@@ -19,8 +19,8 @@ httpx==0.27.2
 # ── AI — STT ─────────────────────────────────────────────────────────────────
 # QwenCleo-ASR: fine-tuned Qwen3-ASR-1.7B for Egyptian Arabic
 transformers==4.45.0
-torch==2.4.1          # Install GPU version from pytorch.org if you have CUDA
-torchaudio==2.4.1
+torch          # Install GPU version from pytorch.org if you have CUDA
+torchaudio
 soundfile==0.12.1
 
 # ── AI — TTS (XTTS v2 voice cloning) ─────────────────────────────────────────
@@ -31,7 +31,7 @@ Pillow==10.4.0
 
 # ── AI — Vision ─────────────────────────────────────────────────────────────
 # UniFace — lightweight face detection on ONNX Runtime (CPU or CUDA)
-uniface==0.1.0        # pip install uniface  (or clone from GitHub)
+uniface       # pip install uniface  (or clone from GitHub)
 onnxruntime==1.19.2   # CPU; swap with onnxruntime-gpu for NVIDIA GPU
 
 # ── AI — Memory / RAG ────────────────────────────────────────────────────────
