@@ -43,6 +43,25 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database initialised")
 
+    # Seed default personality if table is empty
+    from sqlalchemy import select
+    from app.models.personality import Personality
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Personality).limit(1))
+        if not result.scalar_one_or_none():
+            default_p = Personality(
+                id=1,
+                name="Nebula",
+                description="الشخصية الافتراضية للروبوت نيبولا",
+                system_prompt="أنت توأم رقمي مصري. بتتكلم بالمصري العامي وبتخلط إنجليزي زي أي مصري عادي.",
+                dialect="cairo",
+                language_mix="ar_en",
+                is_active=True,
+            )
+            session.add(default_p)
+            await session.commit()
+            logger.info("Default personality seeded (id=1)")
+
 
 async def get_db() -> AsyncSession:  # type: ignore[return]
     """FastAPI dependency: yields an async DB session."""
