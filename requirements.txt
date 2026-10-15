@@ -31,7 +31,8 @@ Pillow==10.4.0
 
 # ── AI — Vision ─────────────────────────────────────────────────────────────
 # UniFace — lightweight face detection on ONNX Runtime (CPU or CUDA)
-uniface       # pip install uniface  (or clone from GitHub)
+uniface
+# pip install uniface  (or clone from GitHub)
 onnxruntime==1.19.2   # CPU; swap with onnxruntime-gpu for NVIDIA GPU
 
 # ── AI — Memory / RAG ────────────────────────────────────────────────────────

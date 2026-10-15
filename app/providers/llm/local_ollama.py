@@ -1,41 +1,58 @@
 """Local Ollama LLM provider — no internet needed (doc §11: works offline on local GPU)."""
 
-import asyncio
-from typing import AsyncIterator
+import json
+from typing import AsyncIterator, List, Dict, Optional
 
 import httpx
 
-from app.providers.tts.base import BaseLLMProvider
+from app.providers.llm.base import BaseLLMProvider, DEFAULT_SYSTEM_PROMPT
 from app.core.config import settings
 from app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-_SYSTEM_PROMPT = """أنت توأم رقمي مصري. بتتكلم بالمصري العامي وبتخلط إنجليزي زي أي مصري عادي.
-ردودك قصيرة (جملة أو اتنين)، بشخصية حيوية وودودة.
-لو الكلام فيه إشارة للمشاعر، ضيف علامة في آخر الجملة زي: [happy] [sad] [surprised] [like] [wave]
-مثال: أهلاً يا صديقي! [happy] [wave]"""
-
 
 class LocalOllamaProvider(BaseLLMProvider):
     """Streams responses from a local Ollama server (Llama 3, Qwen, etc.)."""
 
-    async def generate(self, prompt: str, context: list[str] | None = None) -> str:
+    async def generate(
+        self,
+        prompt: str,
+        context: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
         chunks = []
-        async for token in self.generate_stream(prompt, context):
+        async for token in self.generate_stream(prompt, context, system_prompt, history):
             chunks.append(token)
         return "".join(chunks)
 
     async def generate_stream(
-        self, prompt: str, context: list[str] | None = None
+        self,
+        prompt: str,
+        context: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
     ) -> AsyncIterator[str]:
-        messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+        effective_system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        messages: List[Dict[str, str]] = [{"role": "system", "content": effective_system_prompt}]
+
         if context:
-            memories_text = "\n".join(f"- {m}" for m in context)
-            messages.append({
-                "role": "system",
-                "content": f"ذكريات مرتبطة:\n{memories_text}",
-            })
+            memories_text = "\n".join(f"- {m}" for m in context if m)
+            if memories_text.strip():
+                messages.append({
+                    "role": "system",
+                    "content": f"ذكريات مرتبطة:\n{memories_text}",
+                })
+
+        # Append multi-turn conversation history
+        if history:
+            for msg in history:
+                role = "assistant" if msg.get("role") in ("robot", "assistant") else "user"
+                content = msg.get("content", "")
+                if content:
+                    messages.append({"role": role, "content": content})
+
         messages.append({"role": "user", "content": prompt})
 
         payload = {
@@ -45,8 +62,10 @@ class LocalOllamaProvider(BaseLLMProvider):
             "options": {"temperature": 0.7, "num_predict": 150},
         }
 
+        timeout = httpx.Timeout(getattr(settings, "LLM_TIMEOUT", 120.0), connect=15.0)
+
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
                     "POST",
                     f"{settings.LLM_BASE_URL}/api/chat",
@@ -56,7 +75,6 @@ class LocalOllamaProvider(BaseLLMProvider):
                     async for line in resp.aiter_lines():
                         if not line:
                             continue
-                        import json
                         try:
                             data = json.loads(line)
                             token = data.get("message", {}).get("content", "")
@@ -68,7 +86,13 @@ class LocalOllamaProvider(BaseLLMProvider):
                             continue
         except httpx.ConnectError:
             logger.error(f"Cannot connect to Ollama at {settings.LLM_BASE_URL}. Is it running?")
-            yield "معلش، في مشكلة في الاتصال. حاول تاني."
+            yield "معلش، في مشكلة في الاتصال بـ Ollama. اتأكد إن البرنامج شغال."
+        except httpx.TimeoutException:
+            logger.error(f"Ollama request timed out after {getattr(settings, 'LLM_TIMEOUT', 120.0)}s")
+            yield "استغرق الموديل وقتاً أطول من المعتاد في المعالجة. جرب تاني أو اتأكد من كفاءة الجهاز."
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Ollama HTTP error {e.response.status_code}: {e.response.text}")
+            yield f"في خطأ في تشغيل موديل {settings.LLM_MODEL} على Ollama."
         except Exception as e:
             logger.error(f"Ollama error: {e}")
-            yield "في خطأ تقني. جرب تاني."
+            yield "في خطأ تقني في المعالجة. جرب تاني."

@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
+from app.providers.llm.base import BaseLLMProvider
+
 
 class BaseSTTProvider(ABC):
     """Speech-to-Text provider interface."""
@@ -32,17 +34,4 @@ class BaseTTSProvider(ABC):
         yield wav
 
 
-class BaseLLMProvider(ABC):
-    """Large Language Model provider interface."""
-
-    @abstractmethod
-    async def generate(self, prompt: str, context: list[str] | None = None) -> str:
-        """Generate a complete response (non-streaming)."""
-        ...
-
-    @abstractmethod
-    async def generate_stream(
-        self, prompt: str, context: list[str] | None = None
-    ) -> AsyncIterator[str]:
-        """Generate a streaming response, yielding tokens as they arrive."""
-        ...
+__all__ = ["BaseSTTProvider", "BaseTTSProvider", "BaseLLMProvider"]

@@ -1,6 +1,6 @@
 """LLM provider factory."""
 
-from app.providers.tts.base import BaseLLMProvider
+from app.providers.llm.base import BaseLLMProvider
 from app.core.logger import get_logger
 
 logger = get_logger(__name__)

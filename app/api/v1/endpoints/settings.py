@@ -41,4 +41,11 @@ async def update_providers(body: ProviderUpdate, _u=Depends(get_current_user)):
     updates = body.model_dump(exclude_none=True)
     for k, v in updates.items():
         setattr(settings, k.upper(), v)
-    return {"updated": updates, "note": "Changes apply to next pipeline call"}
+
+    try:
+        from app.websocket.handlers import get_ai_pipeline
+        get_ai_pipeline().reload_providers()
+    except Exception:
+        pass
+
+    return {"updated": updates, "note": "Changes applied immediately to active pipeline"}

@@ -1,7 +1,8 @@
 """OpenAI API LLM provider."""
 
-from typing import AsyncIterator
-from app.providers.tts.base import BaseLLMProvider
+from typing import AsyncIterator, List, Dict, Optional
+
+from app.providers.llm.base import BaseLLMProvider, DEFAULT_SYSTEM_PROMPT
 from app.core.config import settings
 from app.core.logger import get_logger
 
@@ -9,35 +10,85 @@ logger = get_logger(__name__)
 
 
 class OpenAIProvider(BaseLLMProvider):
-    async def generate(self, prompt: str, context: list[str] | None = None) -> str:
+    """OpenAI API provider with streaming support, context injection, and conversation history."""
+
+    def __init__(self):
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from openai import AsyncOpenAI  # type: ignore[import]
+            api_key = settings.LLM_API_KEY or "missing-key"
+            base_url = None
+            if settings.LLM_BASE_URL and "localhost:11434" not in settings.LLM_BASE_URL:
+                base_url = settings.LLM_BASE_URL
+            self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        return self._client
+
+    async def generate(
+        self,
+        prompt: str,
+        context: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
         chunks = []
-        async for t in self.generate_stream(prompt, context):
+        async for t in self.generate_stream(prompt, context, system_prompt, history):
             chunks.append(t)
         return "".join(chunks)
 
-    async def generate_stream(self, prompt: str, context: list[str] | None = None) -> AsyncIterator[str]:
+    async def generate_stream(
+        self,
+        prompt: str,
+        context: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> AsyncIterator[str]:
         try:
-            from openai import AsyncOpenAI  # type: ignore[import]
-            client = AsyncOpenAI(api_key=settings.LLM_API_KEY)
+            client = self._get_client()
+        except ImportError:
+            logger.error("openai package not installed. Run: pip install openai")
+            yield "حزمة openai غير مثبتة. يرجى تثبيتها."
+            return
+
+        effective_system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        messages: List[Dict[str, str]] = [{"role": "system", "content": effective_system_prompt}]
+
+        if context:
+            memories_text = "\n".join(f"- {m}" for m in context if m)
+            if memories_text.strip():
+                messages.append({
+                    "role": "system",
+                    "content": f"ذكريات مرتبطة وسياق سابق:\n{memories_text}",
+                })
+
+        if history:
+            for msg in history:
+                role = "assistant" if msg.get("role") in ("robot", "assistant") else "user"
+                content = msg.get("content", "")
+                if content:
+                    messages.append({"role": role, "content": content})
+
+        messages.append({"role": "user", "content": prompt})
+
+        try:
             stream = await client.chat.completions.create(
                 model=settings.LLM_MODEL or "gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 stream=True,
                 max_tokens=150,
+                temperature=0.7,
             )
             async for chunk in stream:
                 token = chunk.choices[0].delta.content or ""
                 if token:
                     yield token
-        except ImportError:
-            logger.error("openai package not installed. Run: pip install openai")
-            yield "في مشكلة في الاتصال بـ OpenAI."
-
-
-class AnthropicProvider(BaseLLMProvider):
-    async def generate(self, prompt: str, context: list[str] | None = None) -> str:
-        raise NotImplementedError("Anthropic provider not yet implemented.")
-
-    async def generate_stream(self, prompt: str, context: list[str] | None = None) -> AsyncIterator[str]:
-        raise NotImplementedError("Anthropic provider not yet implemented.")
-        yield  # make it a generator
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            error_str = str(e).lower()
+            if "api_key" in error_str or "auth" in error_str:
+                yield "مفتاح API الخاص بـ OpenAI غير صالح أو مفقود."
+            elif "rate" in error_str or "quota" in error_str:
+                yield "تم تجاوز حد استخدام OpenAI أو نفاد الرصيد."
+            else:
+                yield "حدث خطأ أثناء الاتصال بمزود OpenAI."
