@@ -9,6 +9,7 @@ No device talks to another device directly (design decision from doc §4).
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
@@ -65,3 +66,8 @@ app.include_router(ws_router)                       # WebSocket hub (ws/phone, w
 @app.get("/health", tags=["health"])
 async def health_check():
     return {"status": "ok", "version": settings.VERSION}
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")

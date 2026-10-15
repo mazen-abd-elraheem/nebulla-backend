@@ -37,7 +37,7 @@ class Base(DeclarativeBase):
 async def init_db() -> None:
     """Create all tables on startup (dev/simple mode — use Alembic for production)."""
     from app.models import (  # noqa: F401  — import to register models
-        device, personality, memory, conversation, signal, calibration, tracking, log
+        device, personality, memory, conversation, signal, calibration, tracking, log, face_profile
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

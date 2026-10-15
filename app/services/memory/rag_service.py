@@ -67,10 +67,32 @@ class RAGService:
         Returns an empty list if the embedder isn't available.
         """
         await self._ensure_embedder()
-        if self._embedder == "disabled":
-            return []
-
         top_k = top_k or settings.MEMORY_TOP_K
+
+        if self._embedder == "disabled":
+            # Fallback to lexical overlap and importance when sentence-transformers is absent
+            async with AsyncSessionLocal() as session:
+                stmt = select(Memory)
+                if personality_id is not None:
+                    stmt = stmt.where(Memory.personality_id == personality_id)
+                result = await session.execute(stmt)
+                memories: list[Memory] = list(result.scalars().all())
+
+            if not memories:
+                return []
+
+            query_words = set(query.lower().split())
+            scored = []
+            for mem in memories:
+                mem_words = set(mem.content.lower().split())
+                overlap = len(query_words.intersection(mem_words))
+                scored.append((overlap, mem))
+            scored.sort(key=lambda x: (x[0], x[1].importance or 0.5), reverse=True)
+            top = [m for score, m in scored if score > 0][:top_k]
+            if not top and memories:
+                memories.sort(key=lambda m: m.importance or 0.5, reverse=True)
+                top = memories[:top_k]
+            return [m.content for m in top]
 
         # Embed the query
         loop = asyncio.get_event_loop()

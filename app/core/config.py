@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = "http://localhost:11434"   # local Ollama default
     LLM_MODEL: str = "llama3"
     LLM_STREAM: bool = True
+    LLM_TIMEOUT: float = 120.0
 
     # ── STT Config ─────────────────────────────────────────────────────────
     QWENCLEO_MODEL_PATH: str = "models/qwencleo-asr"
