@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
+from app.providers.llm.base import BaseLLMProvider
+
 
 class BaseSTTProvider(ABC):
     """Speech-to-Text provider interface."""
@@ -32,5 +34,4 @@ class BaseTTSProvider(ABC):
         yield wav
 
 
-from app.providers.llm.base import BaseLLMProvider
-
+__all__ = ["BaseSTTProvider", "BaseTTSProvider", "BaseLLMProvider"]

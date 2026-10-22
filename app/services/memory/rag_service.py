@@ -83,29 +83,39 @@ class RAGService:
         Uses semantic cosine similarity when embedding model is loaded,
         and falls back to lexical/keyword matching otherwise.
         """
-        detailed = await self.retrieve_detailed(
-            query=query,
-            personality_id=personality_id,
-            top_k=top_k,
-        )
-        return [item["content"] for item in detailed]
-
-    async def retrieve_detailed(
-        self,
-        query: str,
-        personality_id: int | None = None,
-        top_k: int | None = None,
-    ) -> list[dict]:
-        """
-        Return the top-K most relevant memories with IDs, contents, and similarity scores.
-        """
-        if not query or not query.strip():
-            return []
-
         await self._ensure_embedder()
         top_k = top_k or settings.MEMORY_TOP_K
 
-        # Load candidate memories from DB
+        if self._embedder == "disabled":
+            # Fallback to lexical overlap and importance when sentence-transformers is absent
+            async with AsyncSessionLocal() as session:
+                stmt = select(Memory)
+                if personality_id is not None:
+                    stmt = stmt.where(Memory.personality_id == personality_id)
+                result = await session.execute(stmt)
+                memories: list[Memory] = list(result.scalars().all())
+
+            if not memories:
+                return []
+
+            query_words = set(query.lower().split())
+            scored = []
+            for mem in memories:
+                mem_words = set(mem.content.lower().split())
+                overlap = len(query_words.intersection(mem_words))
+                scored.append((overlap, mem))
+            scored.sort(key=lambda x: (x[0], x[1].importance or 0.5), reverse=True)
+            top = [m for score, m in scored if score > 0][:top_k]
+            if not top and memories:
+                memories.sort(key=lambda m: m.importance or 0.5, reverse=True)
+                top = memories[:top_k]
+            return [m.content for m in top]
+
+        # Embed the query
+        loop = asyncio.get_event_loop()
+        query_vec = await loop.run_in_executor(None, self._embed, query)
+
+        # Load all memories from DB
         async with AsyncSessionLocal() as session:
             stmt = select(Memory)
             if personality_id is not None:

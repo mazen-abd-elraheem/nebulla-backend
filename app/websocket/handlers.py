@@ -25,18 +25,24 @@ _motion_guard: MotionGuard | None = None
 _signal_planner: SignalPlanner | None = None
 
 
-def _get_ai_pipeline() -> AIPipeline:
+def get_ai_pipeline() -> AIPipeline:
     global _ai_pipeline
     if _ai_pipeline is None:
         _ai_pipeline = AIPipeline()
     return _ai_pipeline
 
 
-def _get_face_service() -> FaceService:
+_get_ai_pipeline = get_ai_pipeline
+
+
+def get_face_service() -> FaceService:
     global _face_service
     if _face_service is None:
         _face_service = FaceService()
     return _face_service
+
+
+_get_face_service = get_face_service
 
 
 def _get_motion_guard() -> MotionGuard:
