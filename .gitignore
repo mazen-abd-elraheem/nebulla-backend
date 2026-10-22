@@ -1,4 +1,4 @@
-nebula.db
+nebula.db*
 .env
 __pycache__/
 *.pyc

@@ -32,17 +32,5 @@ class BaseTTSProvider(ABC):
         yield wav
 
 
-class BaseLLMProvider(ABC):
-    """Large Language Model provider interface."""
+from app.providers.llm.base import BaseLLMProvider
 
-    @abstractmethod
-    async def generate(self, prompt: str, context: list[str] | None = None) -> str:
-        """Generate a complete response (non-streaming)."""
-        ...
-
-    @abstractmethod
-    async def generate_stream(
-        self, prompt: str, context: list[str] | None = None
-    ) -> AsyncIterator[str]:
-        """Generate a streaming response, yielding tokens as they arrive."""
-        ...

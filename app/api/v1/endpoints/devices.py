@@ -20,7 +20,11 @@ router = APIRouter()
 
 @router.get("/status", summary="Live connection status of all channels")
 async def connection_status(_user: str = Depends(get_current_user)):
-    return manager.status()
+    st = manager.status()
+    return {
+        "channels": st,
+        **st,
+    }
 
 
 @router.get("/", summary="List all registered devices")

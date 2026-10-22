@@ -22,7 +22,12 @@ def _configure_root_logger() -> None:
     root = logging.getLogger()
     root.setLevel(level)
 
-    # Console handler
+    # Console handler (safeguard for Windows terminal encodings)
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(logging.Formatter(_LOG_FORMAT, _DATE_FORMAT))
     root.addHandler(console)

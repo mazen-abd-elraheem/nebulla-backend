@@ -16,7 +16,7 @@ _rag = RAGService()
 
 class MemoryCreate(BaseModel):
     content: str
-    personality_id: int
+    personality_id: int | None = None
     source: str = "manual"
     importance: int = 5
 
@@ -58,9 +58,13 @@ async def search_memories(
     q: str = Query(..., description="Search query"),
     personality_id: int | None = Query(None),
     top_k: int = Query(5, ge=1, le=20),
+    detailed: bool = Query(False, description="Whether to include similarity score and metadata"),
     _u=Depends(get_current_user),
 ):
-    results = await _rag.retrieve(q, personality_id=personality_id, top_k=top_k)
+    if detailed:
+        results = await _rag.retrieve_detailed(q, personality_id=personality_id, top_k=top_k)
+    else:
+        results = await _rag.retrieve(q, personality_id=personality_id, top_k=top_k)
     return {"query": q, "results": results}
 
 
