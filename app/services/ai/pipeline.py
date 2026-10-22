@@ -104,10 +104,13 @@ class AIPipeline:
         sentence_buffer = ""
         first_sentence_sent = False
 
+        device_state = await self._get_latest_device_telemetry()
         async for token in self._llm.generate_stream(
             prompt=transcript,
             context=memories,
             system_prompt=sys_prompt,
+            personality=active_p,
+            device_state=device_state,
         ):
             full_response += token
             sentence_buffer += token
@@ -206,10 +209,13 @@ class AIPipeline:
         # 2. LLM response generation
         t_llm_start = time.perf_counter()
         full_response = ""
+        device_state = await self._get_latest_device_telemetry()
         async for token in self._llm.generate_stream(
             prompt=text,
             context=memories,
             system_prompt=sys_prompt,
+            personality=p,
+            device_state=device_state,
         ):
             full_response += token
             if broadcast_to_clients:
@@ -290,10 +296,13 @@ class AIPipeline:
         full_response = ""
         t_llm_start = time.perf_counter()
 
+        device_state = await self._get_latest_device_telemetry()
         async for token in self._llm.generate_stream(
             prompt=text,
             context=memories,
             system_prompt=sys_prompt,
+            personality=p,
+            device_state=device_state,
         ):
             full_response += token
             yield {
@@ -343,6 +352,27 @@ class AIPipeline:
         except Exception as e:
             logger.warning(f"Failed to query personality {pid}: {e}")
             return None
+
+    async def _get_latest_device_telemetry(self) -> dict[str, Any] | None:
+        try:
+            from app.models.device import Device
+            async with AsyncSessionLocal() as session:
+                r = await session.execute(
+                    select(Device).where(Device.is_connected == True).order_by(Device.last_seen.desc()).limit(1)
+                )
+                dev = r.scalars().first()
+                if dev:
+                    state: dict[str, Any] = {}
+                    if dev.device_type:
+                        state["device_type"] = dev.device_type
+                    if dev.battery_voltage is not None:
+                        state["battery_voltage"] = dev.battery_voltage
+                    if dev.distance_cm is not None:
+                        state["distance_cm"] = dev.distance_cm
+                    return state if state else None
+        except Exception as e:
+            logger.debug(f"Could not load device telemetry: {e}")
+        return None
 
     async def _record_turn(
         self,

@@ -17,22 +17,28 @@ class MockLLMProvider(BaseLLMProvider):
     async def generate(
         self,
         prompt: str,
-        context: list[str] | None = None,
+        context: list[str] | list[dict] | None = None,
         system_prompt: str | None = None,
+        **kwargs,
     ) -> str:
         chunks = []
-        async for token in self.generate_stream(prompt, context, system_prompt):
+        async for token in self.generate_stream(prompt, context, system_prompt, **kwargs):
             chunks.append(token)
         return "".join(chunks)
 
     async def generate_stream(
         self,
         prompt: str,
-        context: list[str] | None = None,
+        context: list[str] | list[dict] | None = None,
         system_prompt: str | None = None,
+        **kwargs,
     ) -> AsyncIterator[str]:
         if context and len(context) > 0:
-            primary_memory = context[0]
+            first_item = context[0]
+            if isinstance(first_item, dict):
+                primary_memory = first_item.get("content", str(first_item))
+            else:
+                primary_memory = str(first_item)
             simulated_response = (
                 f"أهلاً بك! بناءً على ما أتذكره، {primary_memory}. [happy]"
             )

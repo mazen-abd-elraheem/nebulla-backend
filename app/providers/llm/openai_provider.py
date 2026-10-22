@@ -13,19 +13,21 @@ class OpenAIProvider(BaseLLMProvider):
     async def generate(
         self,
         prompt: str,
-        context: list[str] | None = None,
+        context: list[str] | list[dict] | None = None,
         system_prompt: str | None = None,
+        **kwargs,
     ) -> str:
         chunks = []
-        async for t in self.generate_stream(prompt, context, system_prompt):
+        async for t in self.generate_stream(prompt, context, system_prompt, **kwargs):
             chunks.append(t)
         return "".join(chunks)
 
     async def generate_stream(
         self,
         prompt: str,
-        context: list[str] | None = None,
+        context: list[str] | list[dict] | None = None,
         system_prompt: str | None = None,
+        **kwargs,
     ) -> AsyncIterator[str]:
         try:
             from openai import AsyncOpenAI  # type: ignore[import]
@@ -34,6 +36,7 @@ class OpenAIProvider(BaseLLMProvider):
                 prompt=prompt,
                 context=context,
                 system_prompt=system_prompt,
+                **kwargs,
             )
             stream = await client.chat.completions.create(
                 model=settings.LLM_MODEL or "gpt-4o-mini",
@@ -57,25 +60,31 @@ class AnthropicProvider(BaseLLMProvider):
     async def generate(
         self,
         prompt: str,
-        context: list[str] | None = None,
+        context: list[str] | list[dict] | None = None,
         system_prompt: str | None = None,
+        **kwargs,
     ) -> str:
         chunks = []
-        async for t in self.generate_stream(prompt, context, system_prompt):
+        async for t in self.generate_stream(prompt, context, system_prompt, **kwargs):
             chunks.append(t)
         return "".join(chunks)
 
     async def generate_stream(
         self,
         prompt: str,
-        context: list[str] | None = None,
+        context: list[str] | list[dict] | None = None,
         system_prompt: str | None = None,
+        **kwargs,
     ) -> AsyncIterator[str]:
         try:
             from anthropic import AsyncAnthropic  # type: ignore[import]
             from app.providers.llm.prompt_builder import build_rag_system_prompt
             client = AsyncAnthropic(api_key=settings.LLM_API_KEY)
-            sys_prompt = build_rag_system_prompt(context=context, system_prompt=system_prompt)
+            sys_prompt = build_rag_system_prompt(
+                context=context,
+                system_prompt=system_prompt,
+                **kwargs,
+            )
             async with client.messages.stream(
                 model=settings.LLM_MODEL or "claude-3-5-sonnet-20241022",
                 max_tokens=settings.TTS_MAX_NEW_TOKENS or 150,

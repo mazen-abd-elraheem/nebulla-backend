@@ -20,24 +20,27 @@ class LocalOllamaProvider(BaseLLMProvider):
     async def generate(
         self,
         prompt: str,
-        context: list[str] | None = None,
+        context: list[str] | list[dict] | None = None,
         system_prompt: str | None = None,
+        **kwargs,
     ) -> str:
         chunks = []
-        async for token in self.generate_stream(prompt, context, system_prompt):
+        async for token in self.generate_stream(prompt, context, system_prompt, **kwargs):
             chunks.append(token)
         return "".join(chunks)
 
     async def generate_stream(
         self,
         prompt: str,
-        context: list[str] | None = None,
+        context: list[str] | list[dict] | None = None,
         system_prompt: str | None = None,
+        **kwargs,
     ) -> AsyncIterator[str]:
         messages = build_rag_messages(
             prompt=prompt,
             context=context,
             system_prompt=system_prompt,
+            **kwargs,
         )
 
         max_tokens = getattr(settings, "TTS_MAX_NEW_TOKENS", 150) or 150
