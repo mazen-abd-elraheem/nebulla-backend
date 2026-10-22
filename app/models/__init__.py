@@ -11,10 +11,12 @@ from app.models import (
     personality,
     signal,
     tracking,
+    face_profile,
 )
 from app.models.calibration import ServoCalibration
 from app.models.conversation import Conversation, Message
 from app.models.device import Device
+from app.models.face_profile import FaceProfile
 from app.models.log import SystemLog
 from app.models.memory import Memory
 from app.models.personality import Personality
@@ -25,11 +27,13 @@ __all__ = [
     "calibration",
     "conversation",
     "device",
+    "face_profile",
     "log",
     "memory",
     "personality",
     "signal",
     "tracking",
+    "FaceProfile",
     "Memory",
     "Personality",
     "Device",
