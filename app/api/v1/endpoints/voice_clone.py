@@ -26,18 +26,19 @@ def _svc() -> VoiceCloneService:
 
 @router.post(
     "/upload/{personality_id}",
-    summary="Upload a voice reference sample (WAV) for a personality",
+    summary="Upload a voice reference sample (WAV or MP4) for a personality",
     status_code=status.HTTP_201_CREATED,
 )
 async def upload_voice_sample(
     personality_id: int = Path(..., description="The personality to bind this voice to"),
-    file: UploadFile = File(..., description="WAV file, 3–120 seconds of clean speech"),
+    file: UploadFile = File(..., description="WAV or MP4 file, 3–120 seconds of clean speech"),
     _user: str = Depends(get_current_user),
     svc: VoiceCloneService = Depends(_svc),
 ):
     """
     Upload a voice reference sample.
-    The file must be a mono/stereo WAV, at least 3 seconds long.
+    The file must be a WAV or MP4 (audio or video), at least 3 seconds long.
+    MP4 files are automatically converted to standard WAV audio.
     Longer samples (30–60 s) produce better cloning quality.
     """
     path = await svc.upload_sample(personality_id, file)

@@ -13,6 +13,8 @@ Used by the REST API (/api/v1/voice-clone/*) and by the AI pipeline.
 
 import io
 import os
+import subprocess
+import tempfile
 import uuid
 import wave
 from pathlib import Path
@@ -51,35 +53,45 @@ class VoiceCloneService:
         file: UploadFile,
     ) -> str:
         """
-        Receive an audio upload, validate it, save it, and bind it to a personality.
+        Receive an audio or video upload (WAV or MP4), convert to standard WAV,
+        validate duration, save it, and bind it to a personality.
 
         Returns the saved file path.
-        Accepted formats: .wav  (other formats should be converted client-side)
+        Accepted formats: .wav, .mp4, .m4a
         """
-        if not file.filename or not file.filename.lower().endswith(".wav"):
+        if not file.filename:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Only WAV files are accepted. Please convert your recording first.",
+                detail="Filename is missing.",
+            )
+
+        ext = Path(file.filename).suffix.lower()
+        allowed_exts = {".wav", ".mp4", ".m4a"}
+        if ext not in allowed_exts:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unsupported format '{ext}'. Accepted formats: {', '.join(sorted(allowed_exts))}",
             )
 
         raw = await file.read()
-        duration = _wav_duration(raw)
+        dest = _SAMPLES_DIR / f"personality_{personality_id}.wav"
+
+        duration = _save_and_convert_to_wav(raw, ext, dest)
 
         if duration < _MIN_DURATION_S:
+            if dest.exists():
+                dest.unlink()
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Sample too short ({duration:.1f}s). Minimum is {_MIN_DURATION_S}s.",
             )
         if duration > _MAX_DURATION_S:
+            if dest.exists():
+                dest.unlink()
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Sample too long ({duration:.1f}s). Maximum is {_MAX_DURATION_S}s.",
             )
-
-        # Save with a stable name per personality (overwrite on re-upload)
-        filename = f"personality_{personality_id}.wav"
-        dest = _SAMPLES_DIR / filename
-        dest.write_bytes(raw)
 
         self._personality_voice_map[personality_id] = str(dest)
         logger.info(f"Voice sample saved for personality {personality_id}: {dest} ({duration:.1f}s)")
@@ -185,3 +197,66 @@ def _wav_duration(raw: bytes) -> float:
             return wf.getnframes() / wf.getframerate()
     except Exception:
         return 0.0
+
+
+def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
+    """
+    Save incoming audio/video bytes to standard WAV (16-bit PCM, 24kHz, mono).
+    If it's already a clean WAV, save directly.
+    If it's MP4, M4A, or non-standard WAV, convert using ffmpeg.
+    Returns audio duration in seconds.
+    """
+    if ext == ".wav":
+        try:
+            with wave.open(io.BytesIO(raw), "rb") as wf:
+                dur = wf.getnframes() / wf.getframerate()
+                if dur > 0:
+                    dest.write_bytes(raw)
+                    return dur
+        except Exception:
+            pass  # Fallback to ffmpeg conversion if WAV format is compressed or corrupt
+
+    # Convert via FFmpeg (handles MP4, M4A, AAC, and any WAV variants)
+    try:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception as exc:
+        logger.error(f"Cannot get ffmpeg executable: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server audio conversion component is not available.",
+        )
+
+    # Write temporary file to pass to ffmpeg
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp_name = tmp.name
+        tmp.write(raw)
+
+    try:
+        cmd = [
+            ffmpeg_exe,
+            "-y",
+            "-i", tmp_name,
+            "-vn",                   # Strip video track (in case of MP4 video)
+            "-acodec", "pcm_s16le",  # Standard 16-bit PCM
+            "-ar", "24000",          # 24kHz sample rate (XTTS native)
+            "-ac", "1",              # Mono audio
+            str(dest),
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode != 0:
+            err = res.stderr.decode("utf-8", errors="ignore")
+            logger.error(f"FFmpeg conversion failed: {err}")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Could not extract audio track from file. Please ensure it has a valid audio stream.",
+            )
+
+        duration = _wav_duration(dest.read_bytes())
+        return duration
+    finally:
+        if os.path.exists(tmp_name):
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass

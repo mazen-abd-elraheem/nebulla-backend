@@ -9,25 +9,25 @@ Latency targets (doc §6.3):
 
 Strategy:
   1. Stream STT tokens as they arrive
-  2. Retrieve relevant memories via RAG (grounding context)
-  3. Pass transcript + RAG memories + active personality prompt to LLM in streaming mode
-  4. TTS starts on the FIRST sentence (not the full response)
-  5. Signal planner extracts gesture markers in parallel
-  6. Support both voice audio pipeline and direct text chat pipeline
+  2. Pass transcript to LLM in streaming mode (with personality, RAG memories, and conversation history)
+  3. TTS starts on the FIRST sentence (with gesture tags cleanly stripped)
+  4. Signal planner extracts gesture markers in parallel
+  5. Asynchronously persist conversation and message latencies to database
 """
 
 import asyncio
+import re
 import time
-from typing import AsyncIterator
 import uuid
+from typing import AsyncIterator, List, Dict, Optional, Tuple
 
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.db.session import AsyncSessionLocal
-from app.models.conversation import Conversation, Message
 from app.models.personality import Personality
+from app.models.conversation import Conversation, Message
 from app.providers.stt.base import BaseSTTProvider
 from app.providers.tts.base import BaseTTSProvider
 from app.providers.llm.base import BaseLLMProvider
@@ -37,6 +37,15 @@ from app.websocket.manager import manager
 
 logger = get_logger(__name__)
 
+_TAG_RE = re.compile(r"\[[a-zA-Z_]+\]")
+
+
+def clean_text_for_tts(text: str) -> str:
+    """Remove gesture markers like [happy] or [wave] before sending to TTS."""
+    cleaned = _TAG_RE.sub("", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
 
 class AIPipeline:
     """
@@ -44,13 +53,24 @@ class AIPipeline:
     Injected with swappable STT/LLM/TTS providers via factory.
     """
 
-    def __init__(self):
+    def __init__(self, session_id: Optional[str] = None):
         self._stt = _load_stt_provider()
         self._llm = _load_llm_provider()
         self._tts = _load_tts_provider()
         self._rag = RAGService()
         self._planner = SignalPlanner()
         self._audio_buffer: bytearray = bytearray()
+        self.session_id: str = session_id or str(uuid.uuid4())
+
+    def reload_providers(self) -> None:
+        """Reload STT, LLM, and TTS providers dynamically when settings change."""
+        self._stt = _load_stt_provider()
+        self._llm = _load_llm_provider()
+        self._tts = _load_tts_provider()
+        logger.info(
+            f"AI Pipeline providers reloaded: LLM={settings.LLM_PROVIDER}, "
+            f"STT={settings.STT_PROVIDER}, TTS={settings.TTS_PROVIDER}"
+        )
 
     @property
     def rag(self) -> RAGService:
@@ -90,24 +110,23 @@ class AIPipeline:
         # Acknowledge receipt immediately (doc §6.3 "head nod trick")
         await manager.send_to_phone({"t": "eyes", "mood": "thinking"})
 
-        # ── 2. Memory Retrieval (RAG) ─────────────────────────────────────
-        active_p = await self._get_active_personality()
-        pid = active_p.id if active_p else None
-        sys_prompt = active_p.system_prompt if active_p else None
-
-        memories = await self._rag.retrieve(transcript, personality_id=pid)
-        logger.info(f"RAG retrieved {len(memories)} memories for personality={pid}")
+        # ── 2. Personality & Context Retrieval ───────────────────────────
+        active_pid, active_prompt = await self._get_active_personality()
+        memories = await self._rag.retrieve(transcript, personality_id=active_pid)
+        history = await self._get_recent_history(limit=6)
 
         # ── 3. LLM (streaming) with RAG context ───────────────────────────
         t_llm_start = time.perf_counter()
         full_response = ""
         sentence_buffer = ""
         first_sentence_sent = False
+        first_tts_ms: Optional[float] = None
 
         async for token in self._llm.generate_stream(
-            prompt=transcript,
+            transcript,
             context=memories,
-            system_prompt=sys_prompt,
+            system_prompt=active_prompt,
+            history=history,
         ):
             full_response += token
             sentence_buffer += token
@@ -121,22 +140,31 @@ class AIPipeline:
 
             # TTS starts on first complete sentence (low latency trick)
             if not first_sentence_sent and _is_sentence_end(sentence_buffer):
-                t_tts_start = time.perf_counter()
-                audio_out = await self._tts.synthesize(sentence_buffer.strip())
-                t_tts_end = time.perf_counter()
-                tts_ms = (t_tts_end - t_tts_start) * 1000
-                logger.info(f"TTS first sentence ({tts_ms:.0f}ms)")
-                await manager.send_to_phone(audio_out)
+                tts_text = clean_text_for_tts(sentence_buffer)
                 sentence_buffer = ""
                 first_sentence_sent = True
+
+                if tts_text:
+                    t_tts_start = time.perf_counter()
+                    audio_out = await self._tts.synthesize(tts_text)
+                    t_tts_end = time.perf_counter()
+                    first_tts_ms = (t_tts_end - t_tts_start) * 1000
+                    logger.info(f"TTS first sentence ({first_tts_ms:.0f}ms): {tts_text!r}")
+                    await manager.send_to_phone(audio_out)
 
         t_llm = time.perf_counter()
         llm_ms = (t_llm - t_llm_start) * 1000
 
         # ── 4. Send remaining TTS audio ───────────────────────────────────
-        if sentence_buffer.strip():
-            audio_out = await self._tts.synthesize(sentence_buffer.strip())
+        remaining_tts_ms = 0.0
+        remaining_text = clean_text_for_tts(sentence_buffer)
+        if remaining_text:
+            t_rem_start = time.perf_counter()
+            audio_out = await self._tts.synthesize(remaining_text)
+            remaining_tts_ms = (time.perf_counter() - t_rem_start) * 1000
             await manager.send_to_phone(audio_out)
+
+        total_tts_ms = (first_tts_ms or 0.0) + remaining_tts_ms
 
         # ── 5. Extract gesture / emotion markers from response ─────────────
         commands = await self._planner.extract_from_response(full_response)
@@ -157,236 +185,135 @@ class AIPipeline:
             "latency": {
                 "stt_ms": round(stt_ms),
                 "llm_ms": round(llm_ms),
+                "tts_ms": round(total_tts_ms),
                 "total_ms": round(total_ms),
             },
         })
         logger.info(f"Pipeline complete in {total_ms:.0f}ms")
 
-        # ── 8. Persist conversation turn to DB ─────────────────────────────
+        # ── 8. Asynchronously persist conversation to database ────────────
         asyncio.create_task(
-            self._record_turn(
-                session_id="voice-session",
-                user_text=transcript,
-                assistant_text=full_response,
-                emotion=emotion,
+            self._save_conversation_turn(
+                personality_id=active_pid,
+                user_transcript=transcript,
+                robot_response=full_response,
                 stt_ms=stt_ms,
                 llm_ms=llm_ms,
+                tts_ms=total_tts_ms,
                 total_ms=total_ms,
-            )
-        )
-
-    # ── Text Ingestion (Direct RAG + LLM Chat) ────────────────────────────────
-
-    async def process_text(
-        self,
-        text: str,
-        personality_id: int | None = None,
-        session_id: str | None = None,
-        broadcast_to_clients: bool = True,
-    ) -> dict:
-        """
-        Process a text query directly through RAG + LLM.
-        Useful for REST API, desktop control room text chat, or testing.
-        """
-        t_start = time.perf_counter()
-        session_id = session_id or f"text-{uuid.uuid4().hex[:8]}"
-
-        # Load personality if specified or active
-        if personality_id is not None:
-            p = await self._get_personality_by_id(personality_id)
-        else:
-            p = await self._get_active_personality()
-
-        pid = p.id if p else None
-        sys_prompt = p.system_prompt if p else None
-
-        # 1. RAG retrieval
-        memories = await self._rag.retrieve(text, personality_id=pid)
-
-        # 2. LLM response generation
-        t_llm_start = time.perf_counter()
-        full_response = ""
-        async for token in self._llm.generate_stream(
-            prompt=text,
-            context=memories,
-            system_prompt=sys_prompt,
-        ):
-            full_response += token
-            if broadcast_to_clients:
-                await manager.broadcast_to_desks({
-                    "t": "text_stream",
-                    "token": token,
-                    "is_final": False,
-                })
-
-        t_llm = time.perf_counter()
-        llm_ms = (t_llm - t_llm_start) * 1000
-        total_ms = (time.perf_counter() - t_start) * 1000
-        emotion = _extract_emotion(full_response)
-
-        if broadcast_to_clients:
-            await manager.broadcast_to_desks({
-                "t": "text_stream",
-                "token": "",
-                "is_final": True,
-                "response": full_response,
-                "latency": {"llm_ms": round(llm_ms), "total_ms": round(total_ms)},
-            })
-            await manager.send_to_phone({"t": "eyes", "mood": emotion})
-
-        # Save turn to DB
-        asyncio.create_task(
-            self._record_turn(
-                session_id=session_id,
-                user_text=text,
-                assistant_text=full_response,
                 emotion=emotion,
-                llm_ms=llm_ms,
-                total_ms=total_ms,
             )
         )
-
-        return {
-            "session_id": session_id,
-            "response": full_response,
-            "retrieved_memories": memories,
-            "personality_id": pid,
-            "emotion": emotion,
-            "latency": {
-                "llm_ms": round(llm_ms, 2),
-                "total_ms": round(total_ms, 2),
-            },
-        }
-
-    async def process_text_stream(
-        self,
-        text: str,
-        personality_id: int | None = None,
-        session_id: str | None = None,
-    ) -> AsyncIterator[dict]:
-        """
-        Stream tokens directly to caller as an AsyncIterator.
-        Yields dicts with {"type": "token", "content": "..."} then {"type": "done", ...}.
-        """
-        session_id = session_id or f"stream-{uuid.uuid4().hex[:8]}"
-
-        if personality_id is not None:
-            p = await self._get_personality_by_id(personality_id)
-        else:
-            p = await self._get_active_personality()
-
-        pid = p.id if p else None
-        sys_prompt = p.system_prompt if p else None
-
-        # 1. Retrieve RAG memories
-        memories = await self._rag.retrieve(text, personality_id=pid)
-        yield {
-            "type": "context",
-            "memories": memories,
-            "personality_id": pid,
-        }
-
-        # 2. Stream LLM tokens
-        full_response = ""
-        t_llm_start = time.perf_counter()
-
-        async for token in self._llm.generate_stream(
-            prompt=text,
-            context=memories,
-            system_prompt=sys_prompt,
-        ):
-            full_response += token
-            yield {
-                "type": "token",
-                "content": token,
-            }
-
-        llm_ms = (time.perf_counter() - t_llm_start) * 1000
-        emotion = _extract_emotion(full_response)
-
-        asyncio.create_task(
-            self._record_turn(
-                session_id=session_id,
-                user_text=text,
-                assistant_text=full_response,
-                emotion=emotion,
-                llm_ms=llm_ms,
-                total_ms=llm_ms,
-            )
-        )
-
-        yield {
-            "type": "done",
-            "session_id": session_id,
-            "response": full_response,
-            "emotion": emotion,
-            "llm_ms": round(llm_ms, 2),
-        }
 
     # ── Database Helpers ──────────────────────────────────────────────────────
 
-    async def _get_active_personality(self) -> Personality | None:
+    async def _get_active_personality(self) -> Tuple[Optional[int], Optional[str]]:
+        """Fetch currently active personality from database if set."""
         try:
             async with AsyncSessionLocal() as session:
-                r = await session.execute(
-                    select(Personality).where(Personality.is_active == True).limit(1)
+                res = await session.execute(
+                    select(Personality).where(Personality.is_active == True).limit(1)  # noqa: E712
                 )
-                return r.scalars().first()
+                p = res.scalar_one_or_none()
+                if p:
+                    prompt = p.system_prompt or ""
+                    if p.dialect and p.dialect != "cairo":
+                        prompt += f"\nالتزم بلهجة: {p.dialect}."
+                    return p.id, prompt.strip() or None
         except Exception as e:
-            logger.warning(f"Failed to query active personality: {e}")
-            return None
+            logger.warning(f"Could not load active personality from DB: {e}")
+        return None, None
 
-    async def _get_personality_by_id(self, pid: int) -> Personality | None:
+    async def _get_recent_history(self, limit: int = 6) -> List[Dict[str, str]]:
+        """Fetch recent messages for context from current session."""
         try:
             async with AsyncSessionLocal() as session:
-                return await session.get(Personality, pid)
-        except Exception as e:
-            logger.warning(f"Failed to query personality {pid}: {e}")
-            return None
-
-    async def _record_turn(
-        self,
-        session_id: str,
-        user_text: str,
-        assistant_text: str,
-        emotion: str | None = None,
-        stt_ms: float | None = None,
-        llm_ms: float | None = None,
-        tts_ms: float | None = None,
-        total_ms: float | None = None,
-    ) -> None:
-        try:
-            async with AsyncSessionLocal() as session:
-                # Find or create conversation session
-                r = await session.execute(
-                    select(Conversation).where(Conversation.session_id == session_id)
+                res = await session.execute(
+                    select(Conversation)
+                    .where(Conversation.session_id == self.session_id)
+                    .order_by(Conversation.started_at.desc())
+                    .limit(1)
                 )
-                conv = r.scalars().first()
+                conv = res.scalar_one_or_none()
                 if not conv:
-                    conv = Conversation(session_id=session_id)
+                    return []
+
+                msg_res = await session.execute(
+                    select(Message)
+                    .where(Message.conversation_id == conv.id)
+                    .order_by(Message.created_at.desc(), Message.id.desc())
+                    .limit(limit)
+                )
+                msgs = list(reversed(msg_res.scalars().all()))
+                return [{"role": m.role, "content": m.content} for m in msgs]
+        except Exception as e:
+            logger.warning(f"Could not load recent history: {e}")
+            return []
+
+    async def _save_conversation_turn(
+        self,
+        personality_id: Optional[int],
+        user_transcript: str,
+        robot_response: str,
+        stt_ms: float,
+        llm_ms: float,
+        tts_ms: float,
+        total_ms: float,
+        emotion: str,
+    ) -> None:
+        """Save user utterance and robot response into DB."""
+        try:
+            async with AsyncSessionLocal() as session:
+                res = await session.execute(
+                    select(Conversation)
+                    .where(Conversation.session_id == self.session_id)
+                    .order_by(Conversation.started_at.desc())
+                    .limit(1)
+                )
+                conv = res.scalar_one_or_none()
+                if not conv:
+                    if personality_id is None:
+                        res_p = await session.execute(select(Personality.id).limit(1))
+                        first_p = res_p.scalar_one_or_none()
+                        if first_p:
+                            personality_id = first_p
+                        else:
+                            default_p = Personality(
+                                name="default",
+                                system_prompt="أنت توأم رقمي مصري.",
+                                dialect="cairo",
+                                is_active=True,
+                            )
+                            session.add(default_p)
+                            await session.flush()
+                            personality_id = default_p.id
+
+                    conv = Conversation(
+                        personality_id=personality_id,
+                        session_id=self.session_id,
+                    )
                     session.add(conv)
                     await session.flush()
 
-                u_msg = Message(
+                user_msg = Message(
                     conversation_id=conv.id,
                     role="user",
-                    content=user_text,
+                    content=user_transcript,
+                    stt_latency_ms=round(stt_ms, 2),
                 )
-                a_msg = Message(
+                robot_msg = Message(
                     conversation_id=conv.id,
-                    role="assistant",
-                    content=assistant_text,
+                    role="robot",
+                    content=robot_response,
+                    llm_latency_ms=round(llm_ms, 2),
+                    tts_latency_ms=round(tts_ms, 2),
+                    total_latency_ms=round(total_ms, 2),
                     emotion=emotion,
-                    stt_latency_ms=stt_ms,
-                    llm_latency_ms=llm_ms,
-                    tts_latency_ms=tts_ms,
-                    total_latency_ms=total_ms,
                 )
-                session.add(u_msg)
-                session.add(a_msg)
+                session.add_all([user_msg, robot_msg])
                 await session.commit()
         except Exception as e:
-            logger.warning(f"Could not persist conversation turn to DB: {e}")
+            logger.warning(f"Failed to persist conversation turn: {e}")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -404,9 +331,19 @@ def _is_sentence_end(text: str) -> bool:
 
 
 def _extract_emotion(text: str) -> str:
-    """Extract emotion marker from LLM response."""
+    """Extract emotion marker from LLM response (supports [tags] and keywords)."""
     text_lower = text.lower()
-    if any(w in text_lower for w in ["happy", "فرحان", "😊", "مبسوط"]):
+    tags = _TAG_RE.findall(text)
+    for tag in tags:
+        t_clean = tag.strip("[]").lower()
+        if t_clean in ("happy", "فرحان", "smile", "joy"):
+            return "happy"
+        if t_clean in ("sad", "حزين"):
+            return "sad"
+        if t_clean in ("surprised", "متفاجئ", "shocked"):
+            return "surprised"
+
+    if any(w in text_lower for w in ["happy", "فرحان", "😊"]):
         return "happy"
     if any(w in text_lower for w in ["sad", "حزين", "😢", "زعلان"]):
         return "sad"

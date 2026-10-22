@@ -31,7 +31,8 @@ Pillow==10.4.0
 
 # ── AI — Vision ─────────────────────────────────────────────────────────────
 # UniFace — lightweight face detection on ONNX Runtime (CPU or CUDA)
-uniface       # pip install uniface  (or clone from GitHub)
+uniface
+# pip install uniface  (or clone from GitHub)
 onnxruntime==1.19.2   # CPU; swap with onnxruntime-gpu for NVIDIA GPU
 
 # ── AI — Memory / RAG ────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ gTTS==2.5.3           # ar-EG free fallback TTS (no GPU needed)
 # ── Audio processing ─────────────────────────────────────────────────────────
 webrtcvad==2.0.10     # Voice Activity Detection (VAD)
 pyaudio==0.2.14       # optional: for local mic testing
+imageio-ffmpeg>=0.5.0 # For converting MP4/audio formats to WAV
 
 # ── Utilities ────────────────────────────────────────────────────────────────
 python-multipart==0.0.12  # for file upload (voice samples)
