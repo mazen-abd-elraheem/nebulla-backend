@@ -8,8 +8,9 @@ No device talks to another device directly (design decision from doc §4).
 
 from contextlib import asynccontextmanager
 
+from pathlib import Path
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
@@ -68,6 +69,17 @@ async def health_check():
     return {"status": "ok", "version": settings.VERSION}
 
 
+STUDIO_HTML_PATH = Path(__file__).parent / "static" / "faces_studio.html"
+
+
+@app.get("/faces-ui", response_class=HTMLResponse, tags=["vision-studio"], summary="Interactive Vision Testing Studio")
+async def vision_studio():
+    """Interactive visual testing interface for video face recognition and match percentage."""
+    if STUDIO_HTML_PATH.exists():
+        return HTMLResponse(content=STUDIO_HTML_PATH.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h3>Studio UI template not found</h3>", status_code=404)
+
+
 @app.get("/", include_in_schema=False)
 async def root():
-    return RedirectResponse(url="/docs")
+    return RedirectResponse(url="/faces-ui")

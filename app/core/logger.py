@@ -22,10 +22,18 @@ def _configure_root_logger() -> None:
     root = logging.getLogger()
     root.setLevel(level)
 
+    # Reconfigure stdout to UTF-8 for Windows console support
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     # Console handler
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(logging.Formatter(_LOG_FORMAT, _DATE_FORMAT))
     root.addHandler(console)
+
 
     # Rotating file handler
     log_path = Path(settings.LOG_FILE)

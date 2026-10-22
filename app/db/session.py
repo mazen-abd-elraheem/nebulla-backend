@@ -41,6 +41,21 @@ async def init_db() -> None:
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        def _migrate(connection):
+            from sqlalchemy import inspect, text
+            inspector = inspect(connection)
+            tables = inspector.get_table_names()
+            if "conversations" in tables:
+                cols = [c["name"] for c in inspector.get_columns("conversations")]
+                if "personality_id" not in cols:
+                    connection.execute(text("ALTER TABLE conversations ADD COLUMN personality_id INTEGER REFERENCES personalities(id)"))
+            if "face_profiles" in tables:
+                cols = [c["name"] for c in inspector.get_columns("face_profiles")]
+                if "photo_path" not in cols:
+                    connection.execute(text("ALTER TABLE face_profiles ADD COLUMN photo_path VARCHAR(256)"))
+
+        await conn.run_sync(_migrate)
     logger.info("Database initialised")
 
     # Seed default personality if table is empty
