@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Local-network only (doc §6 security)
     CORS_ORIGINS: List[str] = ["*"]  # tighten in production
     PAIRING_SECRET: str = "change-me-in-production"  # pairing code auth
+    JWT_SECRET_KEY: str = "change-me-jwt-secret-in-production"  # dedicated JWT signing secret
     MAX_COMMANDS_PER_SECOND: int = 20  # rate-limit for ESP32 commands
 
     # ── Database ───────────────────────────────────────────────────────────
@@ -44,22 +45,22 @@ class Settings(BaseSettings):
     LLM_PROVIDER: Literal["local", "openai", "anthropic", "huggingface", "nile"] = "local"
     LLM_API_KEY: str = ""
     LLM_BASE_URL: str = "http://localhost:11434"   # local Ollama default
-    LLM_MODEL: str = "qwen2.5:3b"
+    LLM_MODEL: str = "nebula-masri"
     HF_MODEL_NAME: str = "MBZUAI-Paris/Nile-Chat-3x4B-A6B"
     LLM_STREAM: bool = True
     LLM_TIMEOUT: float = 120.0
-    LLM_MAX_TOKENS: int = 35
-    LLM_TEMPERATURE: float = 0.05
+    LLM_MAX_TOKENS: int = 45
+    LLM_TEMPERATURE: float = 0.1
     LLM_TOP_P: float = 0.85
     LLM_REPEAT_PENALTY: float = 1.15
 
     # ── STT Config ─────────────────────────────────────────────────────────
     QWENCLEO_MODEL_PATH: str = "models/qwencleo-asr"
-    QWENCLEO_DEVICE: str = "cuda"  # "cuda" | "cpu"
+    QWENCLEO_DEVICE: str = "cpu"  # "cuda" | "cpu"
 
     # ── TTS Config ─────────────────────────────────────────────────────────
     VOICETUT_MODEL_PATH: str = "models/voicetut-tts"
-    VOICETUT_DEVICE: str = "cuda"
+    VOICETUT_DEVICE: str = "cpu"  # "cuda" | "cpu"
     # OmniVoice base (VoiceTut is fine-tuned on ~380h Egyptian podcast)
     OMNIVOICE_BASE_PATH: str = "models/omnivoice"
     # Max generation steps — keep first sentence short for low latency (doc §6.3)

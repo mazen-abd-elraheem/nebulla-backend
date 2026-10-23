@@ -25,6 +25,7 @@ from fastapi import HTTPException, UploadFile, status
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.providers.tts.xtts.provider import XTTSProvider
+from app.utils.masri_normalizer import clean_llm_output_for_speech
 
 logger = get_logger(__name__)
 
@@ -37,12 +38,13 @@ _MAX_DURATION_S = 120.0  # cap to avoid huge uploads
 
 class VoiceCloneService:
     """
-    Manages voice samples and drives XTTS synthesis.
-    One XTTSProvider is shared and the reference wav is swapped per request.
+    Manages voice samples and drives XTTS / VoiceTut synthesis.
+    Swaps reference audio per personality and applies Egyptian dialect normalizer.
     """
 
     def __init__(self):
         self._xtts = XTTSProvider()
+        self._voicetut = None
         self._personality_voice_map: dict[int, str] = {}  # personality_id → wav path
 
     # ── Sample management ─────────────────────────────────────────────────────
@@ -147,23 +149,38 @@ class VoiceCloneService:
         language: str = "ar",
     ) -> bytes:
         """
-        Synthesise *text* in the cloned voice.
+        Synthesise *text* in the cloned voice after applying Masri dialect normalization.
 
         Priority of voice reference:
           1. Explicit reference_wav path (override)
           2. Personality-bound sample (personality_id lookup)
-          3. Default XTTS reference (from settings)
-
-        Returns WAV bytes.
+          3. Default provider synthesis
         """
+        # Normalize text to remove thinking tags, action commands, and tune Egyptian pronunciation
+        clean_text = clean_llm_output_for_speech(text)
+        if not clean_text:
+            clean_text = text.strip()
+
         wav_path = reference_wav or (
             self.get_sample_path(personality_id) if personality_id else None
         )
 
+        # If VoiceTut is requested and available
+        if settings.TTS_PROVIDER == "voicetut":
+            if self._voicetut is None:
+                from app.providers.tts.voicetut import VoiceTutProvider
+                self._voicetut = VoiceTutProvider()
+
+            if wav_path:
+                return await self._voicetut.clone_voice(wav_path, clean_text, language)
+            else:
+                return await self._voicetut.synthesize(clean_text)
+
+        # Default to XTTS zero-shot cloning
         if wav_path:
-            return await self._xtts.clone_voice(wav_path, text, language)
+            return await self._xtts.clone_voice(wav_path, clean_text, language)
         else:
-            return await self._xtts.synthesize(text)
+            return await self._xtts.synthesize(clean_text)
 
     async def synthesize_stream(
         self,

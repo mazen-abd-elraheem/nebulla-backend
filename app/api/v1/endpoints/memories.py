@@ -16,15 +16,6 @@ router = APIRouter()
 _rag = RAGService()
 
 
-async def _get_auth_user(
-    db: AsyncSession = Depends(get_db),
-    _u=Depends(lambda: None),
-) -> str:
-    if settings.DEBUG:
-        return "dev_user"
-    return await get_current_user()
-
-
 class MemoryCreate(BaseModel):
     content: str
     personality_id: int | None = None
@@ -36,7 +27,7 @@ class MemoryCreate(BaseModel):
 async def list_memories(
     personality_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _u=Depends(_get_auth_user),
+    _u: str = Depends(get_current_user),
 ):
     stmt = select(Memory).order_by(Memory.created_at.desc())
     if personality_id:
@@ -49,7 +40,7 @@ async def list_memories(
 async def add_memory(
     body: MemoryCreate,
     db: AsyncSession = Depends(get_db),
-    _u=Depends(_get_auth_user),
+    _u: str = Depends(get_current_user),
 ):
     pid = body.personality_id
     if not pid:
@@ -70,7 +61,7 @@ async def add_memory(
 async def delete_memory(
     mid: int,
     db: AsyncSession = Depends(get_db),
-    _u=Depends(_get_auth_user),
+    _u: str = Depends(get_current_user),
 ):
     m = await db.get(Memory, mid)
     if not m:

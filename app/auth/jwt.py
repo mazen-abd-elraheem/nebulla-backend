@@ -23,8 +23,10 @@ api_key_scheme = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # ── Token generation ──────────────────────────────────────────────────────────
 
+import secrets
+
 def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> str:
-    """Create a signed JWT token."""
+    """Create a signed JWT token using dedicated JWT secret."""
     expire = datetime.now(timezone.utc) + timedelta(minutes=_TOKEN_EXPIRE_MINUTES)
     payload: dict[str, Any] = {
         "sub": subject,
@@ -33,13 +35,13 @@ def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> st
     }
     if extra:
         payload.update(extra)
-    return jwt.encode(payload, settings.PAIRING_SECRET, algorithm=_ALGORITHM)
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=_ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
     """Decode and validate a JWT token. Raises HTTPException on failure."""
     try:
-        return jwt.decode(token, settings.PAIRING_SECRET, algorithms=[_ALGORITHM])
+        return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -61,12 +63,9 @@ async def get_current_user(
     if settings.DEBUG and not x_api_key and not authorization:
         return "dev_user"
 
-    # 1. Try raw API key (simple pre-shared key for local network)
+    # 1. Try raw API key (simple pre-shared key for local network) with constant-time comparison
     if x_api_key:
-        import hashlib
-        key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
-        # In production query DB for this hash; for now accept any matching pairing secret
-        if x_api_key == settings.PAIRING_SECRET:
+        if secrets.compare_digest(x_api_key, settings.PAIRING_SECRET):
             return "api_key_client"
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API key")
 

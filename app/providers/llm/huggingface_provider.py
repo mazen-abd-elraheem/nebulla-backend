@@ -43,6 +43,18 @@ class HuggingFaceProvider(BaseLLMProvider):
 
     def _load_model_sync(self):
         try:
+            # Enforce strict model allowlist to prevent arbitrary remote code execution
+            allowed_models = {"MBZUAI-Paris/Nile-Chat-3x4B-A6B"}
+            configured = getattr(settings, "HF_MODEL_NAME", None)
+            if configured:
+                allowed_models.add(configured)
+
+            if self.model_name not in allowed_models:
+                raise ValueError(
+                    f"Untrusted Hugging Face model repository '{self.model_name}'. "
+                    f"Allowed models: {sorted(list(allowed_models))}"
+                )
+
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
 

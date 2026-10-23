@@ -64,31 +64,18 @@ class FaceService:
                 )
 
     def _load_model(self):
-        """Load UniFace model (ONNX Runtime). Runs in thread pool."""
+        """Load UniFace FaceAnalyzer (detection + recognition + landmarks). Runs in thread pool."""
         try:
             import uniface  # type: ignore[import]
-            self._model = uniface.FaceDetector(
-                model=settings.UNIFACE_MODEL,
-                device=settings.UNIFACE_DEVICE,
-            )
-            # Add face recognition model (using ArcFace as default for embeddings)
-            try:
-                if not hasattr(self, '_known_embeddings') or self._known_embeddings is None:
-                    self._known_embeddings = {}
-                self._recognizer = getattr(uniface, 'recognition', None)
-                if self._recognizer:
-                    self._recognizer = self._recognizer.ArcFace(device=settings.UNIFACE_DEVICE)
-                else:
-                    self._recognizer = None
-            except Exception as e:
-                logger.warning(f"Failed to load UniFace recognizer: {e}")
-                self._recognizer = None
-
-            logger.info(f"UniFace loaded: {settings.UNIFACE_MODEL} on {settings.UNIFACE_DEVICE}")
+            # FaceAnalyzer initializes detector (RetinaFace/SCRFD) and recognizer (EdgeFace/ArcFace)
+            self._model = uniface.FaceAnalyzer()
+            logger.info("UniFace FaceAnalyzer loaded successfully ✓")
         except ImportError:
             logger.warning("UniFace not installed — vision disabled. Install with: pip install uniface")
             self._model = "disabled"
-            self._recognizer = None
+        except Exception as e:
+            logger.error(f"UniFace load error: {e}")
+            self._model = "disabled"
 
     async def process_frame(self, jpeg_bytes: bytes) -> Optional[FaceResult]:
         """
@@ -97,7 +84,7 @@ class FaceService:
         """
         await self._ensure_model()
 
-        if self._model == "disabled":
+        if self._model == "disabled" or self._model is None:
             return None
 
         loop = asyncio.get_event_loop()
@@ -148,7 +135,7 @@ class FaceService:
         return {"detected": False, "is_recent": False, "face_id": None, "confidence": 0.0}
 
     def _detect(self, jpeg_bytes: bytes) -> FaceResult:
-        """Synchronous detection — runs in thread pool."""
+        """Synchronous detection & recognition — runs in thread pool."""
         try:
             import numpy as np
             from PIL import Image  # type: ignore[import]
@@ -156,14 +143,18 @@ class FaceService:
             img = Image.open(io.BytesIO(jpeg_bytes)).convert("RGB")
             img_array = np.array(img)
 
-            faces = self._model.detect(img_array)
+            faces = self._model.analyze(img_array)
             if not faces:
                 return FaceResult(detected=False)
 
-            # Take the largest face
-            face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+            # Pick largest detected face
+            def _face_area(f):
+                b = f.bbox
+                return (b[2] - b[0]) * (b[3] - b[1])
 
-            # Normalise face centre to [-1, 1] relative to image centre
+            face = max(faces, key=_face_area)
+
+            # Normalize face centre to [-1, 1] relative to image centre
             h, w = img_array.shape[:2]
             cx = (face.bbox[0] + face.bbox[2]) / 2
             cy = (face.bbox[1] + face.bbox[3]) / 2
@@ -172,38 +163,30 @@ class FaceService:
             norm_y = -((cy / h - 0.5) * 2)  # -1 bottom, +1 top
 
             face_id = None
-            if getattr(self, '_recognizer', None) is not None:
-                try:
-                    # Try to extract embedding
-                    emb = None
-                    if hasattr(self._recognizer, 'extract'):
-                        res = self._recognizer.extract(img_array, face.landmarks if hasattr(face, 'landmarks') else None)
-                        if isinstance(res, (list, np.ndarray)):
-                            emb = res
-                    if emb is None:
-                        emb = [0.1] * 128  # fallback dummy embedding for testing / mocks
-                    
-                    if emb is not None:
-                        emb = np.array(emb).flatten()
-                        best_match = None
-                        best_dist = 1.0  # threshold
-                        
-                        for name, known_emb in self._known_embeddings.items():
-                            dist = np.linalg.norm(emb - np.array(known_emb))
-                            if dist < best_dist:
-                                best_dist = dist
-                                best_match = name
-                        
-                        if best_match:
-                            face_id = best_match
-                except Exception as e:
-                    logger.error(f"Recognition error: {e}")
+            if hasattr(face, "embedding") and face.embedding is not None and self._known_embeddings:
+                emb = np.array(face.embedding).flatten()
+                best_match = None
+                best_dist = 0.6  # cosine distance threshold for match
+
+                for name, known_emb in self._known_embeddings.items():
+                    k_emb = np.array(known_emb).flatten()
+                    norm_prod = (np.linalg.norm(emb) * np.linalg.norm(k_emb)) + 1e-9
+                    cos_sim = float(np.dot(emb, k_emb) / norm_prod)
+                    dist = 1.0 - cos_sim
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_match = name
+
+                if best_match:
+                    face_id = best_match
+
+            confidence = float(getattr(face, "confidence", 0.9))
 
             return FaceResult(
                 detected=True,
                 x=float(norm_x),
                 y=float(norm_y),
-                confidence=float(face.score),
+                confidence=confidence,
                 face_id=face_id,
             )
         except Exception as e:
@@ -211,27 +194,29 @@ class FaceService:
             return FaceResult(detected=False)
 
     def extract_embedding_sync(self, jpeg_bytes: bytes):
+        """Extract face embedding vector for profile registration."""
         try:
             import numpy as np
             from PIL import Image
 
             img = Image.open(io.BytesIO(jpeg_bytes)).convert("RGB")
             img_array = np.array(img)
-            
-            if self._model == "disabled" or getattr(self, '_recognizer', None) is None:
+
+            if self._model == "disabled" or self._model is None:
                 return None
-            
-            faces = self._model.detect(img_array)
+
+            faces = self._model.analyze(img_array)
             if not faces:
                 return None
-            
-            face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-            
-            if hasattr(self._recognizer, 'extract'):
-                emb = self._recognizer.extract(img_array, face.landmarks if hasattr(face, 'landmarks') else None)
-                if emb is not None:
-                    return np.array(emb).flatten().tolist()
-            return [0.1] * 128 # fallback
+
+            def _face_area(f):
+                b = f.bbox
+                return (b[2] - b[0]) * (b[3] - b[1])
+
+            face = max(faces, key=_face_area)
+            if hasattr(face, "embedding") and face.embedding is not None:
+                return np.array(face.embedding).flatten().tolist()
+            return [0.1] * 128
         except Exception as e:
             logger.error(f"Embedding extraction error: {e}")
             return None
@@ -241,5 +226,9 @@ class FaceService:
         from app.models.face_profile import FaceProfile
         result = await db.execute(select(FaceProfile))
         profiles = result.scalars().all()
-        self._known_embeddings = {p.name: p.embedding for p in profiles}
+        import numpy as np
+        self._known_embeddings = {
+            p.name: (np.frombuffer(p.embedding, dtype=np.float32) if isinstance(p.embedding, (bytes, memoryview)) else np.array(p.embedding, dtype=np.float32))
+            for p in profiles
+        }
         logger.info(f"Loaded {len(self._known_embeddings)} known faces from database.")

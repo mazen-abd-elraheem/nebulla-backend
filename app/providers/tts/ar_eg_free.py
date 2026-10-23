@@ -23,16 +23,54 @@ class ArEgFreeProvider(BaseTTSProvider):
             import io
 
             loop = asyncio.get_event_loop()
-            mp3_bytes = await loop.run_in_executor(None, self._synth, text)
-            return mp3_bytes
+            raw_audio = await loop.run_in_executor(None, self._synth, text)
+            return raw_audio
         except ImportError:
             logger.error("gTTS not installed. Run: pip install gTTS")
-            return b""
+            from app.providers.tts.voicetut import _silent_wav
+            return _silent_wav()
 
     def _synth(self, text: str) -> bytes:
-        from gtts import gTTS
-        import io
-        tts = gTTS(text=text, lang="ar", tld="com.eg")
-        buf = io.BytesIO()
-        tts.write_to_fp(buf)
-        return buf.getvalue()
+        try:
+            from gtts import gTTS
+            import io
+            import tempfile
+            import subprocess
+            import imageio_ffmpeg
+
+            tts = gTTS(text=text, lang="ar", tld="com.eg")
+            mp3_buf = io.BytesIO()
+            tts.write_to_fp(mp3_buf)
+            mp3_bytes = mp3_buf.getvalue()
+
+            # Convert to standard WAV using imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as in_f:
+                in_f.write(mp3_bytes)
+                in_path = in_f.name
+
+            out_path = in_path.replace(".mp3", ".wav")
+            try:
+                cmd = [
+                    ffmpeg_exe, "-y", "-i", in_path,
+                    "-acodec", "pcm_s16le", "-ar", "24000", "-ac", "1",
+                    out_path
+                ]
+                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                with open(out_path, "rb") as out_f:
+                    return out_f.read()
+            finally:
+                import os
+                for p in (in_path, out_path):
+                    if os.path.exists(p):
+                        try:
+                            os.unlink(p)
+                        except OSError:
+                            pass
+        except Exception as e:
+            logger.warning(f"gTTS audio generation / conversion error: {e}")
+            from app.providers.tts.voicetut import _silent_wav
+            return _silent_wav()
+
+
+ArEgFreeTTSProvider = ArEgFreeProvider

@@ -18,9 +18,10 @@ logs/
 /models/
 data/voice_samples/
 data/embeddings/
+data/*.jpg
+data/uniface_test_result.jpg
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 htmlcov/
 .coverage
-            

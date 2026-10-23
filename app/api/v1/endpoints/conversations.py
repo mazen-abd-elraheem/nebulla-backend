@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt import get_current_user
+from app.auth.jwt import get_current_user, get_optional_user
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.db.session import get_db
@@ -66,17 +66,11 @@ class ChatResponse(BaseModel):
     memories_used: List[str]
     grounding: Optional[GroundingInfo] = None
 
-
-# ── Authentication Helper ────────────────────────────────────────────────────
-
-async def _get_auth_user(
-    db: AsyncSession = Depends(get_db),
-    _u: Optional[str] = Depends(lambda: None),
-) -> str:
-    """Allow quick development chat without strict auth if in DEBUG mode, else validate."""
-    if settings.DEBUG:
-        return "dev_user"
-    return await get_current_user()
+    # Backward compatibility fields
+    response: Optional[str] = None
+    retrieved_memories: Optional[List[str]] = None
+    personality_id: Optional[int] = None
+    latency: Optional[dict] = None
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────
@@ -93,7 +87,7 @@ async def chat_with_llm(
     request: Request,
     body: ChatRequest,
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(_get_auth_user),
+    _user: str = Depends(get_current_user),
 ):
     """
     Direct REST API endpoint to chat with the LLM.
@@ -241,7 +235,7 @@ async def chat_with_llm(
     )
     robot_msg = Message(
         conversation_id=conv_id,
-        role="robot",
+        role="assistant",
         content=reply,
         llm_latency_ms=round(llm_ms, 2),
         total_latency_ms=round(llm_ms, 2),
@@ -263,76 +257,51 @@ async def chat_with_llm(
         llm_provider=str(target_provider),
         memories_used=memories,
         grounding=grounding,
+        response=reply,
+        retrieved_memories=memories,
+        personality_id=active_pid,
+        latency={"llm_ms": round(llm_ms, 2)},
     )
-
-
-# ── Read-only Endpoints ──────────────────────────────────────────────────────
-
-class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, description="User prompt or question to the LLM")
-    personality_id: int | None = Field(None, description="Optional personality ID to ground responses")
-    session_id: str | None = Field(None, description="Optional conversation session ID")
-    broadcast_to_clients: bool = Field(False, description="Whether to broadcast live tokens to connected desks/phones")
-
-
-class ChatResponse(BaseModel):
-    session_id: str
-    response: str
-    retrieved_memories: list[str]
-    personality_id: int | None
-    emotion: str
-    latency: dict
-
-
-@router.post("/chat", response_model=ChatResponse, summary="Chat with LLM grounded by RAG memories")
-async def chat_with_rag(
-    body: ChatRequest,
-    _u=Depends(get_optional_user),
-):
-    """
-    Direct text chat endpoint linking RAG with LLM:
-    1. Retrieves top relevant memories from the DB via semantic/lexical RAG.
-    2. Builds system prompt with personality persona and RAG context.
-    3. Streams/generates response using selected LLM provider (Ollama / OpenAI / Claude).
-    4. Records turn and latency telemetry to conversations/messages table.
-    """
-    pipeline = _get_ai_pipeline()
-    result = await pipeline.process_text(
-        text=body.message,
-        personality_id=body.personality_id,
-        session_id=body.session_id,
-        broadcast_to_clients=body.broadcast_to_clients,
-    )
-    return result
 
 
 @router.post("/chat/stream", summary="Stream chat tokens from LLM with RAG grounding (SSE)")
-async def chat_stream_with_rag(
+async def chat_stream(
     body: ChatRequest,
-    _u=Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+    _user: str = Depends(get_current_user),
 ):
-    """
-    Server-Sent Events (SSE) streaming endpoint:
-    Streams tokens as they are produced by the LLM with RAG context.
-    """
-    pipeline = _get_ai_pipeline()
+    system_prompt, memories, grounding, active_pid = await build_grounding_context(
+        db=db,
+        personality_id=body.personality_id,
+        message=body.message,
+    )
+    target_provider = body.provider or settings.LLM_PROVIDER
+    llm = get_llm_provider(target_provider)
 
-    async def event_generator() -> AsyncIterator[str]:
-        async for item in pipeline.process_text_stream(
-            text=body.message,
-            personality_id=body.personality_id,
-            session_id=body.session_id,
-        ):
-            yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+    async def event_generator():
+        import json
+        yield f"data: {json.dumps({'type': 'context', 'memories': memories}, ensure_ascii=False)}\n\n"
+        try:
+            async for token in llm.generate_stream(
+                body.message,
+                context=memories,
+                system_prompt=system_prompt,
+            ):
+                yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+
+# ── Read-only Endpoints ──────────────────────────────────────────────────────
 
 @router.get("/", summary="List conversation sessions")
 async def list_conversations(
     limit: int = Query(20, le=100),
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(_get_auth_user),
+    _user: str = Depends(get_current_user),
 ):
     r = await db.execute(select(Conversation).order_by(Conversation.started_at.desc()).limit(limit))
     return {"conversations": [_c(c) for c in r.scalars()]}
@@ -342,7 +311,7 @@ async def list_conversations(
 async def get_messages(
     cid: int,
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(_get_auth_user),
+    _user: str = Depends(get_current_user),
 ):
     r = await db.execute(select(Message).where(Message.conversation_id == cid).order_by(Message.created_at))
     return {"messages": [_msg(m) for m in r.scalars()]}

@@ -65,12 +65,29 @@ class VoiceTutProvider(BaseTTSProvider):
             self._model = "disabled"
 
     async def synthesize(self, text: str) -> bytes:
+        from app.utils.masri_normalizer import clean_llm_output_for_speech
+        normalized_text = clean_llm_output_for_speech(text)
         await self._ensure_loaded()
         if self._model == "disabled":
-            return _silent_wav()
+            from app.providers.tts.ar_eg_free import ArEgFreeTTSProvider
+            fallback = ArEgFreeTTSProvider()
+            return await fallback.synthesize(normalized_text)
 
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._synth, text)
+        return await loop.run_in_executor(None, self._synth, normalized_text)
+
+    async def clone_voice(self, reference_wav: str, text: str, language: str = "ar") -> bytes:
+        """Clone voice using reference audio sample (falls back to XTTS if VoiceTut weights missing)."""
+        from app.utils.masri_normalizer import clean_llm_output_for_speech
+        normalized_text = clean_llm_output_for_speech(text)
+        await self._ensure_loaded()
+        if self._model == "disabled":
+            from app.providers.tts.xtts.provider import XTTSProvider
+            xtts = XTTSProvider()
+            return await xtts.clone_voice(reference_wav, normalized_text, language)
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._synth, normalized_text)
 
     def _synth(self, text: str) -> bytes:
         try:

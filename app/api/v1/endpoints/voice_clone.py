@@ -12,7 +12,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, Upload
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.auth.jwt import get_current_user
+from app.db.session import get_db
+from app.models.personality import Personality
 from app.services.voice_clone.voice_clone_service import VoiceCloneService
 
 router = APIRouter()
@@ -32,6 +37,7 @@ def _svc() -> VoiceCloneService:
 async def upload_voice_sample(
     personality_id: int = Path(..., description="The personality to bind this voice to"),
     file: UploadFile = File(..., description="WAV or MP4 file, 3–120 seconds of clean speech"),
+    db: AsyncSession = Depends(get_db),
     _user: str = Depends(get_current_user),
     svc: VoiceCloneService = Depends(_svc),
 ):
@@ -42,6 +48,14 @@ async def upload_voice_sample(
     Longer samples (30–60 s) produce better cloning quality.
     """
     path = await svc.upload_sample(personality_id, file)
+
+    # Persist the voice sample path on the Personality record in DB
+    res = await db.execute(select(Personality).where(Personality.id == personality_id))
+    personality = res.scalar_one_or_none()
+    if personality:
+        personality.voice_sample_path = path
+        await db.commit()
+
     return {"message": "Sample saved", "path": path, "personality_id": personality_id}
 
 
@@ -60,12 +74,20 @@ async def list_samples(
 @router.delete("/samples/{personality_id}", summary="Delete a voice sample")
 async def delete_sample(
     personality_id: int = Path(...),
+    db: AsyncSession = Depends(get_db),
     _user: str = Depends(get_current_user),
     svc: VoiceCloneService = Depends(_svc),
 ):
     deleted = await svc.delete_sample(personality_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sample not found")
+
+    res = await db.execute(select(Personality).where(Personality.id == personality_id))
+    personality = res.scalar_one_or_none()
+    if personality:
+        personality.voice_sample_path = None
+        await db.commit()
+
     return {"message": "Sample deleted", "personality_id": personality_id}
 
 
