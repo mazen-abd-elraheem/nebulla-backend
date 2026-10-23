@@ -66,13 +66,12 @@ class ChatResponse(BaseModel):
     memories_used: List[str]
     grounding: Optional[GroundingInfo] = None
 
-<<<<<<< HEAD
     # Backward compatibility fields
     response: Optional[str] = None
     retrieved_memories: Optional[List[str]] = None
     personality_id: Optional[int] = None
     latency: Optional[dict] = None
-=======
+
 
 # ── Authentication Helper ────────────────────────────────────────────────────
 
@@ -83,7 +82,7 @@ async def _get_auth_user(
     if user:
         return user
     return "guest_user"
->>>>>>> d5cc12b4221fedd59dd69a60233a0246220c52c6
+
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────
