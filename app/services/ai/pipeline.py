@@ -1,5 +1,5 @@
 """
-AI Pipeline — orchestrates STT → RAG → LLM → TTS with full streaming.
+AI Pipeline — orchestrates STT → LLM → TTS with full streaming.
 
 Latency targets (doc §6.3):
   VAD + STT:     0.2 – 0.6 s
@@ -31,25 +31,28 @@ from app.models.conversation import Conversation, Message
 from app.providers.stt.base import BaseSTTProvider
 from app.providers.tts.base import BaseTTSProvider
 from app.providers.llm.base import BaseLLMProvider
+from app.services.ai.context_builder import build_grounding_context
 from app.services.memory.rag_service import RAGService
 from app.services.motion.signal_planner import SignalPlanner
 from app.websocket.manager import manager
 
 logger = get_logger(__name__)
 
-_TAG_RE = re.compile(r"\[[a-zA-Z_]+\]")
+# Regex for gesture / emotion tags supporting both Latin and Arabic letters
+_TAG_RE = re.compile(r"\[[\w\u0600-\u06FF]+\]")
 
 
 def clean_text_for_tts(text: str) -> str:
-    """Remove gesture markers like [happy] or [wave] before sending to TTS."""
+    """Remove gesture markers like [happy] or [wave] and corrupted glyphs before sending to TTS."""
     cleaned = _TAG_RE.sub("", text)
+    cleaned = re.sub(r"[\u4e00-\u9fff]", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
 
 
 class AIPipeline:
     """
-    End-to-end voice and text conversation pipeline with RAG memory grounding.
+    End-to-end voice conversation pipeline.
     Injected with swappable STT/LLM/TTS providers via factory.
     """
 
@@ -61,31 +64,24 @@ class AIPipeline:
         self._planner = SignalPlanner()
         self._audio_buffer: bytearray = bytearray()
         self.session_id: str = session_id or str(uuid.uuid4())
+        self._active_task: Optional[asyncio.Task] = None
 
     def reload_providers(self) -> None:
         """Reload STT, LLM, and TTS providers dynamically when settings change."""
         self._stt = _load_stt_provider()
         self._llm = _load_llm_provider()
         self._tts = _load_tts_provider()
+        if hasattr(self._llm, "reset_client"):
+            self._llm.reset_client()
         logger.info(
             f"AI Pipeline providers reloaded: LLM={settings.LLM_PROVIDER}, "
             f"STT={settings.STT_PROVIDER}, TTS={settings.TTS_PROVIDER}"
         )
 
-    @property
-    def rag(self) -> RAGService:
-        return self._rag
-
-    @property
-    def llm(self) -> BaseLLMProvider:
-        return self._llm
-
-    # ── Voice Audio Ingestion ──────────────────────────────────────────────────
-
     async def process_audio_chunk(self, chunk: bytes) -> None:
         """
         Accumulate audio from the phone, detect end-of-speech (VAD),
-        then run the full pipeline.
+        then run the full pipeline. Handles barge-in cancellation if user speaks again.
         """
         self._audio_buffer.extend(chunk)
 
@@ -93,7 +89,10 @@ class AIPipeline:
         if _is_end_of_utterance(self._audio_buffer):
             audio = bytes(self._audio_buffer)
             self._audio_buffer.clear()
-            asyncio.create_task(self._run_pipeline(audio))
+            if self._active_task and not self._active_task.done():
+                logger.info("Cancelling previous turn due to new user speech (barge-in)")
+                self._active_task.cancel()
+            self._active_task = asyncio.create_task(self._run_pipeline(audio))
 
     async def _run_pipeline(self, audio: bytes) -> None:
         t_start = time.perf_counter()
@@ -110,73 +109,102 @@ class AIPipeline:
         # Acknowledge receipt immediately (doc §6.3 "head nod trick")
         await manager.send_to_phone({"t": "eyes", "mood": "thinking"})
 
-        # ── 2. Personality & Context Retrieval ───────────────────────────
-        active_pid, active_prompt = await self._get_active_personality()
-        memories = await self._rag.retrieve(transcript, personality_id=active_pid)
+        # ── 2. Personality, Vision & Context Grounding ────────────────────
+        active_pid: Optional[int] = None
+        active_prompt: Optional[str] = None
+        memories: List[str] = []
+        try:
+            async with AsyncSessionLocal() as session:
+                active_prompt, memories, grounding, active_pid = await build_grounding_context(
+                    db=session,
+                    personality_id=None,
+                    message=transcript,
+                )
+        except Exception as e:
+            logger.warning(f"Could not build full grounding context, falling back: {e}")
+            active_pid, active_prompt = await self._get_active_personality()
+            memories = await self._rag.retrieve(transcript, personality_id=active_pid)
+
         history = await self._get_recent_history(limit=6)
 
-        # ── 3. LLM (streaming) with RAG context ───────────────────────────
+        # ── 3. Streaming LLM + Decoupled TTS Pipeline ─────────────────────
+        tts_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+        tts_latencies: List[float] = []
+
+        async def _tts_worker():
+            while True:
+                sentence = await tts_queue.get()
+                if sentence is None:
+                    tts_queue.task_done()
+                    break
+                try:
+                    t_tts_start = time.perf_counter()
+                    audio_out = await self._tts.synthesize(sentence)
+                    t_tts_end = time.perf_counter()
+                    tts_latencies.append((t_tts_end - t_tts_start) * 1000)
+                    await manager.send_to_phone(audio_out)
+                except Exception as ex:
+                    logger.error(f"TTS synthesis error: {ex}")
+                finally:
+                    tts_queue.task_done()
+
+        tts_worker_task = asyncio.create_task(_tts_worker())
+
         t_llm_start = time.perf_counter()
         full_response = ""
         sentence_buffer = ""
-        first_sentence_sent = False
-        first_tts_ms: Optional[float] = None
 
-        device_state = await self._get_latest_device_telemetry()
-        async for token in self._llm.generate_stream(
-            transcript,
-            context=memories,
-            system_prompt=active_prompt,
-            history=history,
-        ):
-            full_response += token
-            sentence_buffer += token
+        try:
+            async for token in self._llm.generate_stream(
+                transcript,
+                context=memories,
+                system_prompt=active_prompt,
+                history=history,
+            ):
+                full_response += token
+                sentence_buffer += token
 
-            # Stream text to desktop live display
-            await manager.broadcast_to_desks({
-                "t": "text_stream",
-                "token": token,
-                "is_final": False,
-            })
+                # Stream text to desktop live display
+                await manager.broadcast_to_desks({
+                    "t": "text_stream",
+                    "token": token,
+                    "is_final": False,
+                })
 
-            # TTS starts on first complete sentence (low latency trick)
-            if not first_sentence_sent and _is_sentence_end(sentence_buffer):
-                tts_text = clean_text_for_tts(sentence_buffer)
-                sentence_buffer = ""
-                first_sentence_sent = True
+                # As sentences complete, enqueue to TTS without pausing LLM stream
+                if _is_sentence_end(sentence_buffer):
+                    tts_text = clean_text_for_tts(sentence_buffer)
+                    sentence_buffer = ""
+                    if tts_text:
+                        await tts_queue.put(tts_text)
 
-                if tts_text:
-                    t_tts_start = time.perf_counter()
-                    audio_out = await self._tts.synthesize(tts_text)
-                    t_tts_end = time.perf_counter()
-                    first_tts_ms = (t_tts_end - t_tts_start) * 1000
-                    logger.info(f"TTS first sentence ({first_tts_ms:.0f}ms): {tts_text!r}")
-                    await manager.send_to_phone(audio_out)
+        except Exception as e:
+            logger.error(f"Error during LLM stream: {e}")
+            await manager.send_to_phone({"t": "eyes", "mood": "confused"})
 
         t_llm = time.perf_counter()
         llm_ms = (t_llm - t_llm_start) * 1000
 
-        # ── 4. Send remaining TTS audio ───────────────────────────────────
-        remaining_tts_ms = 0.0
+        # Send any remaining sentence to TTS
         remaining_text = clean_text_for_tts(sentence_buffer)
         if remaining_text:
-            t_rem_start = time.perf_counter()
-            audio_out = await self._tts.synthesize(remaining_text)
-            remaining_tts_ms = (time.perf_counter() - t_rem_start) * 1000
-            await manager.send_to_phone(audio_out)
+            await tts_queue.put(remaining_text)
 
-        total_tts_ms = (first_tts_ms or 0.0) + remaining_tts_ms
+        # Wait for TTS worker to finish synthesizing all queued audio
+        await tts_queue.put(None)
+        await tts_worker_task
+        total_tts_ms = sum(tts_latencies)
 
-        # ── 5. Extract gesture / emotion markers from response ─────────────
+        # ── 4. Extract gesture / emotion markers from response ─────────────
         commands = await self._planner.extract_from_response(full_response)
         for cmd in commands:
             await manager.send_to_esp(cmd)
 
-        # ── 6. Update emotion on phone display ────────────────────────────
+        # ── 5. Update emotion on phone display ────────────────────────────
         emotion = _extract_emotion(full_response)
         await manager.send_to_phone({"t": "eyes", "mood": emotion})
 
-        # ── 7. Final text token + total latency broadcast ─────────────────
+        # ── 6. Final text token + total latency broadcast ─────────────────
         total_ms = (time.perf_counter() - t_start) * 1000
         await manager.broadcast_to_desks({
             "t": "text_stream",
@@ -192,7 +220,7 @@ class AIPipeline:
         })
         logger.info(f"Pipeline complete in {total_ms:.0f}ms")
 
-        # ── 8. Asynchronously persist conversation to database ────────────
+        # ── 7. Asynchronously persist conversation to database ────────────
         asyncio.create_task(
             self._save_conversation_turn(
                 personality_id=active_pid,
@@ -328,7 +356,14 @@ def _is_end_of_utterance(buffer: bytearray, min_bytes: int = 8000) -> bool:
 
 
 def _is_sentence_end(text: str) -> bool:
-    return any(text.rstrip().endswith(p) for p in (".", "!", "?", "؟", "،", "\n"))
+    # Ensure any opening gesture bracket is closed before splitting sentence
+    if text.count("[") > text.count("]"):
+        return False
+    stripped = text.strip()
+    stripped_no_tags = _TAG_RE.sub("", stripped).strip()
+    if not stripped_no_tags:
+        return False
+    return any(stripped_no_tags.endswith(p) for p in (".", "!", "?", "؟", "،", "\n"))
 
 
 def _extract_emotion(text: str) -> str:
@@ -346,9 +381,9 @@ def _extract_emotion(text: str) -> str:
 
     if any(w in text_lower for w in ["happy", "فرحان", "😊"]):
         return "happy"
-    if any(w in text_lower for w in ["sad", "حزين", "😢", "زعلان"]):
+    if any(w in text_lower for w in ["sad", "حزين", "😢"]):
         return "sad"
-    if any(w in text_lower for w in ["surprised", "متفاجئ", "😲", "واو"]):
+    if any(w in text_lower for w in ["surprised", "متفاجئ", "😲"]):
         return "surprised"
     return "neutral"
 

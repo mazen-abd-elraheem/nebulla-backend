@@ -15,6 +15,9 @@ logger = get_logger(__name__)
 class LocalOllamaProvider(BaseLLMProvider):
     """Streams responses from a local Ollama server (Llama 3, Qwen, etc.)."""
 
+    def __init__(self, model: Optional[str] = None):
+        self.model = model or getattr(settings, "LLM_MODEL", "llama3")
+
     async def generate(
         self,
         prompt: str,
@@ -39,7 +42,8 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         if context:
             memories_text = "\n".join(f"- {m}" for m in context if m)
-            if memories_text.strip():
+            already_in_prompt = any(kw in effective_system_prompt for kw in ("ذكريات", "الذاكرة", "RAG Context", "Verified Context"))
+            if memories_text.strip() and not already_in_prompt:
                 messages.append({
                     "role": "system",
                     "content": f"ذكريات مرتبطة:\n{memories_text}",
@@ -57,7 +61,7 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         max_tokens = getattr(settings, "TTS_MAX_NEW_TOKENS", 150) or 150
         payload = {
-            "model": settings.LLM_MODEL,
+            "model": model,
             "messages": messages,
             "stream": True,
             "options": {"temperature": 0.7, "num_predict": max_tokens},
@@ -80,7 +84,10 @@ class LocalOllamaProvider(BaseLLMProvider):
                             data = json.loads(line)
                             token = data.get("message", {}).get("content", "")
                             if token:
-                                yield token
+                                import re
+                                token = re.sub(r"[\u4e00-\u9fff]", "", token)
+                                if token:
+                                    yield token
                             if data.get("done"):
                                 break
                         except json.JSONDecodeError:

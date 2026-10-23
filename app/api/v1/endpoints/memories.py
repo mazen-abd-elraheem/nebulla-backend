@@ -6,12 +6,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.memory import Memory
+from app.models.personality import Personality
 from app.services.memory.rag_service import RAGService
 
 router = APIRouter()
 _rag = RAGService()
+
+
+async def _get_auth_user(
+    db: AsyncSession = Depends(get_db),
+    _u=Depends(lambda: None),
+) -> str:
+    if settings.DEBUG:
+        return "dev_user"
+    return await get_current_user()
 
 
 class MemoryCreate(BaseModel):
@@ -25,7 +36,7 @@ class MemoryCreate(BaseModel):
 async def list_memories(
     personality_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _u=Depends(get_current_user),
+    _u=Depends(_get_auth_user),
 ):
     stmt = select(Memory).order_by(Memory.created_at.desc())
     if personality_id:
@@ -35,22 +46,37 @@ async def list_memories(
 
 
 @router.post("/", status_code=201, summary="Add a memory")
-async def add_memory(body: MemoryCreate, _u=Depends(get_current_user)):
+async def add_memory(
+    body: MemoryCreate,
+    db: AsyncSession = Depends(get_db),
+    _u=Depends(_get_auth_user),
+):
+    pid = body.personality_id
+    if not pid:
+        res = await db.execute(select(Personality.id).where(Personality.is_active == True).limit(1))  # noqa: E712
+        active_id = res.scalar_one_or_none()
+        pid = active_id or 1
+
     mid = await _rag.add_memory(
         content=body.content,
-        personality_id=body.personality_id,
+        personality_id=pid,
         source=body.source,
         importance=body.importance,
     )
-    return {"id": mid, "message": "Memory added and embedded"}
+    return {"id": mid, "content": body.content, "personality_id": pid, "message": "Memory added and embedded"}
 
 
 @router.delete("/{mid}", status_code=204, summary="Delete a memory")
-async def delete_memory(mid: int, db: AsyncSession = Depends(get_db), _u=Depends(get_current_user)):
+async def delete_memory(
+    mid: int,
+    db: AsyncSession = Depends(get_db),
+    _u=Depends(_get_auth_user),
+):
     m = await db.get(Memory, mid)
     if not m:
         raise HTTPException(status_code=404, detail="Not found")
     await db.delete(m)
+    await db.commit()
 
 
 @router.get("/search", summary="Semantic search memories")

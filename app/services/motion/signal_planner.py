@@ -47,15 +47,25 @@ _BUILTIN_SIGNALS: dict[str, list[dict]] = {
 }
 
 # Emotion-to-gesture mapping (doc §5.1)
-_EMOTION_GESTURES: dict[str, str] = {
+_EMOTION_GESTURES: dict[str, str | None] = {
     "happy": "wave",
+    "فرحان": "wave",
+    "سعيد": "wave",
     "surprised": "greet",
-    "sad": None,     # No movement when sad
+    "متفاجئ": "greet",
+    "like": "like",
+    "إعجاب": "like",
+    "greet": "greet",
+    "تحية": "greet",
+    "wave": "wave",
+    "تلويح": "wave",
+    "sad": None,
+    "حزين": None,
     "neutral": None,
 }
 
-# Regex to extract [gesture] tags from LLM output
-_TAG_RE = re.compile(r"\[(\w+)\]")
+# Regex to extract [gesture] tags from LLM output (supports Arabic and English)
+_TAG_RE = re.compile(r"\[([\w\u0600-\u06FF]+)\]")
 
 
 class SignalPlanner:
@@ -106,24 +116,31 @@ class SignalPlanner:
     async def extract_from_response(self, llm_response: str) -> list[dict]:
         """
         Parse [tag] markers from an LLM response and convert to ESP32 commands.
-        Returns a list of raw dicts ready to send.
+        Deduplicates gestures so overlapping tags (e.g. [wave] [happy]) do not
+        flood the ESP32 with duplicate motor sequences.
         """
         tags = _TAG_RE.findall(llm_response)
         commands: list[dict] = []
+        executed_gestures: set[str] = set()
 
         for tag in tags:
             tag_lower = tag.lower()
-            # Direct gesture
-            gestures = await self.resolve(tag_lower)
-            for g in gestures:
-                commands.append(g.model_dump())
 
-            # Emotion → gesture mapping
-            if tag_lower in _EMOTION_GESTURES:
-                mapped = _EMOTION_GESTURES[tag_lower]
+            target_gesture = tag_lower
+            if target_gesture in _EMOTION_GESTURES:
+                mapped = _EMOTION_GESTURES[target_gesture]
                 if mapped:
-                    extra = await self.resolve(mapped)
-                    for g in extra:
-                        commands.append(g.model_dump())
+                    target_gesture = mapped
+                else:
+                    continue
+
+            if target_gesture in executed_gestures:
+                continue
+
+            gestures = await self.resolve(target_gesture)
+            if gestures:
+                executed_gestures.add(target_gesture)
+                for g in gestures:
+                    commands.append(g.model_dump())
 
         return commands

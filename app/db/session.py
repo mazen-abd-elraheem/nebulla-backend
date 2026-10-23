@@ -20,6 +20,7 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     future=True,
+    connect_args=connect_args,
 )
 
 if "sqlite" in settings.DATABASE_URL:
