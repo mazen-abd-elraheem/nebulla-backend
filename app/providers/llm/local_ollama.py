@@ -59,45 +59,12 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
-        # Model resolution: fall back to llama3 if an OpenAI or Claude model name is configured
-        model = self.model or getattr(settings, "LLM_MODEL", "llama3")
-        if any(prefix in model.lower() for prefix in ("claude", "gpt-", "text-embedding")):
-            model = "llama3"
-
-        max_tokens = min(getattr(settings, "LLM_MAX_TOKENS", 30), 30)
-        temperature = getattr(settings, "LLM_TEMPERATURE", 0.05)
-        top_p = getattr(settings, "LLM_TOP_P", 0.85)
-        repeat_penalty = getattr(settings, "LLM_REPEAT_PENALTY", 1.15)
-
-        # Optimize for CPU physical cores (4 threads on i5 prevents thread thrashing)
-        import os
-        cpu_count = os.cpu_count() or 4
-        optimal_threads = max(1, cpu_count // 2 if cpu_count > 2 else cpu_count)
-
+        max_tokens = getattr(settings, "TTS_MAX_NEW_TOKENS", 150) or 150
         payload = {
             "model": model,
             "messages": messages,
             "stream": True,
-            "keep_alive": "24h",  # Keep model hot in RAM permanently, eliminates 50s cold load
-            "options": {
-                "temperature": temperature,
-                "top_p": top_p,
-                "repeat_penalty": repeat_penalty,
-                "num_predict": max_tokens,
-                "num_ctx": 1024,  # Compact KV cache saves CPU memory bandwidth & RAM
-                "num_thread": optimal_threads,  # Matches 4 physical cores for max AVX2 throughput
-                "num_batch": 256,  # Fast batch evaluation of input tokens
-                "stop": [
-                    "<|eot_id|>",
-                    "<|end_of_text|>",
-                    "<|im_end|>",
-                    "<|endoftext|>",
-                    "<|im_start|>",
-                    "<start_of_turn>",
-                    "<end_of_turn>",
-                    "<eos>",
-                ],
-            },
+            "options": {"temperature": 0.7, "num_predict": max_tokens},
         }
 
         timeout = httpx.Timeout(getattr(settings, "LLM_TIMEOUT", 120.0), connect=15.0)
@@ -106,7 +73,7 @@ class LocalOllamaProvider(BaseLLMProvider):
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
                     "POST",
-                    f"{settings.LLM_BASE_URL}/api/chat",
+                    f"{base_url}/api/chat",
                     json=payload,
                 ) as resp:
                     resp.raise_for_status()

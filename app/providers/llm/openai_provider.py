@@ -15,20 +15,14 @@ class OpenAIProvider(BaseLLMProvider):
     def __init__(self):
         self._client = None
 
-    def reset_client(self) -> None:
-        """Reset cached client so new credentials/base_url take effect."""
-        self._client = None
-
     def _get_client(self):
-        if self._client is not None:
-            return self._client
-
-        from openai import AsyncOpenAI  # type: ignore[import]
-        api_key = settings.LLM_API_KEY or "missing-key"
-        base_url = None
-        if settings.LLM_BASE_URL and "localhost:11434" not in settings.LLM_BASE_URL:
-            base_url = settings.LLM_BASE_URL
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        if self._client is None:
+            from openai import AsyncOpenAI  # type: ignore[import]
+            api_key = settings.LLM_API_KEY or "missing-key"
+            base_url = None
+            if settings.LLM_BASE_URL and "localhost:11434" not in settings.LLM_BASE_URL:
+                base_url = settings.LLM_BASE_URL
+            self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         return self._client
 
     async def generate(
@@ -62,7 +56,7 @@ class OpenAIProvider(BaseLLMProvider):
 
         if context:
             memories_text = "\n".join(f"- {m}" for m in context if m)
-            if memories_text.strip() and "ذكريات" not in effective_system_prompt:
+            if memories_text.strip():
                 messages.append({
                     "role": "system",
                     "content": f"ذكريات مرتبطة وسياق سابق:\n{memories_text}",
@@ -77,21 +71,13 @@ class OpenAIProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
-        # Model resolution: fall back to gpt-4o-mini if local model name is configured
-        model = settings.LLM_MODEL or "gpt-4o-mini"
-        if any(local_prefix in model.lower() for local_prefix in ("llama", "qwen", "mistral", "phi")):
-            model = "gpt-4o-mini"
-
-        max_tokens = getattr(settings, "LLM_MAX_TOKENS", 250)
-        temperature = getattr(settings, "LLM_TEMPERATURE", 0.7)
-
         try:
             stream = await client.chat.completions.create(
-                model=model,
+                model=settings.LLM_MODEL or "gpt-4o-mini",
                 messages=messages,
                 stream=True,
-                max_tokens=max_tokens,
-                temperature=temperature,
+                max_tokens=150,
+                temperature=0.7,
             )
             async for chunk in stream:
                 token = chunk.choices[0].delta.content or ""

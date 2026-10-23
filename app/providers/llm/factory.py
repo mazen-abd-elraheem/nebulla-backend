@@ -19,4 +19,7 @@ def get_llm_provider(name: str) -> BaseLLMProvider:
     if name == "anthropic":
         from app.providers.llm.anthropic_provider import AnthropicProvider
         return AnthropicProvider()
+    if name == "mock":
+        from app.providers.llm.mock_provider import MockLLMProvider
+        return MockLLMProvider()
     raise ValueError(f"Unknown LLM provider: {name!r}")

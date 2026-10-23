@@ -2,7 +2,7 @@
 Memory ORM Model — long-term memory storage with embedding vectors for RAG.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -23,5 +23,5 @@ class Memory(Base):
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     source: Mapped[str] = mapped_column(String(64), default="conversation")
     importance: Mapped[int] = mapped_column(Integer, default=5)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_accessed: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

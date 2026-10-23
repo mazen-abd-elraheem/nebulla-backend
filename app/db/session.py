@@ -16,14 +16,6 @@ logger = get_logger(__name__)
 
 from sqlalchemy import event
 
-is_sqlite = "sqlite" in settings.DATABASE_URL
-connect_args = {}
-if is_sqlite:
-    connect_args = {
-        "timeout": 30.0,
-        "check_same_thread": False,
-    }
-
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
@@ -31,15 +23,13 @@ engine = create_async_engine(
     connect_args=connect_args,
 )
 
-if is_sqlite:
+if "sqlite" in settings.DATABASE_URL:
     @event.listens_for(engine.sync_engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=30000")
-        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
-
 
 AsyncSessionLocal = async_sessionmaker(
     engine,
@@ -63,6 +53,25 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database initialised")
+
+    # Seed default personality if table is empty
+    from sqlalchemy import select
+    from app.models.personality import Personality
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Personality).limit(1))
+        if not result.scalar_one_or_none():
+            default_p = Personality(
+                id=1,
+                name="Nebula",
+                description="الشخصية الافتراضية للروبوت نيبولا",
+                system_prompt="أنت توأم رقمي مصري. بتتكلم بالمصري العامي وبتخلط إنجليزي زي أي مصري عادي.",
+                dialect="cairo",
+                language_mix="ar_en",
+                is_active=True,
+            )
+            session.add(default_p)
+            await session.commit()
+            logger.info("Default personality seeded (id=1)")
 
 
 async def get_db() -> AsyncSession:  # type: ignore[return]

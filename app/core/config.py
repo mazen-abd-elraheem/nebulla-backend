@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     # STT: "qwencleo" | "whisper" | "nemotron"
     STT_PROVIDER: Literal["qwencleo", "whisper", "nemotron"] = "qwencleo"
 
-    # TTS: "voicetut" | "ar_eg_free"
-    TTS_PROVIDER: Literal["voicetut", "ar_eg_free"] = "voicetut"
+    # TTS: "voicetut" | "ar_eg_free" | "xtts"
+    TTS_PROVIDER: Literal["voicetut", "ar_eg_free", "xtts"] = "voicetut"
 
     # LLM: "local" | "openai" | "anthropic" | "huggingface" | "nile"
     LLM_PROVIDER: Literal["local", "openai", "anthropic", "huggingface", "nile"] = "local"

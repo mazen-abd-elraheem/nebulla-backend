@@ -9,11 +9,15 @@ Architecture (doc §1 RAG, §6 personality & memory):
 """
 
 import asyncio
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from typing import List
 
-import numpy as np
-from sqlalchemy import select
+try:
+    import numpy as np  # type: ignore[import]
+except ImportError:
+    np = None
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -27,7 +31,7 @@ logger = get_logger(__name__)
 class RAGService:
     """
     Embedding-based memory retrieval.
-    Lazy-loads the embedding model on first use.
+    Lazy-loads the embedding model on first use, with lexical fallback if unavailable.
     """
 
     def __init__(self):
@@ -43,6 +47,10 @@ class RAGService:
                 await loop.run_in_executor(None, self._load_embedder)
 
     def _load_embedder(self):
+        if np is None:
+            logger.warning("numpy is not installed. RAG will use keyword/lexical fallback.")
+            self._embedder = "disabled"
+            return
         try:
             from sentence_transformers import SentenceTransformer  # type: ignore[import]
             try:
@@ -110,22 +118,37 @@ class RAGService:
         if not memories:
             return []
 
-        # Clean query for lexical keyword matching
-        q_clean = query.replace("؟", " ").replace("!", " ").replace(".", " ").replace("،", " ").strip()
-        query_words = set(w for w in q_clean.lower().split() if len(w) > 1)
-
-        # Semantic embedding vector if embedder is active
-        query_vec = None
-        if self._embedder != "disabled":
-            try:
-                loop = asyncio.get_event_loop()
-                query_vec = await loop.run_in_executor(None, self._embed, query)
-            except Exception as e:
-                logger.warning(f"Error embedding query: {e}")
-                query_vec = None
-
         scored: list[tuple[float, Memory]] = []
-        missing_emb_ids: list[tuple[int, str]] = []
+
+        if self._embedder != "disabled":
+            # Semantic search via cosine similarity
+            loop = asyncio.get_event_loop()
+            try:
+                query_vec = await loop.run_in_executor(None, self._embed, query)
+                for mem in memories:
+                    if mem.embedding:
+                        mem_vec = np.frombuffer(mem.embedding, dtype=np.float32)
+                        norm_prod = (np.linalg.norm(query_vec) * np.linalg.norm(mem_vec)) + 1e-9
+                        score = float(np.dot(query_vec, mem_vec) / norm_prod)
+                        scored.append((score, mem))
+                    else:
+                        # Fallback for un-embedded row: lexical score
+                        score = self._lexical_score(query, mem.content)
+                        if score > 0:
+                            scored.append((score * 0.5, mem))
+            except Exception as e:
+                logger.error(f"Error during semantic embedding search: {e}. Using lexical fallback.")
+                scored = []
+
+        # If semantic returned nothing or embedder is disabled, run lexical matching
+        if not scored:
+            for mem in memories:
+                score = self._lexical_score(query, mem.content)
+                if score > 0:
+                    scored.append((score, mem))
+
+        if not scored:
+            return []
 
         for mem in memories:
             m_words = set(w for w in mem.content.lower().replace("،", " ").replace(".", " ").split() if len(w) > 1)
@@ -167,12 +190,21 @@ class RAGService:
             if m.content not in unique_contents:
                 unique_contents.append(m.content)
 
-        return unique_contents
+        return [
+            {
+                "id": m.id,
+                "content": m.content,
+                "score": round(score, 4),
+                "source": m.source,
+                "personality_id": m.personality_id,
+            }
+            for score, m in top
+        ]
 
     async def add_memory(
         self,
         content: str,
-        personality_id: int,
+        personality_id: int | None = None,
         source: str = "conversation",
         importance: int = 5,
     ) -> int:
@@ -189,11 +221,11 @@ class RAGService:
                 vec = await loop.run_in_executor(None, self._embed, content)
                 embedding_bytes = vec.astype(np.float32).tobytes()
             except Exception as e:
-                logger.warning(f"Could not compute embedding on insert: {e}")
+                logger.warning(f"Could not generate embedding for new memory: {e}")
 
         async with AsyncSessionLocal() as session:
             mem = Memory(
-                content=content,
+                content=content.strip(),
                 personality_id=personality_id,
                 embedding=embedding_bytes,
                 source=source,
@@ -202,13 +234,71 @@ class RAGService:
             session.add(mem)
             await session.commit()
             await session.refresh(mem)
-            logger.info(f"Memory {mem.id} added for personality {personality_id}")
+            logger.info(f"Memory {mem.id} added (personality: {personality_id})")
             return mem.id
 
     # ── Internals ─────────────────────────────────────────────────────────────
 
-    def _embed(self, text: str) -> np.ndarray:
+    def _embed(self, text: str):
         return self._embedder.encode(text, normalize_embeddings=True)
+
+    def _normalize_arabic(self, text: str) -> str:
+        text = re.sub(r"[إأآا]", "ا", text)
+        text = re.sub(r"ى", "ي", text)
+        text = re.sub(r"ة", "ه", text)
+        text = re.sub(r"[\u064B-\u065F]", "", text)  # Tashkeel
+        return text.lower()
+
+    def _tokenize(self, text: str) -> set[str]:
+        if not text:
+            return set()
+        stopwords = {
+            "في", "من", "على", "الى", "إلى", "عن", "مع", "هذا", "هذه", "ذلك", "تلك",
+            "هو", "هي", "هم", "هن", "انت", "انتم", "انا", "نحن",
+            "ان", "أن", "انها", "انه", "كان", "كانت", "يكون", "تكون",
+            "ما", "ماذا", "متى", "اين", "أين", "كيف", "كم", "هل", "لماذا", "ايه", "إيه",
+            "التي", "الذي", "الذين", "اللاتي", "كل", "بعض", "غير", "حيث", "ثم", "او", "أو"
+        }
+        norm = self._normalize_arabic(text)
+        raw_tokens = re.findall(r"\w+", norm)
+        tokens = set()
+        for t in raw_tokens:
+            if t in stopwords:
+                continue
+            tokens.add(t)
+            # Prefix stemming (ال, و, ب, ل)
+            if len(t) > 3 and t.startswith("ال"):
+                tokens.add(t[2:])
+            if len(t) > 3 and t.startswith("و"):
+                tokens.add(t[1:])
+            if len(t) > 3 and t.startswith("ب"):
+                tokens.add(t[1:])
+            # Suffix stemming (ات, ين, ون, ه, ها)
+            if len(t) > 4 and t.endswith("ات"):
+                tokens.add(t[:-2])
+            if len(t) > 4 and t.endswith("ين"):
+                tokens.add(t[:-2])
+            if len(t) > 4 and t.endswith("ون"):
+                tokens.add(t[:-2])
+        return tokens
+
+    def _lexical_score(self, query: str, document: str) -> float:
+        """
+        Token-overlap lexical scoring with Arabic morphology, prefix stripping,
+        and stopword filtering for high-precision fallback.
+        """
+        if not document:
+            return 0.0
+        q_tokens = self._tokenize(query)
+        d_tokens = self._tokenize(document)
+        if not q_tokens or not d_tokens:
+            return 0.0
+        overlap = q_tokens.intersection(d_tokens)
+        if not overlap:
+            return 0.0
+        jaccard = len(overlap) / len(q_tokens.union(d_tokens))
+        coverage = len(overlap) / len(q_tokens)
+        return float(jaccard * 0.4 + coverage * 0.6)
 
     async def _update_access_times(self, memory_ids: list[int]) -> None:
         try:
