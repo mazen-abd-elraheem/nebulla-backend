@@ -99,7 +99,7 @@ async def chat_with_llm(
     request: Request,
     body: ChatRequest,
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(get_current_user),
+    _user: str = Depends(_get_auth_user),
 ):
     """
     Direct REST API endpoint to chat with the LLM.
@@ -280,7 +280,7 @@ async def chat_with_llm(
 async def chat_stream(
     body: ChatRequest,
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(get_current_user),
+    _user: str = Depends(_get_auth_user),
 ):
     system_prompt, memories, grounding, active_pid = await build_grounding_context(
         db=db,
@@ -313,7 +313,7 @@ async def chat_stream(
 async def list_conversations(
     limit: int = Query(20, le=100),
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(get_current_user),
+    _user: str = Depends(_get_auth_user),
 ):
     r = await db.execute(select(Conversation).order_by(Conversation.started_at.desc()).limit(limit))
     return {"conversations": [_c(c) for c in r.scalars()]}
@@ -323,7 +323,7 @@ async def list_conversations(
 async def get_messages(
     cid: int,
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(get_current_user),
+    _user: str = Depends(_get_auth_user),
 ):
     r = await db.execute(select(Message).where(Message.conversation_id == cid).order_by(Message.created_at))
     return {"messages": [_msg(m) for m in r.scalars()]}

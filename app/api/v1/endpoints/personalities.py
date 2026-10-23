@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt import get_current_user
+from app.auth.jwt import get_current_user, get_optional_user
 from app.db.session import get_db
 from app.models.personality import Personality
 
@@ -32,7 +32,7 @@ class PersonalityUpdate(BaseModel):
 
 
 @router.get("/", summary="List all personalities")
-async def list_personalities(db: AsyncSession = Depends(get_db), _u=Depends(get_current_user)):
+async def list_personalities(db: AsyncSession = Depends(get_db), _u=Depends(get_optional_user)):
     r = await db.execute(select(Personality).order_by(Personality.id))
     return {"personalities": [_p(p) for p in r.scalars()]}
 
@@ -47,7 +47,7 @@ async def create_personality(body: PersonalityCreate, db: AsyncSession = Depends
 
 
 @router.get("/{pid}", summary="Get personality by ID")
-async def get_personality(pid: int, db: AsyncSession = Depends(get_db), _u=Depends(get_current_user)):
+async def get_personality(pid: int, db: AsyncSession = Depends(get_db), _u=Depends(get_optional_user)):
     p = await db.get(Personality, pid)
     if not p:
         raise HTTPException(status_code=404, detail="Not found")

@@ -294,23 +294,28 @@ def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
     If it's MP4, M4A, or non-standard WAV, convert using ffmpeg.
     Returns audio duration in seconds.
     """
+    import shutil
+    ffmpeg_exe = shutil.which("ffmpeg")
+    if not ffmpeg_exe:
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception as exc:
+            logger.debug(f"imageio_ffmpeg lookup: {exc}")
+            ffmpeg_exe = None
+
     if ext == ".wav":
         try:
             with wave.open(io.BytesIO(raw), "rb") as wf:
                 dur = wf.getnframes() / wf.getframerate()
-                # Only use directly if it is strictly 24kHz mono 16-bit PCM (otherwise resample with ffmpeg)
-                if dur > 0 and wf.getnchannels() == 1 and wf.getframerate() == 24000 and wf.getsampwidth() == 2:
-                    dest.write_bytes(raw)
-                    return dur
+                if dur > 0:
+                    if not ffmpeg_exe or (wf.getnchannels() == 1 and wf.getframerate() == 24000 and wf.getsampwidth() == 2):
+                        dest.write_bytes(raw)
+                        return dur
         except Exception:
             pass  # Fallback to ffmpeg conversion if WAV format is compressed or corrupt
 
-    # Convert via FFmpeg (handles MP4, M4A, AAC, and any WAV variants)
-    try:
-        import imageio_ffmpeg
-        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-    except Exception as exc:
-        logger.error(f"Cannot get ffmpeg executable: {exc}")
+    if not ffmpeg_exe:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Server audio conversion component is not available.",
