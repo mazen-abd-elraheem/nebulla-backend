@@ -1,4 +1,4 @@
-nebula.db
+nebula.db*
 .env
 __pycache__/
 *.pyc
@@ -23,4 +23,4 @@ data/faces/
 .mypy_cache/
 .ruff_cache/
 htmlcov/
-.coverage
+.coverage

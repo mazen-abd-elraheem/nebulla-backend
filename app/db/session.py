@@ -14,11 +14,21 @@ from app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
+from sqlalchemy import event
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     future=True,
 )
+
+if "sqlite" in settings.DATABASE_URL:
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
     engine,

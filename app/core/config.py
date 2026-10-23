@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     # TTS: "voicetut" | "ar_eg_free" | "xtts"
     TTS_PROVIDER: Literal["voicetut", "ar_eg_free", "xtts"] = "voicetut"
 
-    # LLM: "local" | "openai" | "anthropic"
-    LLM_PROVIDER: Literal["local", "openai", "anthropic"] = "local"
+    # LLM: "local" | "openai" | "anthropic" | "mock"
+    LLM_PROVIDER: Literal["local", "openai", "anthropic", "mock"] = "local"
     LLM_API_KEY: str = ""
     LLM_BASE_URL: str = "http://localhost:11434"   # local Ollama default
     LLM_MODEL: str = "llama3"

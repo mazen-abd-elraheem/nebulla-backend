@@ -1,8 +1,9 @@
 """Conversations + messages endpoints with interactive LLM chat and full system grounding."""
 
+import json
 import time
 import uuid
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, AsyncIterator
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Header
 from fastapi.responses import StreamingResponse
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt import get_current_user, api_key_scheme
+from app.auth.jwt import get_current_user, get_optional_user, api_key_scheme
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.db.session import get_db
@@ -21,7 +22,7 @@ from app.providers.llm.factory import get_llm_provider
 from app.services.ai.pipeline import clean_text_for_tts, _extract_emotion
 from app.services.memory.rag_service import RAGService
 from app.websocket.manager import manager
-from app.websocket.handlers import get_face_service
+from app.websocket.handlers import get_face_service, get_ai_pipeline as _get_ai_pipeline
 
 logger = get_logger(__name__)
 
@@ -32,10 +33,11 @@ _rag_service = RAGService()
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., description="Text message to send to the LLM", examples=["أهلاً، شايف مين قدامك؟"])
+    message: str = Field(..., min_length=1, description="Text message to send to the LLM", examples=["أهلاً، شايف مين قدامك؟"])
     session_id: Optional[str] = Field(None, description="Optional session UUID for multi-turn conversation tracking")
     personality_id: Optional[int] = Field(None, description="Specific personality ID to use (defaults to active personality)")
     stream: bool = Field(False, description="Whether to stream tokens via Server-Sent Events / chunked transfer")
+    broadcast_to_clients: bool = Field(False, description="Whether to broadcast live tokens to connected desks/phones")
 
 
 class GroundingInfo(BaseModel):
@@ -47,13 +49,17 @@ class GroundingInfo(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    reply: str
-    cleaned_reply: str
+    reply: str = ""
+    cleaned_reply: str = ""
+    response: str = ""
     session_id: str
     conversation_id: int
     emotion: str
-    llm_latency_ms: float
-    memories_used: List[str]
+    llm_latency_ms: float = 0.0
+    latency: Dict[str, Any] = Field(default_factory=dict)
+    retrieved_memories: List[str] = Field(default_factory=list)
+    memories_used: List[str] = Field(default_factory=list)
+    personality_id: Optional[int] = None
     grounding: Optional[GroundingInfo] = None
 
 
@@ -321,16 +327,40 @@ async def chat_with_llm(
     return ChatResponse(
         reply=reply,
         cleaned_reply=cleaned_reply,
+        response=reply,
         session_id=session_id,
         conversation_id=conv.id,
         emotion=emotion,
         llm_latency_ms=round(llm_ms, 2),
+        latency={"llm_ms": round(llm_ms, 2), "total_ms": round(llm_ms, 2)},
+        retrieved_memories=memories,
         memories_used=memories,
+        personality_id=active_pid,
         grounding=grounding,
     )
 
 
-# ── Read-only Endpoints ──────────────────────────────────────────────────────
+@router.post("/chat/stream", summary="Stream chat tokens from LLM with RAG grounding (SSE)")
+async def chat_stream_with_rag(
+    body: ChatRequest,
+    _u=Depends(get_optional_user),
+):
+    """
+    Server-Sent Events (SSE) streaming endpoint:
+    Streams tokens as they are produced by the LLM with RAG context.
+    """
+    pipeline = _get_ai_pipeline()
+
+    async def event_generator() -> AsyncIterator[str]:
+        async for item in pipeline.process_text_stream(
+            text=body.message,
+            personality_id=body.personality_id,
+            session_id=body.session_id,
+        ):
+            yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 
 @router.get("/", summary="List conversation sessions")
 async def list_conversations(

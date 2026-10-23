@@ -55,20 +55,22 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
+        max_tokens = getattr(settings, "TTS_MAX_NEW_TOKENS", 150) or 150
         payload = {
             "model": settings.LLM_MODEL,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": 0.7, "num_predict": 150},
+            "options": {"temperature": 0.7, "num_predict": max_tokens},
         }
 
+        base_url = settings.LLM_BASE_URL.rstrip("/")
         timeout = httpx.Timeout(getattr(settings, "LLM_TIMEOUT", 120.0), connect=15.0)
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
                     "POST",
-                    f"{settings.LLM_BASE_URL}/api/chat",
+                    f"{base_url}/api/chat",
                     json=payload,
                 ) as resp:
                     resp.raise_for_status()
