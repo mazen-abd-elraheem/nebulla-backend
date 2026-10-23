@@ -23,4 +23,11 @@ data/embeddings/
 .ruff_cache/
 htmlcov/
 .coverage
-            
+
+# Audio / Media files (test recordings and outputs)
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.ogg
+*.flac

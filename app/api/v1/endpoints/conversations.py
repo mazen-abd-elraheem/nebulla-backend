@@ -4,13 +4,13 @@ import time
 import uuid
 from typing import Optional, List, Dict, Any, Tuple
 
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, Header, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt import get_current_user
+from app.auth.jwt import get_current_user, get_optional_user, api_key_scheme
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.db.session import get_db
@@ -60,13 +60,12 @@ class ChatResponse(BaseModel):
 # ── Authentication Helper ────────────────────────────────────────────────────
 
 async def _get_auth_user(
-    db: AsyncSession = Depends(get_db),
-    _u: Optional[str] = Depends(lambda: None),
+    user: Optional[str] = Depends(get_optional_user),
 ) -> str:
-    """Allow quick development chat without strict auth if in DEBUG mode, else validate."""
-    if settings.DEBUG:
-        return "dev_user"
-    return await get_current_user()
+    """Allow chat without strict auth if unauthenticated or in DEBUG mode."""
+    if user:
+        return user
+    return "guest_user"
 
 
 # ── Grounding Context Builder ────────────────────────────────────────────────
