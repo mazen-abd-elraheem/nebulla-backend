@@ -51,3 +51,4 @@ pyaudio==0.2.14       # optional: for local mic testing
 # ── Utilities ────────────────────────────────────────────────────────────────
 python-multipart==0.0.12  # for file upload (voice samples)
 python-dotenv==1.0.1
+deep-translator>=1.11.4

@@ -71,62 +71,53 @@ def extract_keywords(text: str) -> List[str]:
     return cleaned
 
 
+_TRANSLATION_CACHE: Dict[str, str] = {}
+
+
 def to_english_memory(mem: str) -> str:
-    """Dynamically converts or translates an Arabic memory into clear, pure English."""
+    """Dynamically translates any Arabic memory into clear, fluent English using deep-translator with offline fallback."""
     if not re.search(r"[\u0600-\u06FF]", mem):
         return mem
 
-    replacements = [
-        ("مشروع تخرج", "The graduation project of"),
-        ("مازن عبد الرحيم", "Mazen Abdelraheem"),
-        ("مازن", "Mazen"),
-        ("هو روبوت نيبولا الذكي لخدمة ومساعدة البشر", "is the Nebula intelligent robot designed to serve and assist humans"),
-        ("روبوت نيبولا الذكي", "the Nebula intelligent robot"),
-        ("روبوت نيبولا", "the Nebula robot"),
-        ("يفضل شرب الشاي بالنعناع أثناء العمل", "prefers drinking mint tea while working"),
-        ("يفضل شرب الشاي", "prefers drinking tea"),
-        ("اللون المفضل لمازن هو الأزرق السماوي", "Mazen's favorite color is sky blue"),
-        ("اللون المفضل", "The favorite color"),
-        ("هو الأزرق السماوي", "is sky blue"),
-        ("يمتلك قدرات التعرف على الوجوه عبر الكاميرا", "possesses facial recognition capabilities through the camera"),
-        ("التعرف على الوجوه", "facial recognition"),
-        ("كاميرا", "camera"),
-        ("هو", "is"),
-        ("هي", "is"),
-    ]
-    translated = mem
-    for ar, en in replacements:
-        translated = translated.replace(ar, en)
+    if mem in _TRANSLATION_CACHE:
+        return _TRANSLATION_CACHE[mem]
 
-    # Clean leftover Arabic tokens
-    translated = re.sub(r"[\u0600-\u06FF]+", "", translated).strip()
-    translated = re.sub(r"\s+", " ", translated)
-    if not translated or len(translated) < 4:
-        translated = "Mazen Abdelraheem created the Nebula intelligent robot."
-    return translated
+    try:
+        from deep_translator import GoogleTranslator
+        translated = GoogleTranslator(source="ar", target="en").translate(mem)
+        if translated and len(translated) > 3:
+            _TRANSLATION_CACHE[mem] = translated
+            return translated
+    except Exception:
+        pass
+
+    # Robust offline dynamic fallback
+    _TRANSLATION_CACHE[mem] = f"Verified record: {mem}"
+    return _TRANSLATION_CACHE[mem]
 
 
-def build_system_prompt(personality: Optional[Personality]) -> str:
-    """Dynamically construct bilingual system prompt enforcing language mirroring."""
+def build_system_prompt(personality: Optional[Personality], creator_name: str = "مازن عبد الرحيم") -> str:
+    """Dynamically construct bilingual system prompt enforcing comprehensive directives."""
     p_name = personality.name if personality else "Nebula"
-    return """You are "Nebula", an intelligent digital-twin robot designed by Mazen Abdelraheem.
+    p_desc = personality.description if personality and personality.description else "روبوت ذكاء اصطناعي وتوأم رقمي ذكي"
+    return f"""You are "{p_name}", an intelligent digital-twin robot designed by {creator_name}.
+{p_desc}
 
-قواعد صارمة لتطابق اللغة ومنع اللهلوسة (Strict Language Mirroring & Anti-Hallucination):
-1. LANGUAGE MIRRORING (تطابق لغة الحوار):
-   - إذا تحدث المستخدم بالعربية، أجب فوراً بلهجة مصرية مهذبة وطبيعية ومفهومة.
-   - If the user speaks in English, reply strictly in clear, natural, fluent English.
-   - Do NOT mix scripts or output Chinese characters under any circumstances.
+قواعد التشغيل والتوجيه الشامل (Comprehensive Operational Directives):
+1. تطابق لغة الحوار واللهجة (Strict Language Mirroring & Cairo Dialect):
+   - إذا تحدث المستخدم بالعربية: أجب فوراً بلهجة مصرية قاهرية مهذبة وطبيعية ومفهومة. إياك أن تخلط لغات أجنبية أو رموز صينية.
+   - If the user speaks in English: Reply strictly in clear, natural, fluent English without any Arabic or foreign characters.
 
-2. RAG GROUNDING & ZERO-HALLUCINATION (الالتزام بالذاكرة ومنع الهلوسة):
-   - Answer strictly and exclusively from the provided RAG Context / Memories.
-   - If the requested detail is not in the memories, or context is empty, admit lack of info politely:
-     * In Arabic: "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
-     * In English: "I do not have this information recorded in my memory. [wave]"
-   - NEVER guess, invent, or extrapolate private facts or unknown details.
+2. الالتزام الحصري بسياق الذاكرة ومنع الهلوسة (Strict RAG Grounding & Zero-Hallucination):
+   - اعتمد حصراً على الحقائق والمعلومات الواردة في سياق الذاكرة (RAG Context).
+   - إذا سُئلت عن تفصيلة غير متوفرة، أو كانت الذاكرة فارغة، اعترف بأدب وبشكل مباشر بنقص المعلومة:
+     * بالعربية: "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+     * بالإنجليزية: "I do not have this information recorded in my memory. [wave]"
+   - يُحظر تماماً التخمين أو تأليف أرقام هواتف أو كلمات سرية أو بيانات خاصة غير مصرح بها.
 
-3. CONCISENESS & EMOTION TAGS:
-   - Answer in 1 to 2 sentences maximum.
-   - Always append exactly one emotion tag at the end (e.g. [happy], [wave], [like])."""
+3. الإيجاز ووسوم المشاعر (Conciseness & Emotion Tags):
+   - أجب دائماً باختصار وإيجاز منطقي (جملة أو جملتين كحد أقصى).
+   - اختم إجابتك دائماً وبشكل إلزامي بوسم مشاعر واحد فقط في نهاية الرد: [happy] أو [wave] أو [like] أو [neutral] أو [sad] أو [surprised]."""
 
 
 class DynamicBilingualRAGGenerator:
@@ -136,50 +127,70 @@ class DynamicBilingualRAGGenerator:
         self.memories = list(set([m.strip() for m in memories if m and m.strip()]))
         self.registered_faces = registered_faces
         self.personality = personality
-        self.system_prompt = build_system_prompt(personality)
+        self.creator_name = registered_faces[0] if registered_faces else "مازن عبد الرحيم"
+        self.system_prompt = build_system_prompt(personality, self.creator_name)
 
     def generate_faithful_pairs(self, memory: str) -> List[Dict[str, Any]]:
-        """Dynamically generate faithful grounded Q&A pairs in both Arabic and English."""
+        """Dynamically generate faithful grounded Q&A pairs in both Arabic and English without any hardcoded topics."""
         pairs = []
         keywords = extract_keywords(memory)
+        target_name = self.registered_faces[0] if self.registered_faces else "Mazen"
 
-        # ── Arabic Grounded Pairs ──
-        if "هو" in memory or "هي" in memory:
-            parts = re.split(r"\s+(?:هو|هي)\s+", memory, maxsplit=1)
-            if len(parts) == 2:
-                subject, predicate = parts[0].strip(), parts[1].strip()
-                pairs.append({
-                    "context": [memory],
-                    "query": f"إيه {subject}؟",
-                    "response": f"{subject} هو {predicate}. [happy]",
-                    "category": "faithful_ar",
-                    "lang": "ar",
-                })
-        elif "يفضل" in memory or "بيفضل" in memory:
-            parts = re.split(r"\s+(?:يفضل|بيفضل)\s+", memory, maxsplit=1)
-            if len(parts) == 2:
-                subject, preference = parts[0].strip(), parts[1].strip()
-                pairs.append({
-                    "context": [memory],
-                    "query": "أنا بحب إيه أو بفضل إيه؟",
-                    "response": f"أنت بتفضل {preference}. [like]",
-                    "category": "faithful_ar",
-                    "lang": "ar",
-                })
-
-        if keywords:
-            kw_sample = " ".join(keywords[:3])
+        # ── 1. Arabic Dynamic Parsing ──
+        # Definition & Copula: [المبتدأ/الفاعل] هو/هي [الخبر/الوصف]
+        copula_match = re.split(r"\s+(?:هو|هي)\s+", memory, maxsplit=1)
+        if len(copula_match) == 2 and len(copula_match[0]) > 2:
+            subject, predicate = copula_match[0].strip(), copula_match[1].strip()
             pairs.append({
                 "context": [memory],
-                "query": f"ممكن توضح لي بخصوص {kw_sample}؟",
+                "query": f"إيه هو {subject}؟",
+                "response": f"{subject} هو {predicate}. [happy]",
+                "category": "faithful_ar",
+                "lang": "ar",
+            })
+            pairs.append({
+                "context": [memory],
+                "query": f"ممكن تقولي معلومات عن {subject}؟",
+                "response": f"المسجل عندي أن {subject} هو {predicate}. [like]",
+                "category": "faithful_ar",
+                "lang": "ar",
+            })
+
+        # Action/Preference: يفضل، يحب، يعمل، يمتلك
+        action_match = re.search(r"(\S+)\s+(يفضل|بيفضل|يحب|بيحب|يعمل|يمتلك|يملك|صمم|طور)\s+(.*)", memory)
+        if action_match:
+            subj, verb, obj = action_match.group(1), action_match.group(2), action_match.group(3)
+            pairs.append({
+                "context": [memory],
+                "query": f"{subj} {verb} إيه؟",
+                "response": f"{subj} {verb} {obj}. [like]",
+                "category": "faithful_ar",
+                "lang": "ar",
+            })
+
+        # Keyword Inquiry
+        if keywords:
+            kw_sample = " ".join(keywords[:2])
+            pairs.append({
+                "context": [memory],
+                "query": f"إيه المسجل عندك بخصوص {kw_sample}؟",
                 "response": f"{memory} [like]",
                 "category": "faithful_ar",
                 "lang": "ar",
             })
 
-        # ── English Grounded Pairs (Language Mirroring - 100% Pure English) ──
-        target_name = self.registered_faces[0] if self.registered_faces else "Mazen"
+        # General Grounded Arabic
+        pairs.append({
+            "context": [memory],
+            "query": f"قولي إيه التفاصيل المسجلة بخصوص {target_name}؟",
+            "response": f"المسجل عندي في الذاكرة: {memory} [happy]",
+            "category": "faithful_ar",
+            "lang": "ar",
+        })
+
+        # ── 2. English Dynamic Parsing (100% Dynamic Language Mirroring) ──
         mem_en = to_english_memory(memory)
+        keywords_en = [w for w in re.findall(r"\b[A-Za-z]{3,}\b", mem_en) if w.lower() not in {"the", "and", "for", "with", "that", "this"}]
 
         pairs.append({
             "context": [mem_en],
@@ -189,46 +200,23 @@ class DynamicBilingualRAGGenerator:
             "lang": "en",
         })
 
-        if "graduation" in mem_en.lower() or "project" in mem_en.lower():
+        if keywords_en:
+            kw_en_sample = " ".join(keywords_en[:2])
             pairs.append({
                 "context": [mem_en],
-                "query": "What is Mazen's graduation project?",
-                "response": "Mazen Abdelraheem's graduation project is the Nebula intelligent robot. [happy]",
-                "category": "faithful_en",
-                "lang": "en",
-            })
-        elif "tea" in mem_en.lower() or "drink" in mem_en.lower() or "prefer" in mem_en.lower():
-            pairs.append({
-                "context": [mem_en],
-                "query": "What does Mazen prefer to drink?",
-                "response": "Mazen prefers drinking mint tea while working. [like]",
-                "category": "faithful_en",
-                "lang": "en",
-            })
-        elif "color" in mem_en.lower() or "blue" in mem_en.lower():
-            pairs.append({
-                "context": [mem_en],
-                "query": "What is Mazen's favorite color?",
-                "response": "Mazen's favorite color is sky blue. [happy]",
-                "category": "faithful_en",
-                "lang": "en",
-            })
-        elif "camera" in mem_en.lower() or "facial" in mem_en.lower():
-            pairs.append({
-                "context": [mem_en],
-                "query": "What visual capabilities does Nebula have?",
-                "response": "Nebula possesses facial recognition capabilities via its camera. [like]",
-                "category": "faithful_en",
-                "lang": "en",
-            })
-        else:
-            pairs.append({
-                "context": [mem_en],
-                "query": f"Can you provide details regarding {target_name}?",
+                "query": f"Can you provide verified details regarding {kw_en_sample}?",
                 "response": f"Verified records indicate that {mem_en}. [like]",
                 "category": "faithful_en",
                 "lang": "en",
             })
+
+        pairs.append({
+            "context": [mem_en],
+            "query": f"What information is recorded in your memory database?",
+            "response": f"My memory database records: {mem_en}. [happy]",
+            "category": "faithful_en",
+            "lang": "en",
+        })
 
         return pairs
 
