@@ -30,6 +30,7 @@ class ProviderUpdate(BaseModel):
     llm_provider: str | None = None
     llm_model: str | None = None
     llm_base_url: str | None = None
+    llm_api_key: str | None = None
 
 
 @router.patch("/providers", summary="Hot-swap AI providers (changes take effect on next request)")

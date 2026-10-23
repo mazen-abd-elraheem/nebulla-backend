@@ -57,6 +57,10 @@ async def get_current_user(
     Bearer JWT in Authorization header.
     Returns the subject (device/user identifier).
     """
+    # 0. Development bypass if DEBUG is True and no credentials provided
+    if settings.DEBUG and not x_api_key and not authorization:
+        return "dev_user"
+
     # 1. Try raw API key (simple pre-shared key for local network)
     if x_api_key:
         import hashlib

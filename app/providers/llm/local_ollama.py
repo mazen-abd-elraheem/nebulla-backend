@@ -15,6 +15,9 @@ logger = get_logger(__name__)
 class LocalOllamaProvider(BaseLLMProvider):
     """Streams responses from a local Ollama server (Llama 3, Qwen, etc.)."""
 
+    def __init__(self, model: Optional[str] = None):
+        self.model = model or getattr(settings, "LLM_MODEL", "llama3")
+
     async def generate(
         self,
         prompt: str,
@@ -39,7 +42,8 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         if context:
             memories_text = "\n".join(f"- {m}" for m in context if m)
-            if memories_text.strip():
+            already_in_prompt = any(kw in effective_system_prompt for kw in ("ذكريات", "الذاكرة", "RAG Context", "Verified Context"))
+            if memories_text.strip() and not already_in_prompt:
                 messages.append({
                     "role": "system",
                     "content": f"ذكريات مرتبطة:\n{memories_text}",
@@ -55,11 +59,45 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
+        # Model resolution: fall back to llama3 if an OpenAI or Claude model name is configured
+        model = self.model or getattr(settings, "LLM_MODEL", "llama3")
+        if any(prefix in model.lower() for prefix in ("claude", "gpt-", "text-embedding")):
+            model = "llama3"
+
+        max_tokens = min(getattr(settings, "LLM_MAX_TOKENS", 30), 30)
+        temperature = getattr(settings, "LLM_TEMPERATURE", 0.05)
+        top_p = getattr(settings, "LLM_TOP_P", 0.85)
+        repeat_penalty = getattr(settings, "LLM_REPEAT_PENALTY", 1.15)
+
+        # Optimize for CPU physical cores (4 threads on i5 prevents thread thrashing)
+        import os
+        cpu_count = os.cpu_count() or 4
+        optimal_threads = max(1, cpu_count // 2 if cpu_count > 2 else cpu_count)
+
         payload = {
-            "model": settings.LLM_MODEL,
+            "model": model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": 0.7, "num_predict": 150},
+            "keep_alive": "24h",  # Keep model hot in RAM permanently, eliminates 50s cold load
+            "options": {
+                "temperature": temperature,
+                "top_p": top_p,
+                "repeat_penalty": repeat_penalty,
+                "num_predict": max_tokens,
+                "num_ctx": 1024,  # Compact KV cache saves CPU memory bandwidth & RAM
+                "num_thread": optimal_threads,  # Matches 4 physical cores for max AVX2 throughput
+                "num_batch": 256,  # Fast batch evaluation of input tokens
+                "stop": [
+                    "<|eot_id|>",
+                    "<|end_of_text|>",
+                    "<|im_end|>",
+                    "<|endoftext|>",
+                    "<|im_start|>",
+                    "<start_of_turn>",
+                    "<end_of_turn>",
+                    "<eos>",
+                ],
+            },
         }
 
         timeout = httpx.Timeout(getattr(settings, "LLM_TIMEOUT", 120.0), connect=15.0)
@@ -79,7 +117,10 @@ class LocalOllamaProvider(BaseLLMProvider):
                             data = json.loads(line)
                             token = data.get("message", {}).get("content", "")
                             if token:
-                                yield token
+                                import re
+                                token = re.sub(r"[\u4e00-\u9fff]", "", token)
+                                if token:
+                                    yield token
                             if data.get("done"):
                                 break
                         except json.JSONDecodeError:

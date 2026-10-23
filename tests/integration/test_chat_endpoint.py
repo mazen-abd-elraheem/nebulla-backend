@@ -161,3 +161,74 @@ async def test_chat_empty_message_validation():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post("/api/v1/conversations/chat", json={"message": "   "})
         assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_chat_playground_ui():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/chat")
+        assert resp.status_code == 200
+        assert "شات روبوت Nebula" in resp.text
+        assert "messagesArea" in resp.text
+
+        resp_p = await client.get("/api/v1/conversations/playground")
+        assert resp_p.status_code == 200
+        assert "شات روبوت Nebula" in resp_p.text
+
+
+@pytest.mark.asyncio
+async def test_chat_streaming_concurrency_and_persistence():
+    await init_db()
+
+    async def mock_stream_tokens(*args, **kwargs):
+        for token in ["أهلاً ", "بك ", "يا ", "سيدي! ", "[happy]"]:
+            yield token
+
+    with patch("app.providers.llm.local_ollama.LocalOllamaProvider.generate_stream", side_effect=mock_stream_tokens):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            session_id = f"test-stream-session-{time.time()}"
+
+            # Stream Turn 1
+            r1 = await client.post("/api/v1/conversations/chat", json={
+                "message": "مرحبا 1",
+                "session_id": session_id,
+                "stream": True,
+            })
+            assert r1.status_code == 200
+            content1 = r1.text
+            assert "أهلاً بك يا سيدي!" in content1
+
+            # Stream Turn 2 in quick succession (tests SQLite concurrency & WAL mode)
+            r2 = await client.post("/api/v1/conversations/chat", json={
+                "message": "مرحبا 2",
+                "session_id": session_id,
+                "stream": True,
+            })
+            assert r2.status_code == 200
+            content2 = r2.text
+            assert "أهلاً بك يا سيدي!" in content2
+
+    # Verify messages in DB
+    from app.models.conversation import Conversation, Message
+    async with AsyncSessionLocal() as session:
+        conv_res = await session.execute(
+            select(Conversation).where(Conversation.session_id == session_id)
+        )
+        conv = conv_res.scalar_one_or_none()
+        assert conv is not None
+
+        msgs_res = await session.execute(
+            select(Message).where(Message.conversation_id == conv.id).order_by(Message.id)
+        )
+        msgs = msgs_res.scalars().all()
+        # Turn 1 (user + robot) + Turn 2 (user + robot) = 4 messages
+        assert len(msgs) == 4
+        assert msgs[0].role == "user"
+        assert msgs[0].content == "مرحبا 1"
+        assert msgs[1].role == "robot"
+        assert "أهلاً بك يا سيدي!" in msgs[1].content
+        assert msgs[2].role == "user"
+        assert msgs[2].content == "مرحبا 2"
+        assert msgs[3].role == "robot"
+        assert "أهلاً بك يا سيدي!" in msgs[3].content
+
