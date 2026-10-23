@@ -52,3 +52,4 @@ imageio-ffmpeg>=0.5.0 # For converting MP4/audio formats to WAV
 # ── Utilities ────────────────────────────────────────────────────────────────
 python-multipart==0.0.12  # for file upload (voice samples)
 python-dotenv==1.0.1
+deep-translator>=1.11.4

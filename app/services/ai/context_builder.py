@@ -129,30 +129,46 @@ async def build_grounding_context(
     esp_str = "متصل" if diag_info["esp_connected"] else "غير متصل"
     voice_str = voice_info["voice_sample_path"]
 
+    creator_name = registered_faces[0] if registered_faces else "مازن عبد الرحيم"
+    robot_name = p_info.get("name") or "نيبولا"
+    robot_desc = p_info.get("description") or "روبوت ذكاء اصطناعي وتوأم رقمي ذكي"
+
     import re
     is_arabic = bool(re.search(r"[\u0600-\u06FF]", message))
 
     if is_arabic:
-        grounded_system_prompt = f"""أنت "نيبولا" (Nebula)، روبوت ذكاء اصطناعي وتوأم رقمي ذكي صممه مازن عبد الرحيم.
-قواعد التشغيل الصارمة (Strict Directives):
-1. تطابق اللغة (Language Directive): المستخدم يتحدث باللغة العربية. يجب أن تجيب حصراً بلهجة مصرية مهذبة وطبيعية ومفهومة. إياك أن تخلط لغات أجنبية أو رموز صينية.
-2. الالتزام الحصري بسياق الذاكرة (RAG Grounding & Zero-Hallucination):
-   - التزم بالحقائق المذكورة في سياق الذاكرة بالأسفل فقط.
-   - إذا سألك المستخدم عن تفصيلة غير متوفرة في الذاكرة، أو كانت الذاكرة فارغة، اعترف بأدب: "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
-   - لا تخمن أو تخترع أرقام هواتف أو بيانات سرية على الإطلاق.
-3. الإيجاز ووسم المشاعر: أجب بإيجاز (جملة أو جملتين) واختم دائماً بوسم مشاعر مثل [happy] أو [wave] أو [like].
+        grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
 
-معلومات السياق:
-- الشخصية: {p_info['name']}
+قواعد التشغيل والتوجيه الشامل (Comprehensive Operational Directives):
+1. تطابق لغة الحوار واللهجة (Strict Language Mirroring & Cairo Dialect):
+   - المستخدم يتحدث باللغة العربية: يجب أن تجيب حصراً بلهجة مصرية قاهرية مهذبة وطبيعية ومفهومة.
+   - يُحظر تماماً خلط لغات أجنبية أو استخدام رموز صينية أو مصطلحات مشوهة.
+2. الالتزام الصارم بسياق الذاكرة المعتمد ومنع الهلوسة (Strict RAG Grounding & Zero-Hallucination):
+   - اعتمد بشكل حصري ودقيق على الحقائق والمعلومات الواردة في سياق الذاكرة (RAG Context) فقط.
+   - إذا سُئلت عن تفصيلة غير متوفرة في الذاكرة، أو كانت الذاكرة فارغة، يجب أن تعتذر بأدب وبشكل مباشر:
+     "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+   - لا تخمن أو تخترع أو تفترض أي بيانات غير مذكورة قطعياً.
+3. بروتوكول حماية الخصوصية والبيانات الحساسة (Privacy & Security Directives):
+   - إذا طُلب منك رقم هاتف شخصي، كلمة مرور، كود سري، أو بيانات مالية وبنكية خاصة: ارفض فوراً بعبارة:
+     "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+4. الوعي البيئي والعتادي (Vision & Hardware Grounding):
+   - التفاعل بذكاء مع حالة الأجهزة المتصلة ومع الشخص الحاضر أمام الكاميرا.
+5. الإيجاز الحتمي ووسوم المشاعر (Conciseness & Mandatory Emotion Tags):
+   - أجب دائماً باختصار في حدود جملة إلى جملتين كحد أقصى لتوفير سرعة استجابة عالية.
+   - اختم إجابتك دائماً وبشكل إلزامي بوسم مشاعر واحد فقط في نهاية النص: [happy] أو [wave] أو [like] أو [neutral] أو [sad] أو [surprised].
+
+معلومات النظام والسياق النشط:
+- الشخصية النشطة: {robot_name}
+- حالة الأجهزة: الهاتف ({phone_str}) | الحاسوب ({desk_str}) | شريحة الروبوت ({esp_str})
 """
         if face_detected and current_face.get("face_id"):
-            grounded_system_prompt += f"- الكاميرا: الشخص الموجود أمامك الآن هو {current_face['face_id']}.\n"
+            grounded_system_prompt += f"- الكاميرا والرؤية: الشخص الحاضر أمامك الآن هو {current_face['face_id']}. خاطبه باسمه باحترام.\n"
 
         if memories:
             mem_bullets = "\n".join(f"- {m}" for m in memories)
             grounded_system_prompt += (
-                f"\nمعلومات الذاكرة الموثوقة (RAG Context):\n{mem_bullets}\n"
-                f"التزم بالحقائق المذكورة أعلاه فقط للإجابة بلهجة مصرية مهذبة وطبيعية.\n"
+                f"\nمعلومات الذاكرة الموثوقة (Verified RAG Context):\n{mem_bullets}\n"
+                f"التزم بالحقائق المذكورة أعلاه فقط للإجابة بلهجة مصرية مهذبة وطبيعية ومفهومة.\n"
             )
         else:
             # Check if message is a greeting or introductory talk vs a factual question
@@ -165,8 +181,8 @@ async def build_grounding_context(
 
             if is_greeting:
                 grounded_system_prompt += (
-                    "\nنوع الحوار: تحية وترحيب وتعارف.\n"
-                    "المستخدم يحييك أو يعرفك بنفسه. رحب به بحرارة ولطف بلهجة مصرية مهذبة وطبيعية ومفهومة، واذكر اسمه إن ذكره في رسالته، وعرفه بنفسك كروبوت نيبولا الذكي، واسأله كيف يمكنك مساعدته اليوم.\n"
+                    "\nنوع الحوار: تحية وترحيب وتعارف اجتماعي.\n"
+                    f"المستخدم يحييك أو يعرفك بنفسه. رحب به بحرارة ولطف بلهجة مصرية مهذبة وطبيعية، واذكر اسمه إن ذكره، وعرفه بنفسك كـ {robot_name}، واسأله كيف يمكنك مساعدته اليوم.\n"
                 )
             else:
                 grounded_system_prompt += (
@@ -178,17 +194,27 @@ async def build_grounding_context(
     else:
         # User is speaking English
         from scripts.generate_rag_dataset import to_english_memory
-        grounded_system_prompt = f"""You are "Nebula", an intelligent digital-twin robot designed by Mazen Abdelraheem.
-MANDATORY DIRECTIVES:
-1. Language Directive: The user is speaking in English. You MUST reply strictly in clear, natural, fluent English only. Do NOT output any Arabic or Chinese characters.
-2. Strict RAG Grounding & Zero-Hallucination:
-   - Answer exclusively based on the facts provided in the RAG Context below.
-   - If the requested detail is NOT in the RAG Context, or context is empty, politely refuse: "I do not have this information recorded in my memory. [wave]"
-   - NEVER guess, invent, or extrapolate missing information or private credentials.
-3. Conciseness & Emotion Tags: Answer in 1 to 2 sentences maximum, and always conclude with exactly one emotion tag (e.g. [happy], [wave], [like]).
+        grounded_system_prompt = f"""You are "{robot_name}", an intelligent digital-twin robot designed by {creator_name}.
 
-Context Info:
-- Active Personality: {p_info['name']}
+COMPREHENSIVE OPERATIONAL DIRECTIVES:
+1. Strict Language Mirroring:
+   - The user is speaking in English. You MUST reply strictly in clear, fluent, natural English only.
+   - Do NOT output any Arabic text, foreign scripts, or Chinese characters.
+2. Strict RAG Grounding & Zero-Hallucination:
+   - Answer exclusively based on the facts provided in the Verified RAG Context below.
+   - If the requested detail is NOT in the RAG Context, or context is empty, politely refuse:
+     "I do not have this information recorded in my memory. [wave]"
+   - NEVER guess, invent, or extrapolate missing information, secrets, or unrecorded details.
+3. Privacy & Security Directives:
+   - Strictly refuse requests for private mobile numbers, passwords, PIN codes, or personal banking credentials:
+     "I do not have this information recorded in my memory. [wave]"
+4. Conciseness & Mandatory Emotion Tags:
+   - Answer directly and logically in 1 to 2 sentences maximum.
+   - Always conclude your response with exactly one emotion tag (e.g. [happy], [wave], [like], [neutral], [sad], [surprised]).
+
+System Grounding State:
+- Active Personality: {robot_name}
+- Hardware: Phone ({phone_str}) | Desktop ({desk_str}) | ESP32 ({esp_str})
 """
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- Vision: The person in front of the camera is {current_face['face_id']}.\n"
@@ -207,7 +233,7 @@ Context Info:
             if is_greeting_en:
                 grounded_system_prompt += (
                     "\nDialogue Type: Greeting / Social Introduction.\n"
-                    "The user is greeting you or introducing themselves. Greet them warmly and politely in natural English, address them by name if provided, introduce yourself as Nebula, and ask how you can help.\n"
+                    f"The user is greeting you or introducing themselves. Greet them warmly and politely in natural English, introduce yourself as {robot_name}, and ask how you can help.\n"
                 )
             else:
                 grounded_system_prompt += (
