@@ -239,6 +239,10 @@ class AIPipeline:
         # Send any remaining sentence to TTS
         remaining_text = clean_text_for_tts(sentence_buffer)
         if remaining_text:
+            t_rem_start = time.perf_counter()
+            audio_out = await self._generate_tts(remaining_text, active_pid)
+            remaining_tts_ms = (time.perf_counter() - t_rem_start) * 1000
+            await manager.send_to_phone(audio_out)
             await tts_queue.put(remaining_text)
 
         # Wait for TTS worker to finish synthesizing all queued audio
@@ -284,6 +288,21 @@ class AIPipeline:
                 emotion=emotion,
             )
         )
+
+    async def _generate_tts(self, text: str, personality_id: Optional[int]) -> bytes:
+        """Synthesize text using the cloned voice of the personality, falling back to base TTS."""
+        try:
+            from app.services.voice_clone.voice_clone_service import VoiceCloneService
+            res = await VoiceCloneService.get_instance().synthesize(
+                text=text,
+                personality_id=personality_id,
+            )
+            if res and len(res) > 2000:
+                return res
+        except Exception as e:
+            logger.warning(f"Voice clone synthesis failed in AI pipeline: {e}, falling back to base TTS")
+
+        return await self._tts.synthesize(text)
 
     # ── Database Helpers ──────────────────────────────────────────────────────
 

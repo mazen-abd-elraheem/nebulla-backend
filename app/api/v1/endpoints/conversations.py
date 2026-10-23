@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt import get_current_user, get_optional_user
+from app.auth.jwt import get_current_user, get_optional_user, api_key_scheme
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.db.session import get_db
@@ -66,11 +66,24 @@ class ChatResponse(BaseModel):
     memories_used: List[str]
     grounding: Optional[GroundingInfo] = None
 
+<<<<<<< HEAD
     # Backward compatibility fields
     response: Optional[str] = None
     retrieved_memories: Optional[List[str]] = None
     personality_id: Optional[int] = None
     latency: Optional[dict] = None
+=======
+
+# ── Authentication Helper ────────────────────────────────────────────────────
+
+async def _get_auth_user(
+    user: Optional[str] = Depends(get_optional_user),
+) -> str:
+    """Allow chat without strict auth if unauthenticated or in DEBUG mode."""
+    if user:
+        return user
+    return "guest_user"
+>>>>>>> d5cc12b4221fedd59dd69a60233a0246220c52c6
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────

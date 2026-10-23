@@ -63,7 +63,8 @@ class Settings(BaseSettings):
     VOICETUT_DEVICE: str = "cpu"  # "cuda" | "cpu"
     # OmniVoice base (VoiceTut is fine-tuned on ~380h Egyptian podcast)
     OMNIVOICE_BASE_PATH: str = "models/omnivoice"
-    # Max generation steps — keep first sentence short for low latency (doc §6.3)
+    # Diffusion denoising steps (4: fast preview ~30s, 10: high quality balance, 32: max studio)
+    VOICETUT_NUM_STEPS: int = 10
     TTS_MAX_NEW_TOKENS: int = 200
 
     # ── Vision Config ──────────────────────────────────────────────────────

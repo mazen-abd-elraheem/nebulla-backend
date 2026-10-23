@@ -32,7 +32,7 @@ logger = get_logger(__name__)
 _SAMPLES_DIR = Path("data/voice_samples")
 _SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
-_MIN_DURATION_S = 3.0    # minimum acceptable sample length
+_MIN_DURATION_S = 1.5    # minimum acceptable sample length (supports quick voice notes)
 _MAX_DURATION_S = 120.0  # cap to avoid huge uploads
 
 
@@ -44,7 +44,8 @@ class VoiceCloneService:
 
     def __init__(self):
         self._xtts = XTTSProvider()
-        self._voicetut = None
+        from app.providers.tts.voicetut import VoiceTutProvider
+        self._voicetut = VoiceTutProvider()
         self._personality_voice_map: dict[int, str] = {}  # personality_id → wav path
 
     # ── Sample management ─────────────────────────────────────────────────────
@@ -53,13 +54,14 @@ class VoiceCloneService:
         self,
         personality_id: int,
         file: UploadFile,
+        transcript: str | None = None,
     ) -> str:
         """
         Receive an audio or video upload (WAV or MP4), convert to standard WAV,
         validate duration, save it, and bind it to a personality.
 
         Returns the saved file path.
-        Accepted formats: .wav, .mp4, .m4a
+        Accepted formats: .wav, .mp4, .m4a, .mp3, .webm, .ogg, .aac, .opus, .flac, .3gp, .amr, .wma
         """
         if not file.filename:
             raise HTTPException(
@@ -68,7 +70,10 @@ class VoiceCloneService:
             )
 
         ext = Path(file.filename).suffix.lower()
-        allowed_exts = {".wav", ".mp4", ".m4a"}
+        allowed_exts = {
+            ".wav", ".mp4", ".m4a", ".mp3", ".webm", ".ogg",
+            ".aac", ".opus", ".flac", ".3gp", ".wma", ".amr"
+        }
         if ext not in allowed_exts:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -95,21 +100,59 @@ class VoiceCloneService:
                 detail=f"Sample too long ({duration:.1f}s). Maximum is {_MAX_DURATION_S}s.",
             )
 
+        txt_dest = dest.with_suffix(".txt")
+        if transcript and transcript.strip():
+            txt_dest.write_text(transcript.strip(), encoding="utf-8")
+            logger.info(f"Saved transcript for personality {personality_id}")
+        elif txt_dest.exists():
+            txt_dest.unlink()
+
         self._personality_voice_map[personality_id] = str(dest)
         logger.info(f"Voice sample saved for personality {personality_id}: {dest} ({duration:.1f}s)")
+        await self._sync_db_voice_sample(personality_id, str(dest))
         return str(dest)
 
-    def get_sample_path(self, personality_id: int) -> str | None:
-        """Return the stored WAV path for a personality, or None if not found."""
-        # Check in-memory map first
-        if personality_id in self._personality_voice_map:
-            return self._personality_voice_map[personality_id]
-        # Fall back to disk
-        p = _SAMPLES_DIR / f"personality_{personality_id}.wav"
-        if p.exists():
-            self._personality_voice_map[personality_id] = str(p)
-            return str(p)
+    async def _sync_db_voice_sample(self, personality_id: int, path: str | None) -> None:
+        """Synchronize voice sample path with database personality record."""
+        try:
+            from app.db.session import AsyncSessionLocal
+            from app.models.personality import Personality
+            async with AsyncSessionLocal() as session:
+                p = await session.get(Personality, personality_id)
+                if p:
+                    p.voice_sample_path = path
+                    await session.commit()
+                    logger.info(f"Updated DB personality {personality_id} voice_sample_path -> {path}")
+        except Exception as exc:
+            logger.warning(f"Could not sync voice_sample_path with DB: {exc}")
+
+    def get_latest_sample_path(self) -> str | None:
+        """Return the most recently saved or modified voice sample path."""
+        samples = list(_SAMPLES_DIR.glob("personality_*.wav"))
+        if samples:
+            samples.sort(key=lambda s: s.stat().st_mtime, reverse=True)
+            return str(samples[0])
+        any_wavs = list(_SAMPLES_DIR.glob("*.wav"))
+        if any_wavs:
+            any_wavs.sort(key=lambda s: s.stat().st_mtime, reverse=True)
+            return str(any_wavs[0])
         return None
+
+    def get_sample_path(self, personality_id: int | None = None) -> str | None:
+        """Return the stored WAV path for a personality, or latest available sample if None."""
+        if personality_id is not None:
+            # Check in-memory map first
+            if personality_id in self._personality_voice_map:
+                p = Path(self._personality_voice_map[personality_id])
+                if p.exists():
+                    return str(p)
+            # Fall back to disk
+            p = _SAMPLES_DIR / f"personality_{personality_id}.wav"
+            if p.exists():
+                self._personality_voice_map[personality_id] = str(p)
+                return str(p)
+        # If personality_id is None or not found on disk, fallback to the latest uploaded sample
+        return self.get_latest_sample_path()
 
     def list_samples(self) -> list[dict]:
         """List all stored voice samples."""
@@ -132,10 +175,18 @@ class VoiceCloneService:
     async def delete_sample(self, personality_id: int) -> bool:
         """Delete a stored voice sample."""
         p = _SAMPLES_DIR / f"personality_{personality_id}.wav"
+        txt_p = p.with_suffix(".txt")
+        deleted = False
         if p.exists():
             p.unlink()
+            deleted = True
+        if txt_p.exists():
+            txt_p.unlink()
+            deleted = True
+        if deleted:
             self._personality_voice_map.pop(personality_id, None)
             logger.info(f"Deleted voice sample for personality {personality_id}")
+            await self._sync_db_voice_sample(personality_id, None)
             return True
         return False
 
@@ -147,6 +198,8 @@ class VoiceCloneService:
         personality_id: int | None = None,
         reference_wav: str | None = None,
         language: str = "ar",
+        ref_text: str | None = None,
+        num_step: int | None = None,
     ) -> bytes:
         """
         Synthesise *text* in the cloned voice after applying Masri dialect normalization.
@@ -161,26 +214,44 @@ class VoiceCloneService:
         if not clean_text:
             clean_text = text.strip()
 
-        wav_path = reference_wav or (
-            self.get_sample_path(personality_id) if personality_id else None
-        )
+        wav_path = reference_wav or self.get_sample_path(personality_id)
 
-        # If VoiceTut is requested and available
-        if settings.TTS_PROVIDER == "voicetut":
-            if self._voicetut is None:
-                from app.providers.tts.voicetut import VoiceTutProvider
-                self._voicetut = VoiceTutProvider()
+        from app.providers.tts.factory import get_tts_provider
+        tts = get_tts_provider(settings.TTS_PROVIDER)
 
-            if wav_path:
-                return await self._voicetut.clone_voice(wav_path, clean_text, language)
-            else:
-                return await self._voicetut.synthesize(clean_text)
+        if wav_path and os.path.exists(wav_path):
+            logger.info(f"Synthesizing text using cloned voice sample: {wav_path}")
+            # 1. VoiceTut-TTS: specialized for Egyptian Arabic zero-shot cloning
+            try:
+                res = await self._voicetut.synthesize(
+                    clean_text,
+                    ref_audio=wav_path,
+                    ref_text=ref_text,
+                    num_step=num_step,
+                )
+                if res and len(res) > 2000:
+                    return res
+            except Exception as exc:
+                logger.warning(f"VoiceTut cloning failed: {exc}")
 
-        # Default to XTTS zero-shot cloning
-        if wav_path:
-            return await self._xtts.clone_voice(wav_path, clean_text, language)
-        else:
-            return await self._xtts.synthesize(clean_text)
+            # 2. XTTS v2 fallback
+            if getattr(self._xtts, "_model", None) != "disabled":
+                try:
+                    res = await self._xtts.clone_voice(wav_path, clean_text, language)
+                    if res and len(res) > 2000:
+                        return res
+                except Exception as exc:
+                    logger.warning(f"XTTS cloning failed: {exc}")
+
+        try:
+            res = await tts.synthesize(clean_text)
+            if res and len(res) > 2000:
+                return res
+        except Exception as exc:
+            logger.warning(f"Active TTS provider failed: {exc}")
+
+        from app.providers.tts.ar_eg_free import ArEgFreeProvider
+        return await ArEgFreeProvider().synthesize(clean_text)
 
     async def synthesize_stream(
         self,
@@ -227,7 +298,8 @@ def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
         try:
             with wave.open(io.BytesIO(raw), "rb") as wf:
                 dur = wf.getnframes() / wf.getframerate()
-                if dur > 0:
+                # Only use directly if it is strictly 24kHz mono 16-bit PCM (otherwise resample with ffmpeg)
+                if dur > 0 and wf.getnchannels() == 1 and wf.getframerate() == 24000 and wf.getsampwidth() == 2:
                     dest.write_bytes(raw)
                     return dur
         except Exception:
