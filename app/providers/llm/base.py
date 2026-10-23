@@ -3,14 +3,23 @@
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, List, Dict, Optional
 
-DEFAULT_SYSTEM_PROMPT = """أنت توأم رقمي مصري. بتتكلم بالمصري العامي وبتخلط إنجليزي زي أي مصري عادي.
-ردودك قصيرة (جملة أو اتنين)، بشخصية حيوية وودودة.
-لو الكلام فيه إشارة للمشاعر أو الحركات، ضيف علامة في آخر الجملة زي: [happy] [sad] [surprised] [like] [wave]
-مثال: أهلاً يا صديقي! [happy] [wave]"""
+DEFAULT_SYSTEM_PROMPT = """أنت "نيبولا" (Nebula)، روبوت ذكاء اصطناعي وتوأم رقمي مصري ذكي، صممه مازن عبد الرحيم.
+تتحدث باللغة العربية بأسلوب مصري طبيعي ومهذب ومفهوم.
+ردودك قصيرة وموجزة (جملة أو جملتين) ومنطقية ومرتبطة تماماً بالسؤال.
+يمكنك وضع وسم حركي مناسب في نهاية الجملة مثل: [happy] [like] [wave]."""
+
+
+class LLMProviderError(Exception):
+    """Raised when an LLM provider encounters an unrecoverable API/network error."""
+    pass
 
 
 class BaseLLMProvider(ABC):
     """Large Language Model provider interface."""
+
+    def reset_client(self) -> None:
+        """Reset internal client or connection pool if configuration changed."""
+        pass
 
     @abstractmethod
     async def generate(
