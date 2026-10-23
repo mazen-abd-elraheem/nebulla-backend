@@ -1,5 +1,5 @@
 """
-AI Pipeline — orchestrates STT → LLM → TTS with full streaming.
+AI Pipeline — orchestrates STT → RAG → LLM → TTS with full streaming.
 
 Latency targets (doc §6.3):
   VAD + STT:     0.2 – 0.6 s
@@ -49,7 +49,7 @@ def clean_text_for_tts(text: str) -> str:
 
 class AIPipeline:
     """
-    End-to-end voice conversation pipeline.
+    End-to-end voice and text conversation pipeline with RAG memory grounding.
     Injected with swappable STT/LLM/TTS providers via factory.
     """
 
@@ -71,6 +71,16 @@ class AIPipeline:
             f"AI Pipeline providers reloaded: LLM={settings.LLM_PROVIDER}, "
             f"STT={settings.STT_PROVIDER}, TTS={settings.TTS_PROVIDER}"
         )
+
+    @property
+    def rag(self) -> RAGService:
+        return self._rag
+
+    @property
+    def llm(self) -> BaseLLMProvider:
+        return self._llm
+
+    # ── Voice Audio Ingestion ──────────────────────────────────────────────────
 
     async def process_audio_chunk(self, chunk: bytes) -> None:
         """
@@ -105,13 +115,14 @@ class AIPipeline:
         memories = await self._rag.retrieve(transcript, personality_id=active_pid)
         history = await self._get_recent_history(limit=6)
 
-        # ── 3. LLM (streaming) ───────────────────────────────────────────
+        # ── 3. LLM (streaming) with RAG context ───────────────────────────
         t_llm_start = time.perf_counter()
         full_response = ""
         sentence_buffer = ""
         first_sentence_sent = False
         first_tts_ms: Optional[float] = None
 
+        device_state = await self._get_latest_device_telemetry()
         async for token in self._llm.generate_stream(
             transcript,
             context=memories,
@@ -335,9 +346,9 @@ def _extract_emotion(text: str) -> str:
 
     if any(w in text_lower for w in ["happy", "فرحان", "😊"]):
         return "happy"
-    if any(w in text_lower for w in ["sad", "حزين", "😢"]):
+    if any(w in text_lower for w in ["sad", "حزين", "😢", "زعلان"]):
         return "sad"
-    if any(w in text_lower for w in ["surprised", "متفاجئ", "😲"]):
+    if any(w in text_lower for w in ["surprised", "متفاجئ", "😲", "واو"]):
         return "surprised"
     return "neutral"
 
