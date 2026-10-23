@@ -122,6 +122,7 @@ class AIPipeline:
         first_sentence_sent = False
         first_tts_ms: Optional[float] = None
 
+        device_state = await self._get_latest_device_telemetry()
         async for token in self._llm.generate_stream(
             transcript,
             context=memories,
