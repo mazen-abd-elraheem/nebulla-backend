@@ -3,9 +3,10 @@ Personality ORM Model — robot persona and voice configuration.
 """
 
 from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 
@@ -13,10 +14,14 @@ from app.db.session import Base
 class Personality(Base):
     """
     Personality profile for the digital twin robot.
+    Can belong to a specific user or be a global default (user_id=None).
     """
     __tablename__ = "personalities"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     system_prompt: Mapped[str] = mapped_column(Text, default="")
@@ -25,3 +30,6 @@ class Personality(Base):
     voice_sample_path: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped[Optional["User"]] = relationship("User", back_populates="personalities")
+

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt import get_current_user
+from app.auth.jwt import get_current_user, get_optional_user
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.memory import Memory
@@ -14,15 +14,6 @@ from app.services.memory.rag_service import RAGService
 
 router = APIRouter()
 _rag = RAGService()
-
-
-async def _get_auth_user(
-    db: AsyncSession = Depends(get_db),
-    _u=Depends(lambda: None),
-) -> str:
-    if settings.DEBUG:
-        return "dev_user"
-    return await get_current_user()
 
 
 class MemoryCreate(BaseModel):
@@ -36,7 +27,7 @@ class MemoryCreate(BaseModel):
 async def list_memories(
     personality_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _u=Depends(_get_auth_user),
+    _u: str | None = Depends(get_optional_user),
 ):
     stmt = select(Memory).order_by(Memory.created_at.desc())
     if personality_id:
@@ -49,7 +40,7 @@ async def list_memories(
 async def add_memory(
     body: MemoryCreate,
     db: AsyncSession = Depends(get_db),
-    _u=Depends(_get_auth_user),
+    _u: str | None = Depends(get_optional_user),
 ):
     pid = body.personality_id
     if not pid:
@@ -70,7 +61,7 @@ async def add_memory(
 async def delete_memory(
     mid: int,
     db: AsyncSession = Depends(get_db),
-    _u=Depends(_get_auth_user),
+    _u: str | None = Depends(get_optional_user),
 ):
     m = await db.get(Memory, mid)
     if not m:
@@ -85,7 +76,7 @@ async def search_memories(
     personality_id: int | None = Query(None),
     top_k: int = Query(5, ge=1, le=20),
     detailed: bool = Query(False, description="Whether to include similarity score and metadata"),
-    _u=Depends(get_current_user),
+    _u: str | None = Depends(get_optional_user),
 ):
     if detailed:
         results = await _rag.retrieve_detailed(q, personality_id=personality_id, top_k=top_k)

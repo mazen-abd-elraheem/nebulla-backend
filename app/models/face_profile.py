@@ -1,13 +1,48 @@
-"""Face profile model for facial recognition embeddings."""
-
+import json
 from datetime import datetime
+<<<<<<< HEAD
 import pickle
 from typing import Optional, Union, List
 import numpy as np
+=======
+from typing import Any
+>>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac
 from sqlalchemy import DateTime, Integer, LargeBinary, String
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
+
+
+class EmbeddingType(TypeDecorator):
+    """Transparently serialize list of floats to JSON bytes for BLOB storage."""
+    impl = LargeBinary
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect: Any) -> bytes | None:
+        if value is None:
+            return None
+        if isinstance(value, (list, tuple)):
+            return json.dumps(list(value)).encode("utf-8")
+        if isinstance(value, bytes):
+            return value
+        try:
+            import numpy as np
+            if isinstance(value, np.ndarray):
+                return json.dumps(value.tolist()).encode("utf-8")
+        except ImportError:
+            pass
+        return str(value).encode("utf-8")
+
+    def process_result_value(self, value: Any, dialect: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            try:
+                return json.loads(value.decode("utf-8"))
+            except Exception:
+                return value
+        return value
 
 
 class FaceProfile(Base):
@@ -15,6 +50,7 @@ class FaceProfile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+<<<<<<< HEAD
     embedding: Mapped[bytes] = mapped_column(LargeBinary)
     photo_path: Mapped[Optional[str]] = mapped_column(String(256), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -52,3 +88,8 @@ class FaceProfile(Base):
             pass
         return None
 
+=======
+    embedding: Mapped[Any] = mapped_column(EmbeddingType)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+>>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac

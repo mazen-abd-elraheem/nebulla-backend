@@ -71,10 +71,17 @@ class ChatResponse(BaseModel):
     personality_id: Optional[int] = None
     grounding: Optional[GroundingInfo] = None
 
+    # Backward compatibility fields
+    response: Optional[str] = None
+    retrieved_memories: Optional[List[str]] = None
+    personality_id: Optional[int] = None
+    latency: Optional[dict] = None
+
 
 # ── Authentication Helper ────────────────────────────────────────────────────
 
 async def _get_auth_user(
+<<<<<<< HEAD
     x_api_key: str | None = Depends(api_key_scheme),
     authorization: str | None = Header(None),
 ) -> str:
@@ -82,6 +89,15 @@ async def _get_auth_user(
     if settings.DEBUG or not (x_api_key or authorization):
         return "dev_user"
     return await get_current_user(x_api_key=x_api_key, authorization=authorization)
+=======
+    user: Optional[str] = Depends(get_optional_user),
+) -> str:
+    """Allow chat without strict auth if unauthenticated or in DEBUG mode."""
+    if user:
+        return user
+    return "guest_user"
+
+>>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────
@@ -241,7 +257,7 @@ async def chat_with_llm(
     )
     robot_msg = Message(
         conversation_id=conv_id,
-        role="robot",
+        role="assistant",
         content=reply,
         llm_latency_ms=round(llm_ms, 2),
         total_latency_ms=round(llm_ms, 2),
@@ -267,30 +283,45 @@ async def chat_with_llm(
         memories_used=memories,
         personality_id=active_pid,
         grounding=grounding,
+        response=reply,
+        retrieved_memories=memories,
+        personality_id=active_pid,
+        latency={"llm_ms": round(llm_ms, 2)},
     )
 
 
 @router.post("/chat/stream", summary="Stream chat tokens from LLM with RAG grounding (SSE)")
-async def chat_stream_with_rag(
+async def chat_stream(
     body: ChatRequest,
-    _u=Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+    _user: str = Depends(_get_auth_user),
 ):
-    """
-    Server-Sent Events (SSE) streaming endpoint:
-    Streams tokens as they are produced by the LLM with RAG context.
-    """
-    pipeline = _get_ai_pipeline()
+    system_prompt, memories, grounding, active_pid = await build_grounding_context(
+        db=db,
+        personality_id=body.personality_id,
+        message=body.message,
+    )
+    target_provider = body.provider or settings.LLM_PROVIDER
+    llm = get_llm_provider(target_provider)
 
-    async def event_generator() -> AsyncIterator[str]:
-        async for item in pipeline.process_text_stream(
-            text=body.message,
-            personality_id=body.personality_id,
-            session_id=body.session_id,
-        ):
-            yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+    async def event_generator():
+        import json
+        yield f"data: {json.dumps({'type': 'context', 'memories': memories}, ensure_ascii=False)}\n\n"
+        try:
+            async for token in llm.generate_stream(
+                body.message,
+                context=memories,
+                system_prompt=system_prompt,
+            ):
+                yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+
+# ── Read-only Endpoints ──────────────────────────────────────────────────────
 
 @router.get("/", summary="List conversation sessions")
 async def list_conversations(
