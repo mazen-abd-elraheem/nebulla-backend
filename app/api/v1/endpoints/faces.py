@@ -6,23 +6,26 @@ Provides REST APIs for:
   - Face verification / Image-to-image comparison (1:1 matching)
   - Video face extraction (selecting the clearest face shots from video)
   - Face profile listing and photo serving
+  - Live face detection status
 """
 
+import asyncio
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.jwt import get_current_user, get_optional_user
 from app.db.session import get_db
 from app.models.face_profile import FaceProfile
 from app.websocket.handlers import _get_face_service
 
 router = APIRouter()
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Registration (تسجيل وحفظ الأشخاص)
@@ -32,12 +35,13 @@ router = APIRouter()
     "/register",
     summary="Register a person with a photo",
     description="Upload a photo of a person to detect their face, save their profile, and extract their 512-D embedding.",
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,
 )
 async def register_face(
     name: str = Form(..., description="Full name or identifier of the person"),
     file: UploadFile = File(..., description="Image file (JPEG/PNG) containing the person's face"),
     db: AsyncSession = Depends(get_db),
+    _user: Optional[str] = Depends(get_optional_user),
 ):
     image_bytes = await file.read()
     if not image_bytes:
@@ -252,27 +256,45 @@ async def compare_video_to_image(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.get(
+    "",
+    summary="List all registered face profiles",
+    description="Retrieve all registered persons stored in the database.",
+)
+@router.get(
     "/",
     summary="List all registered face profiles",
     description="Retrieve all registered persons stored in the database.",
 )
-async def list_registered_faces(db: AsyncSession = Depends(get_db)):
+async def list_registered_faces(
+    db: AsyncSession = Depends(get_db),
+    _user: Optional[str] = Depends(get_optional_user),
+):
     result = await db.execute(select(FaceProfile).order_by(FaceProfile.name))
     profiles = result.scalars().all()
+    face_list = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "photo_path": p.photo_path,
+            "photo_url": f"/api/v1/faces/{p.name}/photo" if p.photo_path else None,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        }
+        for p in profiles
+    ]
 
     return {
         "count": len(profiles),
-        "profiles": [
-            {
-                "id": p.id,
-                "name": p.name,
-                "photo_path": p.photo_path,
-                "photo_url": f"/api/v1/faces/{p.name}/photo" if p.photo_path else None,
-                "created_at": p.created_at.isoformat() if p.created_at else None,
-            }
-            for p in profiles
-        ],
+        "profiles": face_list,
+        "faces": face_list,
     }
+
+
+@router.get("/current", summary="Get live face detection and recognition status")
+async def get_current_face(
+    _user: Optional[str] = Depends(get_optional_user),
+):
+    face_service = _get_face_service()
+    return face_service.get_current_face_info()
 
 
 @router.get(
@@ -317,7 +339,11 @@ async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
     summary="Delete a face profile",
     description="Delete a registered person and their photo from the database.",
 )
-async def delete_face_profile(name: str, db: AsyncSession = Depends(get_db)):
+async def delete_face_profile(
+    name: str,
+    db: AsyncSession = Depends(get_db),
+    _user: Optional[str] = Depends(get_optional_user),
+):
     face_service = _get_face_service()
     deleted = await face_service.delete_face(name=name, db=db)
     if not deleted:

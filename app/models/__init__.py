@@ -12,6 +12,7 @@ from app.models import (
     signal,
     tracking,
     face_profile,
+    user,
 )
 from app.models.calibration import ServoCalibration
 from app.models.conversation import Conversation, Message
@@ -22,6 +23,7 @@ from app.models.memory import Memory
 from app.models.personality import Personality
 from app.models.signal import Signal
 from app.models.tracking import TrackingRecord
+from app.models.user import User
 
 __all__ = [
     "calibration",
@@ -33,6 +35,7 @@ __all__ = [
     "personality",
     "signal",
     "tracking",
+    "user",
     "FaceProfile",
     "Memory",
     "Personality",
@@ -43,4 +46,5 @@ __all__ = [
     "ServoCalibration",
     "TrackingRecord",
     "SystemLog",
+    "User",
 ]

@@ -122,8 +122,13 @@ class XTTSProvider(BaseTTSProvider):
         await self.load()
 
         if self._model == "disabled":
-            logger.warning("XTTS disabled — returning silence")
-            return _silent_wav(duration_ms=500)
+            logger.warning("XTTS disabled — using ar-EG fallback TTS to generate speech")
+            from app.providers.tts.ar_eg_free import ArEgFreeProvider
+            res = await ArEgFreeProvider().synthesize(text)
+            if res and len(res) > 2000:
+                return res
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _fallback_tts_wav, text)
 
         loop = asyncio.get_event_loop()
         wav_bytes = await loop.run_in_executor(None, self._synth_sync, text)
@@ -149,19 +154,9 @@ class XTTSProvider(BaseTTSProvider):
         text: str,
         language: str | None = None,
     ) -> bytes:
-        """
-        One-shot voice clone with an explicit reference wav.
-        Use this to test a new voice sample before saving it as default.
-
-        Parameters
-        ----------
-        reference_wav_path : str
-            Path to the WAV file containing ~10 s of clean speech from the target speaker.
-        text : str
-            The text to synthesise in the cloned voice.
-        language : str, optional
-            Override language (default: "ar").
-        """
+        await self.load()
+        if self._model == "disabled" or self._model is None:
+            raise RuntimeError("XTTS model is disabled or not installed")
         original_ref = self._reference_wav
         original_lang = self._language
         try:
@@ -211,13 +206,81 @@ class XTTSProvider(BaseTTSProvider):
                 wf.writeframes(samples.tobytes())
 
         except Exception as exc:
-            logger.error(f"XTTS synthesis error: {exc}")
-            return _silent_wav()
+            logger.error(f"XTTS synthesis error: {exc} — using ar-EG fallback")
+            try:
+                from app.providers.tts.ar_eg_free import ArEgFreeProvider
+                return ArEgFreeProvider().synthesize_sync(text)
+            except Exception:
+                return _silent_wav()
 
         return buf.getvalue()
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
+
+def _fallback_tts_wav(text: str, language: str = "ar") -> bytes:
+    """
+    Fallback TTS when XTTS v2 is disabled or not installed.
+    Uses high quality Egyptian neural voice (ArEgFreeProvider) with gTTS fallback.
+    """
+    try:
+        from app.providers.tts.ar_eg_free import ArEgFreeProvider
+        res = ArEgFreeProvider().synthesize_sync(text)
+        if res and len(res) > 2000:
+            return res
+    except Exception as exc:
+        logger.warning(f"ArEgFreeProvider sync failed: {exc}, trying gTTS...")
+
+    try:
+        import subprocess
+        from gtts import gTTS
+        import imageio_ffmpeg
+
+        # Determine language code for gTTS
+        lang = language if language in ("ar", "en", "fr") else "ar"
+        tld = "com.eg" if lang == "ar" else "com"
+
+        tts = gTTS(text=text, lang=lang, tld=tld)
+        mp3_io = io.BytesIO()
+        tts.write_to_fp(mp3_io)
+        mp3_bytes = mp3_io.getvalue()
+
+        if not mp3_bytes:
+            return _silent_wav()
+
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        proc = subprocess.Popen(
+            [
+                ffmpeg_exe,
+                "-y",
+                "-i", "pipe:0",
+                "-f", "wav",
+                "-acodec", "pcm_s16le",
+                "-ar", "24000",
+                "-ac", "1",
+                "pipe:1",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        wav_out, err = proc.communicate(input=mp3_bytes)
+        if proc.returncode == 0 and len(wav_out) > 0:
+            try:
+                import soundfile as sf
+                data, sr = sf.read(io.BytesIO(wav_out))
+                fixed_buf = io.BytesIO()
+                sf.write(fixed_buf, data, sr, format="WAV", subtype="PCM_16")
+                return fixed_buf.getvalue()
+            except Exception:
+                return wav_out
+
+        logger.error(f"FFmpeg fallback conversion failed: {err.decode('utf-8', errors='ignore')}")
+    except Exception as exc:
+        logger.error(f"Fallback TTS failed: {exc}")
+
+    return _silent_wav()
+
 
 def _silent_wav(duration_ms: int = 500, sample_rate: int = 24000) -> bytes:
     """Return a WAV buffer containing silence — used as a fallback."""

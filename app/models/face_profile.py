@@ -1,13 +1,45 @@
-"""Face profile model for facial recognition embeddings."""
-
-from datetime import datetime
+import json
 import pickle
-from typing import Optional, Union, List
+from datetime import datetime
+from typing import Any, List, Optional, Union
+
 import numpy as np
 from sqlalchemy import DateTime, Integer, LargeBinary, String
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
+
+
+class EmbeddingType(TypeDecorator):
+    """Transparently serialize list of floats to JSON bytes for BLOB storage."""
+    impl = LargeBinary
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect: Any) -> bytes | None:
+        if value is None:
+            return None
+        if isinstance(value, (list, tuple)):
+            return json.dumps(list(value)).encode("utf-8")
+        if isinstance(value, bytes):
+            return value
+        try:
+            import numpy as np
+            if isinstance(value, np.ndarray):
+                return json.dumps(value.tolist()).encode("utf-8")
+        except ImportError:
+            pass
+        return str(value).encode("utf-8")
+
+    def process_result_value(self, value: Any, dialect: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            try:
+                return json.loads(value.decode("utf-8"))
+            except Exception:
+                return value
+        return value
 
 
 class FaceProfile(Base):
@@ -27,7 +59,7 @@ class FaceProfile(Base):
         super().__init__(**kwargs)
 
     @staticmethod
-    def serialize_embedding(vec: Union[List[float], np.ndarray, bytes]) -> bytes:
+    def serialize_embedding(vec: Union[List[float], np.ndarray, bytes, Any]) -> bytes:
         """Standardize any embedding format into float32 bytes for database storage."""
         if isinstance(vec, bytes):
             return vec
@@ -50,5 +82,9 @@ class FaceProfile(Base):
             return np.array(val, dtype=np.float32).flatten()
         except Exception:
             pass
+        try:
+            val = json.loads(self.embedding.decode("utf-8"))
+            return np.array(val, dtype=np.float32).flatten()
+        except Exception:
+            pass
         return None
-

@@ -66,7 +66,7 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         max_tokens = getattr(settings, "TTS_MAX_NEW_TOKENS", 150) or 150
         payload = {
-            "model": model,
+            "model": self.model,
             "messages": messages,
             "stream": True,
             "options": {"temperature": 0.7, "num_predict": max_tokens},
@@ -79,7 +79,7 @@ class LocalOllamaProvider(BaseLLMProvider):
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
                     "POST",
-                    f"{base_url}/api/chat",
+                    f"{settings.LLM_BASE_URL}/api/chat",
                     json=payload,
                 ) as resp:
                     resp.raise_for_status()
@@ -106,7 +106,24 @@ class LocalOllamaProvider(BaseLLMProvider):
             yield "استغرق الموديل وقتاً أطول من المعتاد في المعالجة. جرب تاني أو اتأكد من كفاءة الجهاز."
         except httpx.HTTPStatusError as e:
             logger.error(f"Ollama HTTP error {e.response.status_code}: {e.response.text}")
-            yield f"في خطأ في تشغيل موديل {settings.LLM_MODEL} على Ollama."
+            if e.response.status_code == 404:
+                # Try fallback to available Ollama model
+                try:
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        tags_res = await client.get(f"{settings.LLM_BASE_URL}/api/tags")
+                        if tags_res.status_code == 200:
+                            models = [m.get("name") for m in tags_res.json().get("models", [])]
+                            for candidate in ("phi3:mini", "mistral:7b-instruct-q4_0", "glm-4.7-flash"):
+                                matching = [m for m in models if candidate in m]
+                                if matching:
+                                    logger.info(f"Target model '{self.model}' not found, falling back to '{matching[0]}'")
+                                    self.model = matching[0]
+                                    async for tok in self.generate_stream(prompt, context, system_prompt, history):
+                                        yield tok
+                                    return
+                except Exception as fb_err:
+                    logger.debug(f"Ollama model fallback check failed: {fb_err}")
+            yield f"في خطأ في تشغيل موديل {self.model} على Ollama."
         except Exception as e:
             logger.error(f"Ollama error: {e}")
             yield "في خطأ تقني في المعالجة. جرب تاني."

@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     signals,
     calibration,
     voice_clone,
+    audio,
     settings as settings_ep,
     diagnostics,
     faces,
@@ -27,5 +28,6 @@ api_router.include_router(conversations.router,  prefix="/conversations",  tags=
 api_router.include_router(signals.router,        prefix="/signals",        tags=["signals"])
 api_router.include_router(calibration.router,    prefix="/calibration",    tags=["calibration"])
 api_router.include_router(voice_clone.router,    prefix="/voice-clone",    tags=["voice-clone"])
+api_router.include_router(audio.router,          prefix="/audio",          tags=["audio"])
 api_router.include_router(settings_ep.router,    prefix="/settings",       tags=["settings"])
 api_router.include_router(diagnostics.router,    prefix="/diagnostics",    tags=["diagnostics"])

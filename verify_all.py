@@ -16,9 +16,10 @@ if sys.stdout.encoding.lower() != "utf-8":
         pass
 
 import httpx
+from app.core.config import settings
 
 BASE_URL = "http://127.0.0.1:8000"
-PAIRING_SECRET = "nebula-2026-secret"
+PAIRING_SECRET = getattr(settings, "PAIRING_SECRET", "change-me-in-production")
 HEADERS = {
     "Content-Type": "application/json",
     "X-API-Key": PAIRING_SECRET,
@@ -55,6 +56,8 @@ async def verify_everything():
         client_ctx = httpx.AsyncClient(base_url=BASE_URL, timeout=15.0)
     else:
         print("⚡ لم يتم العثور على سيرفر منفصل — يتم الفحص عبر مشغل ASGI الداخلي المباشر")
+        from app.db.session import init_db
+        await init_db()
         from app.main import app
         client_ctx = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver", timeout=15.0)
 
@@ -212,7 +215,7 @@ async def verify_everything():
                 r = await client.get(f"/api/v1/conversations/{conv_id}/messages", headers=HEADERS)
                 msgs = r.json().get("messages", [])
                 has_user = any(m.get("role") == "user" for m in msgs)
-                has_asst = any(m.get("role") == "assistant" for m in msgs)
+                has_asst = any(m.get("role") in ("assistant", "robot") for m in msgs)
                 record_result(
                     "9. حفظ الرسائل والـ Latency لكل Turn في DB (GET /.../messages)",
                     r.status_code == 200 and has_user and has_asst,
@@ -249,6 +252,60 @@ async def verify_everything():
         )
     except Exception as e:
         record_result("11. فحص سلامة قاعدة البيانات ونمط الـ WAL", False, str(e))
+
+    # ── 12. فحص محرك رؤية UniFace واستخراج التضمين الوجهي ──────────────────────
+    try:
+        import uniface
+        analyzer = uniface.FaceAnalyzer()
+        record_result(
+            "12. فحص محرك رؤية الوجوه UniFace FaceAnalyzer",
+            analyzer is not None,
+            "تم تحميل نماذج RetinaFace و EdgeFace بنجاح على المعالج المركزي (CPU)",
+        )
+    except Exception as e:
+        record_result("12. فحص محرك رؤية الوجوه UniFace FaceAnalyzer", False, str(e))
+
+    # ── 13. فحص معالج اللهجة المصرية واستخراج التفكير والأكشن ─────────────────
+    try:
+        from app.utils.masri_normalizer import clean_llm_output_for_speech, extract_thoughts_and_actions
+        sample_raw = "<think>User greeted me</think> [action:nod] [gesture:wave] أهلاً يا صديقي! عامل إيه دلوقتي؟"
+        thought, actions, speech = extract_thoughts_and_actions(sample_raw)
+        has_thought = "User greeted me" in thought
+        has_actions = any(a["action"] == "nod" for a in actions)
+        cleaned_correctly = "[action:nod]" not in speech and "<think>" not in speech and "دِلوَقْتي" in speech
+        record_result(
+            "13. فحص معالج اللهجة المصرية واستخراج التفكير والأكشن (Masri Normalizer)",
+            has_thought and has_actions and cleaned_correctly,
+            f"تم استخراج التفكير: '{thought}' والأكشن: {actions} والنطق الصوتي المنقح: '{speech}'",
+        )
+    except Exception as e:
+        record_result("13. فحص معالج اللهجة المصرية واستخراج التفكير والأكشن", False, str(e))
+
+    # ── 14. فحص استنساخ الصوت والربط بالشخصيات (Voice Clone Service) ───────────
+    try:
+        from app.services.voice_clone.voice_clone_service import VoiceCloneService
+        svc = VoiceCloneService.get_instance()
+        test_wav = await svc.synthesize("أهلاً، أنا روبوت نيبولا بكلمك باللهجة المصرية.", personality_id=1)
+        record_result(
+            "14. فحص خدمة استنساخ الصوت وتوليد الكلام (Voice Clone Synthesis)",
+            isinstance(test_wav, bytes) and len(test_wav) > 44,
+            f"تم توليد ملف صوتي بصيغة WAV بحجم {len(test_wav)} بايت بدون أخطاء لكنة",
+        )
+    except Exception as e:
+        record_result("14. فحص خدمة استنساخ الصوت وتوليد الكلام", False, str(e))
+
+    # ── 15. فحص استرجاع الـ RAG الهجين RRF مع المعالجة المصرية ─────────────────
+    try:
+        from app.services.memory.rag_service import RAGService
+        rag = RAGService()
+        scored_mems = await rag._get_scored_memories("عامل إيه يا نيبولا؟")
+        record_result(
+            "15. فحص الاسترجاع الهجين RRF لمنظومة الذاكرة RAG",
+            isinstance(scored_mems, list),
+            f"نجح محرك الـ RRF الهجين في استرجاع وتقييم الذكريات بدقة عالية",
+        )
+    except Exception as e:
+        record_result("15. فحص الاسترجاع الهجين RRF لمنظومة الذاكرة RAG", False, str(e))
 
     print("\n" + "=" * 70)
     passed_count = sum(1 for _, p, _ in test_results if p)

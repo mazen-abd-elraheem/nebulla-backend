@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     asyncio.create_task(_warmup_ollama())
     yield
-    logger.info("👋 Nebula backend shutting down…")
+    logger.info("Nebula backend shutting down...")
 
 
 app = FastAPI(
@@ -87,6 +87,8 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api/v1")   # REST endpoints
 app.include_router(ws_router)                       # WebSocket hub (ws/phone, ws/desk, ws/esp)
 
+
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 @app.get("/health", tags=["health"])
 async def health_check():

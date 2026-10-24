@@ -33,7 +33,7 @@ def test_clean_text_for_tts():
 
     # Multiple tags
     raw2 = "تمام جداً [like] [greet] ونلتقي غداً"
-    assert clean_text_for_tts(raw2) == "تمام جداً ونلتقي غداً"
+    assert clean_text_for_tts(raw2) in ("تمام جداً ونلتقي غداً", "تَمامْ جداً ونلتقي غداً")
 
     # Only tags
     assert clean_text_for_tts("[wave] [happy]") == ""

@@ -41,6 +41,26 @@ _BUILTIN_SIGNALS: dict[str, list[dict]] = {
         {"t": "joint", "id": 0, "deg": 90,  "ms": 300},  # thumb
         {"t": "joint", "id": 1, "deg": 90,  "ms": 200},  # index curl
     ],
+    "nod": [
+        {"t": "joint", "id": 3, "deg": 110, "ms": 250},
+        {"t": "joint", "id": 3, "deg": 80,  "ms": 250},
+        {"t": "joint", "id": 3, "deg": 90,  "ms": 250},
+    ],
+    "shake_head": [
+        {"t": "joint", "id": 4, "deg": 70,  "ms": 250},
+        {"t": "joint", "id": 4, "deg": 110, "ms": 250},
+        {"t": "joint", "id": 4, "deg": 90,  "ms": 250},
+    ],
+    "look_left": [
+        {"t": "joint", "id": 4, "deg": 60,  "ms": 300},
+    ],
+    "look_right": [
+        {"t": "joint", "id": 4, "deg": 120, "ms": 300},
+    ],
+    "look_center": [
+        {"t": "joint", "id": 3, "deg": 90,  "ms": 250},
+        {"t": "joint", "id": 4, "deg": 90,  "ms": 250},
+    ],
     "stop": [
         {"t": "stop"},
     ],
@@ -59,13 +79,15 @@ _EMOTION_GESTURES: dict[str, str | None] = {
     "تحية": "greet",
     "wave": "wave",
     "تلويح": "wave",
+    "nod": "nod",
+    "إيماء": "nod",
     "sad": None,
     "حزين": None,
     "neutral": None,
 }
 
-# Regex to extract [gesture] tags from LLM output (supports Arabic and English)
-_TAG_RE = re.compile(r"\[([\w\u0600-\u06FF]+)\]")
+# Regex to extract [gesture] and [action:name] tags from LLM output
+_TAG_RE = re.compile(r"\[(?:action:|gesture:|cmd:)?([\w\u0600-\u06FF]+)(?::[^\]]+)?\]", re.IGNORECASE)
 
 
 class SignalPlanner:

@@ -21,6 +21,7 @@ from httpx import ASGITransport, AsyncClient
 # Import the FastAPI application
 from app.main import app
 from app.core.config import settings
+from app.db.session import init_db
 
 
 async def main():
@@ -31,6 +32,9 @@ async def main():
     print(f"المزود الحالي للـ LLM: {settings.LLM_PROVIDER}")
     print(f"قاعدة البيانات: {settings.DATABASE_URL}")
     print("-" * 60)
+
+    # Initialize tables and seed default data
+    await init_db()
 
     auth_headers = {"X-API-Key": settings.PAIRING_SECRET}
 

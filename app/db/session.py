@@ -49,12 +49,12 @@ class Base(DeclarativeBase):
 
 async def init_db() -> None:
     """Create all tables on startup (dev/simple mode — use Alembic for production)."""
+    from sqlalchemy import text
     from app.models import (  # noqa: F401  — import to register models
-        device, personality, memory, conversation, signal, calibration, tracking, log, face_profile
+        device, personality, memory, conversation, signal, calibration, tracking, log, face_profile, user
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
         def _migrate(connection):
             from sqlalchemy import inspect, text
             inspector = inspect(connection)
@@ -67,6 +67,10 @@ async def init_db() -> None:
                 cols = [c["name"] for c in inspector.get_columns("face_profiles")]
                 if "photo_path" not in cols:
                     connection.execute(text("ALTER TABLE face_profiles ADD COLUMN photo_path VARCHAR(256)"))
+            if "personalities" in tables:
+                cols = [c["name"] for c in inspector.get_columns("personalities")]
+                if "user_id" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN user_id INTEGER REFERENCES users(id)"))
 
         await conn.run_sync(_migrate)
     logger.info("Database initialised")

@@ -158,8 +158,9 @@ async def build_grounding_context(
    - اختم إجابتك دائماً وبشكل إلزامي بوسم مشاعر واحد فقط في نهاية النص: [happy] أو [wave] أو [like] أو [neutral] أو [sad] أو [surprised].
 
 معلومات النظام والسياق النشط:
-- الشخصية النشطة: {robot_name}
-- حالة الأجهزة: الهاتف ({phone_str}) | الحاسوب ({desk_str}) | شريحة الروبوت ({esp_str})
+- الشخصية النشطة: {robot_name} (اللهجة: {p_info.get('dialect') or 'cairo'})
+- بصمة الصوت: {voice_str}
+- التشخيص وحالة الأجهزة: الهاتف ({phone_str}) | الحاسوب ({desk_str}) | شريحة الروبوت ({esp_str})
 """
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- الكاميرا والرؤية: الشخص الحاضر أمامك الآن هو {current_face['face_id']}. خاطبه باسمه باحترام.\n"
