@@ -80,24 +80,33 @@ async def init_db() -> None:
 >>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac
     logger.info("Database initialised")
 
-    # Seed default personality if table is empty
+    # Seed or configure default personality 1 (Mazen - Digital Twin)
     from sqlalchemy import select
     from app.models.personality import Personality
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Personality).limit(1))
-        if not result.scalar_one_or_none():
+        result = await session.execute(select(Personality).where(Personality.id == 1))
+        existing_p = result.scalar_one_or_none()
+        if not existing_p:
             default_p = Personality(
                 id=1,
-                name="Nebula",
-                description="الشخصية الافتراضية للروبوت نيبولا",
-                system_prompt="أنت توأم رقمي مصري. بتتكلم بالمصري العامي وبتخلط إنجليزي زي أي مصري عادي.",
+                name="مازن (Mazen) - التوأم الرقمي",
+                description="التوأم الرقمي الرسمي لفريق نيبولا بصوت مازن الطبيعي",
+                system_prompt="أنت مازن، التوأم الرقمي المصري الذكي. بتتكلم بالمصري العامي العفوي وبنبرتك الطبيعية وبتخلط مصطلحات إنجليزي في السياق التقني.",
                 dialect="cairo",
                 language_mix="ar_en",
+                voice_sample_path="data/voice_samples/personality_1.wav",
                 is_active=True,
             )
             session.add(default_p)
             await session.commit()
-            logger.info("Default personality seeded (id=1)")
+            logger.info("Default personality seeded (id=1: Mazen)")
+        else:
+            if not existing_p.voice_sample_path or existing_p.name == "Nebula":
+                existing_p.name = "مازن (Mazen) - التوأم الرقمي"
+                existing_p.voice_sample_path = "data/voice_samples/personality_1.wav"
+                existing_p.description = "التوأم الرقمي الرسمي لفريق نيبولا بصوت مازن الطبيعي"
+                await session.commit()
+                logger.info("Updated personality 1 to Mazen with clean reference voice")
 
 
 async def get_db() -> AsyncSession:  # type: ignore[return]

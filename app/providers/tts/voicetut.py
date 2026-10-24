@@ -77,17 +77,18 @@ class VoiceTutProvider(BaseTTSProvider):
                 torch.cuda.empty_cache()
 
             from pathlib import Path
-            model_path = str(Path(settings.VOICETUT_MODEL_PATH).resolve())
-            logger.info(f"Loading VoiceTut-TTS from {model_path} on {device}…")
+            local_model = Path(settings.VOICETUT_MODEL_PATH).resolve()
+            model_target = str(local_model) if local_model.exists() else "mohammedaly22/VoiceTut-TTS"
+            logger.info(f"Loading VoiceTut-TTS from {model_target} on {device}…")
             VoiceTutProvider._shared_tts = VoiceTutTTS.from_pretrained(
-                model_path,
+                model_target,
                 device=device,
                 dtype="float32" if device == "cpu" else "float16",
             )
             VoiceTutProvider._shared_device = device
-            logger.info("VoiceTut-TTS ready [OK]")
+            logger.info(f"VoiceTut-TTS ready on {device.upper()} [OK]")
         except ImportError:
-            logger.error("voicetut_tts not installed.")
+            logger.error("voicetut_tts not installed in environment.")
             VoiceTutProvider._shared_tts = "disabled"
         except Exception as e:
             logger.error(f"VoiceTut load error: {e} — falling back")
@@ -103,7 +104,7 @@ class VoiceTutProvider(BaseTTSProvider):
             if wavs:
                 return sorted(wavs)
         return [
-            "ahmed", "ali", "hadeer", "hanan", "hassan", "karim", "mahmoud",
+            "mazen", "ahmed", "ali", "hadeer", "hanan", "hassan", "karim", "mahmoud",
             "mariam", "mohammed", "mostafa", "ramy", "rana", "sarah", "shaker",
             "tarek", "yara", "yasmin", "yehia", "youssef"
         ]
@@ -115,6 +116,9 @@ class VoiceTutProvider(BaseTTSProvider):
         ref_audio: str | None = None,
         ref_text: str | None = None,
         num_step: int | None = None,
+        guidance_scale: float | None = None,
+        speed: float | None = None,
+        language: str | None = None,
     ) -> bytes:
         from app.utils.masri_normalizer import clean_llm_output_for_speech
         clean_text = clean_llm_output_for_speech(text) or text.strip()
@@ -126,7 +130,18 @@ class VoiceTutProvider(BaseTTSProvider):
             return await ArEgFreeProvider().synthesize(clean_text)
 
         loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(None, self._synth, clean_text, speaker, ref_audio, ref_text, num_step)
+        res = await loop.run_in_executor(
+            None,
+            self._synth,
+            clean_text,
+            speaker,
+            ref_audio,
+            ref_text,
+            num_step,
+            guidance_scale,
+            speed,
+            language,
+        )
         if not res or len(res) <= 1000:
             logger.warning("VoiceTut returned empty audio — falling back to ArEgFreeProvider")
             from app.providers.tts.ar_eg_free import ArEgFreeProvider
@@ -137,16 +152,21 @@ class VoiceTutProvider(BaseTTSProvider):
         self,
         reference_wav: str,
         text: str,
-        language: str = "ar",
+        language: str = "arz",
         ref_text: str | None = None,
         num_step: int | None = None,
+        guidance_scale: float | None = None,
+        speed: float | None = None,
     ) -> bytes:
-        """Clone voice using reference audio sample."""
+        """Clone voice using reference audio sample with studio fidelity."""
         return await self.synthesize(
             text=text,
             ref_audio=reference_wav,
             ref_text=ref_text,
             num_step=num_step,
+            guidance_scale=guidance_scale,
+            speed=speed,
+            language=language,
         )
 
     def _synth(
@@ -156,42 +176,76 @@ class VoiceTutProvider(BaseTTSProvider):
         ref_audio: str | None = None,
         ref_text: str | None = None,
         num_step: int | None = None,
+        guidance_scale: float | None = None,
+        speed: float | None = None,
+        language: str | None = None,
     ) -> bytes:
         try:
             import torch
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            # Denoising steps from settings (defaults: 6 for CPU, 10 for CUDA, or user override)
-            default_steps = 6 if getattr(self, "_device", "cpu") == "cpu" else 10
-            steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", default_steps)
+            from pathlib import Path
+            target_ref_audio = ref_audio
+            if not target_ref_audio or not os.path.exists(target_ref_audio):
+                default_ref = Path(settings.DEFAULT_VOICE_SAMPLE)
+                if default_ref.exists():
+                    target_ref_audio = str(default_ref)
 
-            if ref_audio:
-                actual_ref_text = ref_text
+            actual_ref_text = ref_text
+            if not actual_ref_text and target_ref_audio:
+                txt_file = Path(target_ref_audio).with_suffix(".txt")
+                if txt_file.exists():
+                    try:
+                        actual_ref_text = txt_file.read_text(encoding="utf-8").strip()
+                    except Exception:
+                        pass
                 if not actual_ref_text:
-                    from pathlib import Path
-                    txt_file = Path(ref_audio).with_suffix(".txt")
-                    if txt_file.exists():
+                    default_txt = Path(settings.DEFAULT_VOICE_TRANSCRIPT)
+                    if default_txt.exists():
                         try:
-                            actual_ref_text = txt_file.read_text(encoding="utf-8").strip()
+                            actual_ref_text = default_txt.read_text(encoding="utf-8").strip()
                         except Exception:
                             pass
 
-                with torch.inference_mode():
+            # Denoising steps from settings (defaults: 36 for Studio 99%, or override)
+            default_steps = getattr(settings, "VOICETUT_NUM_STEPS", 36)
+            steps = num_step or default_steps
+            cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
+            spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
+            lang = language or getattr(settings, "VOICETUT_LANGUAGE", "arz")
+
+            from voicetut_tts import GenerationParams
+            params = GenerationParams(
+                num_step=steps,
+                guidance_scale=cfg,
+                speed=spd,
+                denoise=True,
+            )
+
+            with torch.inference_mode():
+                if target_ref_audio and os.path.exists(target_ref_audio):
                     wav_samples = self._tts.synthesize(
                         text=text,
-                        ref_audio=ref_audio,
+                        ref_audio=target_ref_audio,
                         ref_text=actual_ref_text,
-                        num_step=steps,
+                        language=lang,
+                        normalize=True,
+                        params=params,
                     )
-            else:
-                spk = speaker or self._speaker
-                with torch.inference_mode():
+                else:
+                    spk = speaker or self._speaker
                     wav_samples = self._tts.synthesize(
                         text=text,
                         speaker=spk,
-                        num_step=steps,
+                        language=lang,
+                        normalize=True,
+                        params=params,
                     )
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             sr = getattr(self._tts, "sampling_rate", 24000)
             return _array_to_wav(wav_samples, sample_rate=sr)
         except Exception as e:
@@ -200,17 +254,23 @@ class VoiceTutProvider(BaseTTSProvider):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            # If user wanted their cloned voice, retry once with fast 4 steps
-            if ref_audio:
+            # Retry once with fast 6 steps if CUDA memory was tight
+            if target_ref_audio and os.path.exists(target_ref_audio):
                 try:
-                    logger.info("Retrying voice clone with 4 steps to fit in GPU memory...")
+                    logger.info("Retrying voice clone with 6 steps to fit in memory...")
+                    from voicetut_tts import GenerationParams
+                    fast_params = GenerationParams(num_step=6, guidance_scale=1.8, speed=1.0, denoise=True)
                     with torch.inference_mode():
                         wav_samples = self._tts.synthesize(
                             text=text,
-                            ref_audio=ref_audio,
-                            ref_text=ref_text,
-                            num_step=4,
+                            ref_audio=target_ref_audio,
+                            ref_text=actual_ref_text,
+                            language="arz",
+                            normalize=True,
+                            params=fast_params,
                         )
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
                     sr = getattr(self._tts, "sampling_rate", 24000)
                     return _array_to_wav(wav_samples, sample_rate=sr)
                 except Exception as retry_err:

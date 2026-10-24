@@ -46,6 +46,8 @@ class VoiceCloneService:
         self._xtts = XTTSProvider()
         from app.providers.tts.voicetut import VoiceTutProvider
         self._voicetut = VoiceTutProvider()
+        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
+        self._voicetut_service = VoiceTutMicroserviceProvider()
         self._personality_voice_map: dict[int, str] = {}  # personality_id → wav path
 
     # ── Sample management ─────────────────────────────────────────────────────
@@ -197,9 +199,11 @@ class VoiceCloneService:
         text: str,
         personality_id: int | None = None,
         reference_wav: str | None = None,
-        language: str = "ar",
+        language: str = "arz",
         ref_text: str | None = None,
         num_step: int | None = None,
+        guidance_scale: float | None = None,
+        speed: float | None = None,
     ) -> bytes:
         """
         Synthesise *text* in the cloned voice after applying Masri dialect normalization.
@@ -215,26 +219,63 @@ class VoiceCloneService:
             clean_text = text.strip()
 
         wav_path = reference_wav or self.get_sample_path(personality_id)
+        if not wav_path or not os.path.exists(wav_path):
+            def_path = Path(getattr(settings, "DEFAULT_VOICE_SAMPLE", "data/voice_samples/personality_1.wav"))
+            if def_path.exists():
+                wav_path = str(def_path.resolve())
 
-        from app.providers.tts.factory import get_tts_provider
-        tts = get_tts_provider(settings.TTS_PROVIDER)
+        if not ref_text and wav_path:
+            txt_path = Path(wav_path).with_suffix(".txt")
+            if txt_path.exists():
+                try:
+                    ref_text = txt_path.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
+        if not ref_text and hasattr(settings, "DEFAULT_VOICE_TRANSCRIPT"):
+            def_txt = Path(settings.DEFAULT_VOICE_TRANSCRIPT)
+            if def_txt.exists():
+                try:
+                    ref_text = def_txt.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
 
+        # Method 2: Check if dedicated VoiceTuT Studio GPU microservice is online (highest reliability & isolated VRAM)
+        try:
+            if await self._voicetut_service.is_healthy():
+                logger.info("Synthesizing via dedicated VoiceTuT Studio microservice (Method 2)...")
+                res = await self._voicetut_service.synthesize(
+                    clean_text,
+                    ref_audio=wav_path,
+                    ref_text=ref_text,
+                    num_step=num_step,
+                    guidance_scale=guidance_scale,
+                    speed=speed,
+                    language=language,
+                )
+                if res and len(res) > 2000:
+                    return res
+        except Exception as exc:
+            logger.warning(f"VoiceTut microservice synthesis failed, falling back to local: {exc}")
+
+        # Method 1: In-process VoiceTut-TTS Native GPU engine
         if wav_path and os.path.exists(wav_path):
-            logger.info(f"Synthesizing text using cloned voice sample: {wav_path}")
-            # 1. VoiceTut-TTS: specialized for Egyptian Arabic zero-shot cloning
+            logger.info(f"Synthesizing text using in-process cloned voice sample (Method 1): {wav_path}")
             try:
                 res = await self._voicetut.synthesize(
                     clean_text,
                     ref_audio=wav_path,
                     ref_text=ref_text,
                     num_step=num_step,
+                    guidance_scale=guidance_scale,
+                    speed=speed,
+                    language=language,
                 )
                 if res and len(res) > 2000:
                     return res
             except Exception as exc:
-                logger.warning(f"VoiceTut cloning failed: {exc}")
+                logger.warning(f"VoiceTut local cloning failed: {exc}")
 
-            # 2. XTTS v2 fallback
+            # XTTS v2 fallback
             if getattr(self._xtts, "_model", None) != "disabled":
                 try:
                     res = await self._xtts.clone_voice(wav_path, clean_text, language)
@@ -243,7 +284,10 @@ class VoiceCloneService:
                 except Exception as exc:
                     logger.warning(f"XTTS cloning failed: {exc}")
 
+        # Active TTS provider fallback
+        from app.providers.tts.factory import get_tts_provider
         try:
+            tts = get_tts_provider(settings.TTS_PROVIDER)
             res = await tts.synthesize(clean_text)
             if res and len(res) > 2000:
                 return res

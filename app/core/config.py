@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     # STT: "qwencleo" | "whisper" | "nemotron"
     STT_PROVIDER: Literal["qwencleo", "whisper", "nemotron"] = "qwencleo"
 
-    # TTS: "voicetut" | "ar_eg_free" | "xtts"
-    TTS_PROVIDER: Literal["voicetut", "ar_eg_free", "xtts"] = "voicetut"
+    # TTS: "voicetut" | "voicetut_service" | "ar_eg_free" | "xtts"
+    TTS_PROVIDER: Literal["voicetut", "voicetut_service", "ar_eg_free", "xtts"] = "voicetut"
 
     # LLM: "local" | "openai" | "anthropic" | "huggingface" | "nile"
     LLM_PROVIDER: Literal["local", "openai", "anthropic", "huggingface", "nile"] = "local"
@@ -60,11 +60,17 @@ class Settings(BaseSettings):
 
     # ── TTS Config ─────────────────────────────────────────────────────────
     VOICETUT_MODEL_PATH: str = "models/voicetut-tts"
-    VOICETUT_DEVICE: str = "cpu"  # "cuda" | "cpu"
+    VOICETUT_DEVICE: str = "cuda"  # "cuda" | "cpu" (RTX 4050 GPU)
+    VOICETUT_SERVICE_URL: str = "http://127.0.0.1:8001"  # Standalone studio microservice endpoint
     # OmniVoice base (VoiceTut is fine-tuned on ~380h Egyptian podcast)
     OMNIVOICE_BASE_PATH: str = "models/omnivoice"
-    # Diffusion denoising steps (4: fast preview ~30s, 10: high quality balance, 32: max studio)
-    VOICETUT_NUM_STEPS: int = 10
+    # Diffusion denoising steps (4: fast preview, 10: balanced streaming, 36: max studio fidelity)
+    VOICETUT_NUM_STEPS: int = 36
+    VOICETUT_GUIDANCE_SCALE: float = 2.2
+    VOICETUT_SPEED: float = 1.0
+    VOICETUT_LANGUAGE: str = "arz"
+    DEFAULT_VOICE_SAMPLE: str = "data/voice_samples/personality_1.wav"
+    DEFAULT_VOICE_TRANSCRIPT: str = "data/voice_samples/personality_1.txt"
     TTS_MAX_NEW_TOKENS: int = 200
 
     # ── Vision Config ──────────────────────────────────────────────────────
