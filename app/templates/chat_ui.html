@@ -156,7 +156,7 @@
 
     /* ── Side Grounding Panel ───────────────────────────── */
     .grounding-panel {
-      width: 320px;
+      width: 360px;
       background: rgba(13, 19, 33, 0.85);
       backdrop-filter: blur(12px);
       border-left: 1px solid var(--card-border);
@@ -547,6 +547,91 @@
         <p style="margin-top: 6px; font-size: 0.72rem;" id="pPrompt">أنت توأم رقمي مصري ذكي وودود.</p>
       </div>
 
+      <!-- 🎙️ Voice Clone Studio Card -->
+      <div class="panel-card" style="border: 1px solid rgba(139, 92, 246, 0.4); background: linear-gradient(180deg, rgba(139, 92, 246, 0.08), rgba(6, 182, 212, 0.04));">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <h3 style="color:#c084fc; margin-bottom:0; font-size:0.88rem;">🎙️ استنساخ الصوت (Voice Clone)</h3>
+          <span id="voiceBadge" class="badge" style="font-size:0.68rem; padding:2px 8px; color:var(--primary); border-color:rgba(6,182,212,0.3);">فحص البصمة...</span>
+        </div>
+        <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
+          سجّل صوتك من المايك أو ارفع مقطع صوتي (1.5 إلى 120 ثانية)، وهيتم استنساخ صوتك ونطق أي كلام بالمصري بنفس نبرتك!
+        </p>
+
+        <!-- Method Tabs: Mic Recording / File Upload -->
+        <div style="display:flex; gap:6px; margin-bottom:10px;">
+          <button id="tabMicBtn" onclick="switchVoiceTab('mic')" style="flex:1; padding:6px; border-radius:6px; font-size:0.75rem; font-weight:600; cursor:pointer; background:rgba(139,92,246,0.3); border:1px solid #8b5cf6; color:#fff;">
+            🎙️ تسجيل بالمايك
+          </button>
+          <button id="tabFileBtn" onclick="switchVoiceTab('file')" style="flex:1; padding:6px; border-radius:6px; font-size:0.75rem; font-weight:600; cursor:pointer; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); color:var(--text-muted);">
+            📁 رفع ملف صوتي
+          </button>
+        </div>
+
+        <!-- Mic Tab -->
+        <div id="voiceMicSection">
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+            <button id="recordVoiceBtn" onclick="toggleVoiceRecording()" style="flex:1; padding:8px 12px; border-radius:8px; border:none; background:linear-gradient(135deg, #ef4444, #dc2626); color:#fff; font-size:0.8rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 0 12px rgba(239,68,68,0.3);">
+              <span id="recDot" style="width:10px; height:10px; border-radius:50%; background:#fff; display:inline-block;"></span>
+              <span id="recBtnText">بدء التسجيل من المايك</span>
+            </button>
+            <span id="recTimer" style="font-family:'JetBrains Mono',monospace; font-size:0.82rem; color:var(--warning); min-width:48px; text-align:center; display:none;">00:00</span>
+          </div>
+          <audio id="recordedAudioPreview" controls style="display:none; width:100%; height:32px; margin-bottom:8px; border-radius:6px;"></audio>
+        </div>
+
+        <!-- File Tab -->
+        <div id="voiceFileSection" style="display:none; margin-bottom:8px;">
+          <input type="file" id="voiceFileInput" accept=".wav,.mp3,.mp4,.m4a,.webm,.ogg,.aac" style="width:100%; font-size:0.75rem; color:#9ca3af; background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:6px; padding:6px;">
+        </div>
+
+        <!-- Optional Transcript -->
+        <input type="text" id="voiceTranscript" placeholder="اختياري: ماذا قلت في التسجيل؟ (يزيد الدقة)" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; color:#fff; font-size:0.75rem; margin-bottom:8px;">
+
+        <!-- Upload & Clone Button -->
+        <button id="uploadVoiceBtn" onclick="uploadVoiceSample()" style="width:100%; padding:7px; border-radius:6px; border:none; background:linear-gradient(135deg, #8b5cf6, #06b6d4); color:#fff; font-size:0.78rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:10px;">
+          🚀 تفعيل واستنساخ بصمتي الصوتية
+        </button>
+        <div id="voiceUploadStatus" style="font-size:0.72rem; margin-bottom:8px; display:none;"></div>
+
+        <!-- Synthesis & Speak Testing Section -->
+        <div style="padding-top:10px; border-top:1px solid rgba(255,255,255,0.08);">
+          <h4 style="font-size:0.78rem; color:#38bdf8; margin-bottom:6px;">🔊 نطق أي نص بصوتك المستنسخ:</h4>
+          <textarea id="ttsSynthesizeText" rows="2" placeholder="اكتب أي جملة بالمصري لتنطقها بصوتك..." style="width:100%; background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; color:#fff; font-size:0.78rem; resize:none; margin-bottom:6px; font-family:inherit;">أهلاً يا باشا! أنا الروبوت نيبولا وبكلمك بنفس نبرة صوتك دلوقتي.</textarea>
+          
+          <!-- Quick sample phrases -->
+          <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
+            <button onclick="setSampleTts('مساء الفل يا صديقي، جاهز لأي سؤال!')" style="background:rgba(255,255,255,0.05); border:1px solid var(--card-border); color:#cbd5e1; font-size:0.68rem; padding:2px 6px; border-radius:4px; cursor:pointer;">مساء الفل يا صديقي</button>
+            <button onclick="setSampleTts('الذكاء الاصطناعي شغال زي الفل وبصوتك أنت!')" style="background:rgba(255,255,255,0.05); border:1px solid var(--card-border); color:#cbd5e1; font-size:0.68rem; padding:2px 6px; border-radius:4px; cursor:pointer;">الذكاء الاصطناعي شغال</button>
+          </div>
+
+          <div style="display:flex; gap:6px;">
+            <button id="synthVoiceBtn" onclick="synthesizeClonedVoice()" style="flex:2; padding:7px; border-radius:6px; border:none; background:linear-gradient(135deg, #10b981, #059669); color:#fff; font-size:0.78rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">
+              <span>🗣️</span> نطق النص بصوتي
+            </button>
+            <button id="testVoiceBtn" onclick="testQuickGreeting()" class="btn-secondary" style="flex:1; font-size:0.72rem; justify-content:center; padding:7px 4px;" title="تجربة ترحيب فوري بصوتك">
+              ⚡ ترحيب سريع
+            </button>
+          </div>
+
+          <!-- Playback Element -->
+          <div id="synthAudioContainer" style="margin-top:8px; display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <span id="synthLatencyText" style="font-size:0.7rem; color:#34d399; font-family:'JetBrains Mono',monospace;">⚡ تم التوليد بنجاح</span>
+              <a id="synthDownloadLink" href="#" download="cloned_voice.wav" style="font-size:0.7rem; color:var(--primary); text-decoration:none;">⬇️ تحميل WAV</a>
+            </div>
+            <audio id="clonedAudioPlayer" controls autoplay style="width:100%; height:32px; border-radius:6px;"></audio>
+          </div>
+
+          <!-- Active Samples list / Delete -->
+          <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:0.72rem; color:var(--text-muted);">
+            <span id="activeSampleInfo">جاري فحص العينات...</span>
+            <button id="deleteVoiceSampleBtn" onclick="deleteCurrentVoiceSample()" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:0.72rem; display:none;" title="حذف العينة المسجلة">
+              🗑️ مسح العينة
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="panel-card">
         <h3>🔌 تشخيص الأجهزة (Diagnostics)</h3>
         <ul>
@@ -725,11 +810,14 @@
 
           // Extract emotion tag if present
           const tagMatch = accumulated.match(/\[([\w\u0600-\u06FF]+)\]/);
+          robotMsg.meta.style.display = "flex";
+          let streamMeta = "";
           if (tagMatch) {
-            robotMsg.meta.style.display = "flex";
-            robotMsg.meta.innerHTML = `<span class="tag-gesture">${tagMatch[0]}</span>`;
+            streamMeta += `<span class="tag-gesture">${tagMatch[0]}</span>`;
             updateMoodBadge(tagMatch[1]);
           }
+          streamMeta += `<button onclick="speakText(this)" class="tag-gesture" style="cursor:pointer; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); color:var(--primary); padding:2px 8px; border-radius:12px; font-size:0.72rem;">🔊 نطق بصوتك</button>`;
+          robotMsg.meta.innerHTML = streamMeta;
 
         } else {
           // Non-streaming REST call
@@ -763,6 +851,7 @@
             metaHtml += `<span class="tag-gesture">[${data.emotion}]</span>`;
             updateMoodBadge(data.emotion);
           }
+          metaHtml += `<button onclick="speakText(this)" class="tag-gesture" style="cursor:pointer; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); color:var(--primary); padding:2px 8px; border-radius:12px; font-size:0.72rem;">🔊 نطق بصوتك</button>`;
           robotMsg.meta.innerHTML = metaHtml;
 
           // Update grounding panel & memories
@@ -893,6 +982,301 @@
       }
     }
 
+    // ── Voice Clone Studio Logic ──────────────────────────────
+    let voiceMediaRecorder = null;
+    let voiceAudioChunks = [];
+    let recordedVoiceBlob = null;
+    let voiceRecInterval = null;
+    let voiceRecSeconds = 0;
+    let activeVoicePersonalityId = 1;
+
+    function switchVoiceTab(tab) {
+      const micSec = document.getElementById("voiceMicSection");
+      const fileSec = document.getElementById("voiceFileSection");
+      const micBtn = document.getElementById("tabMicBtn");
+      const fileBtn = document.getElementById("tabFileBtn");
+      if (tab === 'mic') {
+        micSec.style.display = "block";
+        fileSec.style.display = "none";
+        micBtn.style.background = "rgba(139,92,246,0.3)";
+        micBtn.style.border = "1px solid #8b5cf6";
+        micBtn.style.color = "#fff";
+        fileBtn.style.background = "rgba(255,255,255,0.05)";
+        fileBtn.style.border = "1px solid var(--card-border)";
+        fileBtn.style.color = "var(--text-muted)";
+      } else {
+        micSec.style.display = "none";
+        fileSec.style.display = "block";
+        fileBtn.style.background = "rgba(139,92,246,0.3)";
+        fileBtn.style.border = "1px solid #8b5cf6";
+        fileBtn.style.color = "#fff";
+        micBtn.style.background = "rgba(255,255,255,0.05)";
+        micBtn.style.border = "1px solid var(--card-border)";
+        micBtn.style.color = "var(--text-muted)";
+      }
+    }
+
+    async function toggleVoiceRecording() {
+      const recBtn = document.getElementById("recordVoiceBtn");
+      const recBtnText = document.getElementById("recBtnText");
+      const recDot = document.getElementById("recDot");
+      const timerEl = document.getElementById("recTimer");
+      const preview = document.getElementById("recordedAudioPreview");
+
+      if (voiceMediaRecorder && voiceMediaRecorder.state === "recording") {
+        voiceMediaRecorder.stop();
+        clearInterval(voiceRecInterval);
+        recBtn.style.background = "linear-gradient(135deg, #ef4444, #dc2626)";
+        recBtnText.textContent = "تسجيل عينة جديدة";
+        recDot.style.background = "#fff";
+        timerEl.style.display = "none";
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        voiceAudioChunks = [];
+        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+        voiceMediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+
+        voiceMediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) voiceAudioChunks.push(e.data);
+        };
+
+        voiceMediaRecorder.onstop = () => {
+          recordedVoiceBlob = new Blob(voiceAudioChunks, { type: mime });
+          preview.src = URL.createObjectURL(recordedVoiceBlob);
+          preview.style.display = "block";
+          preview.play();
+          stream.getTracks().forEach(t => t.stop());
+        };
+
+        voiceMediaRecorder.start(250);
+        voiceRecSeconds = 0;
+        timerEl.style.display = "inline-block";
+        timerEl.textContent = "00:00";
+        recBtn.style.background = "linear-gradient(135deg, #10b981, #059669)";
+        recBtnText.textContent = "⏹️ إيقاف وحفظ التسجيل";
+        recDot.style.background = "#fbbf24";
+
+        voiceRecInterval = setInterval(() => {
+          voiceRecSeconds++;
+          const m = String(Math.floor(voiceRecSeconds / 60)).padStart(2, "0");
+          const s = String(voiceRecSeconds % 60).padStart(2, "0");
+          timerEl.textContent = `${m}:${s}`;
+          if (voiceRecSeconds >= 115) {
+            toggleVoiceRecording();
+          }
+        }, 1000);
+
+      } catch (err) {
+        alert("تعذر الوصول للميكروفون: " + err.message + "\nتأكد من السماح بالمايك في المتصفح أو اختر رفع ملف صوتي.");
+      }
+    }
+
+    async function uploadVoiceSample() {
+      const statusEl = document.getElementById("voiceUploadStatus");
+      const btn = document.getElementById("uploadVoiceBtn");
+      const transcript = document.getElementById("voiceTranscript").value.trim();
+      const fileInput = document.getElementById("voiceFileInput");
+
+      let fileToUpload = null;
+      let filename = "my_voice_sample.webm";
+
+      if (recordedVoiceBlob && document.getElementById("voiceMicSection").style.display !== "none") {
+        fileToUpload = recordedVoiceBlob;
+        filename = "my_recorded_voice.webm";
+      } else if (fileInput.files && fileInput.files[0]) {
+        fileToUpload = fileInput.files[0];
+        filename = fileToUpload.name;
+      }
+
+      if (!fileToUpload) {
+        statusEl.style.display = "block";
+        statusEl.style.color = "#f87171";
+        statusEl.textContent = "⚠️ برجاء تسجيل مقطع صوتي أولاً أو اختيار ملف من جهازك.";
+        return;
+      }
+
+      statusEl.style.display = "block";
+      statusEl.style.color = "var(--warning)";
+      statusEl.textContent = "⏳ جاري رفع الصوت واستخراج البصمة الصوتية...";
+      btn.disabled = true;
+
+      try {
+        const formData = new FormData();
+        formData.append("file", fileToUpload, filename);
+        if (transcript) formData.append("transcript", transcript);
+        formData.append("personality_id", activeVoicePersonalityId);
+
+        const resp = await fetch("/api/v1/voice-clone/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!resp.ok) {
+          let errDetail = `خطأ: ${resp.status}`;
+          try {
+            const errJson = await resp.json();
+            if (errJson && errJson.detail) errDetail = errJson.detail;
+          } catch (_) {}
+          throw new Error(errDetail);
+        }
+
+        const resData = await resp.json();
+        statusEl.style.color = "var(--success)";
+        statusEl.textContent = "✅ تم استنساخ وتفعيل بصمتك الصوتية بنجاح! يمكنك الآن تجربة النطق أدناه.";
+        await refreshVoiceSampleStatus();
+      } catch (err) {
+        statusEl.style.color = "#f87171";
+        statusEl.textContent = "❌ فشل استنساخ الصوت: " + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function setSampleTts(phrase) {
+      document.getElementById("ttsSynthesizeText").value = phrase;
+    }
+
+    async function synthesizeClonedVoice() {
+      const text = document.getElementById("ttsSynthesizeText").value.trim();
+      if (!text) {
+        alert("برجاء إدخال نص لنطقه بصوتك.");
+        return;
+      }
+      await speakCustomText(text);
+    }
+
+    async function testQuickGreeting() {
+      const btn = document.getElementById("testVoiceBtn");
+      btn.disabled = true;
+      btn.textContent = "⏳ جاري النطق...";
+      try {
+        const resp = await fetch(`/api/v1/voice-clone/test?personality_id=${activeVoicePersonalityId}`, {
+          method: "POST"
+        });
+        if (!resp.ok) throw new Error(`خطأ: ${resp.status}`);
+        const blob = await resp.blob();
+        playWavBlob(blob, "أهلاً يا صديقي! الروبوت بيكلم بصوتك.");
+      } catch (err) {
+        alert("فشل الاختبار السريع: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "⚡ ترحيب سريع";
+      }
+    }
+
+    async function speakCustomText(text) {
+      const btn = document.getElementById("synthVoiceBtn");
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = "<span>⏳</span> جاري توليد الصوت...";
+
+      const t0 = performance.now();
+      try {
+        const resp = await fetch("/api/v1/voice-clone/synthesize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: text,
+            personality_id: activeVoicePersonalityId,
+            language: "ar"
+          })
+        });
+
+        if (!resp.ok) {
+          let errDetail = `خطأ: ${resp.status}`;
+          try {
+            const errJson = await resp.json();
+            if (errJson && errJson.detail) errDetail = errJson.detail;
+          } catch (_) {}
+          throw new Error(errDetail);
+        }
+
+        const blob = await resp.blob();
+        const latency = Math.round(performance.now() - t0);
+        playWavBlob(blob, text, latency);
+      } catch (err) {
+        alert("فشل توليد الصوت: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+
+    function playWavBlob(blob, text = "", latency = null) {
+      const container = document.getElementById("synthAudioContainer");
+      const player = document.getElementById("clonedAudioPlayer");
+      const downloadLink = document.getElementById("synthDownloadLink");
+      const latencyText = document.getElementById("synthLatencyText");
+
+      const url = URL.createObjectURL(blob);
+      player.src = url;
+      downloadLink.href = url;
+      container.style.display = "block";
+      if (latency) {
+        latencyText.textContent = `⚡ نطق الصوت (${latency} ms)`;
+      } else {
+        latencyText.textContent = "⚡ نطق ترحيبي بصوتك المستنسخ";
+      }
+      player.play().catch(() => {});
+    }
+
+    function speakText(btn) {
+      const msgRow = btn.closest(".message-row");
+      if (!msgRow) return;
+      const bubble = msgRow.querySelector(".bubble");
+      if (!bubble) return;
+      const cleanText = bubble.textContent.replace(/\[.*?\]/g, "").trim();
+      if (!cleanText) return;
+      speakCustomText(cleanText);
+    }
+
+    async function refreshVoiceSampleStatus() {
+      const badge = document.getElementById("voiceBadge");
+      const info = document.getElementById("activeSampleInfo");
+      const delBtn = document.getElementById("deleteVoiceSampleBtn");
+
+      try {
+        const resp = await fetch("/api/v1/voice-clone/samples");
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const samples = data.samples || [];
+
+        if (samples.length > 0) {
+          const s = samples[0];
+          activeVoicePersonalityId = s.personality_id;
+          badge.textContent = "✅ بصمة صوتية مفعلة";
+          badge.style.color = "var(--success)";
+          badge.style.borderColor = "rgba(16,185,129,0.3)";
+          info.innerHTML = `بصمة مسجلة: <b>${s.duration_s} ثانية</b> (${Math.round(s.size_bytes/1024)} KB)`;
+          delBtn.style.display = "inline-block";
+        } else {
+          badge.textContent = "لا توجد بصمة";
+          badge.style.color = "#fbbf24";
+          badge.style.borderColor = "rgba(251,191,36,0.3)";
+          info.textContent = "لم يتم تسجيل بصمة صوتية بعد.";
+          delBtn.style.display = "none";
+        }
+      } catch (_) {}
+    }
+
+    async function deleteCurrentVoiceSample() {
+      if (!confirm("هل أنت متأكد من حذف بصمتك الصوتية المسجلة؟")) return;
+      try {
+        await fetch(`/api/v1/voice-clone/samples/${activeVoicePersonalityId}`, {
+          method: "DELETE"
+        });
+        document.getElementById("voiceUploadStatus").textContent = "تم حذف البصمة الصوتية بنجاح.";
+        document.getElementById("voiceUploadStatus").style.display = "block";
+        document.getElementById("voiceUploadStatus").style.color = "var(--warning)";
+        await refreshVoiceSampleStatus();
+      } catch (err) {
+        alert("فشل الحذف: " + err.message);
+      }
+    }
+
     function setDot(id, status) {
       const el = document.getElementById(id);
       if (el) {
@@ -902,6 +1286,7 @@
 
     // Initial load
     loadAllMemories();
+    refreshVoiceSampleStatus();
   </script>
 </body>
 </html>
