@@ -1,12 +1,14 @@
 """Conversations + messages endpoints with interactive LLM chat and full system grounding."""
 
+import json
 import time
 import uuid
-from typing import Optional, List, Dict, Any, Tuple
-
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
-from fastapi.responses import StreamingResponse, HTMLResponse
+import urllib.parse
+from typing import Optional, List, Dict, Any, Tuple, AsyncIterator
 from pathlib import Path
+
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Header, Request
+from fastapi.responses import StreamingResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.jwt import get_current_user, get_optional_user, api_key_scheme
 from app.core.config import settings
 from app.core.logger import get_logger
-from app.db.session import get_db
+from app.db.session import get_db, AsyncSessionLocal
 from app.models.conversation import Conversation, Message
 from app.models.personality import Personality
 from app.models.face_profile import FaceProfile
@@ -22,7 +24,8 @@ from app.providers.llm.factory import get_llm_provider
 from app.services.ai.pipeline import clean_text_for_tts, _extract_emotion
 from app.services.memory.rag_service import RAGService
 from app.websocket.manager import manager
-from app.websocket.handlers import get_face_service
+from app.websocket.handlers import get_face_service, get_ai_pipeline as _get_ai_pipeline
+from app.services.ai.context_builder import build_grounding_context, GroundingInfo
 
 logger = get_logger(__name__)
 
@@ -33,10 +36,11 @@ _rag_service = RAGService()
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., description="Text message to send to the LLM")
+    message: str = Field(..., min_length=1, description="Text message to send to the LLM")
     session_id: Optional[str] = Field(None, description="Optional session UUID for multi-turn conversation tracking")
     personality_id: Optional[int] = Field(None, description="Specific personality ID to use (defaults to active personality)")
     stream: bool = Field(False, description="Whether to stream tokens via chunked transfer")
+    broadcast_to_clients: bool = Field(False, description="Whether to broadcast live tokens to connected desks/phones")
     provider: Optional[str] = Field(None, description="Override LLM provider ('local', 'nile', 'huggingface', 'openai', etc.)")
     model: Optional[str] = Field(None, description="Override model name (e.g. 'MBZUAI-Paris/Nile-Chat-3x4B-A6B' or 'nebula-rag')")
 
@@ -51,19 +55,20 @@ class ChatRequest(BaseModel):
     }
 
 
-from app.services.ai.context_builder import build_grounding_context, GroundingInfo
-
-
 class ChatResponse(BaseModel):
-    reply: str
-    cleaned_reply: str
+    reply: str = ""
+    cleaned_reply: str = ""
+    response: str = ""
     session_id: str
     conversation_id: int
     emotion: str
-    llm_latency_ms: float
-    llm_model: str = Field(..., description="Active LLM model used")
-    llm_provider: str = Field(..., description="Active LLM provider used")
-    memories_used: List[str]
+    llm_latency_ms: float = 0.0
+    latency: Dict[str, Any] = Field(default_factory=dict)
+    retrieved_memories: List[str] = Field(default_factory=list)
+    llm_model: str = Field("default", description="Active LLM model used")
+    llm_provider: str = Field("default", description="Active LLM provider used")
+    memories_used: List[str] = Field(default_factory=list)
+    personality_id: Optional[int] = None
     grounding: Optional[GroundingInfo] = None
 
     # Backward compatibility fields
@@ -76,6 +81,15 @@ class ChatResponse(BaseModel):
 # ── Authentication Helper ────────────────────────────────────────────────────
 
 async def _get_auth_user(
+<<<<<<< HEAD
+    x_api_key: str | None = Depends(api_key_scheme),
+    authorization: str | None = Header(None),
+) -> str:
+    """Allow quick development chat without strict auth if in DEBUG mode or if unauthenticated in local testing."""
+    if settings.DEBUG or not (x_api_key or authorization):
+        return "dev_user"
+    return await get_current_user(x_api_key=x_api_key, authorization=authorization)
+=======
     user: Optional[str] = Depends(get_optional_user),
 ) -> str:
     """Allow chat without strict auth if unauthenticated or in DEBUG mode."""
@@ -83,6 +97,7 @@ async def _get_auth_user(
         return user
     return "guest_user"
 
+>>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────
@@ -176,8 +191,6 @@ async def chat_with_llm(
     should_stream = body.stream and not force_json
 
     if should_stream:
-
-
         # Streaming response
         async def event_generator():
             full_content = []
@@ -196,7 +209,6 @@ async def chat_with_llm(
 
             # Save to DB safely using a fresh session
             try:
-                from app.db.session import AsyncSessionLocal
                 async with AsyncSessionLocal() as session:
                     full_str = "".join(full_content)
                     llm_ms = (time.perf_counter() - t_start) * 1000
@@ -219,8 +231,6 @@ async def chat_with_llm(
             except Exception as e:
                 logger.error(f"Failed to persist streamed chat messages: {e}")
 
-        import json
-        import urllib.parse
         encoded_mems = urllib.parse.quote(json.dumps(memories, ensure_ascii=False))
         return StreamingResponse(
             event_generator(),
@@ -261,13 +271,17 @@ async def chat_with_llm(
     return ChatResponse(
         reply=reply,
         cleaned_reply=cleaned_reply,
+        response=reply,
         session_id=session_id,
         conversation_id=conv_id,
         emotion=emotion,
         llm_latency_ms=round(llm_ms, 2),
+        latency={"llm_ms": round(llm_ms, 2), "total_ms": round(llm_ms, 2)},
+        retrieved_memories=memories,
         llm_model=str(active_model_name),
         llm_provider=str(target_provider),
         memories_used=memories,
+        personality_id=active_pid,
         grounding=grounding,
         response=reply,
         retrieved_memories=memories,

@@ -24,6 +24,7 @@ class Conversation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     personality_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("personalities.id"), nullable=True, index=True)
     session_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    personality_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("personalities.id"), nullable=True, index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

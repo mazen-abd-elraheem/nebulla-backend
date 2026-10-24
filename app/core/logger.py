@@ -29,6 +29,7 @@ def _configure_root_logger() -> None:
             sys.stderr.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
+
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(logging.Formatter(_LOG_FORMAT, _DATE_FORMAT))
     root.addHandler(console)

@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nebula Vision Studio — كشف الأشخاص ونسبة التطابق في الفيديو</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0a0d14;
+      --bg-card: rgba(18, 24, 38, 0.75);
+      --bg-card-hover: rgba(26, 34, 54, 0.85);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(99, 102, 241, 0.35);
+      --primary: #6366f1;
+      --primary-glow: rgba(99, 102, 241, 0.5);
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --accent-amber: #f59e0b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-subtle: #64748b;
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(6, 182, 212, 0.12) 0%, transparent 45%),
+        radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.04) 0%, transparent 60%);
+      background-attachment: fixed;
+      color: var(--text-main);
+      font-family: 'Cairo', 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Header */
+    header {
+      background: rgba(10, 13, 20, 0.8);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 1rem 2rem;
+    }
+
+    .header-content {
+      max-width: 1300px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, var(--primary), var(--accent-cyan));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 20px var(--primary-glow);
+    }
+
+    .brand-title h1 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      background: linear-gradient(to left, #ffffff, #c7d2fe);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-title p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--accent-emerald);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 8px var(--accent-emerald);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    .btn-docs {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .btn-docs:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--primary);
+      transform: translateY(-1px);
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      max-width: 1300px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    /* Tabs */
+    .tabs-nav {
+      display: flex;
+      gap: 12px;
+      background: rgba(18, 24, 38, 0.6);
+      backdrop-filter: blur(12px);
+      padding: 6px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      flex: 1;
+      min-width: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 12px 20px;
+      border-radius: var(--radius-md);
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.85), rgba(6, 182, 212, 0.85));
+      box-shadow: 0 4px 18px var(--primary-glow);
+    }
+
+    /* Card Panels */
+    .card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+      transition: border-color 0.3s;
+    }
+
+    .card:hover {
+      border-color: rgba(99, 102, 241, 0.25);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #fff;
+    }
+
+    .card-desc {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.5rem;
+      line-height: 1.6;
+    }
+
+    /* Upload Zone */
+    .dropzone {
+      border: 2px dashed rgba(99, 102, 241, 0.35);
+      border-radius: var(--radius-md);
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      background: rgba(10, 13, 20, 0.4);
+      transition: all 0.25s ease;
+      position: relative;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent-cyan);
+      background: rgba(6, 182, 212, 0.06);
+      transform: scale(1.005);
+    }
+
+    .dropzone-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      display: inline-block;
+      filter: drop-shadow(0 0 12px var(--primary-glow));
+    }
+
+    .dropzone-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+    }
+
+    .dropzone-hint {
+      font-size: 0.8rem;
+      color: var(--text-subtle);
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .file-selected-badge {
+      margin-top: 1rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid var(--primary);
+      color: #c7d2fe;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    /* Settings Grid */
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      margin: 1.5rem 0;
+      padding: 1.25rem;
+      background: rgba(10, 13, 20, 0.4);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+    }
+
+    .setting-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .setting-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .setting-val {
+      color: var(--accent-cyan);
+      font-family: 'Fira Code', monospace;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--primary);
+      cursor: pointer;
+      box-shadow: 0 0 10px var(--primary-glow);
+      transition: transform 0.1s;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    /* Buttons */
+    .btn-submit {
+      width: 100%;
+      padding: 1rem 1.5rem;
+      border-radius: var(--radius-md);
+      border: none;
+      background: linear-gradient(135deg, #4f46e5, #06b6d4);
+      color: white;
+      font-family: inherit;
+      font-size: 1.1rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.4);
+      transition: all 0.3s ease;
+    }
+
+    .btn-submit:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(6, 182, 212, 0.5);
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 22px;
+      height: 22px;
+      border: 3px solid rgba(255, 255, 255, 0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Results */
+    .results-section {
+      margin-top: 2rem;
+      display: none;
+      flex-direction: column;
+      gap: 1.5rem;
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Stat Cards */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+
+    .stat-card {
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      text-align: center;
+    }
+
+    .stat-num {
+      font-size: 1.8rem;
+      font-weight: 900;
+      color: var(--accent-cyan);
+      font-family: 'Fira Code', monospace;
+    }
+
+    .stat-title {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Person Match Card */
+    .person-card {
+      background: rgba(10, 13, 20, 0.7);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .person-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 6px;
+      height: 100%;
+      background: linear-gradient(to bottom, var(--accent-emerald), var(--accent-cyan));
+    }
+
+    .person-avatar {
+      width: 100px;
+      height: 100px;
+      border-radius: var(--radius-md);
+      object-fit: cover;
+      border: 2px solid var(--accent-cyan);
+      box-shadow: 0 0 16px rgba(6, 182, 212, 0.35);
+      background: #1e293b;
+    }
+
+    .person-info {
+      flex: 1;
+      min-width: 220px;
+    }
+
+    .person-name {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .person-meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .meta-tag {
+      font-size: 0.8rem;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px 10px;
+      border-radius: 6px;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    /* Match Gauge */
+    .match-gauge-box {
+      text-align: center;
+      padding: 1rem 1.5rem;
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: var(--radius-md);
+      min-width: 170px;
+    }
+
+    .match-gauge-box.low-match {
+      background: rgba(244, 63, 94, 0.08);
+      border-color: rgba(244, 63, 94, 0.3);
+    }
+
+    .match-gauge-box.low-match .match-pct-text {
+      color: var(--accent-rose);
+      text-shadow: 0 0 12px rgba(244, 63, 94, 0.4);
+    }
+
+    .match-pct-text {
+      font-size: 2.2rem;
+      font-weight: 900;
+      color: var(--accent-emerald);
+      font-family: 'Fira Code', monospace;
+      text-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
+      line-height: 1;
+    }
+
+    .match-pct-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin-top: 6px;
+    }
+
+    /* Timeline / Occurrence Strip */
+    .timeline-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      margin-top: 1rem;
+      color: #fff;
+    }
+
+    .timeline-gallery {
+      display: flex;
+      gap: 14px;
+      overflow-x: auto;
+      padding: 0.75rem 0;
+    }
+
+    .timeline-frame {
+      min-width: 120px;
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      text-align: center;
+      transition: transform 0.2s;
+    }
+
+    .timeline-frame:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent-cyan);
+    }
+
+    .timeline-frame img {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .timeline-time {
+      font-size: 0.75rem;
+      padding: 6px;
+      background: rgba(0, 0, 0, 0.5);
+      color: var(--accent-cyan);
+      font-family: 'Fira Code', monospace;
+      font-weight: 700;
+    }
+
+    /* Mode 2: Side-by-Side */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .compare-grid {
+        grid-template-columns: 1fr;
+      }
+      .person-card {
+        flex-direction: column;
+        text-align: center;
+      }
+      .person-meta {
+        justify-content: center;
+      }
+    }
+
+    .comparison-banner {
+      padding: 1.5rem;
+      border-radius: var(--radius-lg);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+
+    .comparison-banner.match {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid var(--accent-emerald);
+    }
+
+    .comparison-banner.no-match {
+      background: rgba(244, 63, 94, 0.12);
+      border: 1px solid var(--accent-rose);
+    }
+
+    .versus-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .versus-item {
+      text-align: center;
+    }
+
+    .versus-img {
+      width: 140px;
+      height: 140px;
+      border-radius: var(--radius-md);
+      object-fit: cover;
+      border: 2px solid var(--border);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    .versus-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      font-weight: 700;
+    }
+
+    /* Profiles List Table */
+    .profiles-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+    }
+
+    .profile-card {
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      transition: all 0.2s;
+    }
+
+    .profile-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+    }
+
+    .profile-img {
+      width: 60px;
+      height: 60px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      background: #1e293b;
+      border: 1px solid var(--border);
+    }
+
+    .profile-details {
+      flex: 1;
+    }
+
+    .profile-name {
+      font-weight: 800;
+      color: #fff;
+      font-size: 1rem;
+    }
+
+    .profile-date {
+      font-size: 0.75rem;
+      color: var(--text-subtle);
+    }
+
+    .btn-delete {
+      background: rgba(244, 63, 94, 0.1);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+      color: var(--accent-rose);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+
+    .btn-delete:hover {
+      background: var(--accent-rose);
+      color: #fff;
+    }
+
+    /* Form Inputs */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .form-control {
+      width: 100%;
+      background: rgba(10, 13, 20, 0.6);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.75rem 1rem;
+      color: #fff;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 10px var(--primary-glow);
+    }
+
+    /* Toast Notification */
+    #toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #1e293b;
+      border: 1px solid var(--primary);
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 9999px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+      pointer-events: none;
+    }
+
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="header-content">
+      <div class="brand">
+        <div class="logo-badge">👁️</div>
+        <div class="brand-title">
+          <h1>Nebula Vision Studio</h1>
+          <p>كشف الأشخاص في الفيديو ونسبة التطابق بالذكاء الاصطناعي (UniFace 512-D)</p>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <div class="badge-status">
+          <span class="status-dot"></span>
+          <span>محرك الرؤية نشط</span>
+        </div>
+        <a href="/docs#/faces" target="_blank" class="btn-docs">
+          <span>📚 توثيق الـ API (Swagger)</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main>
+    <!-- Navigation Tabs -->
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('recognize-tab')">
+        <span>🎥</span>
+        <span>التعرف على الأشخاص في الفيديو (1:N)</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('compare-tab')">
+        <span>🔍</span>
+        <span>مقارنة فيديو مع صورة مباشرة (1:1)</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('profiles-tab')">
+        <span>👤</span>
+        <span>إدارة الأشخاص المسجلين</span>
+      </button>
+    </div>
+
+    <!-- TAB 1: Recognize From Video (1:N) -->
+    <div id="recognize-tab" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <span>🎥</span>
+          <span>فحص الفيديو والتعرف على الأشخاص ونسبة التطابق</span>
+        </div>
+        <div class="card-desc">
+          قم برفع مقطع الفيديو (MP4/MOV/AVI). سيقوم النظام بمسح إطارات الفيديو، وتحديد كافة الوجوه، ومطابقتها مع الأشخاص المسجلين في قاعدة البيانات وعرض اسم كل شخص ونسبة التطابق بدقة مع صور لقطات الظهور.
+        </div>
+
+        <form id="recognize-form" onsubmit="handleRecognizeSubmit(event)">
+          <div class="dropzone" id="recognize-dropzone" onclick="document.getElementById('video-input').click()">
+            <div class="dropzone-icon">📹</div>
+            <div class="dropzone-title">اضغط لاختيار الفيديو أو اسحبه وأفلته هنا</div>
+            <div class="dropzone-hint">يدعم MP4, MOV, AVI, MKV (يصل إلى 200MB)</div>
+            <input type="file" id="video-input" class="file-input" accept="video/*" onchange="handleVideoSelected(this, 'recognize-selected-file')">
+            <div id="recognize-selected-file" class="file-selected-badge" style="display:none;"></div>
+          </div>
+
+          <!-- Video Settings -->
+          <div class="settings-grid">
+            <div class="setting-item">
+              <div class="setting-label">
+                <span>حد قبول التطابق (Threshold)</span>
+                <span class="setting-val" id="thresh-val">40%</span>
+              </div>
+              <input type="range" id="threshold-slider" min="0.10" max="0.90" step="0.05" value="0.40" oninput="document.getElementById('thresh-val').innerText = Math.round(this.value * 100) + '%'">
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <span>معدل أخذ الإطارات (ثواني)</span>
+                <span class="setting-val" id="interval-val">0.5 ثانية</span>
+              </div>
+              <input type="range" id="interval-slider" min="0.1" max="2.0" step="0.1" value="0.5" oninput="document.getElementById('interval-val').innerText = this.value + ' ثانية'">
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <span>الحد الأدنى لجودة الوجه</span>
+                <span class="setting-val" id="conf-val">60%</span>
+              </div>
+              <input type="range" id="conf-slider" min="0.30" max="0.95" step="0.05" value="0.60" oninput="document.getElementById('conf-val').innerText = Math.round(this.value * 100) + '%'">
+            </div>
+          </div>
+
+          <button type="submit" id="recognize-btn" class="btn-submit">
+            <span>⚡ بدء فحص الفيديو والتعرف على الشخص</span>
+          </button>
+        </form>
+
+        <!-- Results Area -->
+        <div id="recognize-results" class="results-section">
+          <div class="stats-row">
+            <div class="stat-card">
+              <div class="stat-num" id="stat-persons-count">0</div>
+              <div class="stat-title">الأشخاص المعترف عليهم</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num" id="stat-total-detections">0</div>
+              <div class="stat-title">إجمالي الوجوه المكتشفة</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num" id="stat-best-pct">0%</div>
+              <div class="stat-title">أعلى نسبة تطابق مسجلة</div>
+            </div>
+          </div>
+
+          <div id="persons-list" style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- Dynamically populated person cards -->
+          </div>
+
+          <!-- Timeline -->
+          <div id="timeline-container" style="display:none; margin-top: 1rem;">
+            <div class="timeline-title">⏱️ شريط إطارات الظهور في الفيديو:</div>
+            <div class="timeline-gallery" id="timeline-gallery"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Compare Video to Image (1:1) -->
+    <div id="compare-tab" class="tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-title">
+          <span>🔍</span>
+          <span>مقارنة فيديو مع صورة مباشرة وحساب نسبة التطابق</span>
+        </div>
+        <div class="card-desc">
+          قارن مباشرة بين فيديو وصورة شخصية محددة دون الحاجة لتسجيلها مسبقاً في قاعدة البيانات. سيكتشف النظام ما إذا كان الشخص موجوداً في الفيديو ويعرض لك نسبة التطابق المئوية وأفضل لقطة.
+        </div>
+
+        <form id="compare-form" onsubmit="handleCompareSubmit(event)">
+          <div class="compare-grid">
+            <!-- Image Drop -->
+            <div class="dropzone" id="compare-img-dropzone" onclick="document.getElementById('compare-image-input').click()">
+              <div class="dropzone-icon">👤</div>
+              <div class="dropzone-title">اختر الصورة المرجعية للشخص</div>
+              <div class="dropzone-hint">JPEG / PNG</div>
+              <input type="file" id="compare-image-input" class="file-input" accept="image/*" onchange="handleImageSelected(this, 'compare-selected-img')">
+              <div id="compare-selected-img" class="file-selected-badge" style="display:none;"></div>
+            </div>
+
+            <!-- Video Drop -->
+            <div class="dropzone" id="compare-vid-dropzone" onclick="document.getElementById('compare-video-input').click()">
+              <div class="dropzone-icon">📹</div>
+              <div class="dropzone-title">اختر الفيديو المطلوب فحصه</div>
+              <div class="dropzone-hint">MP4, MOV, AVI</div>
+              <input type="file" id="compare-video-input" class="file-input" accept="video/*" onchange="handleVideoSelected(this, 'compare-selected-vid')">
+              <div id="compare-selected-vid" class="file-selected-badge" style="display:none;"></div>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <div class="setting-item">
+              <div class="setting-label">
+                <span>حد التطابق (Threshold)</span>
+                <span class="setting-val" id="cmp-thresh-val">40%</span>
+              </div>
+              <input type="range" id="cmp-threshold" min="0.10" max="0.90" step="0.05" value="0.40" oninput="document.getElementById('cmp-thresh-val').innerText = Math.round(this.value * 100) + '%'">
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">
+                <span>معدل أخذ الإطارات</span>
+                <span class="setting-val" id="cmp-interval-val">0.5 ثانية</span>
+              </div>
+              <input type="range" id="cmp-interval" min="0.1" max="2.0" step="0.1" value="0.5" oninput="document.getElementById('cmp-interval-val').innerText = this.value + ' ثانية'">
+            </div>
+          </div>
+
+          <button type="submit" id="compare-btn" class="btn-submit">
+            <span>🔍 فحص الفيديو وحساب نسبة التطابق مع الصورة</span>
+          </button>
+        </form>
+
+        <!-- Compare Results -->
+        <div id="compare-results" class="results-section">
+          <div id="comparison-status-banner" class="comparison-banner match">
+            <div>
+              <h2 id="compare-result-title" style="font-size: 1.4rem; font-weight: 800; margin-bottom: 4px;">✅ تم التطابق بنجاح</h2>
+              <p id="compare-result-sub" style="font-size: 0.9rem; opacity: 0.9;">تم العثور على الشخص داخل الفيديو بنسبة تطابق عالية.</p>
+            </div>
+            <div class="match-gauge-box" id="cmp-gauge-box">
+              <div class="match-pct-text" id="cmp-pct-display">0.0%</div>
+              <div class="match-pct-label">نسبة التطابق المئوية</div>
+            </div>
+          </div>
+
+          <div class="versus-row" id="compare-versus">
+            <div class="versus-item">
+              <img id="versus-ref-img" class="versus-img" src="" alt="الصورة المرجعية">
+              <div class="versus-label">الصورة المرجعية الأصلية</div>
+            </div>
+            <div style="font-size: 1.8rem; font-weight: 900; color: var(--text-muted);">⟷</div>
+            <div class="versus-item">
+              <img id="versus-cand-img" class="versus-img" src="" alt="لقطة الفيديو">
+              <div class="versus-label" id="versus-cand-label">أوضح لقطة من الفيديو (00:00)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Registered Profiles Management -->
+    <div id="profiles-tab" class="tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-title">
+          <span>👤</span>
+          <span>تسجيل شخص جديد في النظام</span>
+        </div>
+        <div class="card-desc">
+          سجل شخصاً جديداً بصورته ليتمكن النظام من التعرف عليه آلياً عند وضع أي فيديو يظهر فيه.
+        </div>
+
+        <form id="register-form" onsubmit="handleRegisterSubmit(event)">
+          <div class="form-group">
+            <label for="reg-name">اسم الشخص بالكامل أو المعرف:</label>
+            <input type="text" id="reg-name" class="form-control" placeholder="مثال: مازن عبد الرحيم" required>
+          </div>
+
+          <div class="form-group">
+            <label>صورة الشخص الواضحة:</label>
+            <input type="file" id="reg-image" class="form-control" accept="image/*" required>
+          </div>
+
+          <button type="submit" id="reg-btn" class="btn-submit" style="margin-top: 1rem;">
+            <span>➕ حفظ وتثبيت الشخص في قاعدة البيانات</span>
+          </button>
+        </form>
+
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 2rem 0;">
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3 style="font-size: 1.15rem; font-weight: 800;">الأشخاص المسجلون حالياً في قاعدة البيانات:</h3>
+          <button onclick="loadRegisteredProfiles()" class="btn-docs">🔄 تحديث القائمة</button>
+        </div>
+
+        <div class="profiles-grid" id="profiles-grid">
+          <!-- Populated via JS -->
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast"></div>
+
+  <script>
+    // Tab Switching
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(tabId).style.display = 'block';
+      event.currentTarget.classList.add('active');
+
+      if (tabId === 'profiles-tab') {
+        loadRegisteredProfiles();
+      }
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.innerText = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3500);
+    }
+
+    // File Selection Handlers
+    function handleVideoSelected(input, badgeId) {
+      const badge = document.getElementById(badgeId);
+      if (input.files && input.files[0]) {
+        badge.innerText = `📹 ${input.files[0].name} (${(input.files[0].size / 1024 / 1024).toFixed(1)} MB)`;
+        badge.style.display = 'inline-flex';
+      }
+    }
+
+    function handleImageSelected(input, badgeId) {
+      const badge = document.getElementById(badgeId);
+      if (input.files && input.files[0]) {
+        badge.innerText = `🖼️ ${input.files[0].name}`;
+        badge.style.display = 'inline-flex';
+      }
+    }
+
+    // Submit Recognize (1:N)
+    async function handleRecognizeSubmit(e) {
+      e.preventDefault();
+      const videoInput = document.getElementById('video-input');
+      if (!videoInput.files || !videoInput.files[0]) {
+        showToast('يرجى اختيار ملف فيديو أولاً!');
+        return;
+      }
+
+      const btn = document.getElementById('recognize-btn');
+      btn.disabled = true;
+      btn.innerHTML = `<div class="spinner"></div><span>جارٍ فحص الإطارات والتعرف على الأشخاص...</span>`;
+
+      const threshold = document.getElementById('threshold-slider').value;
+      const interval = document.getElementById('interval-slider').value;
+      const confidence = document.getElementById('conf-slider').value;
+
+      const formData = new FormData();
+      formData.append('file', videoInput.files[0]);
+
+      try {
+        const url = `/api/v1/faces/recognize-from-video?threshold=${threshold}&sample_interval_sec=${interval}&min_confidence=${confidence}&max_faces=30`;
+        const res = await fetch(url, { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || 'حدث خطأ أثناء معالجة الفيديو.');
+        }
+
+        renderRecognizeResults(data);
+      } catch (err) {
+        showToast('خطأ: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span>⚡ بدء فحص الفيديو والتعرف على الشخص</span>`;
+      }
+    }
+
+    function renderRecognizeResults(data) {
+      const resultsSec = document.getElementById('recognize-results');
+      resultsSec.style.display = 'flex';
+
+      const persons = data.identified_persons || [];
+      document.getElementById('stat-persons-count').innerText = persons.length;
+      document.getElementById('stat-total-detections').innerText = data.total_detections || 0;
+
+      let highestPct = 0;
+      persons.forEach(p => {
+        if (p.highest_match_percentage > highestPct) highestPct = p.highest_match_percentage;
+      });
+      document.getElementById('stat-best-pct').innerText = highestPct > 0 ? highestPct.toFixed(1) + '%' : '0%';
+
+      const listContainer = document.getElementById('persons-list');
+      listContainer.innerHTML = '';
+
+      if (persons.length === 0) {
+        listContainer.innerHTML = `
+          <div style="padding: 2rem; text-align: center; background: rgba(244, 63, 94, 0.08); border-radius: var(--radius-md); border: 1px solid rgba(244, 63, 94, 0.2);">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">🤷‍♂️</div>
+            <h3 style="color: var(--accent-rose); font-weight: 800;">لم يتم التعرف على أشخاص مسجلين</h3>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+              قد تكون الوجوه غير مسجلة مسبقاً في قاعدة البيانات، أو نسبة التطابق أقل من حد القبول المحدد (${Math.round(data.threshold * 100)}%).
+              يمكنك تسجيل الشخص من تبويب "إدارة الأشخاص المسجلين" أو تجربة تبويب "المقارنة المباشرة 1:1".
+            </p>
+          </div>
+        `;
+      } else {
+        persons.forEach(p => {
+          const card = document.createElement('div');
+          card.className = 'person-card';
+
+          const avatarSrc = p.best_crop_base64 
+            ? `data:image/jpeg;base64,${p.best_crop_base64}` 
+            : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="%2364748b"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+
+          const pct = p.highest_match_percentage || 0;
+          const isLow = pct < 60.0;
+
+          card.innerHTML = `
+            <img class="person-avatar" src="${avatarSrc}" alt="${p.name}">
+            <div class="person-info">
+              <div class="person-name">
+                <span>${p.name}</span>
+                <span style="font-size: 0.8rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); padding: 2px 8px; border-radius: 4px;">تم التعرف</span>
+              </div>
+              <div class="person-meta">
+                <span class="meta-tag">ظهور: <b>${p.occurrences} مرات</b></span>
+                <span class="meta-tag">أول ظهور: <b>${p.first_seen}</b></span>
+                <span class="meta-tag">آخر ظهور: <b>${p.last_seen}</b></span>
+              </div>
+            </div>
+            <div class="match-gauge-box ${isLow ? 'low-match' : ''}">
+              <div class="match-pct-text">${pct.toFixed(1)}%</div>
+              <div class="match-pct-label">نسبة التطابق (Match %)</div>
+            </div>
+          `;
+          listContainer.appendChild(card);
+        });
+      }
+
+      // Render timeline
+      const timeline = data.timeline || [];
+      const gallery = document.getElementById('timeline-gallery');
+      gallery.innerHTML = '';
+      if (timeline.length > 0) {
+        document.getElementById('timeline-container').style.display = 'block';
+        timeline.forEach(item => {
+          if (item.crop_base64) {
+            const frame = document.createElement('div');
+            frame.className = 'timeline-frame';
+            frame.innerHTML = `
+              <img src="data:image/jpeg;base64,${item.crop_base64}" alt="frame">
+              <div class="timeline-time">${item.formatted_time || item.timestamp_sec + 's'}</div>
+            `;
+            gallery.appendChild(frame);
+          }
+        });
+      } else {
+        document.getElementById('timeline-container').style.display = 'none';
+      }
+
+      resultsSec.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Submit Compare (1:1)
+    async function handleCompareSubmit(e) {
+      e.preventDefault();
+      const imgInput = document.getElementById('compare-image-input');
+      const vidInput = document.getElementById('compare-video-input');
+
+      if (!imgInput.files || !imgInput.files[0]) {
+        showToast('يرجى اختيار الصورة المرجعية أولاً!');
+        return;
+      }
+      if (!vidInput.files || !vidInput.files[0]) {
+        showToast('يرجى اختيار مقطع الفيديو أولاً!');
+        return;
+      }
+
+      const btn = document.getElementById('compare-btn');
+      btn.disabled = true;
+      btn.innerHTML = `<div class="spinner"></div><span>جارٍ مقارنة الفيديو مع الصورة المرجعية...</span>`;
+
+      const threshold = document.getElementById('cmp-threshold').value;
+      const interval = document.getElementById('cmp-interval').value;
+
+      const formData = new FormData();
+      formData.append('image', imgInput.files[0]);
+      formData.append('video', vidInput.files[0]);
+
+      try {
+        const url = `/api/v1/faces/compare-video-to-image?threshold=${threshold}&sample_interval_sec=${interval}`;
+        const res = await fetch(url, { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || 'فشلت المقارنة.');
+        }
+
+        renderCompareResults(data, imgInput.files[0]);
+      } catch (err) {
+        showToast('خطأ: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span>🔍 فحص الفيديو وحساب نسبة التطابق مع الصورة</span>`;
+      }
+    }
+
+    function renderCompareResults(data, refImageFile) {
+      const resultsSec = document.getElementById('compare-results');
+      resultsSec.style.display = 'flex';
+
+      const banner = document.getElementById('comparison-status-banner');
+      const title = document.getElementById('compare-result-title');
+      const sub = document.getElementById('compare-result-sub');
+      const pctDisp = document.getElementById('cmp-pct-display');
+      const gauge = document.getElementById('cmp-gauge-box');
+
+      const isMatch = data.is_match;
+      const pct = data.match_percentage || 0;
+
+      pctDisp.innerText = pct.toFixed(1) + '%';
+
+      if (isMatch) {
+        banner.className = 'comparison-banner match';
+        gauge.className = 'match-gauge-box';
+        title.innerText = '✅ تم التطابق بنجاح';
+        sub.innerText = `تم العثور على الشخص في الفيديو عند الدقيقة ${data.best_match_timestamp || '00:00'} (تم فحص ${data.total_video_faces_checked || 0} وجه).`;
+      } else {
+        banner.className = 'comparison-banner no-match';
+        gauge.className = 'match-gauge-box low-match';
+        title.innerText = '❌ لم يتطابق مع الشخص';
+        sub.innerText = `نسبة التشابه (${pct.toFixed(1)}%) أقل من الحد الأدنى للقبول (${Math.round(data.threshold * 100)}%).`;
+      }
+
+      // Render Ref Image
+      const refImgElem = document.getElementById('versus-ref-img');
+      const reader = new FileReader();
+      reader.onload = (e) => { refImgElem.src = e.target.result; };
+      reader.readAsDataURL(refImageFile);
+
+      // Render Best Candidate Image
+      const candImgElem = document.getElementById('versus-cand-img');
+      const candLabel = document.getElementById('versus-cand-label');
+      if (data.best_match_crop_base64) {
+        candImgElem.src = `data:image/jpeg;base64,${data.best_match_crop_base64}`;
+        candLabel.innerText = `أوضح لقطة من الفيديو (${data.best_match_timestamp || ''})`;
+      } else {
+        candImgElem.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="%2364748b"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+        candLabel.innerText = 'لم يتم العثور على وجه واضح';
+      }
+
+      resultsSec.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Submit Registration
+    async function handleRegisterSubmit(e) {
+      e.preventDefault();
+      const name = document.getElementById('reg-name').value.trim();
+      const fileInput = document.getElementById('reg-image');
+
+      if (!name || !fileInput.files || !fileInput.files[0]) {
+        showToast('يرجى كتابة الاسم واختيار الصورة!');
+        return;
+      }
+
+      const btn = document.getElementById('reg-btn');
+      btn.disabled = true;
+      btn.innerHTML = `<div class="spinner"></div><span>جارٍ استخراج بصمة الوجه وحفظ الشخص...</span>`;
+
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('file', fileInput.files[0]);
+
+      try {
+        const res = await fetch('/api/v1/faces/register', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || 'فشل تسجيل الشخص.');
+        }
+
+        showToast(`🎉 تم تسجيل ${name} بنجاح!`);
+        document.getElementById('register-form').reset();
+        loadRegisteredProfiles();
+      } catch (err) {
+        showToast('خطأ: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span>➕ حفظ وتثبيت الشخص في قاعدة البيانات</span>`;
+      }
+    }
+
+    // Load Profiles
+    async function loadRegisteredProfiles() {
+      const grid = document.getElementById('profiles-grid');
+      grid.innerHTML = '<div style="color: var(--text-muted); padding: 1rem;">جارٍ تحميل الأشخاص المسجلين...</div>';
+
+      try {
+        const res = await fetch('/api/v1/faces/');
+        const data = await res.json();
+        const profiles = data.profiles || data.faces || [];
+
+        if (profiles.length === 0) {
+          grid.innerHTML = '<div style="color: var(--text-muted); padding: 1rem;">لا يوجد أشخاص مسجلون حالياً. استخدم النموذج بالأعلى للتسجيل.</div>';
+          return;
+        }
+
+        grid.innerHTML = '';
+        profiles.forEach(p => {
+          const card = document.createElement('div');
+          card.className = 'profile-card';
+
+          const hasPhoto = !!(p.photo_url || p.photo_path || p.has_photo);
+          const imgSrc = hasPhoto 
+            ? (p.photo_url || `/api/v1/faces/${p.id}/photo`) 
+            : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="%2364748b"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+
+          card.innerHTML = `
+            <img class="profile-img" src="${imgSrc}" alt="${p.name}">
+            <div class="profile-details">
+              <div class="profile-name">${p.name}</div>
+              <div class="profile-date">ID: #${p.id}</div>
+            </div>
+            <button class="btn-delete" onclick="deleteProfile(${p.id}, '${p.name}')">حذف</button>
+          `;
+          grid.appendChild(card);
+        });
+      } catch (err) {
+        grid.innerHTML = `<div style="color: var(--accent-rose); padding: 1rem;">خطأ في جلب الأشخاص: ${err.message}</div>`;
+      }
+    }
+
+    async function deleteProfile(id, name) {
+      if (!confirm(`هل أنت متأكد من رغبتك في حذف بروفايل "${name}"؟`)) return;
+
+      try {
+        const res = await fetch(`/api/v1/faces/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('فشل الحذف');
+        showToast(`تم حذف ${name}`);
+        loadRegisteredProfiles();
+      } catch (err) {
+        showToast('خطأ في الحذف: ' + err.message);
+      }
+    }
+  </script>
+</body>
+</html>

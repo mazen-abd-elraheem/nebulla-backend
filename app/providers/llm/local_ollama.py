@@ -59,6 +59,11 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
+        # Model resolution: fall back to llama3 if an OpenAI or Claude model name is configured
+        model = self.model or getattr(settings, "LLM_MODEL", "llama3")
+        if any(prefix in model.lower() for prefix in ("claude", "gpt-", "text-embedding")):
+            model = "llama3"
+
         max_tokens = getattr(settings, "TTS_MAX_NEW_TOKENS", 150) or 150
         payload = {
             "model": self.model,
@@ -67,6 +72,7 @@ class LocalOllamaProvider(BaseLLMProvider):
             "options": {"temperature": 0.7, "num_predict": max_tokens},
         }
 
+        base_url = settings.LLM_BASE_URL.rstrip("/")
         timeout = httpx.Timeout(getattr(settings, "LLM_TIMEOUT", 120.0), connect=15.0)
 
         try:

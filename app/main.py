@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
@@ -95,11 +95,24 @@ async def health_check():
     return {"status": "ok", "version": settings.VERSION}
 
 
+STUDIO_HTML_PATH = Path(__file__).parent / "static" / "faces_studio.html"
+
+
+@app.get("/faces-ui", response_class=HTMLResponse, tags=["vision-studio"], summary="Interactive Vision Testing Studio")
+async def vision_studio():
+    """Interactive visual testing interface for video face recognition and match percentage."""
+    if STUDIO_HTML_PATH.exists():
+        return HTMLResponse(content=STUDIO_HTML_PATH.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h3>Studio UI template not found</h3>", status_code=404)
+
+
 @app.get("/chat", response_class=HTMLResponse, tags=["chat"])
 async def chat_playground():
     """Interactive visual web playground to chat with the LLM in real-time."""
     html_path = Path(__file__).parent / "templates" / "chat_ui.html"
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    if html_path.exists():
+        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h3>Chat UI template not found</h3>", status_code=404)
 
 
 @app.get("/", include_in_schema=False)
