@@ -40,13 +40,18 @@ class Settings(BaseSettings):
     # TTS: "voicetut" | "ar_eg_free" | "xtts"
     TTS_PROVIDER: Literal["voicetut", "ar_eg_free", "xtts"] = "voicetut"
 
-    # LLM: "local" | "openai" | "anthropic" | "mock"
-    LLM_PROVIDER: Literal["local", "openai", "anthropic", "mock"] = "local"
+    # LLM: "local" | "openai" | "anthropic" | "huggingface" | "nile"
+    LLM_PROVIDER: Literal["local", "openai", "anthropic", "huggingface", "nile"] = "local"
     LLM_API_KEY: str = ""
     LLM_BASE_URL: str = "http://localhost:11434"   # local Ollama default
-    LLM_MODEL: str = "llama3"
+    LLM_MODEL: str = "qwen2.5:3b"
+    HF_MODEL_NAME: str = "MBZUAI-Paris/Nile-Chat-3x4B-A6B"
     LLM_STREAM: bool = True
     LLM_TIMEOUT: float = 120.0
+    LLM_MAX_TOKENS: int = 35
+    LLM_TEMPERATURE: float = 0.05
+    LLM_TOP_P: float = 0.85
+    LLM_REPEAT_PENALTY: float = 1.15
 
     # ── STT Config ─────────────────────────────────────────────────────────
     QWENCLEO_MODEL_PATH: str = "models/qwencleo-asr"

@@ -7,8 +7,8 @@ No device talks to another device directly (design decision from doc §4).
 """
 
 from contextlib import asynccontextmanager
-
 from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,11 +22,34 @@ from app.db.session import init_db
 logger = get_logger(__name__)
 
 
+async def _warmup_ollama():
+    """Pre-warm the active Ollama model in RAM with 24h keep-alive to avoid cold-start delays."""
+    try:
+        import httpx
+        target_model = settings.LLM_MODEL or "nebula-rag"
+        logger.info(f"🔥 Pre-warming local model '{target_model}' in RAM (keep-alive: 24h)...")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            await client.post(
+                f"{settings.LLM_BASE_URL}/api/chat",
+                json={
+                    "model": target_model,
+                    "messages": [{"role": "user", "content": "test"}],
+                    "keep_alive": "24h",
+                    "options": {"num_predict": 1},
+                },
+            )
+        logger.info(f"✅ Local model '{target_model}' is warm and ready in RAM.")
+    except Exception as e:
+        logger.debug(f"Ollama warm-up notice: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
+    import asyncio
     logger.info("🚀 Nebula backend starting up…")
     await init_db()
+    asyncio.create_task(_warmup_ollama())
     yield
     logger.info("👋 Nebula backend shutting down…")
 
@@ -51,8 +74,9 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_origin_regex=".*",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -80,6 +104,15 @@ async def vision_studio():
     return HTMLResponse(content="<h3>Studio UI template not found</h3>", status_code=404)
 
 
+@app.get("/chat", response_class=HTMLResponse, tags=["chat"])
+async def chat_playground():
+    """Interactive visual web playground to chat with the LLM in real-time."""
+    html_path = Path(__file__).parent / "templates" / "chat_ui.html"
+    if html_path.exists():
+        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h3>Chat UI template not found</h3>", status_code=404)
+
+
 @app.get("/", include_in_schema=False)
 async def root():
-    return RedirectResponse(url="/faces-ui")
+    return RedirectResponse(url="/chat")

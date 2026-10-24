@@ -22,10 +22,11 @@ def _configure_root_logger() -> None:
     root = logging.getLogger()
     root.setLevel(level)
 
-    # Console handler (safeguard for Windows terminal encodings)
-    if hasattr(sys.stdout, "reconfigure"):
+    # Console handler with safe UTF-8 encoding on Windows
+    if sys.platform == "win32":
         try:
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
 

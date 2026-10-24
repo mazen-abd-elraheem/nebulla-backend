@@ -53,21 +53,22 @@ class RAGService:
             return
         try:
             from sentence_transformers import SentenceTransformer  # type: ignore[import]
-            self._embedder = SentenceTransformer(
-                settings.EMBEDDING_MODEL,
-                device=settings.EMBEDDING_DEVICE,
-            )
-            logger.info(f"Embedding model loaded: {settings.EMBEDDING_MODEL}")
-        except ImportError:
-            logger.warning(
-                "sentence-transformers not installed. RAG will use keyword/lexical fallback. "
-                "To enable semantic search: pip install sentence-transformers numpy"
-            )
+            try:
+                self._embedder = SentenceTransformer(
+                    settings.EMBEDDING_MODEL,
+                    device=settings.EMBEDDING_DEVICE,
+                    local_files_only=True,
+                )
+                logger.info(f"Embedding model loaded from local cache: {settings.EMBEDDING_MODEL}")
+                return
+            except Exception:
+                pass
+
+            # If not cached locally, use instant high-speed lexical & keyword matching
+            logger.info("Embedding model weights not in local cache; RAG using instant keyword & BM25 search.")
             self._embedder = "disabled"
         except Exception as e:
-            logger.warning(
-                f"Failed to load embedding model ({e}). RAG will use keyword/lexical fallback."
-            )
+            logger.warning(f"Could not initialize SentenceTransformer ({e}). Using keyword search.")
             self._embedder = "disabled"
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -77,56 +78,42 @@ class RAGService:
         query: str,
         personality_id: int | None = None,
         top_k: int | None = None,
+        db: AsyncSession | None = None,
     ) -> list[str]:
         """
         Return the top-K most relevant memory texts for *query*.
-        Uses semantic cosine similarity when embedding model is loaded,
-        and falls back to lexical/keyword matching otherwise.
+        Uses hybrid search (semantic cosine similarity + lexical Arabic keyword match + importance).
+        Falls back smoothly if embedder is unavailable.
         """
         await self._ensure_embedder()
         top_k = top_k or settings.MEMORY_TOP_K
 
-        if self._embedder == "disabled":
-            # Fallback to lexical overlap and importance when sentence-transformers is absent
+        # Load memories from DB with personality fallback
+        if db is not None:
+            stmt = select(Memory)
+            if personality_id is not None:
+                stmt_p = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
+                res = await db.execute(stmt_p)
+                memories = list(res.scalars().all())
+                if not memories:
+                    res_all = await db.execute(stmt)
+                    memories = list(res_all.scalars().all())
+            else:
+                res = await db.execute(stmt)
+                memories = list(res.scalars().all())
+        else:
             async with AsyncSessionLocal() as session:
                 stmt = select(Memory)
                 if personality_id is not None:
-                    stmt = stmt.where(Memory.personality_id == personality_id)
-                result = await session.execute(stmt)
-                memories: list[Memory] = list(result.scalars().all())
-
-            if not memories:
-                return []
-
-            query_words = set(query.lower().split())
-            scored = []
-            for mem in memories:
-                mem_words = set(mem.content.lower().split())
-                overlap = len(query_words.intersection(mem_words))
-                scored.append((overlap, mem))
-            scored.sort(key=lambda x: (x[0], x[1].importance or 0.5), reverse=True)
-            top = [m for score, m in scored if score > 0][:top_k]
-            if not top and memories:
-                memories.sort(key=lambda m: m.importance or 0.5, reverse=True)
-                top = memories[:top_k]
-            return [m.content for m in top]
-
-        # Embed the query
-        loop = asyncio.get_event_loop()
-        query_vec = await loop.run_in_executor(None, self._embed, query)
-
-        # Load all memories from DB
-        async with AsyncSessionLocal() as session:
-            stmt = select(Memory)
-            if personality_id is not None:
-                stmt = stmt.where(
-                    or_(
-                        Memory.personality_id == personality_id,
-                        Memory.personality_id.is_(None),
-                    )
-                )
-            result = await session.execute(stmt)
-            memories: list[Memory] = list(result.scalars().all())
+                    stmt_p = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
+                    res = await session.execute(stmt_p)
+                    memories = list(res.scalars().all())
+                    if not memories:
+                        res_all = await session.execute(stmt)
+                        memories = list(res_all.scalars().all())
+                else:
+                    res = await session.execute(stmt)
+                    memories = list(res.scalars().all())
 
         if not memories:
             return []
@@ -163,12 +150,45 @@ class RAGService:
         if not scored:
             return []
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top = scored[:top_k]
+        for mem in memories:
+            m_words = set(w for w in mem.content.lower().replace("،", " ").replace(".", " ").split() if len(w) > 1)
+            overlap = len(query_words.intersection(m_words))
+            lexical_score = overlap / max(len(query_words), 1)
+            importance_boost = (mem.importance or 5) / 10.0
 
-        # Update last_accessed timestamp async (fire and forget)
+            if query_vec is not None and mem.embedding:
+                try:
+                    mem_vec = np.frombuffer(mem.embedding, dtype=np.float32)
+                    sim = float(np.dot(query_vec, mem_vec) /
+                                (np.linalg.norm(query_vec) * np.linalg.norm(mem_vec) + 1e-9))
+                    semantic_score = max(0.0, sim)
+                    # Hybrid: 65% semantic, 25% exact keywords, 10% importance
+                    total_score = (0.65 * semantic_score) + (0.25 * lexical_score) + (0.10 * (importance_boost / 2.0))
+                    scored.append((total_score, mem))
+                except Exception:
+                    scored.append((lexical_score + (importance_boost * 0.1), mem))
+            else:
+                if query_vec is not None and not mem.embedding:
+                    missing_emb_ids.append((mem.id, mem.content))
+                # Lexical score + importance
+                total_score = (lexical_score * 0.8) + (importance_boost * 0.2)
+                scored.append((total_score, mem))
+
+        # Sort descending by relevance score
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # Pick top_k relevant memories with strict relevance threshold
+        # If no memory meets the relevance threshold, return empty so LLM triggers zero-hallucination refusal
+        top = [mem for score, mem in scored if score >= 0.12][:top_k]
+
+        # Background update access times and backfill missing embeddings
         if top:
-            asyncio.create_task(self._update_access_times([m.id for _, m in top]))
+            asyncio.create_task(self._update_access_times([m.id for m in top]))
+        # Deduplicate memory contents preserving relevance order
+        unique_contents = []
+        for m in top:
+            if m.content not in unique_contents:
+                unique_contents.append(m.content)
 
         return [
             {
@@ -286,7 +306,26 @@ class RAGService:
                 for mid in memory_ids:
                     mem = await session.get(Memory, mid)
                     if mem:
-                        mem.last_accessed = datetime.now(timezone.utc)
+                        mem.last_accessed = datetime.utcnow()
                 await session.commit()
         except Exception as e:
-            logger.warning(f"Failed to update memory last_accessed: {e}")
+            logger.debug(f"Could not update last_accessed: {e}")
+
+    async def _backfill_embeddings(self, items: list[tuple[int, str]]) -> None:
+        """Asynchronously compute and store embeddings for memories missing them."""
+        try:
+            loop = asyncio.get_event_loop()
+            async with AsyncSessionLocal() as session:
+                for mid, text in items[:10]:
+                    try:
+                        vec = await loop.run_in_executor(None, self._embed, text)
+                        mem = await session.get(Memory, mid)
+                        if mem and not mem.embedding:
+                            mem.embedding = vec.astype(np.float32).tobytes()
+                    except Exception:
+                        continue
+                await session.commit()
+                logger.info(f"Backfilled embeddings for {len(items[:10])} memories")
+        except Exception as e:
+            logger.warning(f"Could not backfill embeddings: {e}")
+
