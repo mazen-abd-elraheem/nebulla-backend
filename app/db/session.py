@@ -49,11 +49,17 @@ class Base(DeclarativeBase):
 
 async def init_db() -> None:
     """Create all tables on startup (dev/simple mode — use Alembic for production)."""
+    from sqlalchemy import text
     from app.models import (  # noqa: F401  — import to register models
-        device, personality, memory, conversation, signal, calibration, tracking, log, face_profile
+        device, personality, memory, conversation, signal, calibration, tracking, log, face_profile, user
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migrate existing SQLite databases if user_id column is missing
+        try:
+            await conn.execute(text("ALTER TABLE personalities ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+        except Exception:
+            pass  # Already exists or handled by create_all
     logger.info("Database initialised")
 
     # Seed default personality if table is empty

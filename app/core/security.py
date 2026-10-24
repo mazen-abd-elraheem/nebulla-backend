@@ -41,3 +41,25 @@ def verify_pairing_code(code: str) -> bool:
     if not code:
         return False
     return secrets.compare_digest(code, settings.PAIRING_SECRET)
+
+
+# ── Password Hashing & Verification (Bcrypt) ─────────────────────────────────
+import bcrypt
+
+
+def get_password_hash(password: str) -> str:
+    """Hash a plaintext password using bcrypt with salt."""
+    pwd_bytes = password.encode("utf-8")[:72]
+    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt(rounds=12)).decode("utf-8")
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plaintext password against a bcrypt hash."""
+    if not plain_password or not hashed_password:
+        return False
+    try:
+        pwd_bytes = plain_password.encode("utf-8")[:72]
+        return bcrypt.checkpw(pwd_bytes, hashed_password.encode("utf-8"))
+    except Exception:
+        return False
+

@@ -93,29 +93,53 @@ async def run_all_endpoint_tests():
             log_result("3. GET /chat", False, str(e))
 
         # ──────────────────────────────────────────────────────────────────
-        # 2. Auth (Pairing code -> JWT -> /me)
+        # 2. User Authentication (Register -> Login -> Biometrics -> Me)
         # ──────────────────────────────────────────────────────────────────
         token = ""
         auth_headers = {}
+        unique_user_email = f"synth_user_{int(time.time())}@synth-core.ai"
+
+        # Register User
         try:
             r = await client.post(
-                "/api/v1/auth/token",
-                json={"pairing_code": settings.PAIRING_SECRET, "device_name": "control_room_desktop"},
+                "/api/v1/auth/register",
+                json={
+                    "full_name": "د. عبد الرحمن الخالدي",
+                    "email": unique_user_email,
+                    "password": "Password2026",
+                    "confirm_password": "Password2026",
+                    "terms_accepted": True,
+                },
+            )
+            ok = r.status_code == 201 and "access_token" in r.json()
+            if ok:
+                token = r.json()["access_token"]
+                auth_headers = {"Authorization": f"Bearer {token}"}
+            log_result("4. POST /api/v1/auth/register", ok, f"User registered: {unique_user_email}")
+        except Exception as e:
+            log_result("4. POST /api/v1/auth/register", False, str(e))
+
+        # Standard Login
+        try:
+            r = await client.post(
+                "/api/v1/auth/login",
+                json={"email": unique_user_email, "password": "Password2026", "remember_me": True},
             )
             ok = r.status_code == 200 and "access_token" in r.json()
             if ok:
                 token = r.json()["access_token"]
                 auth_headers = {"Authorization": f"Bearer {token}"}
-            log_result("4. POST /api/v1/auth/token", ok, f"Token generated (first 20 chars: {token[:20]}...)")
+            log_result("5. POST /api/v1/auth/login (30-day Remember Me)", ok, f"Expires in: {r.json().get('expires_in')}s")
         except Exception as e:
-            log_result("4. POST /api/v1/auth/token", False, str(e))
+            log_result("5. POST /api/v1/auth/login", False, str(e))
 
+        # Profile /me
         try:
             r = await client.get("/api/v1/auth/me", headers=auth_headers)
-            ok = r.status_code == 200 and r.json().get("identity") == "control_room_desktop"
-            log_result("5. GET /api/v1/auth/me", ok, f"Current identity: {r.json()}")
+            ok = r.status_code == 200 and r.json().get("email") == unique_user_email
+            log_result("5b. GET /api/v1/auth/me", ok, f"Profile: {r.json().get('full_name')} ({r.json().get('email')})")
         except Exception as e:
-            log_result("5. GET /api/v1/auth/me", False, str(e))
+            log_result("5b. GET /api/v1/auth/me", False, str(e))
 
         # ──────────────────────────────────────────────────────────────────
         # 3. Devices
@@ -137,7 +161,7 @@ async def run_all_endpoint_tests():
         # ──────────────────────────────────────────────────────────────────
         pid = None
         try:
-            r = await client.get("/api/v1/personalities/")
+            r = await client.get("/api/v1/personalities/", headers=auth_headers)
             log_result("8. GET /api/v1/personalities/", r.status_code == 200, f"Existing: {len(r.json().get('personalities', []))}")
         except Exception as e:
             log_result("8. GET /api/v1/personalities/", False, str(e))
@@ -157,13 +181,13 @@ async def run_all_endpoint_tests():
             ok = r.status_code == 201
             if ok:
                 pid = r.json()["id"]
-            log_result("9. POST /api/v1/personalities/ (Create)", ok, f"Created personality ID: {pid}")
+            log_result("9. POST /api/v1/personalities/ (Create)", ok, f"Created personality ID: {pid} (user_id={r.json().get('user_id')})")
         except Exception as e:
             log_result("9. POST /api/v1/personalities/", False, str(e))
 
         if pid:
             try:
-                r = await client.get(f"/api/v1/personalities/{pid}")
+                r = await client.get(f"/api/v1/personalities/{pid}", headers=auth_headers)
                 log_result("10. GET /api/v1/personalities/{pid}", r.status_code == 200, f"Name: {r.json().get('name')}")
             except Exception as e:
                 log_result("10. GET /api/v1/personalities/{pid}", False, str(e))
