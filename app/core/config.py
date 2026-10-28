@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     LLM_STREAM: bool = True
     LLM_TIMEOUT: float = 120.0
     LLM_MAX_TOKENS: int = 45
-    LLM_TEMPERATURE: float = 0.1
+    LLM_TEMPERATURE: float = 0.0
     LLM_TOP_P: float = 0.85
     LLM_REPEAT_PENALTY: float = 1.15
 

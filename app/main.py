@@ -43,6 +43,17 @@ async def _warmup_ollama():
         logger.debug(f"Ollama warm-up notice: {e}")
 
 
+async def _warmup_rag():
+    """Pre-warm RAG SentenceTransformer in RAM to eliminate cold-start retrieval latency."""
+    try:
+        from app.services.memory.rag_service import RAGService
+        rag = RAGService()
+        await rag._ensure_embedder()
+        logger.info("✅ RAG SentenceTransformer model is warm and ready in RAM.")
+    except Exception as e:
+        logger.debug(f"RAG warm-up notice: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
@@ -50,6 +61,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Nebula backend starting up…")
     await init_db()
     asyncio.create_task(_warmup_ollama())
+    asyncio.create_task(_warmup_rag())
     yield
     logger.info("Nebula backend shutting down...")
 

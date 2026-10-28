@@ -67,6 +67,8 @@ async def init_db() -> None:
                 cols = [c["name"] for c in inspector.get_columns("face_profiles")]
                 if "photo_path" not in cols:
                     connection.execute(text("ALTER TABLE face_profiles ADD COLUMN photo_path VARCHAR(256)"))
+                if "created_at" not in cols:
+                    connection.execute(text("ALTER TABLE face_profiles ADD COLUMN created_at DATETIME"))
             if "personalities" in tables:
                 cols = [c["name"] for c in inspector.get_columns("personalities")]
                 if "user_id" not in cols:

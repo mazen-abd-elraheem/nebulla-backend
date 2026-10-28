@@ -31,44 +31,54 @@ logger = get_logger(__name__)
 class RAGService:
     """
     Embedding-based memory retrieval.
-    Lazy-loads the embedding model on first use, with lexical fallback if unavailable.
+    Pre-warms/caches the embedding model in memory, with lexical fallback if unavailable.
     """
 
+    _shared_embedder = None
+    _shared_lock = asyncio.Lock()
+
     def __init__(self):
-        self._embedder = None
+        self._embedder = RAGService._shared_embedder
         self._lock = asyncio.Lock()
 
     async def _ensure_embedder(self):
-        if self._embedder is not None:
+        if RAGService._shared_embedder is not None:
+            self._embedder = RAGService._shared_embedder
             return
-        async with self._lock:
-            if self._embedder is None:
+        async with RAGService._shared_lock:
+            if RAGService._shared_embedder is None:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self._load_embedder)
+            self._embedder = RAGService._shared_embedder
 
     def _load_embedder(self):
         if np is None:
             logger.warning("numpy is not installed. RAG will use keyword/lexical fallback.")
+            RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
             return
         try:
             from sentence_transformers import SentenceTransformer  # type: ignore[import]
             try:
-                self._embedder = SentenceTransformer(
+                embedder = SentenceTransformer(
                     settings.EMBEDDING_MODEL,
                     device=settings.EMBEDDING_DEVICE,
                     local_files_only=True,
                 )
                 logger.info(f"Embedding model loaded from local cache: {settings.EMBEDDING_MODEL}")
+                RAGService._shared_embedder = embedder
+                self._embedder = embedder
                 return
             except Exception:
                 pass
 
             # If not cached locally, use instant high-speed lexical & keyword matching
             logger.info("Embedding model weights not in local cache; RAG using instant keyword & BM25 search.")
+            RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
         except Exception as e:
             logger.warning(f"Could not initialize SentenceTransformer ({e}). Using keyword search.")
+            RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -138,7 +148,7 @@ class RAGService:
                             cos_sim_aug = float(np.dot(aug_vec, mem_vec) / norm_aug)
                             cos_sim = max(cos_sim, cos_sim_aug)
                         if cos_sim > 0.05:
-                            sem_scores[mem.id] = cos_sim
+                            sem_scores[mem.id] = float(cos_sim)
             except Exception as e:
                 logger.error(f"Error during semantic embedding search: {e}. Using lexical search.")
 

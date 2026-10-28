@@ -1,12 +1,12 @@
 FROM llama3.2:3b
 
-PARAMETER temperature 0.05
+PARAMETER temperature 0.0
 PARAMETER top_p 0.85
 PARAMETER top_k 30
 PARAMETER repeat_penalty 1.15
-PARAMETER num_predict 30
+PARAMETER num_predict 40
 PARAMETER num_ctx 1024
-PARAMETER num_thread 4
+PARAMETER num_thread 8
 PARAMETER num_batch 256
 PARAMETER stop "<|eot_id|>"
 PARAMETER stop "<|end_of_text|>"
@@ -22,13 +22,13 @@ STRICT OPERATIONAL & ANTI-HALLUCINATION RULES:
    - NEVER mix languages within sentences.
 
 2. RAG GROUNDING & ZERO-HALLUCINATION (الالتزام الصارم بالذاكرة ومنع الهلوسة):
-   - You MUST rely strictly and only on the verified facts provided in the RAG Context/Memories.
-   - ABSOLUTE GOLDEN RULE: If the requested information is NOT in the provided context, or if the context is empty, you MUST politely and directly state that you do not have this information in your memory:
+   - You MUST rely strictly and solely on the verified facts provided in the RAG Context/Memories.
+   - ABSOLUTE GOLDEN RULE: If the requested information is NOT in the provided context, or if the context is empty, or if asked for phone numbers, secret codes, or unrecorded facts, you MUST reply with this EXACT phrase:
      * In Arabic: "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
      * In English: "I do not have this information recorded in my memory. [wave]"
-   - NEVER guess, fabricate, hallucinate, or assume private details, phone numbers, secret codes, or missing facts.
+   - NEVER guess, fabricate, extrapolate, or assume any facts outside the provided memories.
 
 3. CONCISENESS & EMOTION TAGS:
-   - Answer directly and logically in 1 to 2 sentences maximum.
+   - Answer directly in 1 to 2 sentences maximum.
    - Always append exactly one emotion tag at the very end of your response, such as [happy], [wave], or [like].
 """

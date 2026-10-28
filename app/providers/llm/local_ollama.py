@@ -1,5 +1,6 @@
 """Local Ollama LLM provider — no internet needed (doc §11: works offline on local GPU)."""
 
+import os
 import json
 from typing import AsyncIterator, List, Dict, Optional
 
@@ -11,12 +12,22 @@ from app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
+_ollama_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_ollama_client() -> httpx.AsyncClient:
+    global _ollama_client
+    if _ollama_client is None or _ollama_client.is_closed:
+        timeout = httpx.Timeout(getattr(settings, "LLM_TIMEOUT", 120.0), connect=15.0)
+        _ollama_client = httpx.AsyncClient(timeout=timeout)
+    return _ollama_client
+
 
 class LocalOllamaProvider(BaseLLMProvider):
-    """Streams responses from a local Ollama server (Llama 3, Qwen, etc.)."""
+    """Streams responses from a local Ollama server (nebula-rag, llama3, qwen, etc.)."""
 
     def __init__(self, model: Optional[str] = None):
-        self.model = model or getattr(settings, "LLM_MODEL", "llama3")
+        self.model = model or getattr(settings, "LLM_MODEL", "nebula-rag")
 
     async def generate(
         self,
@@ -60,17 +71,28 @@ class LocalOllamaProvider(BaseLLMProvider):
         messages.append({"role": "user", "content": prompt})
 
         # Model resolution: use configured or requested model directly without fallback
-        model = self.model or getattr(settings, "LLM_MODEL", "llama3")
+        model = self.model or getattr(settings, "LLM_MODEL", "nebula-rag")
 
-        max_tokens = getattr(settings, "TTS_MAX_NEW_TOKENS", 150) or 150
+        max_tokens = min(getattr(settings, "LLM_MAX_TOKENS", 45) or 45, 60)
+        num_threads = min(os.cpu_count() or 8, 8)
+
         payload = {
             "model": model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": 0.7, "num_predict": max_tokens},
+            "keep_alive": "24h",
+            "options": {
+                "num_predict": max_tokens,
+                "num_ctx": 1024,
+                "num_batch": 256,
+                "num_thread": num_threads,
+                "temperature": getattr(settings, "LLM_TEMPERATURE", 0.0),
+                "top_p": getattr(settings, "LLM_TOP_P", 0.85),
+                "top_k": 30,
+                "repeat_penalty": getattr(settings, "LLM_REPEAT_PENALTY", 1.15),
+            },
         }
 
-        base_url = settings.LLM_BASE_URL.rstrip("/")
         timeout = httpx.Timeout(getattr(settings, "LLM_TIMEOUT", 120.0), connect=15.0)
 
         try:
@@ -80,8 +102,23 @@ class LocalOllamaProvider(BaseLLMProvider):
                     f"{settings.LLM_BASE_URL}/api/chat",
                     json=payload,
                 ) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
+                    status_code = getattr(resp, "status_code", 200)
+                    if isinstance(status_code, int) and status_code >= 400:
+                        err_bytes = await resp.aread()
+                        err_text = err_bytes.decode("utf-8", errors="replace")
+                        logger.error(f"Ollama HTTP error {resp.status_code}: {err_text}")
+                        if resp.status_code == 404:
+                            yield f"الموديل '{model}' غير موجود على خادم Ollama. يرجى التأكد من تثبيت الموديل المطلوب."
+                        else:
+                            yield f"في خطأ في تشغيل موديل {model} على Ollama."
+                        return
+
+                    stream_iter = resp.aiter_lines()
+                    import asyncio
+                    if asyncio.iscoroutine(stream_iter):
+                        stream_iter = await stream_iter
+
+                    async for line in stream_iter:
                         if not line:
                             continue
                         try:
@@ -103,11 +140,18 @@ class LocalOllamaProvider(BaseLLMProvider):
             logger.error(f"Ollama request timed out after {getattr(settings, 'LLM_TIMEOUT', 120.0)}s")
             yield "استغرق الموديل وقتاً أطول من المعتاد في المعالجة. جرب تاني أو اتأكد من كفاءة الجهاز."
         except httpx.HTTPStatusError as e:
-            logger.error(f"Ollama HTTP error {e.response.status_code}: {e.response.text}")
+            try:
+                err_text = (await e.response.aread()).decode("utf-8", errors="replace")
+            except Exception:
+                err_text = str(e)
+            logger.error(f"Ollama HTTP error {e.response.status_code}: {err_text}")
             if e.response.status_code == 404:
-                yield f"الموديل '{self.model}' غير موجود على خادم Ollama. يرجى التأكد من تثبيت الموديل الأساسي."
+                yield f"الموديل '{model}' غير موجود على خادم Ollama. يرجى التأكد من تثبيت الموديل المطلوب."
                 return
-            yield f"في خطأ في تشغيل موديل {self.model} على Ollama."
+            yield f"في خطأ في تشغيل موديل {model} على Ollama."
+        except httpx.ResponseNotRead as e:
+            logger.error(f"Ollama streaming response read error: {e}")
+            yield f"في خطأ في قراءة استجابة موديل {model} على Ollama."
         except Exception as e:
             logger.error(f"Ollama error: {e}")
             yield "في خطأ تقني في المعالجة. جرب تاني."
