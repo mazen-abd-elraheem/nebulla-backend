@@ -1,6 +1,6 @@
 """
 ar-EG Free TTS provider — free Arabic cloud service (doc §6.1 backup plan).
-Uses high-quality Egyptian Arabic neural voice (edge-tts) with gTTS fallback.
+Uses high-quality Egyptian Arabic neural voice (edge-tts).
 Zero GPU required — low latency, realistic Egyptian voice.
 """
 
@@ -16,7 +16,7 @@ DEFAULT_VOICE = "ar-EG-SalmaNeural"  # Egyptian Arabic Neural Voice (Alternative
 
 
 class ArEgFreeProvider(BaseTTSProvider):
-    """Free Egyptian Arabic TTS using edge-tts neural voice with gTTS fallback."""
+    """Free Egyptian Arabic TTS using edge-tts neural voice."""
 
     def __init__(self, voice: str = DEFAULT_VOICE):
         self.voice = voice
@@ -25,7 +25,7 @@ class ArEgFreeProvider(BaseTTSProvider):
         if not text or not text.strip():
             return b""
 
-        # 1. Try edge-tts (High quality Egyptian Neural voice)
+        # Try edge-tts (High quality Egyptian Neural voice)
         try:
             import edge_tts
             comm = edge_tts.Communicate(text, self.voice)
@@ -37,17 +37,7 @@ class ArEgFreeProvider(BaseTTSProvider):
             if mp3_data:
                 return _to_wav(bytes(mp3_data))
         except Exception as e:
-            logger.warning(f"edge-tts failed: {e}, falling back to gTTS")
-
-        # 2. Fallback to gTTS
-        try:
-            from gtts import gTTS
-            loop = asyncio.get_event_loop()
-            mp3_bytes = await loop.run_in_executor(None, self._synth_gtts, text)
-            if mp3_bytes:
-                return _to_wav(mp3_bytes)
-        except Exception as e:
-            logger.error(f"gTTS failed: {e}")
+            logger.error(f"edge-tts failed: {e}")
 
         return b""
 
@@ -59,29 +49,14 @@ class ArEgFreeProvider(BaseTTSProvider):
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    return self._synth_gtts_wav(text)
+                    return b""
                 return loop.run_until_complete(self.synthesize(text))
             except RuntimeError:
                 return asyncio.run(self.synthesize(text))
         except Exception as e:
-            logger.warning(f"Edge-TTS sync failed: {e}, falling back to gTTS")
-            return self._synth_gtts_wav(text)
+            logger.error(f"Edge-TTS sync failed: {e}")
+            return b""
 
-    def _synth_gtts_wav(self, text: str) -> bytes:
-        try:
-            mp3_bytes = self._synth_gtts(text)
-            if mp3_bytes:
-                return _to_wav(mp3_bytes)
-        except Exception as e:
-            logger.error(f"gTTS WAV synthesis failed: {e}")
-        return b""
-
-    def _synth_gtts(self, text: str) -> bytes:
-        from gtts import gTTS
-        tts = gTTS(text=text, lang="ar", tld="com.eg")
-        buf = io.BytesIO()
-        tts.write_to_fp(buf)
-        return buf.getvalue()
 
 
 def _to_wav(audio_data: bytes, sample_rate: int = 24000) -> bytes:
@@ -108,4 +83,4 @@ def _to_wav(audio_data: bytes, sample_rate: int = 24000) -> bytes:
         logger.warning(f"WAV conversion failed: {e}, returning raw audio")
         return audio_data
 
-
+ArEgFreeTTSProvider = ArEgFreeProvider

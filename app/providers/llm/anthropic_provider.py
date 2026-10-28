@@ -12,14 +12,20 @@ logger = get_logger(__name__)
 class AnthropicProvider(BaseLLMProvider):
     """Anthropic Claude API provider with streaming support."""
 
-    def __init__(self):
+    def __init__(self, model: Optional[str] = None):
+        self._client = None
+        self.model = model
+
+    def reset_client(self) -> None:
+        """Reset cached client so new credentials take effect."""
         self._client = None
 
     def _get_client(self):
-        if self._client is None:
-            from anthropic import AsyncAnthropic  # type: ignore[import]
-            api_key = settings.LLM_API_KEY or "missing-key"
-            self._client = AsyncAnthropic(api_key=api_key)
+        if self._client is not None:
+            return self._client
+        from anthropic import AsyncAnthropic  # type: ignore[import]
+        api_key = settings.LLM_API_KEY or "missing-key"
+        self._client = AsyncAnthropic(api_key=api_key)
         return self._client
 
     async def generate(
@@ -51,7 +57,7 @@ class AnthropicProvider(BaseLLMProvider):
         effective_system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         if context:
             memories_text = "\n".join(f"- {m}" for m in context if m)
-            if memories_text.strip():
+            if memories_text.strip() and "ذكريات" not in effective_system_prompt:
                 effective_system_prompt += f"\n\nذكريات مرتبطة:\n{memories_text}"
 
         messages: List[Dict[str, str]] = []
@@ -64,10 +70,15 @@ class AnthropicProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
+        # Model resolution: use configured or requested model directly without fallback
+        model = self.model or settings.LLM_MODEL or "claude-3-5-sonnet-20241022"
+
+        max_tokens = getattr(settings, "LLM_MAX_TOKENS", 250)
+
         try:
             async with client.messages.stream(
-                model=settings.LLM_MODEL or "claude-3-5-sonnet-20241022",
-                max_tokens=150,
+                model=model,
+                max_tokens=max_tokens,
                 system=effective_system_prompt,
                 messages=messages,
             ) as stream:

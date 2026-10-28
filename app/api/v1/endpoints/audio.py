@@ -97,18 +97,10 @@ async def transcribe_audio(
         transcript = await stt_instance.transcribe(wav_data)
     except Exception as exc:
         logger.error(f"STT transcription failed with provider '{chosen_provider}': {exc}")
-        # Try fallback provider if primary fails
-        fallback_name = "whisper" if chosen_provider != "whisper" else "qwencleo"
-        try:
-            from app.providers.stt.factory import get_stt_provider
-            stt_fallback = get_stt_provider(fallback_name)
-            transcript = await stt_fallback.transcribe(wav_data)
-            chosen_provider = f"{chosen_provider} (failed, fallback to {fallback_name})"
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Transcription failed: {exc}",
-            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Transcription failed: {exc}",
+        )
 
     latency_ms = (time.perf_counter() - t0) * 1000
 

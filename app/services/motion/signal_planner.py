@@ -41,21 +41,53 @@ _BUILTIN_SIGNALS: dict[str, list[dict]] = {
         {"t": "joint", "id": 0, "deg": 90,  "ms": 300},  # thumb
         {"t": "joint", "id": 1, "deg": 90,  "ms": 200},  # index curl
     ],
+    "nod": [
+        {"t": "joint", "id": 3, "deg": 110, "ms": 250},
+        {"t": "joint", "id": 3, "deg": 80,  "ms": 250},
+        {"t": "joint", "id": 3, "deg": 90,  "ms": 250},
+    ],
+    "shake_head": [
+        {"t": "joint", "id": 4, "deg": 70,  "ms": 250},
+        {"t": "joint", "id": 4, "deg": 110, "ms": 250},
+        {"t": "joint", "id": 4, "deg": 90,  "ms": 250},
+    ],
+    "look_left": [
+        {"t": "joint", "id": 4, "deg": 60,  "ms": 300},
+    ],
+    "look_right": [
+        {"t": "joint", "id": 4, "deg": 120, "ms": 300},
+    ],
+    "look_center": [
+        {"t": "joint", "id": 3, "deg": 90,  "ms": 250},
+        {"t": "joint", "id": 4, "deg": 90,  "ms": 250},
+    ],
     "stop": [
         {"t": "stop"},
     ],
 }
 
 # Emotion-to-gesture mapping (doc §5.1)
-_EMOTION_GESTURES: dict[str, str] = {
+_EMOTION_GESTURES: dict[str, str | None] = {
     "happy": "wave",
+    "فرحان": "wave",
+    "سعيد": "wave",
     "surprised": "greet",
-    "sad": None,     # No movement when sad
+    "متفاجئ": "greet",
+    "like": "like",
+    "إعجاب": "like",
+    "greet": "greet",
+    "تحية": "greet",
+    "wave": "wave",
+    "تلويح": "wave",
+    "nod": "nod",
+    "إيماء": "nod",
+    "sad": None,
+    "حزين": None,
     "neutral": None,
 }
 
-# Regex to extract [gesture] tags from LLM output
-_TAG_RE = re.compile(r"\[(\w+)\]")
+# Regex to extract [gesture] and [action:name] tags from LLM output
+_TAG_RE = re.compile(r"\[(?:action:|gesture:|cmd:)?([\w\u0600-\u06FF]+)(?::[^\]]+)?\]", re.IGNORECASE)
 
 
 class SignalPlanner:
@@ -106,24 +138,31 @@ class SignalPlanner:
     async def extract_from_response(self, llm_response: str) -> list[dict]:
         """
         Parse [tag] markers from an LLM response and convert to ESP32 commands.
-        Returns a list of raw dicts ready to send.
+        Deduplicates gestures so overlapping tags (e.g. [wave] [happy]) do not
+        flood the ESP32 with duplicate motor sequences.
         """
         tags = _TAG_RE.findall(llm_response)
         commands: list[dict] = []
+        executed_gestures: set[str] = set()
 
         for tag in tags:
             tag_lower = tag.lower()
-            # Direct gesture
-            gestures = await self.resolve(tag_lower)
-            for g in gestures:
-                commands.append(g.model_dump())
 
-            # Emotion → gesture mapping
-            if tag_lower in _EMOTION_GESTURES:
-                mapped = _EMOTION_GESTURES[tag_lower]
+            target_gesture = tag_lower
+            if target_gesture in _EMOTION_GESTURES:
+                mapped = _EMOTION_GESTURES[target_gesture]
                 if mapped:
-                    extra = await self.resolve(mapped)
-                    for g in extra:
-                        commands.append(g.model_dump())
+                    target_gesture = mapped
+                else:
+                    continue
+
+            if target_gesture in executed_gestures:
+                continue
+
+            gestures = await self.resolve(target_gesture)
+            if gestures:
+                executed_gestures.add(target_gesture)
+                for g in gestures:
+                    commands.append(g.model_dump())
 
         return commands

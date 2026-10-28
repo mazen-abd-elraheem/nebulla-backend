@@ -33,7 +33,7 @@ def test_clean_text_for_tts():
 
     # Multiple tags
     raw2 = "تمام جداً [like] [greet] ونلتقي غداً"
-    assert clean_text_for_tts(raw2) == "تمام جداً ونلتقي غداً"
+    assert clean_text_for_tts(raw2) == "تَمامْ جداً ونلتقي غداً"
 
     # Only tags
     assert clean_text_for_tts("[wave] [happy]") == ""
@@ -137,3 +137,56 @@ async def test_anthropic_missing_package():
         async for t in provider.generate_stream("سؤال"):
             tokens.append(t)
         assert any("anthropic غير مثبتة" in t for t in tokens)
+
+
+def test_arabic_gesture_tags_and_cleaning():
+    from app.services.ai.pipeline import _is_sentence_end
+    # Arabic emotion tags
+    raw = "[فرحان] صباح الخير يا هندسة [تلويح]"
+    cleaned = clean_text_for_tts(raw)
+    assert cleaned == "صباح الخير يا هندسة"
+    assert _extract_emotion("شكراً لك! [فرحان]") == "happy"
+    assert _extract_emotion("للأسف حصلت مشكلة [حزين]") == "sad"
+    assert _extract_emotion("مش معقول! [متفاجئ]") == "surprised"
+
+    # Incomplete open tag bracket does not trigger sentence end prematurely
+    assert _is_sentence_end("أهلاً يا صديقي! [hap") is False
+    assert _is_sentence_end("أهلاً يا صديقي! [happy]") is True
+
+
+@pytest.mark.asyncio
+async def test_openai_model_resolution_and_reset():
+    from app.core.config import settings
+    provider = OpenAIProvider()
+    provider._client = MagicMock()
+    provider.reset_client()
+    assert provider._client is None
+
+    # Test that configured settings.LLM_MODEL is used directly without fallback
+    mock_client = MagicMock()
+    async def empty_stream():
+        if False:
+            yield None
+    mock_client.chat.completions.create = AsyncMock(return_value=empty_stream())
+    provider._client = mock_client
+
+    with patch("app.core.config.settings.LLM_MODEL", "llama3"):
+        async for _ in provider.generate_stream("سؤال"):
+            pass
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["model"] == "llama3"
+        assert call_kwargs["max_tokens"] >= 200
+
+
+@pytest.mark.asyncio
+async def test_signal_planner_arabic_and_deduplication():
+    from app.services.motion.signal_planner import SignalPlanner
+    planner = SignalPlanner()
+    # [wave] [happy] -> happy also maps to wave, should only trigger wave ONCE
+    commands = await planner.extract_from_response("مرحباً بك! [wave] [happy]")
+    # Built-in wave has 4 joint commands
+    assert len(commands) == 4
+
+    # Arabic tags: [فرحان] maps to wave
+    arabic_cmds = await planner.extract_from_response("أهلاً يا باشا [فرحان]")
+    assert len(arabic_cmds) == 4

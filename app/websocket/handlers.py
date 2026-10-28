@@ -24,6 +24,14 @@ _face_service: FaceService | None = None
 _motion_guard: MotionGuard | None = None
 _signal_planner: SignalPlanner | None = None
 
+# Concurrency semaphore to throttle concurrent heavy AI inferences (DoS mitigation)
+_pipeline_semaphore = asyncio.Semaphore(3)
+
+
+async def _safe_process_text(pipeline: AIPipeline, text: str) -> None:
+    async with _pipeline_semaphore:
+        await pipeline.process_text(text)
+
 
 def get_ai_pipeline() -> AIPipeline:
     global _ai_pipeline
@@ -87,6 +95,10 @@ async def phone_handler(ws: WebSocket) -> None:
                 msg_type = data.get("t")
                 if msg_type == "status":
                     await ws.send_json(manager.status())
+                elif msg_type == "chat":
+                    user_text = data.get("text", "")
+                    if user_text.strip():
+                        asyncio.create_task(_safe_process_text(pipeline, user_text.strip()))
             except json.JSONDecodeError:
                 logger.warning("Phone sent invalid JSON")
 
@@ -129,6 +141,11 @@ async def desk_handler(ws: WebSocket) -> None:
 
                 elif msg_type == "status":
                     await ws.send_json(manager.status())
+                elif msg_type == "chat":
+                    user_text = data.get("text", "")
+                    if user_text.strip():
+                        pipeline = _get_ai_pipeline()
+                        asyncio.create_task(_safe_process_text(pipeline, user_text.strip()))
 
             except Exception as e:
                 logger.error(f"Desk handler error: {e}")

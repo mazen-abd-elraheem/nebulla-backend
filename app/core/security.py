@@ -1,6 +1,5 @@
-"""Security helpers: pairing-code validation, rate limiting."""
-
-from datetime import datetime, timedelta
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 from fastapi import HTTPException, status
 
@@ -16,7 +15,7 @@ class RateLimiter:
         self._buckets: Dict[str, list] = {}  # device_id → list[datetime]
 
     def check(self, device_id: str) -> None:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         window_start = now - timedelta(seconds=1)
         timestamps = [t for t in self._buckets.get(device_id, []) if t > window_start]
         if len(timestamps) >= self._max:
@@ -27,10 +26,40 @@ class RateLimiter:
         timestamps.append(now)
         self._buckets[device_id] = timestamps
 
+        # Periodic cleanup if map grows too large to avoid memory exhaustion
+        if len(self._buckets) > 500:
+            stale_keys = [k for k, v in self._buckets.items() if not v or v[-1] <= window_start]
+            for k in stale_keys:
+                self._buckets.pop(k, None)
+
 
 rate_limiter = RateLimiter()
 
 
 def verify_pairing_code(code: str) -> bool:
-    """Validate the pairing code sent by a connecting device (doc §6)."""
-    return code == settings.PAIRING_SECRET
+    """Validate the pairing code sent by a connecting device with constant-time comparison."""
+    if not code:
+        return False
+    return secrets.compare_digest(code, settings.PAIRING_SECRET)
+
+
+# ── Password Hashing & Verification (Bcrypt) ─────────────────────────────────
+import bcrypt
+
+
+def get_password_hash(password: str) -> str:
+    """Hash a plaintext password using bcrypt with salt."""
+    pwd_bytes = password.encode("utf-8")[:72]
+    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt(rounds=12)).decode("utf-8")
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plaintext password against a bcrypt hash."""
+    if not plain_password or not hashed_password:
+        return False
+    try:
+        pwd_bytes = plain_password.encode("utf-8")[:72]
+        return bcrypt.checkpw(pwd_bytes, hashed_password.encode("utf-8"))
+    except Exception:
+        return False
+
