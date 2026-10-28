@@ -105,6 +105,27 @@ async def init_db() -> None:
                 await session.commit()
                 logger.info("Updated personality 1 to Mazen with clean reference voice")
 
+        # Seed core personalized RAG memories for Mazen (doc §1 RAG & personalized grounding)
+        from app.models.memory import Memory
+        mem_res = await session.execute(select(Memory.content).where(Memory.personality_id == 1))
+        existing_mem_contents = set(mem_res.scalars().all())
+
+        personalized_seeds = [
+            "مازن هو المهندس ومطور روبوت نيبولا الرئيسي، وهو من مواليد عام 2000.",
+            "مازن يفضل أكل الخضروات ولا يحب أكل الفواكه.",
+            "مشروع تخرج مازن هو روبوت نيبولا (Nebula) للذكاء الاصطناعي والتوأم الرقمي.",
+            "الروبوت نيبولا يمتلك 12 محرك سيرفو فائق الدقة ومتصل بنظام أمان متقدم.",
+            "الروبوت نيبولا تم تزويده بكاميرا تدعم تتبع الوجوه بسرعة 60 إطار في الثانية.",
+        ]
+        new_count = 0
+        for text_content in personalized_seeds:
+            if text_content not in existing_mem_contents:
+                session.add(Memory(content=text_content, personality_id=1, source="system", importance=5))
+                new_count += 1
+        if new_count > 0:
+            await session.commit()
+            logger.info(f"Seeded {new_count} personalized RAG memories for Mazen")
+
 
 async def get_db() -> AsyncSession:  # type: ignore[return]
     """FastAPI dependency: yields an async DB session."""

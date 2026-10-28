@@ -71,37 +71,22 @@ async def build_grounding_context(
         "system_prompt": target_p.system_prompt or "",
     }
 
-    import asyncio
-
-    # 2. Concurrent Retrieval: Memories (RAG) + Face Profiles
-    async def _fetch_faces():
-        try:
-            res = await db.execute(select(FaceProfile.name))
-            return list(res.scalars().all())
-        except Exception as e:
-            logger.warning(f"Could not load registered face profiles: {e}")
-            return []
-
-    memories_coro = _rag_service.retrieve(message, personality_id=target_p.id, db=db)
-    faces_coro = _fetch_faces()
-    memories, registered_faces = await asyncio.gather(memories_coro, faces_coro)
-
-    # 3. Faces (Vision / Face Recognition)
+    # 2. Faces (Vision / Face Recognition)
     current_person_desc = "لا يوجد أحد أمام الكاميرا حالياً"
     face_detected = False
     is_recent = False
-    current_face = {}
+    detected_face_name: Optional[str] = None
     try:
         from app.websocket.handlers import get_face_service
         face_service = get_face_service()
         current_face = face_service.get_current_face_info()
         face_detected = current_face.get("detected", False)
         is_recent = current_face.get("is_recent", False)
-        if face_detected:
-            if current_face.get("face_id"):
-                current_person_desc = f"الشخص الذي تراه أمامك هو: {current_face['face_id']}"
-            else:
-                current_person_desc = "يوجد شخص أمام الكاميرا ولكن لم يتم التعرف على هويته"
+        if face_detected and current_face.get("face_id"):
+            detected_face_name = current_face["face_id"]
+            current_person_desc = f"الشخص الذي تراه أمامك هو: {detected_face_name}"
+        elif face_detected:
+            current_person_desc = "يوجد شخص أمام الكاميرا ولكن لم يتم التعرف على هويته"
     except Exception as e:
         logger.warning(f"Could not retrieve live face info: {e}")
 
@@ -111,6 +96,18 @@ async def build_grounding_context(
         "current_person": current_person_desc,
         "registered_profiles": registered_faces,
     }
+
+    # 3. Memories (RAG grounded in Face Recognition & Persona)
+    rag_person = detected_face_name
+    if not rag_person and target_p and "مازن" in (target_p.name or ""):
+        rag_person = "مازن"
+
+    memories = await _rag_service.retrieve(
+        message,
+        personality_id=target_p.id,
+        db=db,
+        person_name=rag_person,
+    )
 
     # 4. Voice Clone
     voice_info = {
@@ -143,18 +140,31 @@ async def build_grounding_context(
     voice_str = voice_info["voice_sample_path"]
 
     if is_arabic:
-        grounded_system_prompt = (
-            f"أنت \"{robot_name}\" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.\n"
-            "تعليمات التشغيل:\n"
-            "1. اللهجة: أجب بلهجة مصرية قاهرية مهذبة وطبيعية.\n"
-            "2. الذاكرة ومنع الهلوسة: اعتمد حصرياً على الذاكرة أدناه. إذا لم تجد الإجابة، أو طُلب رقم سري/بيانات خاصة، اعتذر فوراً بعبارة:\n"
-            "   \"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]\"\n"
-            "3. الإيجاز: أجب باختصار في جملة أو جملتين فقط.\n"
-            "4. المشاعر: اختم دائماً بوسم مشاعر واحد فقط في النهاية (مثل [happy] أو [wave]).\n"
-            f"- الشخصية النشطة: {robot_name} (اللهجة: {p_info.get('dialect', 'cairo')})\n"
-            f"- استنساخ الصوت: {voice_str}\n"
-            f"- التشخيص وحالة الأجهزة: هاتف ({phone_str}) | حاسوب ({desk_str}) | روبوت ({esp_str})\n"
-        )
+        grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
+
+قواعد التشغيل والتوجيه الشامل (Comprehensive Operational Directives):
+1. تطابق لغة الحوار واللهجة (Strict Language Mirroring & Cairo Dialect):
+   - المستخدم يتحدث باللغة العربية: يجب أن تجيب حصراً بلهجة مصرية قاهرية مهذبة وطبيعية ومفهومة.
+   - يُحظر تماماً خلط لغات أجنبية أو استخدام رموز صينية أو مصطلحات مشوهة.
+2. الالتزام الصارم بسياق الذاكرة المعتمد ومنع الهلوسة (Strict RAG Grounding & Zero-Hallucination):
+   - اعتمد بشكل حصري ودقيق على الحقائق والمعلومات الواردة في سياق الذاكرة (RAG Context) فقط.
+   - إذا سُئلت عن تفصيلة غير متوفرة في الذاكرة، أو كانت الذاكرة فارغة، يجب أن تعتذر بأدب وبشكل مباشر:
+     "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+   - لا تخمن أو تخترع أو تفترض أي بيانات غير مذكورة قطعياً.
+3. بروتوكول حماية الخصوصية والبيانات الحساسة (Privacy & Security Directives):
+   - إذا طُلب منك رقم هاتف شخصي، كلمة مرور، كود سري، أو بيانات مالية وبنكية خاصة: ارفض فوراً بعبارة:
+     "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+4. الوعي البيئي والعتادي (Vision & Hardware Grounding):
+   - التفاعل بذكاء مع حالة الأجهزة المتصلة ومع الشخص الحاضر أمام الكاميرا.
+5. الإيجاز الحتمي ووسوم المشاعر (Conciseness & Mandatory Emotion Tags):
+   - أجب دائماً باختصار في حدود جملة إلى جملتين كحد أقصى لتوفير سرعة استجابة عالية.
+   - اختم إجابتك دائماً وبشكل إلزامي بوسم مشاعر واحد فقط في نهاية النص: [happy] أو [wave] أو [like] أو [neutral] أو [sad] أو [surprised].
+
+معلومات النظام والسياق النشط:
+- الشخصية النشطة: {robot_name} (اللهجة: {p_info.get('dialect') or 'cairo'})
+- بصمة الصوت: {voice_str}
+- التشخيص وحالة الأجهزة: الهاتف ({phone_str}) | الحاسوب ({desk_str}) | شريحة الروبوت ({esp_str})
+"""
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
 

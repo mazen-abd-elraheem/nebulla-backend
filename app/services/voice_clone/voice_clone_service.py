@@ -153,7 +153,8 @@ class VoiceCloneService:
             if p.exists():
                 self._personality_voice_map[personality_id] = str(p)
                 return str(p)
-        # If personality_id is None or not found on disk, fallback to the latest uploaded sample
+            return None
+        # If personality_id is None, fallback to the latest uploaded sample
         return self.get_latest_sample_path()
 
     def list_samples(self) -> list[dict]:

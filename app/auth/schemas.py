@@ -6,7 +6,13 @@ Directly maps to the Neural Interface UI design (Register & Login screens).
 import re
 from datetime import datetime
 from typing import Any, Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+try:
+    import email_validator  # noqa: F401
+    from pydantic import EmailStr
+except ImportError:
+    EmailStr = str  # fallback if email-validator package is missing
 
 
 class UserRegister(BaseModel):

@@ -60,8 +60,20 @@ def _user_to_response(user: User, personalities_count: int = 0) -> UserResponse:
 def _cosine_similarity(emb1: Any, emb2: Any) -> float:
     """Calculate cosine similarity between two face embeddings."""
     try:
-        a = np.array(emb1, dtype=np.float32).flatten()
-        b = np.array(emb2, dtype=np.float32).flatten()
+        def _to_arr(val):
+            if hasattr(val, "get_embedding_vector"):
+                v = val.get_embedding_vector()
+                if v is not None:
+                    return v
+            if isinstance(val, (bytes, memoryview)):
+                try:
+                    return np.frombuffer(val, dtype=np.float32)
+                except Exception:
+                    pass
+            return np.array(val, dtype=np.float32).flatten()
+
+        a = _to_arr(emb1)
+        b = _to_arr(emb2)
         if len(a) != len(b) or len(a) == 0:
             return 0.0
         norm_a = np.linalg.norm(a)
