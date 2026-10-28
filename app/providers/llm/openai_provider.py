@@ -20,6 +20,10 @@ class OpenAIProvider(BaseLLMProvider):
         """Reset cached client so new credentials/base_url take effect."""
         self._client = None
 
+    def reset_client(self) -> None:
+        """Reset cached client so new credentials/base_url take effect."""
+        self._client = None
+
     def _get_client(self):
         if self._client is not None:
             return self._client

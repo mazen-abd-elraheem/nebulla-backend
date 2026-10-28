@@ -6,17 +6,21 @@ Provides REST APIs for:
   - Face verification / Image-to-image comparison (1:1 matching)
   - Video face extraction (selecting the clearest face shots from video)
   - Face profile listing and photo serving
+  - Live face detection status
 """
 
+import asyncio
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.jwt import get_current_user, get_optional_user
 from app.db.session import get_db
 from app.models.face_profile import FaceProfile
 from app.websocket.handlers import _get_face_service
@@ -31,12 +35,13 @@ router = APIRouter()
     "/register",
     summary="Register a person with a photo",
     description="Upload a photo of a person to detect their face, save their profile, and extract their 512-D embedding.",
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,
 )
 async def register_face(
     name: str = Form(..., description="Full name or identifier of the person"),
     file: UploadFile = File(..., description="Image file (JPEG/PNG) containing the person's face"),
     db: AsyncSession = Depends(get_db),
+    _user: Optional[str] = Depends(get_optional_user),
 ):
     image_bytes = await file.read()
     if not image_bytes:
@@ -317,6 +322,61 @@ async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
     description="Delete a registered person and their photo from the database.",
 )
 async def delete_face_profile(name: str, db: AsyncSession = Depends(get_db)):
+    face_service = _get_face_service()
+    deleted = await face_service.delete_face(name=name, db=db)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
+
+    return {"message": f"Person '{name}' was successfully deleted."}
+
+
+@router.get(
+    "/{name}",
+    summary="Get face profile details",
+    description="Retrieve registration info and photo URL for a specific person.",
+)
+async def get_face_profile(name: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
+
+    return {
+        "id": profile.id,
+        "name": profile.name,
+        "photo_path": profile.photo_path,
+        "photo_url": f"/api/v1/faces/{profile.name}/photo" if profile.photo_path else None,
+        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+    }
+
+
+@router.get(
+    "/{name}/photo",
+    summary="Get registered person face photo",
+    description="Serve the thumbnail image of the registered person.",
+)
+async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
+
+    if not profile.photo_path or not os.path.exists(profile.photo_path):
+        raise HTTPException(status_code=404, detail=f"Photo for '{name}' does not exist on disk.")
+
+    return FileResponse(profile.photo_path, media_type="image/jpeg")
+
+
+@router.delete(
+    "/{name}",
+    summary="Delete a face profile",
+    description="Delete a registered person and their photo from the database.",
+)
+async def delete_face_profile(
+    name: str,
+    db: AsyncSession = Depends(get_db),
+    _user: Optional[str] = Depends(get_optional_user),
+):
     face_service = _get_face_service()
     deleted = await face_service.delete_face(name=name, db=db)
     if not deleted:
