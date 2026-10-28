@@ -59,14 +59,12 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
-        # Model resolution: fall back to llama3 if an OpenAI or Claude model name is configured
+        # Model resolution: use configured or requested model directly without fallback
         model = self.model or getattr(settings, "LLM_MODEL", "llama3")
-        if any(prefix in model.lower() for prefix in ("claude", "gpt-", "text-embedding")):
-            model = "llama3"
 
         max_tokens = getattr(settings, "TTS_MAX_NEW_TOKENS", 150) or 150
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": messages,
             "stream": True,
             "options": {"temperature": 0.7, "num_predict": max_tokens},
@@ -107,22 +105,8 @@ class LocalOllamaProvider(BaseLLMProvider):
         except httpx.HTTPStatusError as e:
             logger.error(f"Ollama HTTP error {e.response.status_code}: {e.response.text}")
             if e.response.status_code == 404:
-                # Try fallback to available Ollama model
-                try:
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        tags_res = await client.get(f"{settings.LLM_BASE_URL}/api/tags")
-                        if tags_res.status_code == 200:
-                            models = [m.get("name") for m in tags_res.json().get("models", [])]
-                            for candidate in ("phi3:mini", "mistral:7b-instruct-q4_0", "glm-4.7-flash"):
-                                matching = [m for m in models if candidate in m]
-                                if matching:
-                                    logger.info(f"Target model '{self.model}' not found, falling back to '{matching[0]}'")
-                                    self.model = matching[0]
-                                    async for tok in self.generate_stream(prompt, context, system_prompt, history):
-                                        yield tok
-                                    return
-                except Exception as fb_err:
-                    logger.debug(f"Ollama model fallback check failed: {fb_err}")
+                yield f"الموديل '{self.model}' غير موجود على خادم Ollama. يرجى التأكد من تثبيت الموديل الأساسي."
+                return
             yield f"في خطأ في تشغيل موديل {self.model} على Ollama."
         except Exception as e:
             logger.error(f"Ollama error: {e}")

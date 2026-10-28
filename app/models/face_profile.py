@@ -1,8 +1,8 @@
 import json
 import pickle
 from datetime import datetime
-from typing import Any, List, Optional, Union
-
+import pickle
+from typing import Optional, Union, List, Any
 import numpy as np
 from sqlalchemy import DateTime, Integer, LargeBinary, String
 from sqlalchemy.types import TypeDecorator
@@ -59,7 +59,7 @@ class FaceProfile(Base):
         super().__init__(**kwargs)
 
     @staticmethod
-    def serialize_embedding(vec: Union[List[float], np.ndarray, bytes, Any]) -> bytes:
+    def serialize_embedding(vec: Union[List[float], np.ndarray, bytes]) -> bytes:
         """Standardize any embedding format into float32 bytes for database storage."""
         if isinstance(vec, bytes):
             return vec
@@ -79,11 +79,6 @@ class FaceProfile(Base):
             pass
         try:
             val = pickle.loads(self.embedding)
-            return np.array(val, dtype=np.float32).flatten()
-        except Exception:
-            pass
-        try:
-            val = json.loads(self.embedding.decode("utf-8"))
             return np.array(val, dtype=np.float32).flatten()
         except Exception:
             pass

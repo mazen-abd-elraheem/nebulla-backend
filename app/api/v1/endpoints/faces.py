@@ -256,45 +256,78 @@ async def compare_video_to_image(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.get(
-    "",
-    summary="List all registered face profiles",
-    description="Retrieve all registered persons stored in the database.",
-)
-@router.get(
     "/",
     summary="List all registered face profiles",
     description="Retrieve all registered persons stored in the database.",
 )
-async def list_registered_faces(
-    db: AsyncSession = Depends(get_db),
-    _user: Optional[str] = Depends(get_optional_user),
-):
+async def list_registered_faces(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(FaceProfile).order_by(FaceProfile.name))
     profiles = result.scalars().all()
-    face_list = [
-        {
-            "id": p.id,
-            "name": p.name,
-            "photo_path": p.photo_path,
-            "photo_url": f"/api/v1/faces/{p.name}/photo" if p.photo_path else None,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-        }
-        for p in profiles
-    ]
 
     return {
         "count": len(profiles),
-        "profiles": face_list,
-        "faces": face_list,
+        "profiles": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "photo_path": p.photo_path,
+                "photo_url": f"/api/v1/faces/{p.name}/photo" if p.photo_path else None,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in profiles
+        ],
     }
 
 
-@router.get("/current", summary="Get live face detection and recognition status")
-async def get_current_face(
-    _user: Optional[str] = Depends(get_optional_user),
-):
+@router.get(
+    "/{name}",
+    summary="Get face profile details",
+    description="Retrieve registration info and photo URL for a specific person.",
+)
+async def get_face_profile(name: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
+
+    return {
+        "id": profile.id,
+        "name": profile.name,
+        "photo_path": profile.photo_path,
+        "photo_url": f"/api/v1/faces/{profile.name}/photo" if profile.photo_path else None,
+        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+    }
+
+
+@router.get(
+    "/{name}/photo",
+    summary="Get registered person face photo",
+    description="Serve the thumbnail image of the registered person.",
+)
+async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
+
+    if not profile.photo_path or not os.path.exists(profile.photo_path):
+        raise HTTPException(status_code=404, detail=f"Photo for '{name}' does not exist on disk.")
+
+    return FileResponse(profile.photo_path, media_type="image/jpeg")
+
+
+@router.delete(
+    "/{name}",
+    summary="Delete a face profile",
+    description="Delete a registered person and their photo from the database.",
+)
+async def delete_face_profile(name: str, db: AsyncSession = Depends(get_db)):
     face_service = _get_face_service()
-    return face_service.get_current_face_info()
+    deleted = await face_service.delete_face(name=name, db=db)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
+
+    return {"message": f"Person '{name}' was successfully deleted."}
 
 
 @router.get(

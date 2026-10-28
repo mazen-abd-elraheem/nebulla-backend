@@ -81,12 +81,13 @@ class ChatResponse(BaseModel):
 # ── Authentication Helper ────────────────────────────────────────────────────
 
 async def _get_auth_user(
-    user: Optional[str] = Depends(get_optional_user),
+    x_api_key: Optional[str] = Depends(api_key_scheme),
+    authorization: Optional[str] = Header(None),
 ) -> str:
-    """Allow chat without strict auth if unauthenticated or in DEBUG mode."""
-    if user:
-        return user
-    return "dev_user" if settings.DEBUG else "guest_user"
+    """Allow quick development chat without strict auth if in DEBUG mode or if unauthenticated in local testing."""
+    if settings.DEBUG or not (x_api_key or authorization):
+        return "dev_user"
+    return await get_current_user(x_api_key=x_api_key, authorization=authorization)
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────

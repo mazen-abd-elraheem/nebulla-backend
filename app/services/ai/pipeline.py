@@ -523,19 +523,12 @@ class AIPipeline:
         return None
 
     async def _generate_tts(self, text: str, personality_id: Optional[int]) -> bytes:
-        """Synthesize text using the cloned voice of the personality, falling back to base TTS."""
-        try:
-            from app.services.voice_clone.voice_clone_service import VoiceCloneService
-            res = await VoiceCloneService.get_instance().synthesize(
-                text=text,
-                personality_id=personality_id,
-            )
-            if res and len(res) > 2000:
-                return res
-        except Exception as e:
-            logger.warning(f"Voice clone synthesis failed in AI pipeline: {e}, falling back to base TTS")
-
-        return await self._tts.synthesize(text)
+        """Synthesize text strictly using the cloned voice of the personality (no fallback models)."""
+        from app.services.voice_clone.voice_clone_service import VoiceCloneService
+        return await VoiceCloneService.get_instance().synthesize(
+            text=text,
+            personality_id=personality_id,
+        )
 
     # ── Database Helpers ──────────────────────────────────────────────────────
 

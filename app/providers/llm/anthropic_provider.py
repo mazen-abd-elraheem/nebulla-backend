@@ -12,8 +12,9 @@ logger = get_logger(__name__)
 class AnthropicProvider(BaseLLMProvider):
     """Anthropic Claude API provider with streaming support."""
 
-    def __init__(self):
+    def __init__(self, model: Optional[str] = None):
         self._client = None
+        self.model = model
 
     def reset_client(self) -> None:
         """Reset cached client so new credentials take effect."""
@@ -69,10 +70,8 @@ class AnthropicProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
-        # Model resolution: fall back to claude-3-5-sonnet if local or openai model name is configured
-        model = settings.LLM_MODEL or "claude-3-5-sonnet-20241022"
-        if any(prefix in model.lower() for prefix in ("llama", "qwen", "mistral", "phi", "gpt-")):
-            model = "claude-3-5-sonnet-20241022"
+        # Model resolution: use configured or requested model directly without fallback
+        model = self.model or settings.LLM_MODEL or "claude-3-5-sonnet-20241022"
 
         max_tokens = getattr(settings, "LLM_MAX_TOKENS", 250)
 

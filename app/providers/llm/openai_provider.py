@@ -12,7 +12,12 @@ logger = get_logger(__name__)
 class OpenAIProvider(BaseLLMProvider):
     """OpenAI API provider with streaming support, context injection, and conversation history."""
 
-    def __init__(self):
+    def __init__(self, model: Optional[str] = None):
+        self._client = None
+        self.model = model
+
+    def reset_client(self) -> None:
+        """Reset cached client so new credentials/base_url take effect."""
         self._client = None
 
     def reset_client(self) -> None:
@@ -77,10 +82,8 @@ class OpenAIProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
-        # Model resolution: fall back to gpt-4o-mini if local model name is configured
-        model = settings.LLM_MODEL or "gpt-4o-mini"
-        if any(local_prefix in model.lower() for local_prefix in ("llama", "qwen", "mistral", "phi")):
-            model = "gpt-4o-mini"
+        # Model resolution: use configured or requested model directly without fallback
+        model = self.model or settings.LLM_MODEL or "gpt-4o-mini"
 
         max_tokens = max(getattr(settings, "LLM_MAX_TOKENS", 250), 250)
         temperature = getattr(settings, "LLM_TEMPERATURE", 0.7)

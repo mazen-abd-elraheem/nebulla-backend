@@ -71,14 +71,6 @@ class FaceService:
         self._known_embeddings: Dict[str, np.ndarray] = {}
         self._db_loaded: bool = False
 
-    @property
-    def _model(self):
-        return self._analyzer
-
-    @_model.setter
-    def _model(self, value):
-        self._analyzer = value
-
     async def _ensure_model(self):
         """Lazy-load the UniFace models."""
         if self._analyzer is not None:
@@ -94,10 +86,12 @@ class FaceService:
             import uniface
             # FaceAnalyzer combines detector (RetinaFace) + recognizer (EdgeFace/ArcFace)
             self._analyzer = uniface.FaceAnalyzer()
+            self._model = self._analyzer
             logger.info("UniFace FaceAnalyzer initialized successfully with ONNX Runtime.")
         except Exception as e:
             logger.warning(f"Could not initialize UniFace: {e}. Face recognition will use fallback mode.")
             self._analyzer = "disabled"
+            self._model = "disabled"
 
     # ──────────────────────────────────────────────────────────────────────────
     # Database Cache Synchronization
@@ -346,10 +340,6 @@ class FaceService:
             logger.error(f"UniFace analyze error: {e}")
             return []
 
-    def _detect(self, jpeg_bytes: bytes) -> FaceResult:
-        """Synchronous detection & recognition wrapper for compatibility."""
-        return self._process_frame_sync(jpeg_bytes)
-
     def _match_embedding(self, emb: np.ndarray) -> Tuple[Optional[str], float]:
         """Find the best matching known person and similarity score."""
         if emb is None or len(self._known_embeddings) == 0:
@@ -371,25 +361,15 @@ class FaceService:
         """Extract primary face embedding vector as float list."""
         img = self._decode_image(jpeg_bytes)
         if img is None:
-            try:
-                import io
-                from PIL import Image
-                pil_img = Image.open(io.BytesIO(jpeg_bytes)).convert("RGB")
-                img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-            except Exception:
-                return None
-
-        if img is None:
             return None
-
         faces = self._detect_faces_raw(img)
         if not faces:
             return None
-
         largest_face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-        if hasattr(largest_face, "embedding") and largest_face.embedding is not None:
-            return np.array(largest_face.embedding).flatten().astype(float).tolist()
+        if largest_face.embedding is not None:
+            return largest_face.embedding.astype(float).tolist()
         return None
+
     # ──────────────────────────────────────────────────────────────────────────
     # Person Identification / Recognition (تعريف الأشخاص)
     # ──────────────────────────────────────────────────────────────────────────
@@ -867,63 +847,36 @@ class FaceService:
         """Register a new person from an uploaded photo."""
         await self._ensure_model()
 
-        # Check if extract_embedding_sync extracts an embedding (supports mocked tests or direct extraction)
-        loop = asyncio.get_event_loop()
-        extracted_emb = await loop.run_in_executor(None, self.extract_embedding_sync, image_bytes)
-
         img = self._decode_image(image_bytes)
-        rel_photo_path = None
-        confidence = 1.0
+        if img is None:
+            raise ValueError("Could not decode image.")
 
-        if extracted_emb is not None:
-            emb_arr = np.array(extracted_emb, dtype=np.float32).flatten()
-            emb_bytes = emb_arr.tobytes()
-            dim = len(emb_arr)
+        faces = self._detect_faces_raw(img)
+        if not faces:
+            raise ValueError("No face detected in the provided image.")
 
-            # Try to save face crop if image decoded
-            if img is not None:
-                faces = self._detect_faces_raw(img)
-                if faces:
-                    best_face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-                    confidence = float(getattr(best_face, "confidence", 1.0))
-                    crop = self._crop_face(img, best_face.bbox, margin_pct=0.25)
-                else:
-                    crop = img
-                safe_name = "".join(c for c in name if c.isalnum() or c in ("-", "_", " ")).strip().replace(" ", "_")
-                photo_filename = f"{safe_name}_{int(time.time())}.jpg"
-                photo_full_path = self.faces_dir / photo_filename
-                try:
-                    cv2.imwrite(str(photo_full_path), crop)
-                    rel_photo_path = f"data/faces/{photo_filename}"
-                except Exception:
-                    pass
-        else:
-            if img is None:
-                raise ValueError("Could not decode image.")
-            faces = self._detect_faces_raw(img)
-            if not faces:
-                raise ValueError("No face detected in the provided image.")
-            best_face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-            if best_face.embedding is None:
-                raise ValueError("Could not extract facial recognition embedding.")
+        # Pick primary face
+        best_face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+        if best_face.embedding is None:
+            raise ValueError("Could not extract facial recognition embedding.")
 
-            crop = self._crop_face(img, best_face.bbox, margin_pct=0.25)
-            safe_name = "".join(c for c in name if c.isalnum() or c in ("-", "_", " ")).strip().replace(" ", "_")
-            photo_filename = f"{safe_name}_{int(time.time())}.jpg"
-            photo_full_path = self.faces_dir / photo_filename
-            cv2.imwrite(str(photo_full_path), crop)
-            rel_photo_path = f"data/faces/{photo_filename}"
+        # Crop face and save thumbnail photo
+        crop = self._crop_face(img, best_face.bbox, margin_pct=0.25)
+        safe_name = "".join(c for c in name if c.isalnum() or c in ("-", "_", " ")).strip().replace(" ", "_")
+        photo_filename = f"{safe_name}_{int(time.time())}.jpg"
+        photo_full_path = self.faces_dir / photo_filename
 
-            emb_bytes = best_face.embedding.astype(np.float32).tobytes()
-            dim = len(best_face.embedding)
-            confidence = float(best_face.confidence)
+        cv2.imwrite(str(photo_full_path), crop)
+        rel_photo_path = f"data/faces/{photo_filename}"
+
+        # Serialize embedding
+        emb_bytes = best_face.embedding.astype(np.float32).tobytes()
 
         # Check existing profile
         existing = (await db.execute(select(FaceProfile).where(FaceProfile.name == name))).scalar_one_or_none()
         if existing:
             existing.embedding = emb_bytes
-            if rel_photo_path:
-                existing.photo_path = rel_photo_path
+            existing.photo_path = rel_photo_path
             face_profile = existing
         else:
             face_profile = FaceProfile(
@@ -939,10 +892,9 @@ class FaceService:
         return {
             "message": "Face registered successfully",
             "name": name,
-            "confidence": round(float(confidence), 4),
+            "confidence": round(float(best_face.confidence), 4),
             "photo_path": rel_photo_path,
-            "embedding_dimension": dim,
-            "embedding_size": len(emb_bytes),
+            "embedding_dimension": len(best_face.embedding),
         }
 
     async def register_face_from_video(

@@ -23,6 +23,14 @@ class MemoryCreate(BaseModel):
     importance: int = 5
 
 
+class RAGPromptRequest(BaseModel):
+    query: str
+    personality_id: int | None = None
+    person_name: str | None = None
+    top_k: int = 5
+    instructions: str | None = None
+
+
 @router.get("/", summary="List memories")
 async def list_memories(
     personality_id: int | None = Query(None),
@@ -74,15 +82,73 @@ async def delete_memory(
 async def search_memories(
     q: str = Query(..., description="Search query"),
     personality_id: int | None = Query(None),
+    person_name: str | None = Query(None, description="Optional recognized person name from Vision/Face Recognition"),
     top_k: int = Query(5, ge=1, le=20),
     detailed: bool = Query(False, description="Whether to include similarity score and metadata"),
     _u: str | None = Depends(get_optional_user),
 ):
     if detailed:
-        results = await _rag.retrieve_detailed(q, personality_id=personality_id, top_k=top_k)
+        results = await _rag.retrieve_detailed(
+            q,
+            personality_id=personality_id,
+            top_k=top_k,
+            person_name=person_name,
+        )
     else:
-        results = await _rag.retrieve(q, personality_id=personality_id, top_k=top_k)
-    return {"query": q, "results": results}
+        results = await _rag.retrieve(
+            q,
+            personality_id=personality_id,
+            top_k=top_k,
+            person_name=person_name,
+        )
+    return {"query": q, "person_name": person_name, "results": results}
+
+
+@router.post("/prompt", summary="Retrieve memories and compile as clean LLM Prompt (not JSON)")
+async def build_rag_prompt_endpoint(
+    body: RAGPromptRequest,
+    db: AsyncSession = Depends(get_db),
+    _u: str | None = Depends(get_optional_user),
+):
+    """
+    RAG Prompt Builder Endpoint:
+    Retrieves personalized context (grounded in Face Recognition/Person identity)
+    and formats everything into a clean textual Prompt for the LLM rather than JSON,
+    saving tokens and improving generation performance.
+    """
+    pid = body.personality_id
+    target_p = None
+    if pid:
+        target_p = await db.get(Personality, pid)
+    if not target_p:
+        res = await db.execute(select(Personality).where(Personality.is_active == True).limit(1))  # noqa: E712
+        target_p = res.scalar_one_or_none()
+
+    p_id = target_p.id if target_p else 1
+    instructions = body.instructions or (target_p.system_prompt if target_p else None)
+    robot_name = target_p.name if target_p else "نيبولا"
+
+    memories = await _rag.retrieve(
+        query=body.query,
+        personality_id=p_id,
+        top_k=body.top_k,
+        db=db,
+        person_name=body.person_name,
+    )
+    prompt_str = _rag.format_rag_prompt(
+        query=body.query,
+        memories=memories,
+        instructions=instructions,
+        person_name=body.person_name,
+        robot_name=robot_name,
+    )
+    return {
+        "format": "prompt",
+        "prompt": prompt_str,
+        "retrieved_memories": memories,
+        "personality_id": p_id,
+        "person_name": body.person_name,
+    }
 
 
 def _m(m: Memory) -> dict:
