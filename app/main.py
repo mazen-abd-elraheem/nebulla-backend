@@ -26,6 +26,18 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     logger.info("Nebula backend starting up...")
     await init_db()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            logger.info(f"🚀 [GPU ACTIVE] NVIDIA CUDA Acceleration enabled on: {torch.cuda.get_device_name(0)}")
+        else:
+            logger.warning(
+                "⚠️ [RUNNING ON CPU] GPU is not active in this Python environment. "
+                "To run with fast NVIDIA GTX 1650 acceleration, start the server using: "
+                "run_server.bat OR D:\\nebula_venv\\Scripts\\python.exe -m uvicorn app.main:app --reload"
+            )
+    except Exception:
+        pass
     yield
     logger.info("Nebula backend shutting down...")
 

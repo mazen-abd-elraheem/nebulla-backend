@@ -105,13 +105,40 @@ class AIPipeline:
         memories = await self._rag.retrieve(transcript, personality_id=active_pid)
         history = await self._get_recent_history(limit=6)
 
-        # ── 3. LLM (streaming) ───────────────────────────────────────────
+        # ── 3. Parallel Execution: LLM Streaming + Concurrent Background TTS ───
         t_llm_start = time.perf_counter()
         full_response = ""
         sentence_buffer = ""
-        first_sentence_sent = False
-        first_tts_ms: Optional[float] = None
+        tts_queue: asyncio.Queue = asyncio.Queue()
+        tts_timings: list = []
 
+        async def _tts_worker():
+            first_done = False
+            while True:
+                item = await tts_queue.get()
+                if item is None:
+                    tts_queue.task_done()
+                    break
+                sentence_to_synth = item
+                t0 = time.perf_counter()
+                try:
+                    audio_out = await self._generate_tts(sentence_to_synth, active_pid)
+                    elapsed = (time.perf_counter() - t0) * 1000
+                    tts_timings.append(elapsed)
+                    if not first_done:
+                        first_done = True
+                        logger.info(f"TTS parallel first sentence ({elapsed:.0f}ms): {sentence_to_synth!r}")
+                    if audio_out and len(audio_out) > 1000:
+                        await manager.send_to_phone(audio_out)
+                except Exception as exc:
+                    logger.error(f"TTS parallel synthesis error: {exc}")
+                finally:
+                    tts_queue.task_done()
+
+        # Start TTS worker task concurrently in the background
+        tts_worker_task = asyncio.create_task(_tts_worker())
+
+        # Stream LLM tokens without waiting or blocking for TTS
         async for token in self._llm.generate_stream(
             transcript,
             context=memories,
@@ -121,49 +148,46 @@ class AIPipeline:
             full_response += token
             sentence_buffer += token
 
-            # Stream text to desktop live display
+            # Stream text to desktop live display immediately
             await manager.broadcast_to_desks({
                 "t": "text_stream",
                 "token": token,
                 "is_final": False,
             })
 
-            # TTS starts on first complete sentence (low latency trick)
-            if not first_sentence_sent and _is_sentence_end(sentence_buffer):
+            # Real-time gesture and emotion detection while streaming
+            if "[" in token or "]" in token:
+                interim_emotion = _extract_emotion(full_response)
+                await manager.send_to_phone({"t": "eyes", "mood": interim_emotion})
+
+            # When a sentence completes, queue it for TTS in background immediately
+            if _is_sentence_end(sentence_buffer):
                 tts_text = clean_text_for_tts(sentence_buffer)
                 sentence_buffer = ""
-                first_sentence_sent = True
-
-                if tts_text:
-                    t_tts_start = time.perf_counter()
-                    audio_out = await self._generate_tts(tts_text, active_pid)
-                    t_tts_end = time.perf_counter()
-                    first_tts_ms = (t_tts_end - t_tts_start) * 1000
-                    logger.info(f"TTS first sentence ({first_tts_ms:.0f}ms): {tts_text!r}")
-                    await manager.send_to_phone(audio_out)
+                if tts_text and len(tts_text.strip()) > 1:
+                    tts_queue.put_nowait(tts_text)
 
         t_llm = time.perf_counter()
         llm_ms = (t_llm - t_llm_start) * 1000
 
-        # ── 4. Send remaining TTS audio ───────────────────────────────────
-        remaining_tts_ms = 0.0
+        # Queue any remaining sentence buffer
         remaining_text = clean_text_for_tts(sentence_buffer)
-        if remaining_text:
-            t_rem_start = time.perf_counter()
-            audio_out = await self._generate_tts(remaining_text, active_pid)
-            remaining_tts_ms = (time.perf_counter() - t_rem_start) * 1000
-            await manager.send_to_phone(audio_out)
+        if remaining_text and len(remaining_text.strip()) > 1:
+            tts_queue.put_nowait(remaining_text)
 
-        total_tts_ms = (first_tts_ms or 0.0) + remaining_tts_ms
+        # Signal TTS worker to complete and await all generated audio
+        tts_queue.put_nowait(None)
+        await tts_worker_task
 
-        # ── 5. Extract gesture / emotion markers from response ─────────────
+        total_tts_ms = sum(tts_timings) if tts_timings else 0.0
+
+        # Extract and send ESP32 gestures
         commands = await self._planner.extract_from_response(full_response)
         for cmd in commands:
             await manager.send_to_esp(cmd)
 
-        # ── 6. Update emotion on phone display ────────────────────────────
-        emotion = _extract_emotion(full_response)
-        await manager.send_to_phone({"t": "eyes", "mood": emotion})
+        final_emotion = _extract_emotion(full_response)
+        await manager.send_to_phone({"t": "eyes", "mood": final_emotion})
 
         # ── 7. Final text token + total latency broadcast ─────────────────
         total_ms = (time.perf_counter() - t_start) * 1000
@@ -196,19 +220,12 @@ class AIPipeline:
         )
 
     async def _generate_tts(self, text: str, personality_id: Optional[int]) -> bytes:
-        """Synthesize text using the cloned voice of the personality, falling back to base TTS."""
-        try:
-            from app.services.voice_clone.voice_clone_service import VoiceCloneService
-            res = await VoiceCloneService.get_instance().synthesize(
-                text=text,
-                personality_id=personality_id,
-            )
-            if res and len(res) > 2000:
-                return res
-        except Exception as e:
-            logger.warning(f"Voice clone synthesis failed in AI pipeline: {e}, falling back to base TTS")
-
-        return await self._tts.synthesize(text)
+        """Synthesize text strictly using the cloned voice of the personality (no fallback models)."""
+        from app.services.voice_clone.voice_clone_service import VoiceCloneService
+        return await VoiceCloneService.get_instance().synthesize(
+            text=text,
+            personality_id=personality_id,
+        )
 
     # ── Database Helpers ──────────────────────────────────────────────────────
 

@@ -150,7 +150,8 @@ class VoiceCloneService:
             if p.exists():
                 self._personality_voice_map[personality_id] = str(p)
                 return str(p)
-        # If personality_id is None or not found on disk, fallback to the latest uploaded sample
+            return None
+        # If personality_id is None, fallback to the latest uploaded sample
         return self.get_latest_sample_path()
 
     def list_samples(self) -> list[dict]:
@@ -201,53 +202,52 @@ class VoiceCloneService:
         num_step: int | None = None,
     ) -> bytes:
         """
-        Synthesise *text* in the cloned voice.
-
-        Priority of voice reference:
-          1. Explicit reference_wav path (override)
-          2. Personality-bound sample (personality_id lookup)
-          3. Default XTTS reference (from settings)
+        Synthesise *text* strictly in the cloned voice using VoiceTut zero-shot cloning.
+        Retrieves the voice sample from the specified personality, DB active personality,
+        or latest uploaded recording.
+        No generic speakers or fallback models allowed.
 
         Returns WAV bytes.
         """
         wav_path = reference_wav or self.get_sample_path(personality_id)
 
-        from app.providers.tts.factory import get_tts_provider
-        tts = get_tts_provider(settings.TTS_PROVIDER)
-
-        if wav_path and os.path.exists(wav_path):
-            logger.info(f"Synthesizing text using cloned voice sample: {wav_path}")
-            # 1. VoiceTut-TTS: specialized for Egyptian Arabic zero-shot cloning
+        # If not found yet, check active personality in DB
+        if not wav_path or not os.path.exists(wav_path):
             try:
-                res = await self._voicetut.synthesize(
-                    text,
-                    ref_audio=wav_path,
-                    ref_text=ref_text,
-                    num_step=num_step,
-                )
-                if res and len(res) > 2000:
-                    return res
-            except Exception as exc:
-                logger.warning(f"VoiceTut cloning failed: {exc}")
+                from app.db.session import AsyncSessionLocal
+                from app.models.personality import Personality
+                from sqlalchemy import select
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(
+                        select(Personality).where(Personality.is_active == True).limit(1)  # noqa: E712
+                    )
+                    active_p = res.scalar_one_or_none()
+                    if active_p and active_p.voice_sample_path and os.path.exists(active_p.voice_sample_path):
+                        wav_path = active_p.voice_sample_path
+            except Exception as db_err:
+                logger.debug(f"DB active personality check: {db_err}")
 
-            # 2. XTTS v2 fallback
-            if getattr(self._xtts, "_model", None) != "disabled":
-                try:
-                    res = await self._xtts.clone_voice(wav_path, text, language)
-                    if res and len(res) > 2000:
-                        return res
-                except Exception as exc:
-                    logger.warning(f"XTTS cloning failed: {exc}")
+        # Fallback to latest uploaded sample
+        if not wav_path or not os.path.exists(wav_path):
+            wav_path = self.get_latest_sample_path()
 
-        try:
-            res = await tts.synthesize(text)
-            if res and len(res) > 2000:
-                return res
-        except Exception as exc:
-            logger.warning(f"Active TTS provider failed: {exc}")
+        if not wav_path or not os.path.exists(wav_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="لا توجد عينة صوتية مستنسخة محفوظة للنظام أو للشخصية المطلوبة. يرجى رفع ملف الصوت أولاً عبر POST /api/v1/voice-clone/upload.",
+            )
 
-        from app.providers.tts.ar_eg_free import ArEgFreeProvider
-        return await ArEgFreeProvider().synthesize(text)
+        logger.info(f"Synthesizing text strictly using cloned voice sample: {wav_path}")
+        res = await self._voicetut.synthesize(
+            text=text,
+            ref_audio=wav_path,
+            ref_text=ref_text,
+            num_step=num_step,
+        )
+        if not res or len(res) <= 1000:
+            raise RuntimeError("فشل توليد الصوت المستنسخ بواسطة VoiceTut ولم يتم إنتاج إشارة صوتية كافية.")
+
+        return res
 
     async def synthesize_stream(
         self,

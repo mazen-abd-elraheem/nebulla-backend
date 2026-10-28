@@ -118,16 +118,12 @@ class VoiceTutProvider(BaseTTSProvider):
     ) -> bytes:
         await self._ensure_loaded()
         if self._tts == "disabled" or self._tts is None:
-            logger.warning("VoiceTut is not available — falling back to fast Egyptian ArEgFreeProvider")
-            from app.providers.tts.ar_eg_free import ArEgFreeProvider
-            return await ArEgFreeProvider().synthesize(text)
+            raise RuntimeError("VoiceTut-TTS model is not available or failed to load. Generic fallback voices are disabled.")
 
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, self._synth, text, speaker, ref_audio, ref_text, num_step)
         if not res or len(res) <= 1000:
-            logger.warning("VoiceTut returned empty audio — falling back to ArEgFreeProvider")
-            from app.providers.tts.ar_eg_free import ArEgFreeProvider
-            return await ArEgFreeProvider().synthesize(text)
+            raise RuntimeError("VoiceTut-TTS returned empty audio. Generic fallback voices are disabled.")
         return res
 
     def _synth(
@@ -145,34 +141,30 @@ class VoiceTutProvider(BaseTTSProvider):
 
             # Denoising steps from settings (defaults: 6 for CPU, 10 for CUDA, or user override)
             default_steps = 6 if getattr(self, "_device", "cpu") == "cpu" else 10
-            steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", default_steps)
+            steps = num_step if (num_step and num_step > 0) else getattr(settings, "VOICETUT_NUM_STEPS", default_steps)
+            if not steps or steps <= 0:
+                steps = default_steps
 
-            if ref_audio:
-                actual_ref_text = ref_text
-                if not actual_ref_text:
-                    from pathlib import Path
-                    txt_file = Path(ref_audio).with_suffix(".txt")
-                    if txt_file.exists():
-                        try:
-                            actual_ref_text = txt_file.read_text(encoding="utf-8").strip()
-                        except Exception:
-                            pass
+            if not ref_audio:
+                raise ValueError("ref_audio (cloned voice sample) is required. Pre-built speakers and fallbacks are disabled.")
 
-                with torch.inference_mode():
-                    wav_samples = self._tts.synthesize(
-                        text=text,
-                        ref_audio=ref_audio,
-                        ref_text=actual_ref_text,
-                        num_step=steps,
-                    )
-            else:
-                spk = speaker or self._speaker
-                with torch.inference_mode():
-                    wav_samples = self._tts.synthesize(
-                        text=text,
-                        speaker=spk,
-                        num_step=steps,
-                    )
+            actual_ref_text = ref_text if (ref_text and ref_text.strip() and ref_text.strip() != "string") else None
+            if not actual_ref_text:
+                from pathlib import Path
+                txt_file = Path(ref_audio).with_suffix(".txt")
+                if txt_file.exists():
+                    try:
+                        actual_ref_text = txt_file.read_text(encoding="utf-8").strip()
+                    except Exception:
+                        pass
+
+            with torch.inference_mode():
+                wav_samples = self._tts.synthesize(
+                    text=text,
+                    ref_audio=ref_audio,
+                    ref_text=actual_ref_text,
+                    num_step=steps,
+                )
             sr = getattr(self._tts, "sampling_rate", 24000)
             return _array_to_wav(wav_samples, sample_rate=sr)
         except Exception as e:
@@ -181,15 +173,15 @@ class VoiceTutProvider(BaseTTSProvider):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            # If user wanted their cloned voice, retry once with fast 4 steps
-            if ref_audio:
+            # Retry once with fast 4 steps if steps was > 4
+            if ref_audio and steps != 4:
                 try:
                     logger.info("Retrying voice clone with 4 steps to fit in GPU memory...")
                     with torch.inference_mode():
                         wav_samples = self._tts.synthesize(
                             text=text,
                             ref_audio=ref_audio,
-                            ref_text=ref_text,
+                            ref_text=actual_ref_text,
                             num_step=4,
                         )
                     sr = getattr(self._tts, "sampling_rate", 24000)
@@ -197,12 +189,8 @@ class VoiceTutProvider(BaseTTSProvider):
                 except Exception as retry_err:
                     logger.error(f"Voice clone retry failed: {retry_err}")
 
-            try:
-                from app.providers.tts.ar_eg_free import ArEgFreeProvider
-                return ArEgFreeProvider().synthesize_sync(text)
-            except Exception as fb_err:
-                logger.error(f"Fallback synthesis error: {fb_err}")
-                return _silent_wav()
+            # NO FALLBACKS
+            raise RuntimeError(f"Voice clone failed via VoiceTut: {e}")
 
 
 def _array_to_wav(samples, sample_rate: int = 24000) -> bytes:
