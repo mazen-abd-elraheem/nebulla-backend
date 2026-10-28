@@ -71,25 +71,23 @@ async def build_grounding_context(
         "system_prompt": target_p.system_prompt or "",
     }
 
-    # 2. Memories (RAG)
-    memories = await _rag_service.retrieve(message, personality_id=target_p.id, db=db)
-
-    # 3. Faces (Vision / Face Recognition)
+    # 2. Faces (Vision / Face Recognition)
     current_person_desc = "لا يوجد أحد أمام الكاميرا حالياً"
     registered_faces: List[str] = []
     face_detected = False
     is_recent = False
+    detected_face_name: Optional[str] = None
     try:
         from app.websocket.handlers import get_face_service
         face_service = get_face_service()
         current_face = face_service.get_current_face_info()
         face_detected = current_face.get("detected", False)
         is_recent = current_face.get("is_recent", False)
-        if face_detected:
-            if current_face.get("face_id"):
-                current_person_desc = f"الشخص الذي تراه أمامك هو: {current_face['face_id']}"
-            else:
-                current_person_desc = "يوجد شخص أمام الكاميرا ولكن لم يتم التعرف على هويته"
+        if face_detected and current_face.get("face_id"):
+            detected_face_name = current_face["face_id"]
+            current_person_desc = f"الشخص الذي تراه أمامك هو: {detected_face_name}"
+        elif face_detected:
+            current_person_desc = "يوجد شخص أمام الكاميرا ولكن لم يتم التعرف على هويته"
     except Exception as e:
         logger.warning(f"Could not retrieve live face info: {e}")
 
@@ -105,6 +103,18 @@ async def build_grounding_context(
         "current_person": current_person_desc,
         "registered_profiles": registered_faces,
     }
+
+    # 3. Memories (RAG grounded in Face Recognition & Persona)
+    rag_person = detected_face_name
+    if not rag_person and target_p and "مازن" in (target_p.name or ""):
+        rag_person = "مازن"
+
+    memories = await _rag_service.retrieve(
+        message,
+        personality_id=target_p.id,
+        db=db,
+        person_name=rag_person,
+    )
 
     # 4. Voice Clone
     voice_info = {

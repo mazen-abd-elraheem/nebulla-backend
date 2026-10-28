@@ -78,6 +78,7 @@ class RAGService:
         query: str,
         personality_id: int | None = None,
         db: AsyncSession | None = None,
+        person_name: str | None = None,
     ) -> list[tuple[float, Memory]]:
         await self._ensure_embedder()
 
@@ -115,24 +116,43 @@ class RAGService:
         sem_scores: dict[int, float] = {}
         lex_scores: dict[int, float] = {}
 
+        clean_person = person_name.strip() if person_name else None
+        augmented_query = f"{clean_person} {query}" if clean_person and clean_person not in query else query
+
         # 1. Dense Semantic Scoring
         if self._embedder != "disabled":
             loop = asyncio.get_event_loop()
             try:
                 query_vec = await loop.run_in_executor(None, self._embed, query)
+                aug_vec = None
+                if augmented_query != query:
+                    aug_vec = await loop.run_in_executor(None, self._embed, augmented_query)
+
                 for mem in memories:
                     if mem.embedding:
                         mem_vec = np.frombuffer(mem.embedding, dtype=np.float32)
                         norm_prod = (np.linalg.norm(query_vec) * np.linalg.norm(mem_vec)) + 1e-9
                         cos_sim = float(np.dot(query_vec, mem_vec) / norm_prod)
+                        if aug_vec is not None:
+                            norm_aug = (np.linalg.norm(aug_vec) * np.linalg.norm(mem_vec)) + 1e-9
+                            cos_sim_aug = float(np.dot(aug_vec, mem_vec) / norm_aug)
+                            cos_sim = max(cos_sim, cos_sim_aug)
                         if cos_sim > 0.05:
                             sem_scores[mem.id] = cos_sim
             except Exception as e:
                 logger.error(f"Error during semantic embedding search: {e}. Using lexical search.")
 
-        # 2. Egyptian Lexical & Keyword Matching
+        # 2. Egyptian Lexical & Keyword Matching (with person_name boost)
         for mem in memories:
             l_score = self._lexical_score(query, mem.content)
+            if augmented_query != query:
+                l_score_aug = self._lexical_score(augmented_query, mem.content)
+                l_score = max(l_score, l_score_aug)
+
+            # Boost memories that explicitly mention the recognized person
+            if clean_person and clean_person.lower() in mem.content.lower():
+                l_score += 0.25
+
             if l_score > 0.0:
                 lex_scores[mem.id] = l_score
 
@@ -169,6 +189,10 @@ class RAGService:
         if not scored:
             for mem in memories:
                 score = self._lexical_score(query, mem.content)
+                if augmented_query != query:
+                    score = max(score, self._lexical_score(augmented_query, mem.content))
+                if clean_person and clean_person.lower() in mem.content.lower():
+                    score += 0.2
                 if score > 0:
                     scored.append((score, mem))
 
@@ -181,13 +205,14 @@ class RAGService:
         personality_id: int | None = None,
         top_k: int | None = None,
         db: AsyncSession | None = None,
+        person_name: str | None = None,
     ) -> list[str]:
         """
         Return the top-K most relevant memory texts for *query*.
         Uses hybrid search (semantic cosine similarity + lexical Arabic keyword match + importance).
-        Falls back smoothly if embedder is unavailable.
+        Enhanced with personalized face recognition context when person_name is supplied.
         """
-        scored = await self._get_scored_memories(query, personality_id, db)
+        scored = await self._get_scored_memories(query, personality_id, db, person_name=person_name)
         if not scored:
             return []
 
@@ -209,9 +234,10 @@ class RAGService:
         personality_id: int | None = None,
         top_k: int | None = None,
         db: AsyncSession | None = None,
+        person_name: str | None = None,
     ) -> list[dict]:
         """Return top-K relevant memories with scores and metadata."""
-        scored = await self._get_scored_memories(query, personality_id, db)
+        scored = await self._get_scored_memories(query, personality_id, db, person_name=person_name)
         if not scored:
             return []
 
@@ -230,6 +256,66 @@ class RAGService:
             }
             for score, m in top_scored
         ]
+
+    def format_rag_prompt(
+        self,
+        query: str,
+        memories: list[str],
+        instructions: str | None = None,
+        person_name: str | None = None,
+        robot_name: str = "نيبولا",
+    ) -> str:
+        """
+        Builds a clean, optimized textual Prompt (NOT JSON) combining:
+        1. Instructions from control DB / Personality directives.
+        2. Verified RAG Context & personalized memories (e.g. from Face Recognition).
+        3. Clear operational directives (Egyptian dialect, conciseness, zero hallucination).
+        4. User query.
+
+        This textual Prompt structure minimizes token footprint, eliminates JSON parsing overhead,
+        and provides optimal grounding for LLM generation.
+        """
+        prompt_parts: list[str] = []
+
+        # 1. System Persona & Core Instructions
+        base_inst = instructions or f"أنت '{robot_name}'، توأم رقمي مصري ذكي وودود."
+        prompt_parts.append(base_inst.strip())
+
+        # 2. Operational Directives
+        prompt_parts.append(
+            "\n[توجيهات التشغيل والرد]:\n"
+            "- أجب حصراً بلهجة مصرية قاهرية طبيعية ومهذبة ومباشرة (جملة أو جملتين كحد أقصى).\n"
+            "- اعتمد بدقة وحصرياً على حقائق الذاكرة المسترجعة أدناه لتجنب أي هلوسة.\n"
+            "- اختم ردك دائماً وبشكل إلزامي بوسم مشاعر مناسب في النهاية مثل: [happy] أو [wave] أو [like]."
+        )
+
+        # 3. Personalized Context from Face Recognition
+        if person_name and person_name.strip():
+            prompt_parts.append(
+                f"\n[بيانات الشخص الحاضر / التعرف على الوجه]:\n"
+                f"الشخص الذي تتحدث معه الآن هو: {person_name.strip()}."
+            )
+
+        # 4. Verified RAG Context (Textual prompt bullets, NOT JSON)
+        if memories:
+            mem_bullets = "\n".join(f"• {m.strip()}" for m in memories if m.strip())
+            prompt_parts.append(
+                f"\n--- [سياق الذاكرة المسترجع (Verified RAG Context)] ---\n"
+                f"{mem_bullets}\n"
+                f"--------------------------------------------------"
+            )
+        else:
+            prompt_parts.append(
+                "\n--- [سياق الذاكرة المسترجع (Verified RAG Context)] ---\n"
+                "لا توجد معلومات مسجلة في الذاكرة بخصوص هذا الاستفسار.\n"
+                "تنبيه: إذا كان السؤال يتطلب معلومة شخصية غير مسجلة، وضح بأدب أن المعلومة غير مسجلة حالياً.\n"
+                "--------------------------------------------------"
+            )
+
+        # 5. User Query
+        prompt_parts.append(f"\n[سؤال المستخدم]:\n{query.strip()}\n\n[الرد]:")
+
+        return "\n".join(prompt_parts)
 
     async def add_memory(
         self,
