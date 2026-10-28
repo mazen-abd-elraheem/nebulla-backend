@@ -275,27 +275,14 @@ class VoiceCloneService:
             except Exception as exc:
                 logger.warning(f"VoiceTut local cloning failed: {exc}")
 
-            # XTTS v2 fallback
-            if getattr(self._xtts, "_model", None) != "disabled":
-                try:
-                    res = await self._xtts.clone_voice(wav_path, clean_text, language)
-                    if res and len(res) > 2000:
-                        return res
-                except Exception as exc:
-                    logger.warning(f"XTTS cloning failed: {exc}")
-
-        # Active TTS provider fallback
+        # Synthesize with active configured TTS provider
         from app.providers.tts.factory import get_tts_provider
         try:
             tts = get_tts_provider(settings.TTS_PROVIDER)
-            res = await tts.synthesize(clean_text)
-            if res and len(res) > 2000:
-                return res
+            return await tts.synthesize(clean_text)
         except Exception as exc:
-            logger.warning(f"Active TTS provider failed: {exc}")
-
-        from app.providers.tts.ar_eg_free import ArEgFreeProvider
-        return await ArEgFreeProvider().synthesize(clean_text)
+            logger.error(f"TTS provider '{settings.TTS_PROVIDER}' synthesis failed: {exc}")
+            return b""
 
     async def synthesize_stream(
         self,

@@ -125,9 +125,8 @@ class VoiceTutProvider(BaseTTSProvider):
 
         await self._ensure_loaded()
         if self._tts == "disabled" or self._tts is None:
-            logger.warning("VoiceTut is not available — falling back to fast Egyptian ArEgFreeProvider")
-            from app.providers.tts.ar_eg_free import ArEgFreeProvider
-            return await ArEgFreeProvider().synthesize(clean_text)
+            logger.error("VoiceTut is not available or disabled")
+            return _silent_wav()
 
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(
@@ -143,9 +142,8 @@ class VoiceTutProvider(BaseTTSProvider):
             language,
         )
         if not res or len(res) <= 1000:
-            logger.warning("VoiceTut returned empty audio — falling back to ArEgFreeProvider")
-            from app.providers.tts.ar_eg_free import ArEgFreeProvider
-            return await ArEgFreeProvider().synthesize(clean_text)
+            logger.warning("VoiceTut returned empty audio")
+            return _silent_wav()
         return res
 
     async def clone_voice(
@@ -276,12 +274,7 @@ class VoiceTutProvider(BaseTTSProvider):
                 except Exception as retry_err:
                     logger.error(f"Voice clone retry failed: {retry_err}")
 
-            try:
-                from app.providers.tts.ar_eg_free import ArEgFreeProvider
-                return ArEgFreeProvider().synthesize_sync(text)
-            except Exception as fb_err:
-                logger.error(f"Fallback synthesis error: {fb_err}")
-                return _silent_wav()
+            return _silent_wav()
 
 
 def _array_to_wav(samples, sample_rate: int = 24000) -> bytes:

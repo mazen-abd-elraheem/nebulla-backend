@@ -2,7 +2,7 @@
 VoiceTut Microservice Provider (Method 2: Dedicated GPU Microservice Bridge)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Bridges Nebulla Backend to the standalone VoiceTuT Studio server (running on port 8001)
-via HTTP REST API. Features health checks, character routing, and automatic fallback.
+via HTTP REST API. Features health checks and character routing.
 """
 
 from __future__ import annotations
@@ -102,16 +102,6 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
                         logger.info(f"Microservice synthesized {len(audio_resp.content)} bytes (RTF: {data.get('rtf')}x)")
                         return audio_resp.content
         except Exception as exc:
-            logger.warning(f"VoiceTuT Studio microservice request failed: {exc} — attempting local synthesis")
+            logger.error(f"VoiceTuT Studio microservice request failed: {exc}")
 
-        # Fallback to local native engine
-        from app.providers.tts.voicetut import VoiceTutProvider
-        return await VoiceTutProvider().synthesize(
-            clean_text,
-            ref_audio=target_ref_audio,
-            ref_text=actual_ref_text,
-            num_step=num_step,
-            guidance_scale=guidance_scale,
-            speed=speed,
-            language=language,
-        )
+        return b""

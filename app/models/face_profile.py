@@ -1,12 +1,8 @@
 import json
 from datetime import datetime
-<<<<<<< HEAD
 import pickle
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Any
 import numpy as np
-=======
-from typing import Any
->>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac
 from sqlalchemy import DateTime, Integer, LargeBinary, String
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column
@@ -50,7 +46,6 @@ class FaceProfile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(128), unique=True, index=True)
-<<<<<<< HEAD
     embedding: Mapped[bytes] = mapped_column(LargeBinary)
     photo_path: Mapped[Optional[str]] = mapped_column(String(256), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -87,9 +82,3 @@ class FaceProfile(Base):
         except Exception:
             pass
         return None
-
-=======
-    embedding: Mapped[Any] = mapped_column(EmbeddingType)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
->>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac

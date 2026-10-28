@@ -81,23 +81,13 @@ class ChatResponse(BaseModel):
 # ── Authentication Helper ────────────────────────────────────────────────────
 
 async def _get_auth_user(
-<<<<<<< HEAD
-    x_api_key: str | None = Depends(api_key_scheme),
-    authorization: str | None = Header(None),
+    x_api_key: Optional[str] = Depends(api_key_scheme),
+    authorization: Optional[str] = Header(None),
 ) -> str:
     """Allow quick development chat without strict auth if in DEBUG mode or if unauthenticated in local testing."""
     if settings.DEBUG or not (x_api_key or authorization):
         return "dev_user"
     return await get_current_user(x_api_key=x_api_key, authorization=authorization)
-=======
-    user: Optional[str] = Depends(get_optional_user),
-) -> str:
-    """Allow chat without strict auth if unauthenticated or in DEBUG mode."""
-    if user:
-        return user
-    return "guest_user"
-
->>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────
@@ -283,10 +273,6 @@ async def chat_with_llm(
         memories_used=memories,
         personality_id=active_pid,
         grounding=grounding,
-        response=reply,
-        retrieved_memories=memories,
-        personality_id=active_pid,
-        latency={"llm_ms": round(llm_ms, 2)},
     )
 
 

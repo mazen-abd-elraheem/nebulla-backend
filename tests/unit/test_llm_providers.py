@@ -33,7 +33,7 @@ def test_clean_text_for_tts():
 
     # Multiple tags
     raw2 = "تمام جداً [like] [greet] ونلتقي غداً"
-    assert clean_text_for_tts(raw2) == "تمام جداً ونلتقي غداً"
+    assert clean_text_for_tts(raw2) == "تَمامْ جداً ونلتقي غداً"
 
     # Only tags
     assert clean_text_for_tts("[wave] [happy]") == ""
@@ -155,14 +155,14 @@ def test_arabic_gesture_tags_and_cleaning():
 
 
 @pytest.mark.asyncio
-async def test_openai_model_fallback_and_reset():
+async def test_openai_model_resolution_and_reset():
     from app.core.config import settings
     provider = OpenAIProvider()
     provider._client = MagicMock()
     provider.reset_client()
     assert provider._client is None
 
-    # Test fallback to gpt-4o-mini when settings.LLM_MODEL is a local model
+    # Test that configured settings.LLM_MODEL is used directly without fallback
     mock_client = MagicMock()
     async def empty_stream():
         if False:
@@ -174,7 +174,7 @@ async def test_openai_model_fallback_and_reset():
         async for _ in provider.generate_stream("سؤال"):
             pass
         call_kwargs = mock_client.chat.completions.create.call_args[1]
-        assert call_kwargs["model"] == "gpt-4o-mini"
+        assert call_kwargs["model"] == "llama3"
         assert call_kwargs["max_tokens"] >= 200
 
 

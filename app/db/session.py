@@ -55,8 +55,6 @@ async def init_db() -> None:
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-<<<<<<< HEAD
-
         def _migrate(connection):
             from sqlalchemy import inspect, text
             inspector = inspect(connection)
@@ -69,15 +67,12 @@ async def init_db() -> None:
                 cols = [c["name"] for c in inspector.get_columns("face_profiles")]
                 if "photo_path" not in cols:
                     connection.execute(text("ALTER TABLE face_profiles ADD COLUMN photo_path VARCHAR(256)"))
+            if "personalities" in tables:
+                cols = [c["name"] for c in inspector.get_columns("personalities")]
+                if "user_id" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN user_id INTEGER REFERENCES users(id)"))
 
         await conn.run_sync(_migrate)
-=======
-        # Migrate existing SQLite databases if user_id column is missing
-        try:
-            await conn.execute(text("ALTER TABLE personalities ADD COLUMN user_id INTEGER REFERENCES users(id)"))
-        except Exception:
-            pass  # Already exists or handled by create_all
->>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac
     logger.info("Database initialised")
 
     # Seed or configure default personality 1 (Mazen - Digital Twin)

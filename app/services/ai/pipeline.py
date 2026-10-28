@@ -305,7 +305,6 @@ class AIPipeline:
             )
         )
 
-<<<<<<< HEAD
     async def process_text(
         self,
         text: str,
@@ -522,7 +521,7 @@ class AIPipeline:
         except Exception as e:
             logger.debug(f"Could not load device telemetry: {e}")
         return None
-=======
+
     async def _generate_tts(self, text: str, personality_id: Optional[int]) -> bytes:
         """Synthesize text using the cloned voice of the personality, falling back to base TTS."""
         try:
@@ -537,7 +536,6 @@ class AIPipeline:
             logger.warning(f"Voice clone synthesis failed in AI pipeline: {e}, falling back to base TTS")
 
         return await self._tts.synthesize(text)
->>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac
 
     # ── Database Helpers ──────────────────────────────────────────────────────
 
