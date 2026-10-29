@@ -1,0 +1,31 @@
+nebula.db*
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+*.log
+logs/
+/models/
+data/voice_samples/
+data/embeddings/
+<<<<<<< HEAD
+data/faces/
+=======
+data/*.jpg
+data/uniface_test_result.jpg
+>>>>>>> 9dcb10fd8b69cf4910628e4c6ddcc404ccb3eaac
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage

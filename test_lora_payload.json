@@ -1,0 +1,7 @@
+{
+  "character_id": "mazen",
+  "character_name": "مازن (Mazen) - LoRA Studio",
+  "lora_rank": 16,
+  "lora_alpha": 32,
+  "epochs": 2
+}
