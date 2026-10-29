@@ -31,44 +31,54 @@ logger = get_logger(__name__)
 class RAGService:
     """
     Embedding-based memory retrieval.
-    Lazy-loads the embedding model on first use, with lexical fallback if unavailable.
+    Pre-warms/caches the embedding model in memory, with lexical fallback if unavailable.
     """
 
+    _shared_embedder = None
+    _shared_lock = asyncio.Lock()
+
     def __init__(self):
-        self._embedder = None
+        self._embedder = RAGService._shared_embedder
         self._lock = asyncio.Lock()
 
     async def _ensure_embedder(self):
-        if self._embedder is not None:
+        if RAGService._shared_embedder is not None:
+            self._embedder = RAGService._shared_embedder
             return
-        async with self._lock:
-            if self._embedder is None:
+        async with RAGService._shared_lock:
+            if RAGService._shared_embedder is None:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self._load_embedder)
+            self._embedder = RAGService._shared_embedder
 
     def _load_embedder(self):
         if np is None:
             logger.warning("numpy is not installed. RAG will use keyword/lexical fallback.")
+            RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
             return
         try:
             from sentence_transformers import SentenceTransformer  # type: ignore[import]
             try:
-                self._embedder = SentenceTransformer(
+                embedder = SentenceTransformer(
                     settings.EMBEDDING_MODEL,
                     device=settings.EMBEDDING_DEVICE,
                     local_files_only=True,
                 )
                 logger.info(f"Embedding model loaded from local cache: {settings.EMBEDDING_MODEL}")
+                RAGService._shared_embedder = embedder
+                self._embedder = embedder
                 return
             except Exception:
                 pass
 
             # If not cached locally, use instant high-speed lexical & keyword matching
             logger.info("Embedding model weights not in local cache; RAG using instant keyword & BM25 search.")
+            RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
         except Exception as e:
             logger.warning(f"Could not initialize SentenceTransformer ({e}). Using keyword search.")
+            RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -115,18 +125,22 @@ class RAGService:
         sem_scores: dict[int, float] = {}
         lex_scores: dict[int, float] = {}
 
-        # 1. Dense Semantic Scoring
-        if self._embedder != "disabled":
+        # 1. Dense Semantic Scoring (Vectorized batch matrix product)
+        if self._embedder != "disabled" and self._embedder is not None:
             loop = asyncio.get_event_loop()
             try:
                 query_vec = await loop.run_in_executor(None, self._embed, query)
-                for mem in memories:
-                    if mem.embedding:
-                        mem_vec = np.frombuffer(mem.embedding, dtype=np.float32)
-                        norm_prod = (np.linalg.norm(query_vec) * np.linalg.norm(mem_vec)) + 1e-9
-                        cos_sim = float(np.dot(query_vec, mem_vec) / norm_prod)
+                q_norm = (np.linalg.norm(query_vec)) + 1e-9
+                normalized_q = query_vec / q_norm
+
+                valid_mems = [m for m in memories if m.embedding]
+                if valid_mems:
+                    mat = np.array([np.frombuffer(m.embedding, dtype=np.float32) for m in valid_mems])
+                    norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-9
+                    sims = np.dot(mat / norms, normalized_q)
+                    for mem, cos_sim in zip(valid_mems, sims):
                         if cos_sim > 0.05:
-                            sem_scores[mem.id] = cos_sim
+                            sem_scores[mem.id] = float(cos_sim)
             except Exception as e:
                 logger.error(f"Error during semantic embedding search: {e}. Using lexical search.")
 

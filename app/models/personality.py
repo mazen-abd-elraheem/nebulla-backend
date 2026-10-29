@@ -30,6 +30,7 @@ class Personality(Base):
     voice_sample_path: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)
 
     user: Mapped[Optional["User"]] = relationship("User", back_populates="personalities")
 

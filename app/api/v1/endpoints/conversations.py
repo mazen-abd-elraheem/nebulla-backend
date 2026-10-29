@@ -195,7 +195,15 @@ async def chat_with_llm(
                     yield token
             except Exception as e:
                 logger.error(f"Error during streamed LLM generation: {e}")
-                yield f"\n[خطأ أثناء التوليد: {e}]"
+                if hasattr(e, "response") and hasattr(getattr(e, "response"), "aread"):
+                    try:
+                        await e.response.aread()
+                    except Exception:
+                        pass
+                err_msg = str(e)
+                if "ResponseNotRead" in type(e).__name__ or "streaming response content" in err_msg:
+                    err_msg = "خطأ في قراءة استجابة الموديل المباشرة"
+                yield f"\n[خطأ أثناء التوليد: {err_msg}]"
 
             # Save to DB safely using a fresh session
             try:
@@ -282,27 +290,111 @@ async def chat_stream(
     db: AsyncSession = Depends(get_db),
     _user: str = Depends(_get_auth_user),
 ):
+    session_id = body.session_id or str(uuid.uuid4())
     system_prompt, memories, grounding, active_pid = await build_grounding_context(
         db=db,
         personality_id=body.personality_id,
         message=body.message,
     )
+
+    # Resolve target provider and model
     target_provider = body.provider or settings.LLM_PROVIDER
+    if body.model and ("nile" in body.model.lower() or "mbzuai" in body.model.lower()):
+        if not body.provider:
+            target_provider = "huggingface"
     llm = get_llm_provider(target_provider)
+    if body.model:
+        if hasattr(llm, "model_name"):
+            llm.model_name = body.model
+        if hasattr(llm, "model"):
+            llm.model = body.model
+
+    # Find or create Conversation
+    conv_res = await db.execute(
+        select(Conversation)
+        .where(Conversation.session_id == session_id)
+        .order_by(Conversation.started_at.desc())
+        .limit(1)
+    )
+    conv = conv_res.scalar_one_or_none()
+    if not conv:
+        conv = Conversation(personality_id=active_pid, session_id=session_id)
+        db.add(conv)
+        await db.commit()
+        await db.refresh(conv)
+
+    # Fetch recent conversation history
+    msg_res = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conv.id)
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(6)
+    )
+    recent_msgs = list(reversed(msg_res.scalars().all()))
+    history = [{"role": m.role, "content": m.content} for m in recent_msgs]
+    conv_id = conv.id
+
+    # Commit read transaction to release all SQLite locks before LLM generation
+    await db.commit()
+
+    t_start = time.perf_counter()
 
     async def event_generator():
         import json
         yield f"data: {json.dumps({'type': 'context', 'memories': memories}, ensure_ascii=False)}\n\n"
+        full_content = []
         try:
             async for token in llm.generate_stream(
                 body.message,
                 context=memories,
                 system_prompt=system_prompt,
+                history=history,
             ):
+                full_content.append(token)
                 yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
-        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+            logger.error(f"Error during SSE chat stream: {e}")
+            if hasattr(e, "response") and hasattr(getattr(e, "response"), "aread"):
+                try:
+                    await e.response.aread()
+                except Exception:
+                    pass
+            # If no tokens have been sent yet, yield a user-friendly token so client/tests receive valid token stream
+            if not full_content:
+                error_msg_user = "حصل خطأ في معالجة الموديل اللحظية. جرب مرة تانية."
+                full_content.append(error_msg_user)
+                yield f"data: {json.dumps({'type': 'token', 'content': error_msg_user}, ensure_ascii=False)}\n\n"
+            err_msg = str(e)
+            if "ResponseNotRead" in type(e).__name__ or "streaming response content" in err_msg:
+                err_msg = "خطأ في قراءة استجابة الموديل المباشرة (Streaming read error)"
+            yield f"data: {json.dumps({'type': 'error', 'content': err_msg}, ensure_ascii=False)}\n\n"
+        finally:
+            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+
+        # Save to DB safely using a fresh session
+        if full_content:
+            try:
+                async with AsyncSessionLocal() as session:
+                    full_str = "".join(full_content)
+                    llm_ms = (time.perf_counter() - t_start) * 1000
+                    emotion = _extract_emotion(full_str)
+                    user_msg = Message(
+                        conversation_id=conv_id,
+                        role="user",
+                        content=body.message,
+                    )
+                    robot_msg = Message(
+                        conversation_id=conv_id,
+                        role="robot",
+                        content=full_str,
+                        llm_latency_ms=round(llm_ms, 2),
+                        total_latency_ms=round(llm_ms, 2),
+                        emotion=emotion,
+                    )
+                    session.add_all([user_msg, robot_msg])
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to persist SSE streamed chat messages: {e}")
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
