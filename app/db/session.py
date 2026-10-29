@@ -73,6 +73,8 @@ async def init_db() -> None:
                 cols = [c["name"] for c in inspector.get_columns("personalities")]
                 if "user_id" not in cols:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+                if "updated_at" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN updated_at DATETIME"))
 
         await conn.run_sync(_migrate)
     logger.info("Database initialised")

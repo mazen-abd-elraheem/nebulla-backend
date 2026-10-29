@@ -14,6 +14,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # ── Project ────────────────────────────────────────────────────────────
@@ -57,11 +58,14 @@ class Settings(BaseSettings):
     # ── STT Config ─────────────────────────────────────────────────────────
     QWENCLEO_MODEL_PATH: str = "models/qwencleo-asr"
     QWENCLEO_DEVICE: str = "cpu"  # "cuda" | "cpu"
+    QWENCLEO_LANGUAGE: str = "Arabic"
 
     # ── TTS Config ─────────────────────────────────────────────────────────
     VOICETUT_MODEL_PATH: str = "models/voicetut-tts"
     VOICETUT_DEVICE: str = "cuda"  # "cuda" | "cpu" (RTX 4050 GPU)
     VOICETUT_SERVICE_URL: str = "http://127.0.0.1:8001"  # Standalone studio microservice endpoint
+    VOICETUT_SPEAKER: str = "Mohammed"
+    VOICETUT_STEPS: int = 32
     # OmniVoice base (VoiceTut is fine-tuned on ~380h Egyptian podcast)
     OMNIVOICE_BASE_PATH: str = "models/omnivoice"
     # Diffusion denoising steps (4: fast preview, 10: balanced streaming, 36: max studio fidelity)
@@ -75,6 +79,9 @@ class Settings(BaseSettings):
 
     # ── Vision Config ──────────────────────────────────────────────────────
     UNIFACE_MODEL: Literal["scrfd", "retinaface", "yolo_face"] = "scrfd"
+    UNIFACE_MODEL_NAME: str = "scrfd_2.5g_kps"
+    UNIFACE_RECOGNIZER: str = "mobileface"
+    UNIFACE_CONF_THRESH: float = 0.6
     UNIFACE_DEVICE: str = "cpu"   # "cpu" | "cuda" (keep off GPU if STT/TTS busy)
     CAMERA_FPS: int = 10          # frames per second sent from phone camera
     CAMERA_WIDTH: int = 320

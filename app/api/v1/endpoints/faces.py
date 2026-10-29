@@ -321,57 +321,6 @@ async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
     summary="Delete a face profile",
     description="Delete a registered person and their photo from the database.",
 )
-async def delete_face_profile(name: str, db: AsyncSession = Depends(get_db)):
-    face_service = _get_face_service()
-    deleted = await face_service.delete_face(name=name, db=db)
-    if not deleted:
-        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
-
-    return {"message": f"Person '{name}' was successfully deleted."}
-
-
-@router.get(
-    "/{name}",
-    summary="Get face profile details",
-    description="Retrieve registration info and photo URL for a specific person.",
-)
-async def get_face_profile(name: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
-    profile = result.scalar_one_or_none()
-    if not profile:
-        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
-
-    return {
-        "id": profile.id,
-        "name": profile.name,
-        "photo_path": profile.photo_path,
-        "photo_url": f"/api/v1/faces/{profile.name}/photo" if profile.photo_path else None,
-        "created_at": profile.created_at.isoformat() if profile.created_at else None,
-    }
-
-
-@router.get(
-    "/{name}/photo",
-    summary="Get registered person face photo",
-    description="Serve the thumbnail image of the registered person.",
-)
-async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
-    profile = result.scalar_one_or_none()
-    if not profile:
-        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
-
-    if not profile.photo_path or not os.path.exists(profile.photo_path):
-        raise HTTPException(status_code=404, detail=f"Photo for '{name}' does not exist on disk.")
-
-    return FileResponse(profile.photo_path, media_type="image/jpeg")
-
-
-@router.delete(
-    "/{name}",
-    summary="Delete a face profile",
-    description="Delete a registered person and their photo from the database.",
-)
 async def delete_face_profile(
     name: str,
     db: AsyncSession = Depends(get_db),
@@ -383,4 +332,5 @@ async def delete_face_profile(
         raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
 
     return {"message": f"Person '{name}' was successfully deleted."}
+
 

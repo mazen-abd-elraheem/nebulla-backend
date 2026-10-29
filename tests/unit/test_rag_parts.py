@@ -36,6 +36,11 @@ if sys.stdout.encoding.lower() != "utf-8":
     except Exception:
         pass
 
+import os
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 import httpx
 
 from app.main import app
