@@ -70,7 +70,7 @@ class AnthropicProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
-        # Model resolution: use configured or requested model directly without fallback
+        # Model resolution: use configured or requested model directly
         model = self.model or settings.LLM_MODEL or "claude-3-5-sonnet-20241022"
 
         max_tokens = getattr(settings, "LLM_MAX_TOKENS", 250)

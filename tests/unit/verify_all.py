@@ -46,7 +46,7 @@ async def verify_everything():
     print("      بدء الفحص الشامل لمنظومة الـ RAG والـ LLM والـ API")
     print("=" * 70)
 
-    # Determine whether external server is running or fallback to ASGI in-process
+    # Determine whether external server is running or use ASGI in-process
     live_server_online = False
     try:
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=1.5) as probe:

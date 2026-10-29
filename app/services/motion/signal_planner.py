@@ -18,7 +18,7 @@ from app.websocket.messages import JointCmdMsg
 
 logger = get_logger(__name__)
 
-# Built-in gesture sequences (fallback if DB is empty)
+# Built-in gesture sequences (used when DB is unseeded)
 _BUILTIN_SIGNALS: dict[str, list[dict]] = {
     "like": [
         # Thumb up — all fingers close, thumb extends

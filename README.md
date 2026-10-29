@@ -92,13 +92,13 @@ nebulla-backend/
 │   │   │   ├── base.py             # BaseSTTProvider ABC
 │   │   │   ├── factory.py          # get_stt_provider(name)
 │   │   │   ├── qwencleo.py         # Egyptian Arabic ASR (primary)
-│   │   │   ├── whisper.py          # Whisper large-v3 (fallback)
+│   │   │   ├── whisper.py          # Whisper large-v3 STT
 │   │   │   └── nemotron.py         # Nemotron stub
 │   │   ├── tts/
 │   │   │   ├── base.py             # BaseTTSProvider ABC
 │   │   │   ├── factory.py          # get_tts_provider(name)
 │   │   │   ├── voicetut.py         # VoiceTut (OmniVoice fine-tune)
-│   │   │   ├── ar_eg_free.py       # gTTS fallback (no GPU)
+│   │   │   ├── ar_eg_free.py       # Edge-TTS Egyptian neural voice
 │   │   │   └── xtts/
 │   │   │       └── provider.py     # XTTS v2 zero-shot voice clone ⭐
 │   │   └── llm/

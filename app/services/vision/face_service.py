@@ -89,7 +89,7 @@ class FaceService:
             self._model = self._analyzer
             logger.info("UniFace FaceAnalyzer initialized successfully with ONNX Runtime.")
         except Exception as e:
-            logger.warning(f"Could not initialize UniFace: {e}. Face recognition will use fallback mode.")
+            logger.warning(f"Could not initialize UniFace: {e}. Face recognition is disabled.")
             self._analyzer = "disabled"
             self._model = "disabled"
 

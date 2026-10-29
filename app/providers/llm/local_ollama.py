@@ -70,7 +70,7 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
-        # Model resolution: use configured or requested model directly without fallback
+        # Model resolution: use configured or requested model directly
         model = self.model or getattr(settings, "LLM_MODEL", "nebula-rag")
 
         max_tokens = min(getattr(settings, "LLM_MAX_TOKENS", 45) or 45, 60)

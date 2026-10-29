@@ -60,12 +60,12 @@
 | **`app/providers/stt/`** | **STT Providers** |
 | `app/providers/stt/factory.py` | `get_stt_provider(name)` factory |
 | `app/providers/stt/qwencleo.py` | QwenCleo-ASR — Egyptian Arabic primary |
-| `app/providers/stt/whisper.py` | Whisper large-v3 fallback |
+| `app/providers/stt/whisper.py` | Whisper large-v3 STT provider |
 | `app/providers/stt/nemotron.py` | Nemotron stub |
 | **`app/providers/tts/`** | **TTS Providers** |
 | `app/providers/tts/factory.py` | `get_tts_provider(name)` factory |
 | `app/providers/tts/voicetut.py` | VoiceTut (OmniVoice fine-tune on Egyptian podcasts) |
-| `app/providers/tts/ar_eg_free.py` | gTTS free fallback (no GPU needed) |
+| `app/providers/tts/ar_eg_free.py` | Edge-TTS free Egyptian neural voice (no GPU needed) |
 | `app/providers/tts/xtts/provider.py` | ⭐ **XTTS v2 zero-shot voice clone** |
 | **`app/providers/llm/`** | **LLM Providers** |
 | `app/providers/llm/factory.py` | `get_llm_provider(name)` factory |

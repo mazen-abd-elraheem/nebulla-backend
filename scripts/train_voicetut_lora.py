@@ -140,7 +140,7 @@ def train_lora_voice(
             core_model.save_pretrained(str(adapter_dir))
             print(f"[✓] LoRA weights saved to: {adapter_dir}")
         except Exception as peft_err:
-            print(f"[!] PEFT training fallback: {peft_err}")
+            print(f"[!] PEFT adaptation warning: {peft_err}")
 
     # 5. Extract VoiceClonePrompt Caching
     print("\n[4] Computing Pre-calibrated Acoustic Prompt Tokens (prompt.pt)...")

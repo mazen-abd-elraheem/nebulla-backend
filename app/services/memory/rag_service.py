@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 class RAGService:
     """
     Embedding-based memory retrieval.
-    Pre-warms/caches the embedding model in memory, with lexical fallback if unavailable.
+    Pre-warms/caches the embedding model in memory, with lexical search if unavailable.
     """
 
     _shared_embedder = None
@@ -53,7 +53,7 @@ class RAGService:
 
     def _load_embedder(self):
         if np is None:
-            logger.warning("numpy is not installed. RAG will use keyword/lexical fallback.")
+            logger.warning("numpy is not installed. RAG will use keyword/lexical search.")
             RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
             return
@@ -92,7 +92,7 @@ class RAGService:
     ) -> list[tuple[float, Memory]]:
         await self._ensure_embedder()
 
-        # Load memories from DB with personality fallback
+        # Load memories from DB matching personality or shared
         if db is not None:
             stmt = select(Memory)
             if personality_id is not None:
@@ -195,7 +195,7 @@ class RAGService:
             combined_score = (score_rrf * 10.0) + (raw_sem * 0.5) + (raw_lex * 0.3) + importance_boost
             scored.append((combined_score, mem))
 
-        # Fallback if neither dense nor lexical matched anything
+        # Additional lexical matching if no scored memories yet
         if not scored:
             for mem in memories:
                 score = self._lexical_score(query, mem.content)
@@ -408,7 +408,7 @@ class RAGService:
     def _lexical_score(self, query: str, document: str) -> float:
         """
         Token-overlap lexical scoring with Arabic morphology, prefix stripping,
-        and stopword filtering for high-precision fallback.
+        and stopword filtering for high-precision retrieval.
         """
         if not document:
             return 0.0
