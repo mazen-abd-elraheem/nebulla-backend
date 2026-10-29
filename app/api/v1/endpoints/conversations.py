@@ -4,12 +4,12 @@ import json
 import time
 import uuid
 import urllib.parse
-from typing import Optional, List, Dict, Any, Tuple, AsyncIterator
+from typing import Optional, List, Dict, Any, Tuple, AsyncIterator, Union
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Header, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,11 +38,29 @@ _rag_service = RAGService()
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="Text message to send to the LLM")
     session_id: Optional[str] = Field(None, description="Optional session UUID for multi-turn conversation tracking")
-    personality_id: Optional[int] = Field(None, description="Specific personality ID to use (defaults to active personality)")
+    personality_id: Optional[Union[int, str]] = Field(None, description="Specific personality ID to use (defaults to active personality)")
     stream: bool = Field(False, description="Whether to stream tokens via chunked transfer")
     broadcast_to_clients: bool = Field(False, description="Whether to broadcast live tokens to connected desks/phones")
     provider: Optional[str] = Field(None, description="Override LLM provider ('local', 'nile', 'huggingface', 'openai', etc.)")
     model: Optional[str] = Field(None, description="Override model name (e.g. 'MBZUAI-Paris/Nile-Chat-3x4B-A6B' or 'nebula-rag')")
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            pid = data.get("personality_id")
+            if pid in ("", "string", "null", 0, "0", None):
+                data["personality_id"] = None
+            elif isinstance(pid, str):
+                try:
+                    data["personality_id"] = int(pid)
+                except ValueError:
+                    data["personality_id"] = None
+
+            sid = data.get("session_id")
+            if sid in ("", "string", "null", None):
+                data["session_id"] = None
+        return data
 
     model_config = {
         "json_schema_extra": {
