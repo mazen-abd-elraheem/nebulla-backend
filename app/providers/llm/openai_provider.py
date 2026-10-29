@@ -82,7 +82,7 @@ class OpenAIProvider(BaseLLMProvider):
 
         messages.append({"role": "user", "content": prompt})
 
-        # Model resolution: use configured or requested model directly without fallback
+        # Model resolution: use configured or requested model directly
         model = self.model or settings.LLM_MODEL or "gpt-4o-mini"
 
         max_tokens = max(getattr(settings, "LLM_MAX_TOKENS", 250), 250)

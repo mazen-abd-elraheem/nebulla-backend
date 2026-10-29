@@ -154,7 +154,7 @@ class VoiceCloneService:
                 self._personality_voice_map[personality_id] = str(p)
                 return str(p)
             return None
-        # If personality_id is None, fallback to the latest uploaded sample
+        # If personality_id is None, use the latest uploaded sample
         return self.get_latest_sample_path()
 
     def list_samples(self) -> list[dict]:
@@ -345,7 +345,7 @@ def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
                         dest.write_bytes(raw)
                         return dur
         except Exception:
-            pass  # Fallback to ffmpeg conversion if WAV format is compressed or corrupt
+            pass  # Use ffmpeg conversion if WAV format is compressed or non-standard
 
     if not ffmpeg_exe:
         raise HTTPException(

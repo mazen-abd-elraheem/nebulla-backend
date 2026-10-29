@@ -219,7 +219,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Audio path handling (interactive fallback if not provided)
+    # Audio path handling (interactive selection if not provided)
     audio_path = args.audio
     if not audio_path:
         # Check if default sample files exist as suggestions

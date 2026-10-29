@@ -7,7 +7,7 @@ RAG Modular Server Test Suite
   - الجزء 2: البحث الدلالي المهجن (Semantic & Lexical Hybrid Search)
   - الجزء 3: الاسترجاع المخصص للشخصية والتعرف على الوجه (Personalized RAG Grounding)
   - الجزء 4: تجميع وبناء الـ Prompt النصي الموجه للـ LLM (بدون JSON)
-  - الجزء 5: المحادثة والربط المباشر مع الـ LLM (End-to-End Chat with RAG - بدون Fallback)
+  - الجزء 5: المحادثة والربط المباشر مع الـ LLM (End-to-End Chat with RAG)
   - الجزء 6: تدفق الرد اللحظي مع سياق الذاكرة (Streaming RAG Chat)
   - الجزء 7: حذف الذكريات وإدارة دورة الحياة (Memory Deletion)
 
@@ -221,11 +221,11 @@ class RAGServerTester:
         assert "توجيهات التشغيل والرد" in prompt_text, "تعليمات التشغيل مفقودة!"
         print("   ✓ تم التأكد: تم إنتاج Prompt نصي كامل ومنظم وجاهز للإرسال المباشر للـ LLM.")
 
-    # ── [الجزء 5] المحادثة مع الـ LLM مع ربط الـ RAG (بدون Fallback) ────────
+    # ── [الجزء 5] المحادثة مع الـ LLM مع ربط الـ RAG ────────
     async def test_part_5_chat_grounding(self):
         print("\n" + "=" * 65)
         print("  [الجزء 5] اختبار المحادثة مع الـ LLM بحقن سياق الـ RAG عبر الـ API")
-        print("  Endpoint: POST /api/v1/conversations/chat (No Fallback Model)")
+        print("  Endpoint: POST /api/v1/conversations/chat")
         print("=" * 65)
 
         user_query = "هو مازن بيحب أكل الخضار ولا الفواكه؟"
@@ -251,7 +251,7 @@ class RAGServerTester:
 
         retrieved = chat_data.get("retrieved_memories", [])
         assert len(retrieved) > 0, "الـ RAG لم يقم بتغذية الـ LLM بالسياق!"
-        print("   ✓ تم التأكد: الـ RAG قام بحقن الذاكرة المطلوبة بنجاح وبدون أي Fallback Model.")
+        print("   ✓ تم التأكد: الـ RAG قام بحقن الذاكرة المطلوبة بنجاح.")
 
     # ── [الجزء 6] التدفق اللحظي مع RAG ────────────────────────────────────
     async def test_part_6_streaming(self):
@@ -377,7 +377,7 @@ async def main():
             print("  [2] الاسترجاع الدلالي والبحث المهجن (Hybrid Search)")
             print("  [3] الاسترجاع المخصص للشخصية والوجه (Personalized RAG)")
             print("  [4] تجميع وبناء الـ Prompt النصي بدلاً من JSON")
-            print("  [5] المحادثة وربط الـ RAG مع الـ LLM (بدون Fallback)")
+            print("  [5] المحادثة وربط الـ RAG مع الـ LLM")
             print("  [6] تدفق الرد اللحظي مع سياق الـ RAG (Streaming)")
             print("  [7] اختبار دورة الحذف والتنظيف (Memory Deletion)")
             print("  [8] تشغيل جميع الأجزاء بالتتابع (Full Test)")

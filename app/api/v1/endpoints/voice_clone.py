@@ -178,7 +178,7 @@ async def synthesize(
 ):
     """
     Convert *text* to speech strictly in the user's cloned voice using VoiceTut.
-    Returns a WAV audio file. No fallback models used.
+    Returns a WAV audio file.
     """
     cleaned_text = body.text.strip()
     if not cleaned_text:
@@ -290,7 +290,7 @@ async def synthesize_get(
             },
         )
 
-    # Fallback default
+    # Default preview request
     req = SynthesizeRequest(
         text="أهلاً بيك يا صديقي! الصوت المصري المستنسخ شغال وجاهز تماماً.",
         personality_id=pid,

@@ -162,7 +162,7 @@ async def test_openai_model_resolution_and_reset():
     provider.reset_client()
     assert provider._client is None
 
-    # Test that configured settings.LLM_MODEL is used directly without fallback
+    # Test that configured settings.LLM_MODEL is used directly
     mock_client = MagicMock()
     async def empty_stream():
         if False:
