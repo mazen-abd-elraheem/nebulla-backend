@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # ── AI Providers (swappable without code changes, doc §6) ──────────────
     # STT: "qwencleo" | "whisper" | "nemotron"
-    STT_PROVIDER: Literal["qwencleo", "whisper", "nemotron"] = "qwencleo"
+    STT_PROVIDER: Literal["qwencleo", "whisper", "nemotron", "groq", "openai"] = "whisper"
 
     # TTS: "voicetut" | "ar_eg_free" | "xtts"
     TTS_PROVIDER: Literal["voicetut", "ar_eg_free", "xtts"] = "voicetut"
@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # ── STT Config ─────────────────────────────────────────────────────────
     QWENCLEO_MODEL_PATH: str = "models/qwencleo-asr"
     QWENCLEO_DEVICE: str = "cuda"  # "cuda" | "cpu"
+    WHISPER_MODEL: str = "base"    # "tiny" | "base" | "small" | "medium" | "turbo" | "large-v3"
+    WHISPER_DEVICE: str = "cuda"   # "cuda" | "cpu"
+    WHISPER_LANGUAGE: str = "ar"
+    GROQ_API_KEY: str = ""
 
     # ── TTS Config ─────────────────────────────────────────────────────────
     VOICETUT_MODEL_PATH: str = "models/voicetut-tts"
