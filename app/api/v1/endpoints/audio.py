@@ -200,15 +200,16 @@ async def synthesize_voicetut(
 
 @router.get(
     "/speakers",
-    summary="List available pre-built Egyptian speakers in VoiceTut",
+    summary="List available cloned Egyptian speakers in VoiceTut",
 )
 async def list_speakers(
     _user: Optional[str] = Depends(get_optional_user),
 ):
-    """Return all available pre-built Egyptian speaker names."""
+    """Return all available cloned Egyptian speaker names in VoiceTut."""
     speakers = VoiceTutProvider.list_speakers()
+    default_speaker = "mazen" if "mazen" in speakers else (speakers[0] if speakers else "personality_1")
     return {
         "speakers": speakers,
         "count": len(speakers),
-        "default": "mohammed",
+        "default": default_speaker,
     }

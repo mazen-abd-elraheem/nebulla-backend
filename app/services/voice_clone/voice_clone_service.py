@@ -25,6 +25,7 @@ from fastapi import HTTPException, UploadFile, status
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.providers.tts.xtts.provider import XTTSProvider
+from app.utils.masri_normalizer import clean_llm_output_for_speech
 
 logger = get_logger(__name__)
 
@@ -37,14 +38,16 @@ _MAX_DURATION_S = 120.0  # cap to avoid huge uploads
 
 class VoiceCloneService:
     """
-    Manages voice samples and drives XTTS synthesis.
-    One XTTSProvider is shared and the reference wav is swapped per request.
+    Manages voice samples and drives XTTS / VoiceTut synthesis.
+    Swaps reference audio per personality and applies Egyptian dialect normalizer.
     """
 
     def __init__(self):
         self._xtts = XTTSProvider()
         from app.providers.tts.voicetut import VoiceTutProvider
         self._voicetut = VoiceTutProvider()
+        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
+        self._voicetut_service = VoiceTutMicroserviceProvider()
         self._personality_voice_map: dict[int, str] = {}  # personality_id → wav path
 
     # ── Sample management ─────────────────────────────────────────────────────
@@ -151,7 +154,7 @@ class VoiceCloneService:
                 self._personality_voice_map[personality_id] = str(p)
                 return str(p)
             return None
-        # If personality_id is None, fallback to the latest uploaded sample
+        # If personality_id is None, use the latest uploaded sample
         return self.get_latest_sample_path()
 
     def list_samples(self) -> list[dict]:
@@ -197,57 +200,90 @@ class VoiceCloneService:
         text: str,
         personality_id: int | None = None,
         reference_wav: str | None = None,
-        language: str = "ar",
+        language: str = "arz",
         ref_text: str | None = None,
         num_step: int | None = None,
+        guidance_scale: float | None = None,
+        speed: float | None = None,
     ) -> bytes:
         """
-        Synthesise *text* strictly in the cloned voice using VoiceTut zero-shot cloning.
-        Retrieves the voice sample from the specified personality, DB active personality,
-        or latest uploaded recording.
-        No generic speakers or fallback models allowed.
+        Synthesise *text* in the cloned voice after applying Masri dialect normalization.
 
-        Returns WAV bytes.
+        Priority of voice reference:
+          1. Explicit reference_wav path (override)
+          2. Personality-bound sample (personality_id lookup)
+          3. Default provider synthesis
         """
+        # Normalize text to remove thinking tags, action commands, and tune Egyptian pronunciation
+        clean_text = clean_llm_output_for_speech(text)
+        if not clean_text:
+            clean_text = text.strip()
+
         wav_path = reference_wav or self.get_sample_path(personality_id)
-
-        # If not found yet, check active personality in DB
         if not wav_path or not os.path.exists(wav_path):
+            def_path = Path(getattr(settings, "DEFAULT_VOICE_SAMPLE", "data/voice_samples/personality_1.wav"))
+            if def_path.exists():
+                wav_path = str(def_path.resolve())
+
+        if not ref_text and wav_path:
+            txt_path = Path(wav_path).with_suffix(".txt")
+            if txt_path.exists():
+                try:
+                    ref_text = txt_path.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
+        if not ref_text and hasattr(settings, "DEFAULT_VOICE_TRANSCRIPT"):
+            def_txt = Path(settings.DEFAULT_VOICE_TRANSCRIPT)
+            if def_txt.exists():
+                try:
+                    ref_text = def_txt.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
+
+        # Method 2: Check if dedicated VoiceTuT Studio GPU microservice is online (highest reliability & isolated VRAM)
+        try:
+            if await self._voicetut_service.is_healthy():
+                logger.info("Synthesizing via dedicated VoiceTuT Studio microservice (Method 2)...")
+                res = await self._voicetut_service.synthesize(
+                    clean_text,
+                    ref_audio=wav_path,
+                    ref_text=ref_text,
+                    num_step=num_step,
+                    guidance_scale=guidance_scale,
+                    speed=speed,
+                    language=language,
+                )
+                if res and len(res) > 2000:
+                    return res
+        except Exception as exc:
+            logger.warning(f"VoiceTut microservice synthesis failed, falling back to local: {exc}")
+
+        # Method 1: In-process VoiceTut-TTS Native GPU engine
+        if wav_path and os.path.exists(wav_path):
+            logger.info(f"Synthesizing text using in-process cloned voice sample (Method 1): {wav_path}")
             try:
-                from app.db.session import AsyncSessionLocal
-                from app.models.personality import Personality
-                from sqlalchemy import select
-                async with AsyncSessionLocal() as session:
-                    res = await session.execute(
-                        select(Personality).where(Personality.is_active == True).limit(1)  # noqa: E712
-                    )
-                    active_p = res.scalar_one_or_none()
-                    if active_p and active_p.voice_sample_path and os.path.exists(active_p.voice_sample_path):
-                        wav_path = active_p.voice_sample_path
-            except Exception as db_err:
-                logger.debug(f"DB active personality check: {db_err}")
+                res = await self._voicetut.synthesize(
+                    clean_text,
+                    ref_audio=wav_path,
+                    ref_text=ref_text,
+                    num_step=num_step,
+                    guidance_scale=guidance_scale,
+                    speed=speed,
+                    language=language,
+                )
+                if res and len(res) > 2000:
+                    return res
+            except Exception as exc:
+                logger.warning(f"VoiceTut local cloning failed: {exc}")
 
-        # Fallback to latest uploaded sample
-        if not wav_path or not os.path.exists(wav_path):
-            wav_path = self.get_latest_sample_path()
-
-        if not wav_path or not os.path.exists(wav_path):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="لا توجد عينة صوتية مستنسخة محفوظة للنظام أو للشخصية المطلوبة. يرجى رفع ملف الصوت أولاً عبر POST /api/v1/voice-clone/upload.",
-            )
-
-        logger.info(f"Synthesizing text strictly using cloned voice sample: {wav_path}")
-        res = await self._voicetut.synthesize(
-            text=text,
-            ref_audio=wav_path,
-            ref_text=ref_text,
-            num_step=num_step,
-        )
-        if not res or len(res) <= 1000:
-            raise RuntimeError("فشل توليد الصوت المستنسخ بواسطة VoiceTut ولم يتم إنتاج إشارة صوتية كافية.")
-
-        return res
+        # Synthesize with active configured TTS provider
+        from app.providers.tts.factory import get_tts_provider
+        try:
+            tts = get_tts_provider(settings.TTS_PROVIDER)
+            return await tts.synthesize(clean_text)
+        except Exception as exc:
+            logger.error(f"TTS provider '{settings.TTS_PROVIDER}' synthesis failed: {exc}")
+            return b""
 
     async def synthesize_stream(
         self,
@@ -290,23 +326,28 @@ def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
     If it's MP4, M4A, or non-standard WAV, convert using ffmpeg.
     Returns audio duration in seconds.
     """
+    import shutil
+    ffmpeg_exe = shutil.which("ffmpeg")
+    if not ffmpeg_exe:
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception as exc:
+            logger.debug(f"imageio_ffmpeg lookup: {exc}")
+            ffmpeg_exe = None
+
     if ext == ".wav":
         try:
             with wave.open(io.BytesIO(raw), "rb") as wf:
                 dur = wf.getnframes() / wf.getframerate()
-                # Only use directly if it is strictly 24kHz mono 16-bit PCM (otherwise resample with ffmpeg)
-                if dur > 0 and wf.getnchannels() == 1 and wf.getframerate() == 24000 and wf.getsampwidth() == 2:
-                    dest.write_bytes(raw)
-                    return dur
+                if dur > 0:
+                    if not ffmpeg_exe or (wf.getnchannels() == 1 and wf.getframerate() == 24000 and wf.getsampwidth() == 2):
+                        dest.write_bytes(raw)
+                        return dur
         except Exception:
-            pass  # Fallback to ffmpeg conversion if WAV format is compressed or corrupt
+            pass  # Use ffmpeg conversion if WAV format is compressed or non-standard
 
-    # Convert via FFmpeg (handles MP4, M4A, AAC, and any WAV variants)
-    try:
-        import imageio_ffmpeg
-        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-    except Exception as exc:
-        logger.error(f"Cannot get ffmpeg executable: {exc}")
+    if not ffmpeg_exe:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Server audio conversion component is not available.",

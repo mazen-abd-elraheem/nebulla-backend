@@ -1,4 +1,4 @@
-nebula.db
+nebula.db*
 .env
 __pycache__/
 *.pyc
@@ -18,16 +18,11 @@ logs/
 /models/
 data/voice_samples/
 data/embeddings/
+data/faces/
+data/*.jpg
+data/uniface_test_result.jpg
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 htmlcov/
 .coverage
-
-# Audio / Media files (test recordings and outputs)
-*.wav
-*.mp3
-*.mp4
-*.m4a
-*.ogg
-*.flac

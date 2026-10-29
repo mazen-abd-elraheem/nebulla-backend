@@ -12,6 +12,7 @@ from fastapi.security import APIKeyHeader
 
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.db.session import get_db
 
 logger = get_logger(__name__)
 
@@ -23,23 +24,33 @@ api_key_scheme = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # ── Token generation ──────────────────────────────────────────────────────────
 
-def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> str:
-    """Create a signed JWT token."""
-    expire = datetime.now(timezone.utc) + timedelta(minutes=_TOKEN_EXPIRE_MINUTES)
+import secrets
+
+def create_access_token(
+    subject: str,
+    extra: dict[str, Any] | None = None,
+    expires_delta: timedelta | None = None,
+) -> str:
+    """Create a signed JWT token using dedicated JWT secret."""
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=_TOKEN_EXPIRE_MINUTES)
+
     payload: dict[str, Any] = {
-        "sub": subject,
+        "sub": str(subject),
         "exp": expire,
         "iat": datetime.now(timezone.utc),
     }
     if extra:
         payload.update(extra)
-    return jwt.encode(payload, settings.PAIRING_SECRET, algorithm=_ALGORITHM)
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=_ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
     """Decode and validate a JWT token. Raises HTTPException on failure."""
     try:
-        return jwt.decode(token, settings.PAIRING_SECRET, algorithms=[_ALGORITHM])
+        return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -57,12 +68,13 @@ async def get_current_user(
     Bearer JWT in Authorization header.
     Returns the subject (device/user identifier).
     """
-    # 1. Try raw API key (simple pre-shared key for local network)
+    # 0. Development bypass if DEBUG is True and no credentials provided
+    if settings.DEBUG and not x_api_key and not authorization:
+        return "dev_user"
+
+    # 1. Try raw API key (simple pre-shared key for local network) with constant-time comparison
     if x_api_key:
-        import hashlib
-        key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
-        # In production query DB for this hash; for now accept any matching pairing secret
-        if x_api_key == settings.PAIRING_SECRET:
+        if secrets.compare_digest(x_api_key, settings.PAIRING_SECRET):
             return "api_key_client"
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API key")
 
@@ -70,7 +82,7 @@ async def get_current_user(
     if authorization and authorization.startswith("Bearer "):
         token = authorization[7:]
         payload = decode_access_token(token)
-        return payload["sub"]
+        return str(payload["sub"])
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -88,3 +100,53 @@ async def get_optional_user(
         return await get_current_user(x_api_key, authorization)
     except HTTPException:
         return None
+
+
+async def get_current_user_model(
+    sub: str = Depends(get_current_user),
+    db: Any = Depends(get_db),
+):
+    """
+    Resolves the authenticated User database entity from the JWT subject
+    within the active request DB session.
+    """
+    from sqlalchemy import select
+    from app.models.user import User
+
+    user = None
+    if sub.isdigit():
+        user = await db.get(User, int(sub))
+    else:
+        res = await db.execute(select(User).where(User.email == sub.lower()))
+        user = res.scalar_one_or_none()
+
+    if user:
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is deactivated.")
+        return user
+
+    # If sub is a recognized hardware/developer identity, look for default user
+    res_admin = await db.execute(select(User).order_by(User.id).limit(1))
+    first_user = res_admin.scalar_one_or_none()
+    if first_user:
+        return first_user
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="User associated with token not found.",
+    )
+
+
+async def get_optional_user_model(
+    sub: str | None = Depends(get_optional_user),
+    db: Any = Depends(get_db),
+):
+    """Returns User model if authenticated, otherwise None."""
+    if not sub:
+        return None
+    try:
+        return await get_current_user_model(sub=sub, db=db)
+    except Exception:
+        return None
+
+

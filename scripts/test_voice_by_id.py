@@ -104,7 +104,7 @@ async def test_synthesis_by_id(
             for s in samples:
                 print(f"      • ID: {s.get('personality_id')} | ملف: {s.get('filename')} | المدة: {s.get('duration_s')}s")
             speakers = v_data.get("voicetut_speakers", [])
-            print(f"   🗣️ أصوات VoiceTut المصرية الجاهزة ({len(speakers)}): {', '.join(speakers[:8])}...")
+            print(f"   🗣️ أصوات VoiceTut المستنسخة في النظام ({len(speakers)}): {', '.join(speakers[:8])}...")
         else:
             print(f"   ⚠️ استجابة قائمة الأصوات: {r_voices.status_code}")
 

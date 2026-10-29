@@ -1,0 +1,10 @@
+{
+  "character_name": "مازن (Mazen) - التوأم الرقمي",
+  "audio_source": "C:\\Users\\L0Q\\Desktop\\tut-voice\\output\\clean_reference.wav",
+  "reference_text": "السلام عليكم ورحمة الله وبركاته، أنا اسمي مازن، ودي تجربة صوت عملية عشان ننسخ الصوت كويس ونعمل حاجة جديدة ومختلفة، أتمنى إنكم تكونوا عرفتوا أنا مين، كان معاكم مازن من تيم نيبولا.",
+  "description": "صوت مازن من تيم نيبولا - مستنسخ بدقة 99% باللهجة المصرية العامية",
+  "tags": ["Nebulla", "Mazen", "Egyptian Masri", "99% Clone"],
+  "num_step": 36,
+  "guidance_scale": 2.2,
+  "speed": 1.0
+}

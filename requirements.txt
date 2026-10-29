@@ -12,37 +12,36 @@ alembic==1.13.3
 # ── Auth ─────────────────────────────────────────────────────────────────────
 pyjwt==2.9.0
 passlib[bcrypt]==1.7.4
+bcrypt>=4.0.0
+email-validator>=2.0.0
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────
 httpx==0.27.2
 
-# ── AI — STT ─────────────────────────────────────────────────────────────────
-# QwenCleo-ASR: fine-tuned Qwen3-ASR-1.7B for Egyptian Arabic
-transformers==4.45.0
-torch          # Install GPU version from pytorch.org if you have CUDA
+# ── AI — STT (QwenCleo-ASR) ──────────────────────────────────────────────────
+# Fine-tuned Qwen3-ASR-1.7B for Egyptian Arabic & code-switching
+qwencleo-asr
+transformers>=4.48.0
+accelerate>=1.0.0
+torch                 # Install CUDA build from pytorch.org for GPU acceleration
 torchaudio
 soundfile==0.12.1
 
-# ── AI — TTS (XTTS v2 voice cloning) ─────────────────────────────────────────
-# Coqui XTTS v2 — zero-shot voice cloning in Arabic
-TTS==0.22.0           # pip install TTS  (pulls in coqpit, trainer, etc.)
+# ── AI — TTS (VoiceTut-TTS) ──────────────────────────────────────────────────
+# Egyptian-Arabic & code-switching TTS + zero-shot voice cloning
+git+https://github.com/k2-fsa/OmniVoice.git
+voicetut-tts
 numpy==1.26.4
 Pillow==10.4.0
 
-# ── AI — Vision ─────────────────────────────────────────────────────────────
-# UniFace — lightweight face detection on ONNX Runtime (CPU or CUDA)
-uniface
-# pip install uniface  (or clone from GitHub)
-onnxruntime==1.19.2   # CPU; swap with onnxruntime-gpu for NVIDIA GPU
+# ── AI — Vision (UniFace) ────────────────────────────────────────────────────
+# Lightweight face detection, recognition & attributes on ONNX Runtime
+uniface>=2.0.0
+onnxruntime>=1.19.2
+opencv-python-headless>=4.10.0
 
 # ── AI — Memory / RAG ────────────────────────────────────────────────────────
 sentence-transformers==3.1.1
-
-# ── AI — LLM Fallback ────────────────────────────────────────────────────────
-openai==1.50.0        # optional: for OpenAI / compatible API
-
-# ── TTS Fallback ─────────────────────────────────────────────────────────────
-gTTS==2.5.3           # ar-EG free fallback TTS (no GPU needed)
 
 # ── Audio processing ─────────────────────────────────────────────────────────
 webrtcvad==2.0.10     # Voice Activity Detection (VAD)
@@ -50,5 +49,6 @@ pyaudio==0.2.14       # optional: for local mic testing
 imageio-ffmpeg>=0.5.0 # For converting MP4/audio formats to WAV
 
 # ── Utilities ────────────────────────────────────────────────────────────────
-python-multipart==0.0.12  # for file upload (voice samples)
+python-multipart==0.0.12  # for file upload (voice & face samples)
 python-dotenv==1.0.1
+deep-translator>=1.11.4
