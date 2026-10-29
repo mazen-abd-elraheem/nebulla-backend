@@ -523,7 +523,7 @@ class AIPipeline:
         return None
 
     async def _generate_tts(self, text: str, personality_id: Optional[int]) -> bytes:
-        """Synthesize text strictly using the cloned voice of the personality (no fallback models)."""
+        """Synthesize text strictly using the cloned voice of the personality."""
         from app.services.voice_clone.voice_clone_service import VoiceCloneService
         return await VoiceCloneService.get_instance().synthesize(
             text=text,

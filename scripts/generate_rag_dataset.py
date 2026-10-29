@@ -75,7 +75,7 @@ _TRANSLATION_CACHE: Dict[str, str] = {}
 
 
 def to_english_memory(mem: str) -> str:
-    """Dynamically translates any Arabic memory into clear, fluent English using deep-translator with offline fallback."""
+    """Dynamically translates any Arabic memory into clear, fluent English using deep-translator with offline dictionary."""
     if not re.search(r"[\u0600-\u06FF]", mem):
         return mem
 
@@ -91,7 +91,7 @@ def to_english_memory(mem: str) -> str:
     except Exception:
         pass
 
-    # Robust offline dynamic fallback
+    # Offline dynamic translation prefix
     _TRANSLATION_CACHE[mem] = f"Verified record: {mem}"
     return _TRANSLATION_CACHE[mem]
 

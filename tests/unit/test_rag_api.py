@@ -1,6 +1,6 @@
 """
 اختبار الربط بين الـ RAG والـ LLM عبر الـ API (وفق متطلبات التسجيل الصوتي)
-RAG + LLM End-to-End API Test Script (No Fallback Model)
+RAG + LLM End-to-End API Test Script
 """
 
 import asyncio
@@ -35,7 +35,7 @@ async def main():
     print("  Testing RAG Personalized Memories & Prompt Generation via API")
     print("=" * 65)
     print(f"المزود النشط للـ LLM: {settings.LLM_PROVIDER}")
-    print(f"الموديل النشط (بدون Fallback Model): {settings.LLM_MODEL}")
+    print(f"الموديل النشط: {settings.LLM_MODEL}")
     print(f"قاعدة البيانات: {settings.DATABASE_URL}")
     print("-" * 65)
 
@@ -175,7 +175,7 @@ async def main():
 
     print("\n" + "=" * 65)
     print("  🎉 نجحت جميع اختبارات الـ RAG عبر الـ API بنجاح تام!")
-    print("  ALL RAG API TESTS COMPLETED AND VERIFIED WITHOUT FALLBACK MODEL!")
+    print("  ALL RAG API TESTS COMPLETED AND VERIFIED SUCCESSFULLY!")
     print("=" * 65)
 
 

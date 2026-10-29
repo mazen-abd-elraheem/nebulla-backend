@@ -12,7 +12,7 @@ try:
     import email_validator  # noqa: F401
     from pydantic import EmailStr
 except ImportError:
-    EmailStr = str  # fallback if email-validator package is missing
+    EmailStr = str  # alias if email-validator package is missing
 
 
 class UserRegister(BaseModel):

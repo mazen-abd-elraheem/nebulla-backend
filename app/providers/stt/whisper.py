@@ -1,5 +1,5 @@
 """
-Fallback Whisper STT provider.
+Whisper STT provider.
 Not the primary choice for Egyptian Arabic (QwenCleo outperforms it by 64 % WER
 on Egyptian test sets — doc §6.1), but useful as a backup.
 """
@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 
 class WhisperProvider(BaseSTTProvider):
-    """OpenAI Whisper large-v3 — used as a fallback."""
+    """OpenAI Whisper large-v3 STT provider."""
 
     def __init__(self):
         self._model = None

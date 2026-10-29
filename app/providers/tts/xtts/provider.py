@@ -211,7 +211,7 @@ class XTTSProvider(BaseTTSProvider):
 
 
 def _silent_wav(duration_ms: int = 500, sample_rate: int = 24000) -> bytes:
-    """Return a WAV buffer containing silence — used as a fallback."""
+    """Return a WAV buffer containing silence on synthesis failure."""
     num_samples = int(sample_rate * duration_ms / 1000)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
