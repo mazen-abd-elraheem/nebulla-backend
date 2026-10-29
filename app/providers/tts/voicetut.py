@@ -34,7 +34,7 @@ class VoiceTutProvider(BaseTTSProvider):
     _shared_device = None
     _shared_lock = asyncio.Lock()
 
-    def __init__(self, speaker: str = "Mohammed"):
+    def __init__(self, speaker: str | None = None):
         self._speaker = speaker
 
     @property
@@ -96,18 +96,29 @@ class VoiceTutProvider(BaseTTSProvider):
 
     @classmethod
     def list_speakers(cls) -> list[str]:
-        """Return available pre-built Egyptian speakers."""
+        """Return available cloned Egyptian speakers."""
         from pathlib import Path
-        ref_dir = Path(settings.VOICETUT_MODEL_PATH) / "reference_speakers"
-        if ref_dir.exists():
-            wavs = [p.stem for p in ref_dir.glob("*.wav")]
-            if wavs:
-                return sorted(wavs)
-        return [
-            "mazen", "ahmed", "ali", "hadeer", "hanan", "hassan", "karim", "mahmoud",
-            "mariam", "mohammed", "mostafa", "ramy", "rana", "sarah", "shaker",
-            "tarek", "yara", "yasmin", "yehia", "youssef"
-        ]
+        samples_dir = Path("data/voice_samples")
+        speakers: list[str] = []
+        if samples_dir.exists():
+            for wav in sorted(samples_dir.glob("personality_*.wav")):
+                pid = wav.stem.replace("personality_", "")
+                speakers.append(f"personality_{pid}")
+            for wav in sorted(samples_dir.glob("*.wav")):
+                stem = wav.stem
+                if (
+                    not stem.startswith("personality_")
+                    and not stem.startswith("api_")
+                    and stem not in ("cloned_test", "mazen_test_result", "latest_synthesized")
+                ):
+                    speakers.append(stem)
+
+        if not speakers:
+            speakers = ["mazen", "personality_1"]
+        elif "personality_1" in speakers and "mazen" not in speakers:
+            speakers.insert(0, "mazen")
+
+        return sorted(list(set(speakers)))
 
     async def synthesize(
         self,
@@ -185,10 +196,38 @@ class VoiceTutProvider(BaseTTSProvider):
 
             from pathlib import Path
             target_ref_audio = ref_audio
+
+            # Resolve speaker to cloned audio sample if ref_audio was not explicitly provided
+            if not target_ref_audio:
+                spk = speaker or self._speaker
+                if spk:
+                    spk_str = str(spk).strip()
+                    if os.path.exists(spk_str):
+                        target_ref_audio = spk_str
+                    else:
+                        samples_dir = Path("data/voice_samples")
+                        if samples_dir.exists():
+                            if spk_str.isdigit():
+                                cand = samples_dir / f"personality_{spk_str}.wav"
+                                if cand.exists():
+                                    target_ref_audio = str(cand)
+                            elif spk_str.startswith("personality_"):
+                                cand = samples_dir / f"{spk_str}.wav"
+                                if cand.exists():
+                                    target_ref_audio = str(cand)
+                            elif spk_str.lower() == "mazen":
+                                cand = samples_dir / "personality_1.wav"
+                                if cand.exists():
+                                    target_ref_audio = str(cand)
+                            else:
+                                cand = samples_dir / f"{spk_str}.wav"
+                                if cand.exists():
+                                    target_ref_audio = str(cand)
+
             if not target_ref_audio or not os.path.exists(target_ref_audio):
                 default_ref = Path(settings.DEFAULT_VOICE_SAMPLE)
                 if default_ref.exists():
-                    target_ref_audio = str(default_ref)
+                    target_ref_audio = str(default_ref.resolve())
 
             actual_ref_text = ref_text
             if not actual_ref_text and target_ref_audio:
@@ -232,7 +271,7 @@ class VoiceTutProvider(BaseTTSProvider):
                         params=params,
                     )
                 else:
-                    spk = speaker or self._speaker
+                    spk = speaker or self._speaker or "Mohammed"
                     wav_samples = self._tts.synthesize(
                         text=text,
                         speaker=spk,

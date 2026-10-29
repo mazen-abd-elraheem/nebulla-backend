@@ -113,9 +113,12 @@ async def list_available_voices(
     Returns all cloned voice samples available in the system.
     """
     samples = svc.list_samples()
+    from app.providers.tts.voicetut import VoiceTutProvider
+    speakers = VoiceTutProvider.list_speakers()
     return {
         "active_provider": settings.TTS_PROVIDER,
         "cloned_samples": samples,
+        "voicetut_speakers": speakers,
         "usage_example": {
             "voice_id": 1,
             "text": "أهلاً بيك، الصوت ده مستنسخ بصوتك المرفوع على النظام",
@@ -149,6 +152,7 @@ async def delete_sample(
 
 class SynthesizeRequest(BaseModel):
     text: str
+    voice_id: int | str | None = None
     personality_id: int | None = None
     language: str = "arz"
     ref_text: str | None = None
@@ -195,10 +199,21 @@ async def synthesize(
     # Sanitize target PID
     target_pid: int | None = None
     if body.voice_id is not None:
-        try:
-            target_pid = int(body.voice_id)
-        except Exception:
-            target_pid = None
+        v_str = str(body.voice_id).strip().lower()
+        if v_str.isdigit():
+            target_pid = int(v_str)
+        elif v_str in ("mazen", "personality_1"):
+            target_pid = 1
+        elif v_str.startswith("personality_"):
+            try:
+                target_pid = int(v_str.replace("personality_", ""))
+            except Exception:
+                target_pid = None
+        else:
+            try:
+                target_pid = int(v_str)
+            except Exception:
+                target_pid = None
 
     if target_pid is None and body.personality_id is not None and body.personality_id > 0:
         target_pid = body.personality_id

@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     VOICETUT_MODEL_PATH: str = "models/voicetut-tts"
     VOICETUT_DEVICE: str = "cuda"  # "cuda" | "cpu" (RTX 4050 GPU)
     VOICETUT_SERVICE_URL: str = "http://127.0.0.1:8001"  # Standalone studio microservice endpoint
-    VOICETUT_SPEAKER: str = "Mohammed"
+    VOICETUT_SPEAKER: str = "mazen"
     VOICETUT_STEPS: int = 32
     # OmniVoice base (VoiceTut is fine-tuned on ~380h Egyptian podcast)
     OMNIVOICE_BASE_PATH: str = "models/omnivoice"
