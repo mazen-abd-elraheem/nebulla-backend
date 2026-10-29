@@ -72,13 +72,23 @@ async def build_grounding_context(
     }
 
     # 2. Faces (Vision / Face Recognition)
+    registered_faces: List[str] = []
+    try:
+        faces_res = await db.execute(select(FaceProfile.name))
+        registered_faces = list(faces_res.scalars().all())
+    except Exception as e:
+        logger.warning(f"Could not load registered face profiles from DB: {e}")
+
     current_person_desc = "لا يوجد أحد أمام الكاميرا حالياً"
     face_detected = False
     is_recent = False
     detected_face_name: Optional[str] = None
+    current_face: Dict[str, Any] = {}
     try:
         from app.websocket.handlers import get_face_service
         face_service = get_face_service()
+        if not registered_faces and getattr(face_service, "_known_embeddings", None):
+            registered_faces = list(face_service._known_embeddings.keys())
         current_face = face_service.get_current_face_info()
         face_detected = current_face.get("detected", False)
         is_recent = current_face.get("is_recent", False)
