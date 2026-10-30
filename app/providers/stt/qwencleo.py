@@ -14,6 +14,7 @@ import asyncio
 from app.providers.tts.base import BaseSTTProvider
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.core.threading import run_in_audio_thread
 
 logger = get_logger(__name__)
 
@@ -31,7 +32,7 @@ class QwenCleoProvider(BaseSTTProvider):
         async with self._lock:
             if self._pipeline is None:
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._load)
+                await run_in_audio_thread(self._load)
 
     def _load(self):
         try:
@@ -60,7 +61,7 @@ class QwenCleoProvider(BaseSTTProvider):
             return ""
 
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._run, audio_bytes)
+        return await run_in_audio_thread(self._run, audio_bytes)
 
     def _run(self, audio_bytes: bytes) -> str:
         try:

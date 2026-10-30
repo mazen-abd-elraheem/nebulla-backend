@@ -157,7 +157,9 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env — at minimum set PAIRING_SECRET
 
-# 5. Run
+# 5. Run (Multi-Threaded Server)
+python run.py
+# Or directly:
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -251,6 +253,21 @@ curl -X PATCH http://localhost:8000/api/v1/settings/providers \
 ```bash
 pytest tests/ -v
 ```
+
+---
+
+## 🚀 Multithreading & Concurrency Architecture
+
+The backend features a domain-isolated **Multi-Threading Engine** (`app/core/threading.py`) designed to eliminate latency bottlenecks between real-time robot actuators, WebSocket cameras, and heavy AI inference:
+
+- **Dedicated Thread Pools**:
+  - `Vision Pool` (`VISION_MAX_THREADS`): Handles UniFace face detection, gaze tracking, and OpenCV operations.
+  - `Audio Pool` (`AUDIO_MAX_THREADS`): Handles QwenCleo/Whisper STT, VoiceTut/XTTS voice synthesis, and audio normalization.
+  - `RAG Pool` (`RAG_MAX_THREADS`): Handles SentenceTransformer embeddings and vector similarity ranking.
+  - `I/O Pool` (`IO_MAX_THREADS`): Handles FFmpeg audio transcoding, video frame sampling, and disk operations.
+- **Decoupled WebSocket Workers**: Camera frames and audio PCM chunks from the mobile app are processed on independent non-blocking queues with a freshest-frame policy, preventing camera feeds from blocking speech recognition.
+- **Parallel Video Processing**: Video face extraction (`/faces/extract-from-video`, `/faces/recognize-from-video`) parallelizes frame analysis across CPU worker threads, cutting video processing latency by 3x–6x.
+- **Live Diagnostics**: Inspect thread counts, worker pool utilization, and system metrics in real time via `GET /threads` or `GET /health`.
 
 ---
 

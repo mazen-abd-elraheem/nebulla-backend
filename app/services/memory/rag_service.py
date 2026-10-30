@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.core.threading import run_in_rag_thread
 from app.db.session import AsyncSessionLocal
 from app.models.memory import Memory
 
@@ -48,7 +49,7 @@ class RAGService:
         async with RAGService._shared_lock:
             if RAGService._shared_embedder is None:
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._load_embedder)
+                await run_in_rag_thread(self._load_embedder)
             self._embedder = RAGService._shared_embedder
 
     def _load_embedder(self):
@@ -133,10 +134,10 @@ class RAGService:
         if self._embedder != "disabled":
             loop = asyncio.get_event_loop()
             try:
-                query_vec = await loop.run_in_executor(None, self._embed, query)
+                query_vec = await run_in_rag_thread(self._embed, query)
                 aug_vec = None
                 if augmented_query != query:
-                    aug_vec = await loop.run_in_executor(None, self._embed, augmented_query)
+                    aug_vec = await run_in_rag_thread(self._embed, augmented_query)
 
                 for mem in memories:
                     if mem.embedding:
@@ -344,7 +345,7 @@ class RAGService:
         if self._embedder != "disabled":
             try:
                 loop = asyncio.get_event_loop()
-                vec = await loop.run_in_executor(None, self._embed, content)
+                vec = await run_in_rag_thread(self._embed, content)
                 embedding_bytes = vec.astype(np.float32).tobytes()
             except Exception as e:
                 logger.warning(f"Could not generate embedding for new memory: {e}")
@@ -441,7 +442,7 @@ class RAGService:
             async with AsyncSessionLocal() as session:
                 for mid, text in items[:10]:
                     try:
-                        vec = await loop.run_in_executor(None, self._embed, text)
+                        vec = await run_in_rag_thread(self._embed, text)
                         mem = await session.get(Memory, mid)
                         if mem and not mem.embedding:
                             mem.embedding = vec.astype(np.float32).tobytes()

@@ -20,7 +20,7 @@ from app.auth.jwt import get_optional_user
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.providers.tts.voicetut import VoiceTutProvider
-from app.services.voice_clone.voice_clone_service import _save_and_convert_to_wav, _wav_duration
+from app.services.voice_clone.voice_clone_service import save_and_convert_to_wav_async, _save_and_convert_to_wav, _wav_duration
 
 logger = get_logger(__name__)
 
@@ -79,7 +79,7 @@ async def transcribe_audio(
         tmp_dest = Path(tmp_wav.name)
 
     try:
-        duration_s = _save_and_convert_to_wav(raw_bytes, ext, tmp_dest)
+        duration_s = await save_and_convert_to_wav_async(raw_bytes, ext, tmp_dest)
         wav_data = tmp_dest.read_bytes()
     finally:
         if tmp_dest.exists():
@@ -152,7 +152,7 @@ async def synthesize_voicetut(
         if len(raw_bytes) > 100:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_f:
                 temp_ref_path = Path(tmp_f.name)
-            _save_and_convert_to_wav(raw_bytes, ext, temp_ref_path)
+            await save_and_convert_to_wav_async(raw_bytes, ext, temp_ref_path)
             ref_audio_path = str(temp_ref_path)
 
     try:

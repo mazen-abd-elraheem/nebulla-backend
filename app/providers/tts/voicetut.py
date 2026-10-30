@@ -23,6 +23,7 @@ import wave
 from app.providers.tts.base import BaseTTSProvider
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.core.threading import run_in_audio_thread
 
 logger = get_logger(__name__)
 
@@ -59,7 +60,7 @@ class VoiceTutProvider(BaseTTSProvider):
         async with VoiceTutProvider._shared_lock:
             if VoiceTutProvider._shared_tts is None:
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._load)
+                await run_in_audio_thread(self._load)
 
     def _load(self):
         try:
@@ -129,8 +130,8 @@ class VoiceTutProvider(BaseTTSProvider):
             return _silent_wav()
 
         loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(
-            None,
+        res = await run_in_audio_thread(
+
             self._synth,
             clean_text,
             speaker,

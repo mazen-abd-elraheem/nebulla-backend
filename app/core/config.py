@@ -99,6 +99,14 @@ class Settings(BaseSettings):
     SERVO_MAX_SPEED_MS: int = 2000   # milliseconds for full travel
     MOTOR_MAX_SPEED: int = 255       # PWM 0-255
 
+    # ── Multithreading & Thread Pools ─────────────────────────────────────
+    THREADING_ENABLED: bool = True
+    VISION_MAX_THREADS: int = 4
+    AUDIO_MAX_THREADS: int = 4
+    RAG_MAX_THREADS: int = 2
+    IO_MAX_THREADS: int = 4
+    VIDEO_PROCESSING_WORKERS: int = 4
+
     # ── Logging ────────────────────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/nebula.log"

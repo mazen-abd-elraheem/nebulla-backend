@@ -3,14 +3,20 @@ UniFace Vision Service — Face detection, recognition, comparison, gaze estimat
 and video face extraction.
 
 Powered by UniFace (ONNX Runtime) for high performance on CPU or GPU.
+Includes multi-threaded parallel video frame processing and dedicated
+vision thread pool execution.
 """
+
+from __future__ import annotations
 
 import asyncio
 import base64
+import concurrent.futures
 import io
 import math
 import os
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.core.threading import run_in_vision_thread
 from app.models.face_profile import FaceProfile
 from app.websocket.manager import manager
 
@@ -46,7 +53,7 @@ class FaceService:
       - Face detection & alignment
       - 512-D Face recognition embeddings (EdgeFace / ArcFace)
       - Cosine similarity matching (1:1 comparison & 1:N identification)
-      - Video processing & frame extraction for clearest face shots
+      - Multi-threaded video processing & frame extraction for clearest face shots
       - Real-time robot eye gaze tracking
     """
 
@@ -67,21 +74,21 @@ class FaceService:
         self.last_result: Optional[FaceResult] = None
         self.last_detection_time: Optional[float] = None
 
-        # In-memory vector cache: {person_name: np.ndarray (512,)}
+        # Thread-safe in-memory vector cache: {person_name: np.ndarray (512,)}
         self._known_embeddings: Dict[str, np.ndarray] = {}
         self._db_loaded: bool = False
+        self._cache_lock = threading.Lock()
 
-    async def _ensure_model(self):
-        """Lazy-load the UniFace models."""
+    async def _ensure_model(self) -> None:
+        """Lazy-load the UniFace models on the dedicated vision thread pool."""
         if self._analyzer is not None:
             return
         async with self._load_lock:
             if self._analyzer is None:
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._load_model)
+                await run_in_vision_thread(self._load_model)
 
-    def _load_model(self):
-        """Instantiate UniFace FaceAnalyzer (runs in background executor)."""
+    def _load_model(self) -> None:
+        """Instantiate UniFace FaceAnalyzer (runs in vision thread pool)."""
         try:
             import uniface
             # FaceAnalyzer combines detector (RetinaFace) + recognizer (EdgeFace/ArcFace)
@@ -98,7 +105,7 @@ class FaceService:
     # ──────────────────────────────────────────────────────────────────────────
 
     async def reload_known_faces(self, db: AsyncSession) -> int:
-        """Load all registered face embeddings from database into in-memory cache."""
+        """Load all registered face embeddings from database into thread-safe in-memory cache."""
         try:
             result = await db.execute(select(FaceProfile))
             profiles = result.scalars().all()
@@ -111,21 +118,22 @@ class FaceService:
                             f"FaceProfile '{p.name}' (id={p.id}) has a legacy {vec.size}-D embedding "
                             f"(UniFace requires 512-D). Please re-register this profile to enable video matching."
                         )
-                    # Normalize vector
                     norm = np.linalg.norm(vec)
                     if norm > 0:
                         vec = vec / norm
                     cache[p.name] = vec
 
-            self._known_embeddings = cache
-            self._db_loaded = True
-            logger.info(f"Loaded {len(self._known_embeddings)} known face profile(s) from database.")
-            return len(self._known_embeddings)
+            with self._cache_lock:
+                self._known_embeddings = cache
+                self._db_loaded = True
+
+            logger.info(f"Loaded {len(cache)} known face profile(s) from database.")
+            return len(cache)
         except Exception as e:
             logger.error(f"Error reloading known faces: {e}")
             return 0
 
-    async def ensure_db_loaded(self, db: AsyncSession):
+    async def ensure_db_loaded(self, db: AsyncSession) -> None:
         """Ensure the in-memory cache is populated at least once."""
         if not self._db_loaded:
             await self.reload_known_faces(db)
@@ -204,15 +212,6 @@ class FaceService:
     def _calculate_match_percentage(sim: float, threshold: float = 0.40) -> float:
         """
         Calibrate raw cosine similarity into an intuitive biometric match percentage [0.0% - 100.0%].
-        In 512-D deep face recognition, genuine matches between distinct photos of the same person
-        typically have cosine similarities between 0.45 and 0.65 (where 0.50+ is >99.9% statistically certain).
-
-        Calibration Curve:
-        - sim <= 0.0 -> 0.0%
-        - sim < threshold (stranger) -> scaled [0.0% - 49.0%]
-        - sim == threshold -> 93.0% (positive match confirmation)
-        - sim = 0.497 (Ahmed) -> 99.11%
-        - sim >= 0.55 -> 100.0%
         """
         if sim <= 0.0:
             return 0.0
@@ -239,7 +238,6 @@ class FaceService:
         else:
             return 100.0
 
-
     # ──────────────────────────────────────────────────────────────────────────
     # Real-Time Robot Frame Processing (WebSocket / Camera Feed)
     # ──────────────────────────────────────────────────────────────────────────
@@ -247,14 +245,13 @@ class FaceService:
     async def process_frame(self, jpeg_bytes: bytes) -> Optional[FaceResult]:
         """
         Detect face in JPEG frame, estimate eye gaze, and identify person.
-        Sends gaze to robot face screen and attentive mood signal.
+        Offloads inference to dedicated vision thread pool.
         """
         await self._ensure_model()
         if self._analyzer == "disabled" or self._analyzer is None:
             return None
 
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, self._process_frame_sync, jpeg_bytes)
+        result = await run_in_vision_thread(self._process_frame_sync, jpeg_bytes)
 
         if result.detected:
             self.last_result = result
@@ -276,7 +273,7 @@ class FaceService:
         return result if result.detected else None
 
     def _process_frame_sync(self, jpeg_bytes: bytes) -> FaceResult:
-        """Synchronous face processing on a single frame."""
+        """Synchronous face processing on a single frame (runs in vision thread pool)."""
         img = self._decode_image(jpeg_bytes)
         if img is None:
             return FaceResult(detected=False)
@@ -296,10 +293,13 @@ class FaceService:
 
         # Match face against known profiles
         face_id = None
-        if face.embedding is not None and len(self._known_embeddings) > 0:
-            best_match, sim = self._match_embedding(face.embedding)
-            if best_match and sim >= 0.45:
-                face_id = best_match
+        if face.embedding is not None:
+            with self._cache_lock:
+                has_known = len(self._known_embeddings) > 0
+            if has_known:
+                best_match, sim = self._match_embedding(face.embedding)
+                if best_match and sim >= 0.45:
+                    face_id = best_match
 
         return FaceResult(
             detected=True,
@@ -341,15 +341,17 @@ class FaceService:
             return []
 
     def _match_embedding(self, emb: np.ndarray) -> Tuple[Optional[str], float]:
-        """Find the best matching known person and similarity score."""
-        if emb is None or len(self._known_embeddings) == 0:
-            return None, 0.0
+        """Find the best matching known person and similarity score (thread-safe)."""
+        with self._cache_lock:
+            if emb is None or len(self._known_embeddings) == 0:
+                return None, 0.0
+            known_items = list(self._known_embeddings.items())
 
         best_name = None
         best_sim = -1.0
         emb_norm = emb / (np.linalg.norm(emb) + 1e-7)
 
-        for name, known_vec in self._known_embeddings.items():
+        for name, known_vec in known_items:
             sim = self._cosine_similarity(emb_norm, known_vec)
             if sim > best_sim:
                 best_sim = sim
@@ -370,6 +372,11 @@ class FaceService:
             return largest_face.embedding.astype(float).tolist()
         return None
 
+    async def extract_embedding(self, jpeg_bytes: bytes) -> Optional[list]:
+        """Asynchronously extract face embedding on the vision thread pool."""
+        await self._ensure_model()
+        return await run_in_vision_thread(self.extract_embedding_sync, jpeg_bytes)
+
     # ──────────────────────────────────────────────────────────────────────────
     # Person Identification / Recognition (تعريف الأشخاص)
     # ──────────────────────────────────────────────────────────────────────────
@@ -377,12 +384,11 @@ class FaceService:
     async def recognize_faces(self, image_bytes: bytes, threshold: float = 0.45) -> List[Dict[str, Any]]:
         """
         Detect all faces in the image and identify each person against registered profiles.
-        Returns detailed list of identified faces, bounding boxes, and similarity scores.
+        Runs in the dedicated vision thread pool.
         """
         await self._ensure_model()
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, self._recognize_faces_sync, image_bytes, threshold
+        return await run_in_vision_thread(
+            self._recognize_faces_sync, image_bytes, threshold
         )
 
     def _recognize_faces_sync(self, image_bytes: bytes, threshold: float) -> List[Dict[str, Any]]:
@@ -393,6 +399,9 @@ class FaceService:
         faces = self._detect_faces_raw(img)
         results = []
 
+        with self._cache_lock:
+            known_count = len(self._known_embeddings)
+
         for idx, face in enumerate(faces):
             bbox = [int(v) for v in face.bbox]
             confidence = float(face.confidence)
@@ -402,7 +411,7 @@ class FaceService:
             similarity = 0.0
             is_known = False
 
-            if face.embedding is not None and len(self._known_embeddings) > 0:
+            if face.embedding is not None and known_count > 0:
                 best_name, best_sim = self._match_embedding(face.embedding)
                 similarity = round(float(best_sim), 4)
                 if best_name and best_sim >= threshold:
@@ -431,13 +440,11 @@ class FaceService:
     async def compare_faces(self, img1_bytes: bytes, img2_bytes: bytes, threshold: float = 0.40) -> Dict[str, Any]:
         """
         Compare faces in two images and compute cosine similarity.
-        Compares all detected face pairs to find the best match.
-        Returns match decision, similarity percentage, and confidence metrics.
+        Runs on dedicated vision thread pool.
         """
         await self._ensure_model()
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, self._compare_faces_sync, img1_bytes, img2_bytes, threshold
+        return await run_in_vision_thread(
+            self._compare_faces_sync, img1_bytes, img2_bytes, threshold
         )
 
     def _compare_faces_sync(self, img1_bytes: bytes, img2_bytes: bytes, threshold: float) -> Dict[str, Any]:
@@ -489,7 +496,6 @@ class FaceService:
                 "error": "Could not extract embeddings for comparison."
             }
 
-        # Sort pairs by similarity descending to get the best match pair
         valid_pairs.sort(key=lambda item: item[0], reverse=True)
         best_sim, best_i1, face1, best_i2, face2 = valid_pairs[0]
 
@@ -511,7 +517,7 @@ class FaceService:
         }
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Video Face Extraction & Best Shot Selection (واختار الصور من الفيديوهات)
+    # Multi-threaded Video Face Extraction & Best Shot Selection
     # ──────────────────────────────────────────────────────────────────────────
 
     async def extract_best_faces_from_video(
@@ -522,13 +528,11 @@ class FaceService:
         max_faces: int = 10,
     ) -> List[Dict[str, Any]]:
         """
-        Sample frames from video, detect faces, assess sharpness and resolution,
-        and return the top-K highest quality face crops with timestamps.
+        Sample frames from video, detect faces concurrently across worker threads,
+        assess sharpness and resolution, and return top-K highest quality face crops.
         """
         await self._ensure_model()
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
+        return await run_in_vision_thread(
             self._extract_faces_from_video_sync,
             video_bytes,
             sample_interval_sec,
@@ -544,12 +548,15 @@ class FaceService:
         max_faces: int,
         include_raw: bool = False,
     ) -> List[Dict[str, Any]]:
-        # Write video bytes to a temporary file for OpenCV
+        """
+        Parallel multi-threaded video face extractor.
+        Samples frames from video and analyzes them concurrently using worker threads.
+        """
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_vid:
             temp_path = temp_vid.name
             temp_vid.write(video_bytes)
 
-        candidates = []
+        sampled_frames = []
         try:
             cap = cv2.VideoCapture(temp_path)
             if not cap.isOpened():
@@ -571,41 +578,7 @@ class FaceService:
                 mins, secs = divmod(int(timestamp_sec), 60)
                 formatted_time = f"{mins:02d}:{secs:02d}"
 
-                # Detect faces on frame
-                faces = self._detect_faces_raw(frame)
-                for f in faces:
-                    if f.confidence < min_confidence:
-                        continue
-
-                    bbox = [int(v) for v in f.bbox]
-                    area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
-                    if area < 400:  # Ignore tiny faces
-                        continue
-
-                    # Crop face
-                    crop = self._crop_face(frame, bbox, margin_pct=0.2)
-                    sharpness = self._compute_laplacian_sharpness(crop)
-
-                    # Quality composite score: confidence * log(area) * sharpness
-                    quality_score = float(f.confidence) * math.log(max(area, 10)) * min(sharpness, 500.0)
-
-                    # Encode crop to JPEG base64
-                    _, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
-                    b64_img = base64.b64encode(buf).decode("utf-8")
-
-                    candidates.append({
-                        "frame_index": frame_idx,
-                        "timestamp_sec": timestamp_sec,
-                        "formatted_time": formatted_time,
-                        "confidence": round(float(f.confidence), 4),
-                        "sharpness": round(sharpness, 2),
-                        "quality_score": round(quality_score, 2),
-                        "bbox": bbox,
-                        "crop_base64": f"data:image/jpeg;base64,{b64_img}",
-                        "_crop_bytes": buf.tobytes(),
-                        "_embedding": f.embedding,
-                    })
-
+                sampled_frames.append((frame_idx, timestamp_sec, formatted_time, frame))
                 frame_idx += frame_step
 
             cap.release()
@@ -616,10 +589,54 @@ class FaceService:
                 except Exception:
                     pass
 
+        if not sampled_frames:
+            return []
+
+        # ── Parallel Frame Processing across Thread Pool ──────────────────────
+        candidates = []
+
+        def _process_single_frame(item: Tuple[int, float, str, np.ndarray]) -> List[Dict[str, Any]]:
+            f_idx, t_sec, f_time, frame_img = item
+            frame_results = []
+            faces = self._detect_faces_raw(frame_img)
+            for f in faces:
+                if f.confidence < min_confidence:
+                    continue
+
+                bbox = [int(v) for v in f.bbox]
+                area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+                if area < 400:  # Ignore tiny faces
+                    continue
+
+                crop = self._crop_face(frame_img, bbox, margin_pct=0.2)
+                sharpness = self._compute_laplacian_sharpness(crop)
+                quality_score = float(f.confidence) * math.log(max(area, 10)) * min(sharpness, 500.0)
+
+                _, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                b64_img = base64.b64encode(buf).decode("utf-8")
+
+                frame_results.append({
+                    "frame_index": f_idx,
+                    "timestamp_sec": t_sec,
+                    "formatted_time": f_time,
+                    "confidence": round(float(f.confidence), 4),
+                    "sharpness": round(sharpness, 2),
+                    "quality_score": round(quality_score, 2),
+                    "bbox": bbox,
+                    "crop_base64": f"data:image/jpeg;base64,{b64_img}",
+                    "_crop_bytes": buf.tobytes(),
+                    "_embedding": f.embedding,
+                })
+            return frame_results
+
+        worker_count = min(getattr(settings, "VIDEO_PROCESSING_WORKERS", 4), os.cpu_count() or 4)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="video-frame-worker") as executor:
+            for result_list in executor.map(_process_single_frame, sampled_frames):
+                candidates.extend(result_list)
+
         # Sort candidate faces by quality score descending
         candidates.sort(key=lambda c: c["quality_score"], reverse=True)
 
-        # Select Top-K best diverse faces
         selected = candidates[:max_faces]
 
         if include_raw:
@@ -642,13 +659,11 @@ class FaceService:
         max_faces: int = 30,
     ) -> Dict[str, Any]:
         """
-        Scan video frames, identify each detected face against registered profiles,
+        Scan video frames in parallel, identify each detected face against registered profiles,
         and calculate match percentages, timestamps, and overall person summary.
         """
         await self._ensure_model()
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
+        return await run_in_vision_thread(
             self._recognize_faces_from_video_sync,
             video_bytes,
             threshold,
@@ -677,6 +692,9 @@ class FaceService:
         person_stats: Dict[str, Dict[str, Any]] = {}
         unknown_count = 0
 
+        with self._cache_lock:
+            has_known = len(self._known_embeddings) > 0
+
         for cand in candidates:
             emb = cand.get("_embedding")
             is_known = False
@@ -684,7 +702,7 @@ class FaceService:
             similarity = 0.0
             match_pct = 0.0
 
-            if emb is not None and len(self._known_embeddings) > 0:
+            if emb is not None and has_known:
                 best_name, best_sim = self._match_embedding(emb)
                 similarity = round(float(best_sim), 4)
                 if best_name and best_sim >= threshold:
@@ -757,9 +775,7 @@ class FaceService:
         Returns whether the person appears in the video and highest match percentage.
         """
         await self._ensure_model()
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
+        return await run_in_vision_thread(
             self._compare_video_to_image_sync,
             video_bytes,
             image_bytes,
@@ -838,15 +854,12 @@ class FaceService:
     # Person Registration (Photo & Video)
     # ──────────────────────────────────────────────────────────────────────────
 
-    async def register_face_from_image(
+    def _register_face_from_image_sync(
         self,
         name: str,
         image_bytes: bytes,
-        db: AsyncSession,
-    ) -> Dict[str, Any]:
-        """Register a new person from an uploaded photo."""
-        await self._ensure_model()
-
+    ) -> Tuple[bytes, str, float, int]:
+        """Synchronous face extraction and photo crop saving (runs in vision thread pool)."""
         img = self._decode_image(image_bytes)
         if img is None:
             raise ValueError("Could not decode image.")
@@ -872,7 +885,20 @@ class FaceService:
         # Serialize embedding
         emb_bytes = best_face.embedding.astype(np.float32).tobytes()
 
-        # Check existing profile
+        return emb_bytes, rel_photo_path, float(best_face.confidence), len(best_face.embedding)
+
+    async def register_face_from_image(
+        self,
+        name: str,
+        image_bytes: bytes,
+        db: AsyncSession,
+    ) -> Dict[str, Any]:
+        """Register a new person from an uploaded photo using vision thread pool."""
+        await self._ensure_model()
+        emb_bytes, rel_photo_path, confidence, emb_dim = await run_in_vision_thread(
+            self._register_face_from_image_sync, name, image_bytes
+        )
+
         existing = (await db.execute(select(FaceProfile).where(FaceProfile.name == name))).scalar_one_or_none()
         if existing:
             existing.embedding = emb_bytes
@@ -892,9 +918,9 @@ class FaceService:
         return {
             "message": "Face registered successfully",
             "name": name,
-            "confidence": round(float(best_face.confidence), 4),
+            "confidence": round(confidence, 4),
             "photo_path": rel_photo_path,
-            "embedding_dimension": len(best_face.embedding),
+            "embedding_dimension": emb_dim,
         }
 
     async def register_face_from_video(
@@ -905,13 +931,11 @@ class FaceService:
         sample_interval_sec: float = 0.5,
     ) -> Dict[str, Any]:
         """
-        Automatically analyze uploaded video, extract the single highest-quality,
-        clearest face frame of the person, extract embedding, and register them.
+        Automatically analyze uploaded video across worker threads, extract the single
+        highest-quality, clearest face frame of the person, extract embedding, and register them.
         """
         await self._ensure_model()
-        loop = asyncio.get_event_loop()
-        extracted = await loop.run_in_executor(
-            None,
+        extracted = await run_in_vision_thread(
             self._extract_faces_from_video_sync,
             video_bytes,
             sample_interval_sec,
@@ -935,8 +959,11 @@ class FaceService:
         photo_filename = f"{safe_name}_video_{int(time.time())}.jpg"
         photo_full_path = self.faces_dir / photo_filename
 
-        with open(photo_full_path, "wb") as f:
-            f.write(crop_bytes)
+        def _save_crop(p: Path, data: bytes):
+            with open(p, "wb") as f:
+                f.write(data)
+
+        await run_in_vision_thread(_save_crop, photo_full_path, crop_bytes)
         rel_photo_path = f"data/faces/{photo_filename}"
 
         # Serialize embedding
@@ -983,7 +1010,8 @@ class FaceService:
         await db.execute(delete(FaceProfile).where(FaceProfile.name == name))
         await db.commit()
 
-        if name in self._known_embeddings:
-            del self._known_embeddings[name]
+        with self._cache_lock:
+            if name in self._known_embeddings:
+                del self._known_embeddings[name]
 
         return True

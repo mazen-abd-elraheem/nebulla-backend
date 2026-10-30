@@ -67,3 +67,18 @@ async def test_voice_clone_test_no_sample(auth_headers):
     # Should return WAV audio (or 200 with some content)
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("audio/")
+
+
+@pytest.mark.asyncio
+async def test_threads_endpoint():
+    """Verify multithreading diagnostics endpoint returns active pool status."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/threads")
+    assert r.status_code == 200
+    data = r.json()
+    assert "pools" in data
+    assert "vision" in data["pools"]
+    assert "audio" in data["pools"]
+    assert "rag" in data["pools"]
+    assert "io" in data["pools"]
+    assert data["cpu_cores"] > 0

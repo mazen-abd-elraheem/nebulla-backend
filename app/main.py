@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.core.threading import init_thread_pools, shutdown_thread_pools, get_thread_stats
 from app.api.v1.router import api_router
 from app.websocket.hub import router as ws_router
 from app.db.session import init_db
@@ -59,11 +60,18 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     import asyncio
     logger.info("🚀 Nebula backend starting up…")
+    init_thread_pools(
+        vision_workers=getattr(settings, "VISION_MAX_THREADS", 4),
+        audio_workers=getattr(settings, "AUDIO_MAX_THREADS", 4),
+        rag_workers=getattr(settings, "RAG_MAX_THREADS", 2),
+        io_workers=getattr(settings, "IO_MAX_THREADS", 4),
+    )
     await init_db()
     asyncio.create_task(_warmup_ollama())
     asyncio.create_task(_warmup_rag())
     yield
     logger.info("Nebula backend shutting down...")
+    shutdown_thread_pools(wait=False)
 
 
 app = FastAPI(
@@ -104,7 +112,17 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 @app.get("/health", tags=["health"])
 async def health_check():
-    return {"status": "ok", "version": settings.VERSION}
+    return {
+        "status": "ok",
+        "version": settings.VERSION,
+        "threads": get_thread_stats(),
+    }
+
+
+@app.get("/threads", tags=["diagnostics"], summary="Multithreading and Thread Pool Metrics")
+async def thread_pool_diagnostics():
+    """Inspect active thread counts, domain pool states, and system cores."""
+    return get_thread_stats()
 
 
 STUDIO_HTML_PATH = Path(__file__).parent / "static" / "faces_studio.html"

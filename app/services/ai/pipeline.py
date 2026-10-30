@@ -640,7 +640,7 @@ class AIPipeline:
         except Exception as e:
             logger.warning(f"Failed to persist conversation turn to DB: {e}")
 
-    async def process_text(self, text: str) -> None:
+    async def process_websocket_chat(self, text: str) -> None:
         """Process incoming text message from websocket phone/desktop."""
         clean_text = text.strip()
         if not clean_text:

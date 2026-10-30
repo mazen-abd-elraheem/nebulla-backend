@@ -38,6 +38,7 @@ from typing import AsyncIterator
 
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.core.threading import run_in_audio_thread
 from app.providers.tts.base import BaseTTSProvider
 
 logger = get_logger(__name__)
@@ -85,7 +86,7 @@ class XTTSProvider(BaseTTSProvider):
         async with self._lock:
             if self._model is None:
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._load_sync)
+                await run_in_audio_thread(self._load_sync)
 
     def _load_sync(self) -> None:
         """Blocking model load — runs in thread pool."""
@@ -126,7 +127,7 @@ class XTTSProvider(BaseTTSProvider):
             return _silent_wav()
 
         loop = asyncio.get_event_loop()
-        wav_bytes = await loop.run_in_executor(None, self._synth_sync, text)
+        wav_bytes = await run_in_audio_thread(self._synth_sync, text)
         return wav_bytes
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:

@@ -24,6 +24,7 @@ from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.core.threading import run_in_io_thread, run_in_audio_thread
 from app.providers.tts.xtts.provider import XTTSProvider
 from app.utils.masri_normalizer import clean_llm_output_for_speech
 
@@ -85,7 +86,7 @@ class VoiceCloneService:
         raw = await file.read()
         dest = _SAMPLES_DIR / f"personality_{personality_id}.wav"
 
-        duration = _save_and_convert_to_wav(raw, ext, dest)
+        duration = await run_in_io_thread(_save_and_convert_to_wav, raw, ext, dest)
 
         if duration < _MIN_DURATION_S:
             if dest.exists():
@@ -317,6 +318,11 @@ def _wav_duration(raw: bytes) -> float:
             return wf.getnframes() / wf.getframerate()
     except Exception:
         return 0.0
+
+
+async def save_and_convert_to_wav_async(raw: bytes, ext: str, dest: Path) -> float:
+    """Asynchronously convert and save audio using the dedicated I/O thread pool."""
+    return await run_in_io_thread(_save_and_convert_to_wav, raw, ext, dest)
 
 
 def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:

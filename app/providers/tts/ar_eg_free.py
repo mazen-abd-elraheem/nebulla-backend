@@ -9,6 +9,7 @@ import io
 import subprocess
 from app.providers.tts.base import BaseTTSProvider
 from app.core.logger import get_logger
+from app.core.threading import run_in_io_thread
 
 logger = get_logger(__name__)
 
@@ -35,7 +36,7 @@ class ArEgFreeProvider(BaseTTSProvider):
                     mp3_data.extend(chunk["data"])
 
             if mp3_data:
-                return _to_wav(bytes(mp3_data))
+                return await run_in_io_thread(_to_wav, bytes(mp3_data))
         except Exception as e:
             logger.error(f"edge-tts failed: {e}")
 

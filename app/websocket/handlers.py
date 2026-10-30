@@ -1,7 +1,11 @@
 """
 WebSocket message handlers for each channel.
 Each handler runs in a loop receiving messages and dispatching to services.
+Features decoupled multi-threaded processing so video frames and audio chunks
+do not block the WebSocket connection or each other.
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
@@ -25,7 +29,7 @@ _motion_guard: MotionGuard | None = None
 _signal_planner: SignalPlanner | None = None
 
 # Concurrency semaphore to throttle concurrent heavy AI inferences (DoS mitigation)
-_pipeline_semaphore = asyncio.Semaphore(3)
+_pipeline_semaphore = asyncio.Semaphore(4)
 
 
 async def _safe_process_text(pipeline: AIPipeline, text: str) -> None:
@@ -67,40 +71,106 @@ def _get_signal_planner() -> SignalPlanner:
     return _signal_planner
 
 
+async def _vision_frame_worker(queue: asyncio.Queue[bytes], face_service: FaceService) -> None:
+    """
+    Background worker consuming camera frames from bounded queue.
+    Ensures vision model inference never blocks the WebSocket receive loop.
+    """
+    while True:
+        try:
+            frame_bytes = await queue.get()
+            try:
+                await face_service.process_frame(frame_bytes)
+            finally:
+                queue.task_done()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Vision frame worker error: {e}")
+
+
+async def _audio_chunk_worker(queue: asyncio.Queue[bytes], pipeline: AIPipeline) -> None:
+    """
+    Background worker consuming audio PCM chunks sequentially.
+    Ensures VAD and STT pipeline execution runs independently of camera frames.
+    """
+    while True:
+        try:
+            audio_bytes = await queue.get()
+            try:
+                await pipeline.process_audio_chunk(audio_bytes)
+            finally:
+                queue.task_done()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Audio chunk worker error: {e}")
+
+
 async def phone_handler(ws: WebSocket) -> None:
     """
-    Handle messages from the phone app.
-    - Binary messages: audio (PCM) → STT → LLM → TTS pipeline
-    - JSON messages: camera frames (JPEG) → UniFace → gaze
+    Handle messages from the phone app with decoupled multi-threaded processing.
+    - Camera frames are buffered in a latest-frame queue (drop-frame on congestion).
+    - Audio chunks stream continuously through an independent audio worker queue.
     """
     pipeline = _get_ai_pipeline()
     face_service = _get_face_service()
 
-    while True:
-        message = await ws.receive()
+    # Bounded queue with size 1 for freshest-frame tracking
+    frame_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=1)
+    # Bounded audio queue (up to ~12 seconds of buffered audio chunks)
+    audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=120)
 
-        if "bytes" in message and message["bytes"]:
-            raw = message["bytes"]
+    vision_worker = asyncio.create_task(_vision_frame_worker(frame_queue, face_service))
+    audio_worker = asyncio.create_task(_audio_chunk_worker(audio_queue, pipeline))
 
-            if raw[:2] in (b"\xff\xd8", b"\xff\xe0", b"\xff\xe1"):
-                # JPEG camera frame → vision pipeline
-                await face_service.process_frame(raw)
-            else:
-                # Audio chunk → full AI pipeline (STT → LLM → TTS)
-                await pipeline.process_audio_chunk(raw)
+    try:
+        while True:
+            message = await ws.receive()
 
-        elif "text" in message and message["text"]:
-            try:
-                data = json.loads(message["text"])
-                msg_type = data.get("t")
-                if msg_type == "status":
-                    await ws.send_json(manager.status())
-                elif msg_type == "chat":
-                    user_text = data.get("text", "")
-                    if user_text.strip():
-                        asyncio.create_task(_safe_process_text(pipeline, user_text.strip()))
-            except json.JSONDecodeError:
-                logger.warning("Phone sent invalid JSON")
+            if "bytes" in message and message["bytes"]:
+                raw = message["bytes"]
+
+                if raw[:2] in (b"\xff\xd8", b"\xff\xe0", b"\xff\xe1"):
+                    # JPEG camera frame: keep latest frame only
+                    if frame_queue.full():
+                        try:
+                            frame_queue.get_nowait()
+                            frame_queue.task_done()
+                        except (asyncio.QueueEmpty, ValueError):
+                            pass
+                    try:
+                        frame_queue.put_nowait(raw)
+                    except asyncio.QueueFull:
+                        pass
+                else:
+                    # Audio chunk: buffer for pipeline
+                    try:
+                        audio_queue.put_nowait(raw)
+                    except asyncio.QueueFull:
+                        try:
+                            audio_queue.get_nowait()
+                            audio_queue.task_done()
+                        except (asyncio.QueueEmpty, ValueError):
+                            pass
+                        audio_queue.put_nowait(raw)
+
+            elif "text" in message and message["text"]:
+                try:
+                    data = json.loads(message["text"])
+                    msg_type = data.get("t")
+                    if msg_type == "status":
+                        await ws.send_json(manager.status())
+                    elif msg_type == "chat":
+                        user_text = data.get("text", "")
+                        if user_text.strip():
+                            asyncio.create_task(_safe_process_text(pipeline, user_text.strip()))
+                except json.JSONDecodeError:
+                    logger.warning("Phone sent invalid JSON")
+    finally:
+        vision_worker.cancel()
+        audio_worker.cancel()
+        await asyncio.gather(vision_worker, audio_worker, return_exceptions=True)
 
 
 async def desk_handler(ws: WebSocket) -> None:
@@ -133,8 +203,12 @@ async def desk_handler(ws: WebSocket) -> None:
                                 await manager.send_to_esp(joint_cmd.model_dump())
                     elif cmd.joint_id is not None:
                         # Direct servo control
-                        joint = {"t": "joint", "id": cmd.joint_id,
-                                 "deg": cmd.angle, "ms": cmd.speed_ms or 300}
+                        joint = {
+                            "t": "joint",
+                            "id": cmd.joint_id,
+                            "deg": cmd.angle,
+                            "ms": cmd.speed_ms or 300,
+                        }
                         validated = guard.validate_dict(joint)
                         if validated:
                             await manager.send_to_esp(validated)
