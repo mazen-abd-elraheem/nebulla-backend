@@ -234,7 +234,9 @@ async def build_grounding_context(
             mem_bullets = "\n".join(f"- {m}" for m in memories)
             grounded_system_prompt += (
                 f"\nالذاكرة المعتمدة:\n{mem_bullets}\n"
-                "تنبيه صارم لمنع الهلوسة: إذا طُلب رقم هاتف، كلمة مرور، أو تفصيلة غير مذكورة نصاً في الذاكرة أعلاه، يجب أن تجيب حصراً بـ:\n"
+                "قواعد صارمة لمنع الهلوسة والردود الخارجة عن موضوع البحث:\n"
+                "1. أجب فقط وبدقة متناهية عن موضوع السؤال المطروح نصاً؛ يُحظر تماماً ذكر أي معلومات لا ترتبط مباشرة بموضوع السؤال.\n"
+                "2. إذا كان السؤال يسأل عن تفصيلة غير متوفرة نصاً في الذاكرة أعلاه، أو طُلب رقم هاتف أو كود سري، يجب أن تجيب حصراً بـ:\n"
                 "\"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]\"\n"
             )
         else:
@@ -273,7 +275,9 @@ async def build_grounding_context(
             mem_bullets = "\n".join(f"- {to_english_memory(m)}" for m in memories)
             grounded_system_prompt += (
                 f"\nVerified Memory:\n{mem_bullets}\n"
-                "STRICT DIRECTIVE: If the inquiry asks for unrecorded details, phone numbers, or passwords, you MUST reply with:\n"
+                "STRICT ZERO-HALLUCINATION DIRECTIVES:\n"
+                "1. Answer strictly and exclusively about the specific topic asked. Do not volunteer unrelated facts.\n"
+                "2. If the inquiry asks for unrecorded details, phone numbers, or passwords, you MUST reply with:\n"
                 "\"I do not have this information recorded in my memory. [wave]\"\n"
             )
         else:

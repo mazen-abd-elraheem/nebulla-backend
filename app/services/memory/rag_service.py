@@ -36,6 +36,7 @@ class RAGService:
 
     _shared_embedder = None
     _shared_lock = asyncio.Lock()
+    _shared_cache: dict = {}
 
     def __init__(self):
         self._embedder = RAGService._shared_embedder
@@ -122,52 +123,49 @@ class RAGService:
         if not memories:
             return []
 
-        # ── Hybrid Retrieval: Dense Embedding + Egyptian Lexical RRF ──────────
+        # ── Fast Vectorized Hybrid Retrieval & Strict Topic Relevance ──────────
         sem_scores: dict[int, float] = {}
         lex_scores: dict[int, float] = {}
 
         clean_person = person_name.strip() if person_name else None
         augmented_query = f"{clean_person} {query}" if clean_person and clean_person not in query else query
 
-        # 1. Dense Semantic Scoring
+        # 1. Fast Vectorized Semantic Scoring (Single-pass + LRU cached)
         if self._embedder != "disabled":
             loop = asyncio.get_event_loop()
             try:
-                query_vec = await loop.run_in_executor(None, self._embed, query)
-                aug_vec = None
-                if augmented_query != query:
-                    aug_vec = await loop.run_in_executor(None, self._embed, augmented_query)
+                # Encode once (augmented if person available, otherwise raw query)
+                embed_text = augmented_query if clean_person else query
+                query_vec = await loop.run_in_executor(None, self._embed, embed_text)
 
-                for mem in memories:
-                    if mem.embedding:
-                        mem_vec = np.frombuffer(mem.embedding, dtype=np.float32)
-                        norm_prod = (np.linalg.norm(query_vec) * np.linalg.norm(mem_vec)) + 1e-9
-                        cos_sim = float(np.dot(query_vec, mem_vec) / norm_prod)
-                        if aug_vec is not None:
-                            norm_aug = (np.linalg.norm(aug_vec) * np.linalg.norm(mem_vec)) + 1e-9
-                            cos_sim_aug = float(np.dot(aug_vec, mem_vec) / norm_aug)
-                            cos_sim = max(cos_sim, cos_sim_aug)
-                        if cos_sim > 0.05:
-                            sem_scores[mem.id] = float(cos_sim)
+                valid_mems = [m for m in memories if m.embedding]
+                if valid_mems and query_vec is not None:
+                    # Batch cosine similarity in one single vectorized BLAS dot product
+                    mem_matrix = np.vstack([np.frombuffer(m.embedding, dtype=np.float32) for m in valid_mems])
+                    dot_sims = np.dot(mem_matrix, query_vec)
+                    for m, sim_val in zip(valid_mems, dot_sims):
+                        cos_sim = float(sim_val)
+                        # Strict relevance threshold: disregard unrelated noise
+                        if cos_sim >= 0.28:
+                            sem_scores[m.id] = cos_sim
             except Exception as e:
                 logger.error(f"Error during semantic embedding search: {e}. Using lexical search.")
 
-        # 2. Egyptian Lexical & Keyword Matching (with person_name boost)
+        # 2. Egyptian Lexical & Keyword Matching (Topic-Focused)
         for mem in memories:
             l_score = self._lexical_score(query, mem.content)
             if augmented_query != query:
-                l_score_aug = self._lexical_score(augmented_query, mem.content)
-                l_score = max(l_score, l_score_aug)
+                l_score = max(l_score, self._lexical_score(augmented_query, mem.content))
 
-            # Boost memories that explicitly mention the recognized person
+            # Only boost person_name if there is already topical overlap to prevent irrelevant memory pollution
             if clean_person and clean_person.lower() in mem.content.lower():
-                l_score += 0.25
+                if l_score > 0.05 or sem_scores.get(mem.id, 0.0) >= 0.28:
+                    l_score += 0.15
 
-            if l_score > 0.0:
+            if l_score >= 0.08:
                 lex_scores[mem.id] = l_score
 
-        # 3. Reciprocal Rank Fusion (RRF)
-        # Sort each list to obtain ranks
+        # 3. Reciprocal Rank Fusion (RRF) with Strict Relevance Cutoff
         sorted_sem = sorted(sem_scores.items(), key=lambda x: x[1], reverse=True)
         sem_ranks = {mid: rank for rank, (mid, _) in enumerate(sorted_sem, start=1)}
 
@@ -188,23 +186,17 @@ class RAGService:
             if mid in lex_ranks:
                 score_rrf += 1.0 / (k_rrf + lex_ranks[mid])
 
-            # Blend with raw semantic similarity and importance weight
             raw_sem = sem_scores.get(mid, 0.0)
             raw_lex = lex_scores.get(mid, 0.0)
-            importance_boost = (getattr(mem, "importance", 5) / 10.0) * 0.05
-            combined_score = (score_rrf * 10.0) + (raw_sem * 0.5) + (raw_lex * 0.3) + importance_boost
-            scored.append((combined_score, mem))
 
-        # Additional lexical matching if no scored memories yet
-        if not scored:
-            for mem in memories:
-                score = self._lexical_score(query, mem.content)
-                if augmented_query != query:
-                    score = max(score, self._lexical_score(augmented_query, mem.content))
-                if clean_person and clean_person.lower() in mem.content.lower():
-                    score += 0.2
-                if score > 0:
-                    scored.append((score, mem))
+            # Strict guard: Must have genuine semantic or lexical relation to query topic
+            if raw_sem < 0.28 and raw_lex < 0.10:
+                continue
+
+            importance_boost = (getattr(mem, "importance", 5) / 10.0) * 0.03
+            combined_score = (score_rrf * 10.0) + (raw_sem * 0.6) + (raw_lex * 0.4) + importance_boost
+            if combined_score >= 0.28:
+                scored.append((combined_score, mem))
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return scored
@@ -227,7 +219,7 @@ class RAGService:
             return []
 
         top_k = top_k or settings.MEMORY_TOP_K
-        top = [mem for score, mem in scored if score >= 0.12][:top_k]
+        top = [mem for score, mem in scored if score >= 0.28][:top_k]
         if top:
             asyncio.create_task(self._update_access_times([m.id for m in top]))
 
@@ -252,7 +244,7 @@ class RAGService:
             return []
 
         top_k = top_k or settings.MEMORY_TOP_K
-        top_scored = [(score, mem) for score, mem in scored if score >= 0.12][:top_k]
+        top_scored = [(score, mem) for score, mem in scored if score >= 0.28][:top_k]
         if top_scored:
             asyncio.create_task(self._update_access_times([m.id for _, m in top_scored]))
 
@@ -366,7 +358,13 @@ class RAGService:
     # ── Internals ─────────────────────────────────────────────────────────────
 
     def _embed(self, text: str):
-        return self._embedder.encode(text, normalize_embeddings=True)
+        if text in RAGService._shared_cache:
+            return RAGService._shared_cache[text]
+        vec = self._embedder.encode(text, normalize_embeddings=True)
+        if len(RAGService._shared_cache) > 2048:
+            RAGService._shared_cache.clear()
+        RAGService._shared_cache[text] = vec
+        return vec
 
     def _normalize_arabic(self, text: str) -> str:
         from app.utils.masri_normalizer import normalize_masri_orthography

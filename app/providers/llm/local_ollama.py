@@ -84,24 +84,24 @@ class LocalOllamaProvider(BaseLLMProvider):
             "options": {
                 "num_predict": max_tokens,
                 "num_ctx": 1024,
-                "num_batch": 256,
+                "num_batch": 512,
                 "num_thread": num_threads,
                 "temperature": getattr(settings, "LLM_TEMPERATURE", 0.0),
-                "top_p": getattr(settings, "LLM_TOP_P", 0.85),
-                "top_k": 30,
+                "top_p": getattr(settings, "LLM_TOP_P", 0.80),
+                "top_k": 20,
                 "repeat_penalty": getattr(settings, "LLM_REPEAT_PENALTY", 1.15),
+                "stop": ["<|eot_id|>", "<|end_of_text|>", "<|start_header_id|>", "<|end_header_id|>", "<|im_end|>"],
             },
         }
 
-        timeout = httpx.Timeout(getattr(settings, "LLM_TIMEOUT", 120.0), connect=15.0)
+        client = _get_ollama_client()
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                async with client.stream(
-                    "POST",
-                    f"{settings.LLM_BASE_URL}/api/chat",
-                    json=payload,
-                ) as resp:
+            async with client.stream(
+                "POST",
+                f"{settings.LLM_BASE_URL}/api/chat",
+                json=payload,
+            ) as resp:
                     status_code = getattr(resp, "status_code", 200)
                     if isinstance(status_code, int) and status_code >= 400:
                         err_bytes = await resp.aread()
