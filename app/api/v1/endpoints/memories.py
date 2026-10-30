@@ -18,9 +18,9 @@ _rag = RAGService()
 
 
 class MemoryCreate(BaseModel):
-    content: str = Field(default="", description="The factual text to store in memory")
-    text: Optional[str] = Field(default=None, description="Alias for content")
-    memory: Optional[str] = Field(default=None, description="Alias for content")
+    content: Union[str, list[str]] = Field(default="", description="The factual text (or list of texts) to store in memory")
+    text: Optional[Union[str, list[str]]] = Field(default=None, description="Alias for content")
+    memory: Optional[Union[str, list[str]]] = Field(default=None, description="Alias for content")
     personality_id: int | str | None = Field(default=None, description="Personality ID (e.g. 1)")
     source: str = Field(default="manual", description="Source of memory (manual, conversation, etc.)")
     importance: int | str | None = Field(default=5, description="Importance score 1-10")
@@ -30,10 +30,18 @@ class MemoryCreate(BaseModel):
     def sanitize(cls, data: Any) -> Any:
         if isinstance(data, str):
             return {"content": data}
+        if isinstance(data, list):
+            return {"content": data}
         if isinstance(data, dict):
             # Resolve content from aliases
-            content = data.get("content") or data.get("text") or data.get("memory") or data.get("fact") or ""
-            data["content"] = str(content).strip()
+            content = data.get("content")
+            if content is None:
+                content = data.get("text") or data.get("memory") or data.get("fact") or ""
+            
+            if isinstance(content, list):
+                data["content"] = [str(c).strip() for c in content if str(c).strip()]
+            else:
+                data["content"] = str(content).strip()
 
             # Sanitize personality_id
             pid = data.get("personality_id")
@@ -110,13 +118,13 @@ async def add_memory(
     db: AsyncSession = Depends(get_db),
     _u: str | None = Depends(get_optional_user),
 ):
-    actual_content = ""
+    actual_content: Union[str, list[str]] = ""
     pid = None
     src = "manual"
     imp = 5
 
     if body:
-        actual_content = body.content.strip()
+        actual_content = body.content
         pid = body.personality_id
         src = body.source or "manual"
         imp = int(body.importance or 5)
@@ -138,6 +146,26 @@ async def add_memory(
         res = await db.execute(select(Personality.id).where(Personality.is_active == True).limit(1))  # noqa: E712
         active_id = res.scalar_one_or_none()
         pid = active_id or 1
+
+    # If a list of memories was provided, add all of them
+    if isinstance(actual_content, list):
+        created_ids = []
+        for text_item in actual_content:
+            item_str = str(text_item).strip()
+            if item_str:
+                mid = await _rag.add_memory(
+                    content=item_str,
+                    personality_id=pid,
+                    source=src,
+                    importance=imp,
+                )
+                created_ids.append(mid)
+        return {
+            "ids": created_ids,
+            "count": len(created_ids),
+            "personality_id": pid,
+            "message": f"Successfully added {len(created_ids)} memories and embedded them.",
+        }
 
     mid = await _rag.add_memory(
         content=actual_content,
