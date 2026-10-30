@@ -4,12 +4,10 @@ QwenCleo ASR Provider — Egyptian Arabic Speech-to-Text
 Fine-tune of Qwen3-ASR-1.7B specialised for Egyptian Arabic.
 WER ≈ 19.9 % on a 3,699-sentence Egyptian test set (doc §6.1).
 License: Apache-2.0.
-
-Requires an NVIDIA GPU (Ampere or newer) for real-time streaming.
-Runs on CPU in a pinch but with higher latency.
 """
 
 import asyncio
+from pathlib import Path
 
 from app.providers.tts.base import BaseSTTProvider
 from app.core.config import settings
@@ -24,6 +22,7 @@ class QwenCleoProvider(BaseSTTProvider):
     def __init__(self):
         self._pipeline = None
         self._lock = asyncio.Lock()
+        self._fallback_whisper = None
 
     async def _ensure_loaded(self):
         if self._pipeline is not None:
@@ -37,36 +36,41 @@ class QwenCleoProvider(BaseSTTProvider):
         try:
             from transformers import pipeline as hf_pipeline  # type: ignore[import]
 
-            logger.info(f"Loading QwenCleo-ASR from {settings.QWENCLEO_MODEL_PATH}…")
+            model_path = settings.QWENCLEO_MODEL_PATH
+            # If local relative path doesn't exist, check Hugging Face repo
+            if not Path(model_path).exists():
+                logger.info(f"Local QwenCleo model not found at '{model_path}'. Trying 'mohammedaly22/QwenCleo-ASR'...")
+                model_path = "mohammedaly22/QwenCleo-ASR"
+
+            logger.info(f"Loading QwenCleo-ASR from {model_path}…")
             self._pipeline = hf_pipeline(
                 task="automatic-speech-recognition",
-                model=settings.QWENCLEO_MODEL_PATH,
+                model=model_path,
                 device=0 if settings.QWENCLEO_DEVICE == "cuda" else -1,
                 chunk_length_s=30,
                 stride_length_s=5,
                 return_timestamps=False,
             )
             logger.info("QwenCleo-ASR ready ✓")
-        except ImportError:
-            logger.error("transformers not installed. Run: pip install transformers")
-            self._pipeline = "disabled"
         except Exception as e:
-            logger.error(f"QwenCleo load error: {e}")
+            logger.warning(f"QwenCleo load note: {e} — falling back to Whisper STT provider.")
             self._pipeline = "disabled"
 
     async def transcribe(self, audio_bytes: bytes) -> str:
         await self._ensure_loaded()
-        if self._pipeline == "disabled":
-            return ""
+        if self._pipeline == "disabled" or self._pipeline is None:
+            if self._fallback_whisper is None:
+                from app.providers.stt.whisper import WhisperProvider
+                self._fallback_whisper = WhisperProvider()
+            return await self._fallback_whisper.transcribe(audio_bytes)
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._run, audio_bytes)
 
     def _run(self, audio_bytes: bytes) -> str:
         try:
-            import numpy as np
-            import soundfile as sf  # type: ignore[import]
             import io
+            import soundfile as sf  # type: ignore[import]
 
             audio_array, sample_rate = sf.read(io.BytesIO(audio_bytes))
             if audio_array.ndim > 1:
