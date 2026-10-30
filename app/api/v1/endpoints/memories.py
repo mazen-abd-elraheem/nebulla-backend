@@ -21,9 +21,9 @@ class MemoryCreate(BaseModel):
     content: str = Field(default="", description="The factual text to store in memory")
     text: Optional[str] = Field(default=None, description="Alias for content")
     memory: Optional[str] = Field(default=None, description="Alias for content")
-    personality_id: Optional[Union[int, str]] = Field(default=None, description="Personality ID (e.g. 1)")
+    personality_id: int | str | None = Field(default=None, description="Personality ID (e.g. 1)")
     source: str = Field(default="manual", description="Source of memory (manual, conversation, etc.)")
-    importance: Optional[Union[int, str]] = Field(default=5, description="Importance score 1-10")
+    importance: int | str | None = Field(default=5, description="Importance score 1-10")
 
     @model_validator(mode="before")
     @classmethod
@@ -59,9 +59,9 @@ class MemoryCreate(BaseModel):
 
 class RAGPromptRequest(BaseModel):
     query: str = Field(default="", description="User query to ground with RAG memories")
-    personality_id: Optional[Union[int, str]] = Field(default=None, description="Personality ID")
+    personality_id: int | str | None = Field(default=None, description="Personality ID")
     person_name: Optional[str] = Field(default=None, description="Optional recognized person name")
-    top_k: Optional[Union[int, str]] = Field(default=5, description="Top K memories")
+    top_k: int | str | None = Field(default=5, description="Top K memories")
     instructions: Optional[str] = Field(default=None, description="Custom prompt instructions")
 
     @model_validator(mode="before")

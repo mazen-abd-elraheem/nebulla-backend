@@ -38,7 +38,7 @@ _rag_service = RAGService()
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="Text message to send to the LLM")
     session_id: Optional[str] = Field(None, description="Optional session UUID for multi-turn conversation tracking")
-    personality_id: Optional[Union[int, str]] = Field(None, description="Specific personality ID to use (defaults to active personality)")
+    personality_id: int | str | None = Field(None, description="Specific personality ID to use (defaults to active personality)")
     stream: bool = Field(False, description="Whether to stream tokens via chunked transfer")
     broadcast_to_clients: bool = Field(False, description="Whether to broadcast live tokens to connected desks/phones")
     provider: Optional[str] = Field(None, description="Override LLM provider ('local', 'nile', 'huggingface', 'openai', etc.)")
