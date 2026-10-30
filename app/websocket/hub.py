@@ -20,6 +20,7 @@ from app.core.logger import get_logger
 from app.core.security import verify_pairing_code
 from app.websocket.manager import manager
 from app.websocket.handlers import phone_handler, desk_handler, esp_handler
+from app.services.phone_action import get_phone_action_service
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -73,6 +74,7 @@ async def phone_ws(
         pass
     finally:
         await manager.disconnect_phone(websocket)
+        get_phone_action_service().reset_call_state()
 
 
 @router.websocket("/ws/desk")

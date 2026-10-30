@@ -197,6 +197,19 @@ async def build_grounding_context(
         "backend_status": "ok",
     }
 
+    # 6. Allowlisted Contacts & Reminders (Privacy: names only, zero numbers per §14.9)
+    trusted_contacts: List[str] = []
+    active_reminders_list: List[str] = []
+    try:
+        from app.models.contact import Contact
+        from app.models.reminder import Reminder
+        c_res = await db.execute(select(Contact.name).where(Contact.is_allowlisted == True).limit(20))
+        trusted_contacts = list(c_res.scalars().all())
+        r_res = await db.execute(select(Reminder.title).where(Reminder.is_active == True, Reminder.status == "pending").limit(5))
+        active_reminders_list = list(r_res.scalars().all())
+    except Exception as e:
+        logger.debug(f"Contacts/reminders grounding notice: {e}")
+
     # Formulate system prompt
     phone_str = "متصل" if diag_info["phone_connected"] else "غير متصل"
     desk_str = "متصل" if diag_info["desktop_connected"] else "غير متصل"
@@ -234,10 +247,35 @@ async def build_grounding_context(
             grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
 {persona_extra}
 
-المهمة: استخرج الإجابة حصراً وبدقة متناهية من نص الذاكرة المعتمدة أدناه.
-القواعد:
-1. أجب بجملة واحدة مباشرة بالعامية المصرية القاهرية بدون أي تأليف أو تفاصيل إضافية غير مذكورة.
-2. اختم إجابتك دائماً بوسم مشاعر واحد فقط في النهاية: [happy] أو [wave] أو [like].
+قواعد التشغيل والتوجيه الشامل (Comprehensive Operational Directives):
+1. تطابق لغة الحوار واللهجة (Strict Language Mirroring & Cairo Dialect):
+   - المستخدم يتحدث باللغة العربية: يجب أن تجيب حصراً بلهجة مصرية قاهرية مهذبة وطبيعية ومفهومة.
+   - يُحظر تماماً خلط لغات أجنبية أو استخدام رموز صينية أو مصطلحات مشوهة.
+2. الالتزام الصارم بسياق الذاكرة المعتمد ومنع الهلوسة (Strict RAG Grounding & Zero-Hallucination):
+   - اعتمد بشكل حصري ودقيق على الحقائق والمعلومات الواردة في سياق الذاكرة (RAG Context) فقط.
+   - إذا سُئلت عن تفصيلة غير متوفرة في الذاكرة، أو كانت الذاكرة فارغة، يجب أن تعتذر بأدب وبشكل مباشر:
+     "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+   - لا تخمن أو تخترع أو تفترض أي بيانات غير مذكورة قطعياً.
+3. بروتوكول حماية الخصوصية والبيانات الحساسة (Privacy & Security Directives):
+   - إذا طُلب منك رقم هاتف شخصي، كلمة مرور، كود سري، أو بيانات مالية وبنكية خاصة: ارفض فوراً بعبارة:
+     "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+4. الوعي البيئي والعتادي (Vision & Hardware Grounding):
+   - التفاعل بذكاء مع حالة الأجهزة المتصلة ومع الشخص الحاضر أمام الكاميرا.
+5. الإيجاز الحتمي ووسوم المشاعر (Conciseness & Mandatory Emotion Tags):
+   - أجب دائماً باختصار في حدود جملة إلى جملتين كحد أقصى لتوفير سرعة استجابة عالية.
+   - اختم إجابتك دائماً وبشكل إلزامي بوسم مشاعر واحد فقط في نهاية النص: [happy] أو [wave] أو [like] أو [neutral] أو [sad] أو [surprised].
+
+معلومات النظام والسياق النشط:
+- الشخصية النشطة: {robot_name} (اللهجة: {p_info.get('dialect') or 'cairo'})
+- بصمة الصوت: {voice_str}
+- التشخيص وحالة الأجهزة: الهاتف ({phone_str}) | الحاسوب ({desk_str}) | شريحة الروبوت ({esp_str})
+"""
+        if face_detected and current_face.get("face_id"):
+            grounded_system_prompt += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
+        if trusted_contacts:
+            grounded_system_prompt += f"- جهات الاتصال المسموحة (أسماء فقط): {', '.join(trusted_contacts)}.\n"
+        if active_reminders_list:
+            grounded_system_prompt += f"- التذكيرات الحالية: {', '.join(active_reminders_list)}.\n"
 
 أمثلة توضيحية لأسلوب الإجابة المباشر:
 الذاكرة المعتمدة:
