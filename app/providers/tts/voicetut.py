@@ -19,7 +19,10 @@ Performance on T4 GPU:
 
 import asyncio
 import io
+import os
+from pathlib import Path
 import wave
+import torch
 from app.providers.tts.base import BaseTTSProvider
 from app.core.config import settings
 from app.core.logger import get_logger
@@ -246,10 +249,10 @@ class VoiceTutProvider(BaseTTSProvider):
                             pass
 
             # Denoising steps from settings (defaults: 36 for Studio 99%, or override)
-            default_steps = getattr(settings, "VOICETUT_NUM_STEPS", 36)
+            default_steps = getattr(settings, "VOICETUT_NUM_STEPS", 16)
             steps = num_step or default_steps
-            cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
-            spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
+            cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.6)
+            spd = speed or getattr(settings, "VOICETUT_SPEED", 1.15)
             lang = language or getattr(settings, "VOICETUT_LANGUAGE", "arz")
 
             from voicetut_tts import GenerationParams
