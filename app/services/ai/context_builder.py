@@ -137,14 +137,12 @@ async def build_grounding_context(
 
     # 3. Memories (RAG grounded in Question, Face Recognition & Persona)
     rag_person = detected_face_name
-    if not rag_person and target_p:
-        p_name = target_p.name or ""
-        if "مازن" in p_name or "mazen" in p_name.lower():
-            rag_person = "مازن"
-        elif "منه" in p_name or "منّة" in p_name or "menna" in p_name.lower():
-            rag_person = "منه"
-        else:
-            rag_person = p_name.split()[0]
+    # Only assign person context if a face is detected or person name is explicitly in user message
+    if not rag_person and target_p and target_p.name:
+        p_name = target_p.name.strip()
+        first_name = p_name.split()[0]
+        if first_name in message or p_name in message:
+            rag_person = first_name
 
     memories = await _rag_service.retrieve(
         message,
