@@ -79,10 +79,29 @@ async def init_db() -> None:
         await conn.run_sync(_migrate)
     logger.info("Database initialised")
 
-    # Seed or configure default personality 1 (Mazen - Digital Twin)
+    # Seed default Admin/Developer User (Mazen)
     from sqlalchemy import select
+    from app.models.user import User
     from app.models.personality import Personality
+    from app.core.security import get_password_hash
+
     async with AsyncSessionLocal() as session:
+        u_res = await session.execute(select(User).order_by(User.id).limit(1))
+        existing_u = u_res.scalar_one_or_none()
+        if not existing_u:
+            default_user = User(
+                id=1,
+                full_name="مازن عبد الرحيم (Mazen)",
+                email="admin@nebula.local",
+                hashed_password=get_password_hash("nebula2026"),
+                is_active=True,
+                is_superuser=True,
+            )
+            session.add(default_user)
+            await session.commit()
+            logger.info("Default user seeded (id=1: Mazen)")
+
+        # Seed or configure default personality 1 (Mazen - Digital Twin)
         result = await session.execute(select(Personality).where(Personality.id == 1))
         existing_p = result.scalar_one_or_none()
         if not existing_p:

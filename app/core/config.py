@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # Local-network only (doc §6 security)
     CORS_ORIGINS: List[str] = ["*"]  # tighten in production
     PAIRING_SECRET: str = "change-me-in-production"  # pairing code auth
+    API_KEY: str = "change-me-in-production"  # pre-shared API key
     JWT_SECRET_KEY: str = "change-me-jwt-secret-in-production"  # dedicated JWT signing secret
     MAX_COMMANDS_PER_SECOND: int = 20  # rate-limit for ESP32 commands
 
