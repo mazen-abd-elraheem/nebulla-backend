@@ -71,33 +71,34 @@ async def build_grounding_context(
         "system_prompt": target_p.system_prompt or "",
     }
 
-    # 2. Memories (RAG)
-    memories = await _rag_service.retrieve(message, personality_id=target_p.id, db=db)
-
-    # 3. Faces (Vision / Face Recognition)
-    current_person_desc = "لا يوجد أحد أمام الكاميرا حالياً"
+    # 2. Faces (Vision / Face Recognition)
     registered_faces: List[str] = []
-    face_detected = False
-    is_recent = False
-    try:
-        from app.websocket.handlers import get_face_service
-        face_service = get_face_service()
-        current_face = face_service.get_current_face_info()
-        face_detected = current_face.get("detected", False)
-        is_recent = current_face.get("is_recent", False)
-        if face_detected:
-            if current_face.get("face_id"):
-                current_person_desc = f"الشخص الذي تراه أمامك هو: {current_face['face_id']}"
-            else:
-                current_person_desc = "يوجد شخص أمام الكاميرا ولكن لم يتم التعرف على هويته"
-    except Exception as e:
-        logger.warning(f"Could not retrieve live face info: {e}")
-
     try:
         faces_res = await db.execute(select(FaceProfile.name))
         registered_faces = list(faces_res.scalars().all())
     except Exception as e:
-        logger.warning(f"Could not load registered face profiles: {e}")
+        logger.warning(f"Could not load registered face profiles from DB: {e}")
+
+    current_person_desc = "لا يوجد أحد أمام الكاميرا حالياً"
+    face_detected = False
+    is_recent = False
+    detected_face_name: Optional[str] = None
+    current_face: Dict[str, Any] = {}
+    try:
+        from app.websocket.handlers import get_face_service
+        face_service = get_face_service()
+        if not registered_faces and getattr(face_service, "_known_embeddings", None):
+            registered_faces = list(face_service._known_embeddings.keys())
+        current_face = face_service.get_current_face_info()
+        face_detected = current_face.get("detected", False)
+        is_recent = current_face.get("is_recent", False)
+        if face_detected and current_face.get("face_id"):
+            detected_face_name = current_face["face_id"]
+            current_person_desc = f"الشخص الذي تراه أمامك هو: {detected_face_name}"
+        elif face_detected:
+            current_person_desc = "يوجد شخص أمام الكاميرا ولكن لم يتم التعرف على هويته"
+    except Exception as e:
+        logger.warning(f"Could not retrieve live face info: {e}")
 
     faces_info = {
         "currently_detected": face_detected,
@@ -105,6 +106,18 @@ async def build_grounding_context(
         "current_person": current_person_desc,
         "registered_profiles": registered_faces,
     }
+
+    # 3. Memories (RAG grounded in Face Recognition & Persona)
+    rag_person = detected_face_name
+    if not rag_person and target_p and "مازن" in (target_p.name or ""):
+        rag_person = "مازن"
+
+    memories = await _rag_service.retrieve(
+        message,
+        personality_id=target_p.id,
+        db=db,
+        person_name=rag_person,
+    )
 
     # 4. Voice Clone
     voice_info = {
@@ -123,11 +136,9 @@ async def build_grounding_context(
     }
 
     # Formulate system prompt
-    registered_str = ", ".join(registered_faces) if registered_faces else "لا توجد وجوه مسجلة بعد"
     phone_str = "متصل" if diag_info["phone_connected"] else "غير متصل"
     desk_str = "متصل" if diag_info["desktop_connected"] else "غير متصل"
     esp_str = "متصل" if diag_info["esp_connected"] else "غير متصل"
-    voice_str = voice_info["voice_sample_path"]
 
     creator_name = registered_faces[0] if registered_faces else "مازن عبد الرحيم"
     robot_name = p_info.get("name") or "نيبولا"
@@ -135,6 +146,8 @@ async def build_grounding_context(
 
     import re
     is_arabic = bool(re.search(r"[\u0600-\u06FF]", message))
+
+    voice_str = voice_info["voice_sample_path"]
 
     if is_arabic:
         grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
@@ -163,68 +176,53 @@ async def build_grounding_context(
 - التشخيص وحالة الأجهزة: الهاتف ({phone_str}) | الحاسوب ({desk_str}) | شريحة الروبوت ({esp_str})
 """
         if face_detected and current_face.get("face_id"):
-            grounded_system_prompt += f"- الكاميرا والرؤية: الشخص الحاضر أمامك الآن هو {current_face['face_id']}. خاطبه باسمه باحترام.\n"
+            grounded_system_prompt += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
 
         if memories:
             mem_bullets = "\n".join(f"- {m}" for m in memories)
             grounded_system_prompt += (
-                f"\nمعلومات الذاكرة الموثوقة (Verified RAG Context):\n{mem_bullets}\n"
-                f"التزم بالحقائق المذكورة أعلاه فقط للإجابة بلهجة مصرية مهذبة وطبيعية ومفهومة.\n"
+                f"\nالذاكرة المعتمدة:\n{mem_bullets}\n"
+                "تنبيه صارم لمنع الهلوسة: إذا طُلب رقم هاتف، كلمة مرور، أو تفصيلة غير مذكورة نصاً في الذاكرة أعلاه، يجب أن تجيب حصراً بـ:\n"
+                "\"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]\"\n"
             )
         else:
-            # Check if message is a greeting or introductory talk vs a factual question
             greeting_patterns_ar = [
                 r"\b(صباح|مساء)\s+(الخير|النور|الفل|الورد|الياسمين)\b",
                 r"\b(أهلاً|اهلا|ازيك|إزيك|عامل إيه|عامل ايه|سلام عليكم|السلام عليكم|مرحبا|مرحباً|هاي|أنا|انا|منور)\b",
                 r"\b(شكراً|شكرا|تسلم|تسلمي|يعطيك العافية)\b",
             ]
             is_greeting = any(re.search(pat, message.lower()) for pat in greeting_patterns_ar)
-
             if is_greeting:
                 grounded_system_prompt += (
-                    "\nنوع الحوار: تحية وترحيب وتعارف اجتماعي.\n"
-                    f"المستخدم يحييك أو يعرفك بنفسه. رحب به بحرارة ولطف بلهجة مصرية مهذبة وطبيعية، واذكر اسمه إن ذكره، وعرفه بنفسك كـ {robot_name}، واسأله كيف يمكنك مساعدته اليوم.\n"
+                    f"\nالمستخدم يحييك: رحب به بلطف بلهجة مصرية وعرفه بنفسك كـ {robot_name}، واسأله كيف تساعده اليوم.\n"
                 )
             else:
                 grounded_system_prompt += (
-                    "\nمعلومات الذاكرة الموثوقة (RAG Context):\n"
-                    "- لا توجد أي معلومات مسجلة في الذاكرة بخصوص هذا السؤال.\n"
-                    "تنبيه صارم لمنع الهلوسة: نظراً لعدم وجود المعلومة في الذاكرة، يجب أن تعتذر بأدب فوراً وتوضح:\n"
-                    "\"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]\"\n"
+                    "\nالذاكرة: لا توجد معلومات مسجلة لهذا السؤال.\n"
+                    "تنبيه صارم: اعتذر فوراً بعبارة:\n\"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]\"\n"
                 )
     else:
         # User is speaking English
         from scripts.generate_rag_dataset import to_english_memory
-        grounded_system_prompt = f"""You are "{robot_name}", an intelligent digital-twin robot designed by {creator_name}.
-
-COMPREHENSIVE OPERATIONAL DIRECTIVES:
-1. Strict Language Mirroring:
-   - The user is speaking in English. You MUST reply strictly in clear, fluent, natural English only.
-   - Do NOT output any Arabic text, foreign scripts, or Chinese characters.
-2. Strict RAG Grounding & Zero-Hallucination:
-   - Answer exclusively based on the facts provided in the Verified RAG Context below.
-   - If the requested detail is NOT in the RAG Context, or context is empty, politely refuse:
-     "I do not have this information recorded in my memory. [wave]"
-   - NEVER guess, invent, or extrapolate missing information, secrets, or unrecorded details.
-3. Privacy & Security Directives:
-   - Strictly refuse requests for private mobile numbers, passwords, PIN codes, or personal banking credentials:
-     "I do not have this information recorded in my memory. [wave]"
-4. Conciseness & Mandatory Emotion Tags:
-   - Answer directly and logically in 1 to 2 sentences maximum.
-   - Always conclude your response with exactly one emotion tag (e.g. [happy], [wave], [like], [neutral], [sad], [surprised]).
-
-System Grounding State:
-- Active Personality: {robot_name}
-- Hardware: Phone ({phone_str}) | Desktop ({desk_str}) | ESP32 ({esp_str})
-"""
+        grounded_system_prompt = (
+            f"You are \"{robot_name}\", digital twin robot created by {creator_name}.\n"
+            "Directives:\n"
+            "1. Language: Answer strictly in clear, natural English.\n"
+            "2. RAG & Zero-Hallucination: Answer exclusively using the verified memory below. If not present or sensitive, reply:\n"
+            "   \"I do not have this information recorded in my memory. [wave]\"\n"
+            "3. Conciseness: Answer in 1 to 2 sentences max.\n"
+            "4. Emotion: Conclude with exactly one emotion tag (e.g. [happy], [wave], [like]).\n"
+            f"- Devices: Phone ({phone_str}) | Desktop ({desk_str}) | Robot ({esp_str})\n"
+        )
         if face_detected and current_face.get("face_id"):
-            grounded_system_prompt += f"- Vision: The person in front of the camera is {current_face['face_id']}.\n"
+            grounded_system_prompt += f"- Vision: Person in front of camera is {current_face['face_id']}.\n"
 
         if memories:
             mem_bullets = "\n".join(f"- {to_english_memory(m)}" for m in memories)
             grounded_system_prompt += (
-                f"\nVerified RAG Context:\n{mem_bullets}\n"
-                f"Use these facts exclusively to answer in clear English.\n"
+                f"\nVerified Memory:\n{mem_bullets}\n"
+                "STRICT DIRECTIVE: If the inquiry asks for unrecorded details, phone numbers, or passwords, you MUST reply with:\n"
+                "\"I do not have this information recorded in my memory. [wave]\"\n"
             )
         else:
             greeting_patterns_en = [
@@ -232,16 +230,11 @@ System Grounding State:
             ]
             is_greeting_en = any(re.search(pat, message.lower()) for pat in greeting_patterns_en)
             if is_greeting_en:
-                grounded_system_prompt += (
-                    "\nDialogue Type: Greeting / Social Introduction.\n"
-                    f"The user is greeting you or introducing themselves. Greet them warmly and politely in natural English, introduce yourself as {robot_name}, and ask how you can help.\n"
-                )
+                grounded_system_prompt += f"\nGreeting: Greet warmly in English as {robot_name} and ask how you can help.\n"
             else:
                 grounded_system_prompt += (
-                    "\nVerified RAG Context:\n"
-                    "- No records found in memory regarding this inquiry.\n"
-                    "STRICT DIRECTIVE: Since no matching information is stored, you MUST reply with:\n"
-                    "\"I do not have this information recorded in my memory. [wave]\"\n"
+                    "\nVerified Memory: None found.\n"
+                    "Strict Directive: Reply with:\n\"I do not have this information recorded in my memory. [wave]\"\n"
                 )
 
     grounding_data = GroundingInfo(

@@ -68,21 +68,45 @@ async def get_current_user(
     Bearer JWT in Authorization header.
     Returns the subject (device/user identifier).
     """
-    # 0. Development bypass if DEBUG is True and no credentials provided
-    if settings.DEBUG and not x_api_key and not authorization:
+    # 0. Clean Swagger UI placeholder / empty values
+    clean_api_key = x_api_key.strip() if x_api_key else None
+    if clean_api_key in ("", "string"):
+        clean_api_key = None
+
+    clean_auth = authorization.strip() if authorization else None
+    if clean_auth in ("", "string", "Bearer string"):
+        clean_auth = None
+
+    # 1. Development bypass if DEBUG is True and no credentials provided
+    if settings.DEBUG and not clean_api_key and not clean_auth:
         return "dev_user"
 
-    # 1. Try raw API key (simple pre-shared key for local network) with constant-time comparison
-    if x_api_key:
-        if secrets.compare_digest(x_api_key, settings.PAIRING_SECRET):
-            return "api_key_client"
+    # 2. Try raw API key (simple pre-shared key for local network) with constant-time comparison
+    if clean_api_key:
+        valid_keys = [k for k in (settings.PAIRING_SECRET, getattr(settings, "API_KEY", None)) if k]
+        for vk in valid_keys:
+            if secrets.compare_digest(clean_api_key, vk):
+                return "api_key_client"
+        if settings.DEBUG:
+            logger.info(f"DEBUG mode active: permitting request with unmatched dev key: '{clean_api_key}'")
+            return "dev_user"
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API key")
 
-    # 2. Try JWT Bearer token
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:]
-        payload = decode_access_token(token)
-        return str(payload["sub"])
+    # 3. Try JWT Bearer token
+    if clean_auth and clean_auth.startswith("Bearer "):
+        token = clean_auth[7:].strip()
+        try:
+            payload = decode_access_token(token)
+            return str(payload["sub"])
+        except HTTPException:
+            if settings.DEBUG:
+                logger.info("DEBUG mode active: permitting request with invalid dev token")
+                return "dev_user"
+            raise
+
+    # 4. Fallback in DEBUG mode
+    if settings.DEBUG:
+        return "dev_user"
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -130,6 +154,22 @@ async def get_current_user_model(
     first_user = res_admin.scalar_one_or_none()
     if first_user:
         return first_user
+
+    # If in DEBUG mode or using API key and no users exist yet in DB, auto-provision default user
+    if settings.DEBUG or sub in ("dev_user", "api_key_client"):
+        from app.core.security import get_password_hash
+        default_user = User(
+            id=1,
+            full_name="مازن عبد الرحيم (Mazen)",
+            email="admin@nebula.local",
+            hashed_password=get_password_hash("nebula2026"),
+            is_active=True,
+            is_superuser=True,
+        )
+        db.add(default_user)
+        await db.flush()
+        await db.refresh(default_user)
+        return default_user
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

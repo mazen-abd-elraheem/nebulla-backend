@@ -133,12 +133,8 @@ class HuggingFaceProvider(BaseLLMProvider):
         await self._ensure_loaded()
 
         if self._load_error or self._model is None:
-            # Fall back to local Ollama if HF weights not downloaded locally
-            logger.warning(f"HF Model not available locally ({self._load_error}). Forwarding to Ollama...")
-            from app.providers.llm.local_ollama import LocalOllamaProvider
-            provider = LocalOllamaProvider()
-            async for tok in provider.generate_stream(prompt, context, system_prompt, history):
-                yield tok
+            logger.error(f"HF Model '{self.model_name}' not available: {self._load_error}")
+            yield f"تعذر تحميل الموديل '{self.model_name}'. يرجى التأكد من توفر الموديل وإعداداته."
             return
 
         from transformers import TextIteratorStreamer

@@ -257,19 +257,11 @@ async def compare_video_to_image(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.get(
-    "",
-    summary="List all registered face profiles",
-    description="Retrieve all registered persons stored in the database.",
-)
-@router.get(
     "/",
     summary="List all registered face profiles",
     description="Retrieve all registered persons stored in the database.",
 )
-async def list_registered_faces(
-    db: AsyncSession = Depends(get_db),
-    _user: Optional[str] = Depends(get_optional_user),
-):
+async def list_registered_faces(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(FaceProfile).order_by(FaceProfile.name))
     profiles = result.scalars().all()
     face_list = [
@@ -475,5 +467,6 @@ async def delete_face_profile(
         raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
 
     return {"message": f"Person '{name}' was successfully deleted."}
+
 
 

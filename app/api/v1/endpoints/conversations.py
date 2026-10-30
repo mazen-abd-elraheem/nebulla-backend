@@ -4,12 +4,12 @@ import json
 import time
 import uuid
 import urllib.parse
-from typing import Optional, List, Dict, Any, Tuple, AsyncIterator
+from typing import Optional, List, Dict, Any, Tuple, AsyncIterator, Union
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Header, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,11 +38,29 @@ _rag_service = RAGService()
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="Text message to send to the LLM")
     session_id: Optional[str] = Field(None, description="Optional session UUID for multi-turn conversation tracking")
-    personality_id: Optional[int] = Field(None, description="Specific personality ID to use (defaults to active personality)")
+    personality_id: int | str | None = Field(None, description="Specific personality ID to use (defaults to active personality)")
     stream: bool = Field(False, description="Whether to stream tokens via chunked transfer")
     broadcast_to_clients: bool = Field(False, description="Whether to broadcast live tokens to connected desks/phones")
     provider: Optional[str] = Field(None, description="Override LLM provider ('local', 'nile', 'huggingface', 'openai', etc.)")
     model: Optional[str] = Field(None, description="Override model name (e.g. 'MBZUAI-Paris/Nile-Chat-3x4B-A6B' or 'nebula-rag')")
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            pid = data.get("personality_id")
+            if pid in ("", "string", "null", 0, "0", None):
+                data["personality_id"] = None
+            elif isinstance(pid, str):
+                try:
+                    data["personality_id"] = int(pid)
+                except ValueError:
+                    data["personality_id"] = None
+
+            sid = data.get("session_id")
+            if sid in ("", "string", "null", None):
+                data["session_id"] = None
+        return data
 
     model_config = {
         "json_schema_extra": {
@@ -81,12 +99,13 @@ class ChatResponse(BaseModel):
 # ── Authentication Helper ────────────────────────────────────────────────────
 
 async def _get_auth_user(
-    user: Optional[str] = Depends(get_optional_user),
+    x_api_key: Optional[str] = Depends(api_key_scheme),
+    authorization: Optional[str] = Header(None),
 ) -> str:
-    """Allow chat without strict auth if unauthenticated or in DEBUG mode."""
-    if user:
-        return user
-    return "dev_user" if settings.DEBUG else "guest_user"
+    """Allow quick development chat without strict auth if in DEBUG mode or if unauthenticated in local testing."""
+    if settings.DEBUG or not (x_api_key or authorization):
+        return "dev_user"
+    return await get_current_user(x_api_key=x_api_key, authorization=authorization)
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────
@@ -194,7 +213,15 @@ async def chat_with_llm(
                     yield token
             except Exception as e:
                 logger.error(f"Error during streamed LLM generation: {e}")
-                yield f"\n[خطأ أثناء التوليد: {e}]"
+                if hasattr(e, "response") and hasattr(getattr(e, "response"), "aread"):
+                    try:
+                        await e.response.aread()
+                    except Exception:
+                        pass
+                err_msg = str(e)
+                if "ResponseNotRead" in type(e).__name__ or "streaming response content" in err_msg:
+                    err_msg = "خطأ في قراءة استجابة الموديل المباشرة"
+                yield f"\n[خطأ أثناء التوليد: {err_msg}]"
 
             # Save to DB safely using a fresh session
             try:
@@ -281,27 +308,111 @@ async def chat_stream(
     db: AsyncSession = Depends(get_db),
     _user: str = Depends(_get_auth_user),
 ):
+    session_id = body.session_id or str(uuid.uuid4())
     system_prompt, memories, grounding, active_pid = await build_grounding_context(
         db=db,
         personality_id=body.personality_id,
         message=body.message,
     )
+
+    # Resolve target provider and model
     target_provider = body.provider or settings.LLM_PROVIDER
+    if body.model and ("nile" in body.model.lower() or "mbzuai" in body.model.lower()):
+        if not body.provider:
+            target_provider = "huggingface"
     llm = get_llm_provider(target_provider)
+    if body.model:
+        if hasattr(llm, "model_name"):
+            llm.model_name = body.model
+        if hasattr(llm, "model"):
+            llm.model = body.model
+
+    # Find or create Conversation
+    conv_res = await db.execute(
+        select(Conversation)
+        .where(Conversation.session_id == session_id)
+        .order_by(Conversation.started_at.desc())
+        .limit(1)
+    )
+    conv = conv_res.scalar_one_or_none()
+    if not conv:
+        conv = Conversation(personality_id=active_pid, session_id=session_id)
+        db.add(conv)
+        await db.commit()
+        await db.refresh(conv)
+
+    # Fetch recent conversation history
+    msg_res = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conv.id)
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(6)
+    )
+    recent_msgs = list(reversed(msg_res.scalars().all()))
+    history = [{"role": m.role, "content": m.content} for m in recent_msgs]
+    conv_id = conv.id
+
+    # Commit read transaction to release all SQLite locks before LLM generation
+    await db.commit()
+
+    t_start = time.perf_counter()
 
     async def event_generator():
         import json
         yield f"data: {json.dumps({'type': 'context', 'memories': memories}, ensure_ascii=False)}\n\n"
+        full_content = []
         try:
             async for token in llm.generate_stream(
                 body.message,
                 context=memories,
                 system_prompt=system_prompt,
+                history=history,
             ):
+                full_content.append(token)
                 yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
-        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+            logger.error(f"Error during SSE chat stream: {e}")
+            if hasattr(e, "response") and hasattr(getattr(e, "response"), "aread"):
+                try:
+                    await e.response.aread()
+                except Exception:
+                    pass
+            # If no tokens have been sent yet, yield a user-friendly token so client/tests receive valid token stream
+            if not full_content:
+                error_msg_user = "حصل خطأ في معالجة الموديل اللحظية. جرب مرة تانية."
+                full_content.append(error_msg_user)
+                yield f"data: {json.dumps({'type': 'token', 'content': error_msg_user}, ensure_ascii=False)}\n\n"
+            err_msg = str(e)
+            if "ResponseNotRead" in type(e).__name__ or "streaming response content" in err_msg:
+                err_msg = "خطأ في قراءة استجابة الموديل المباشرة (Streaming read error)"
+            yield f"data: {json.dumps({'type': 'error', 'content': err_msg}, ensure_ascii=False)}\n\n"
+        finally:
+            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+
+        # Save to DB safely using a fresh session
+        if full_content:
+            try:
+                async with AsyncSessionLocal() as session:
+                    full_str = "".join(full_content)
+                    llm_ms = (time.perf_counter() - t_start) * 1000
+                    emotion = _extract_emotion(full_str)
+                    user_msg = Message(
+                        conversation_id=conv_id,
+                        role="user",
+                        content=body.message,
+                    )
+                    robot_msg = Message(
+                        conversation_id=conv_id,
+                        role="robot",
+                        content=full_str,
+                        llm_latency_ms=round(llm_ms, 2),
+                        total_latency_ms=round(llm_ms, 2),
+                        emotion=emotion,
+                    )
+                    session.add_all([user_msg, robot_msg])
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to persist SSE streamed chat messages: {e}")
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

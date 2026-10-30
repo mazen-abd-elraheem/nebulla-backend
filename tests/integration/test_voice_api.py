@@ -43,7 +43,7 @@ async def test_get_speakers_endpoint():
     data = res.json()
     assert "speakers" in data
     assert len(data["speakers"]) > 0
-    assert "mohammed" in data["speakers"]
+    assert "mazen" in data["speakers"]
 
 
 @pytest.mark.asyncio

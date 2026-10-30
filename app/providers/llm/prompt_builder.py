@@ -10,7 +10,7 @@ from datetime import datetime
 import re
 from typing import Any, Mapping
 
-# Default fallback values
+# Default persona values
 DEFAULT_ROBOT_NAME = "Nebula"
 DEFAULT_ROLE_DESCRIPTION = "توأم رقمي مصري وذكي"
 DEFAULT_DIALECT = "cairo"

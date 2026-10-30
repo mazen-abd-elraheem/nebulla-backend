@@ -22,7 +22,11 @@ def get_tts_provider(name: str) -> BaseTTSProvider:
         from app.providers.tts.ar_eg_free import ArEgFreeProvider
         return ArEgFreeProvider()
 
+    if name == "voicetut_service":
+        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
+        return VoiceTutMicroserviceProvider()
+
     raise ValueError(
         f"Unknown TTS provider: {name!r}. "
-        "Choose from: voicetut, xtts, ar_eg_free"
+        "Choose from: voicetut, voicetut_service, xtts, ar_eg_free"
     )

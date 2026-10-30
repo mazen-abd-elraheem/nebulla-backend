@@ -369,7 +369,7 @@ async def run_all_endpoint_tests():
         try:
             r = await client.post(
                 "/api/v1/audio/voicetut",
-                data={"text": "أهلاً وسهلاً بك في نيبولا، أنا سعيد جداً بمساعدتك!", "speaker": "mohammed"},
+                data={"text": "أهلاً وسهلاً بك في نيبولا، أنا سعيد جداً بمساعدتك!", "speaker": "mazen"},
             )
             ok = r.status_code == 200 and len(r.content) > 1000 and r.headers.get("content-type") == "audio/wav"
             log_result("27. POST /api/v1/audio/voicetut (TTS Synthesis)", ok, f"WAV Audio: {len(r.content):,} bytes")
