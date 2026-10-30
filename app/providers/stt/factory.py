@@ -6,18 +6,31 @@ from app.core.logger import get_logger
 logger = get_logger(__name__)
 
 
-def get_stt_provider(name: str) -> BaseSTTProvider:
+def get_stt_provider(name: str | None = None) -> BaseSTTProvider:
     """Return the STT provider instance matching *name*."""
-    if name == "qwencleo":
-        from app.providers.stt.qwencleo import QwenCleoProvider
-        return QwenCleoProvider()
+    provider_name = (name or "whisper").lower().strip()
 
-    if name == "whisper":
+    if provider_name == "whisper":
         from app.providers.stt.whisper import WhisperProvider
         return WhisperProvider()
 
-    if name == "nemotron":
+    if provider_name == "qwencleo":
+        from app.providers.stt.qwencleo import QwenCleoProvider
+        return QwenCleoProvider()
+
+    if provider_name == "groq":
+        from app.providers.stt.groq_provider import GroqSTTProvider
+        return GroqSTTProvider()
+
+    if provider_name == "openai":
+        from app.providers.stt.groq_provider import GroqSTTProvider
+        return GroqSTTProvider()
+
+    if provider_name == "nemotron":
         from app.providers.stt.nemotron import NemotronProvider
         return NemotronProvider()
 
-    raise ValueError(f"Unknown STT provider: {name!r}. Choose from: qwencleo, whisper, nemotron")
+    # Default fallback to whisper
+    logger.warning(f"Unknown STT provider '{name}'. Falling back to 'whisper'.")
+    from app.providers.stt.whisper import WhisperProvider
+    return WhisperProvider()
