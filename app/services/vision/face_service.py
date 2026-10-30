@@ -70,6 +70,8 @@ class FaceService:
         # In-memory vector cache: {person_name: np.ndarray (512,)}
         self._known_embeddings: Dict[str, np.ndarray] = {}
         self._db_loaded: bool = False
+        # Active session auto-adaptation cache for head tilts & angle transitions
+        self._session_cache: Dict[str, list] = {}
 
     async def _ensure_model(self):
         """Lazy-load the UniFace models."""
@@ -86,8 +88,11 @@ class FaceService:
             import uniface
             # FaceAnalyzer combines detector (RetinaFace) + recognizer (EdgeFace/ArcFace)
             self._analyzer = uniface.FaceAnalyzer()
+            # Set detector confidence threshold to 0.35 for robust detection of upward/extreme head tilts
+            if hasattr(self._analyzer, "detector") and hasattr(self._analyzer.detector, "confidence_threshold"):
+                self._analyzer.detector.confidence_threshold = 0.35
             self._model = self._analyzer
-            logger.info("UniFace FaceAnalyzer initialized successfully with ONNX Runtime.")
+            logger.info("UniFace FaceAnalyzer initialized successfully with ONNX Runtime (conf_threshold: 0.35).")
         except Exception as e:
             logger.warning(f"Could not initialize UniFace: {e}. Face recognition is disabled.")
             self._analyzer = "disabled"
@@ -106,16 +111,17 @@ class FaceService:
             for p in profiles:
                 vec = p.get_embedding_vector()
                 if vec is not None and vec.size > 0:
-                    if vec.size != 512:
+                    if vec.size % 512 != 0:
                         logger.warning(
                             f"FaceProfile '{p.name}' (id={p.id}) has a legacy {vec.size}-D embedding "
                             f"(UniFace requires 512-D). Please re-register this profile to enable video matching."
                         )
-                    # Normalize vector
-                    norm = np.linalg.norm(vec)
-                    if norm > 0:
-                        vec = vec / norm
-                    cache[p.name] = vec
+                        continue
+                    # Reshape to (N, 512) supporting multi-angle embeddings per person
+                    mat = vec.reshape(-1, 512)
+                    norms = np.linalg.norm(mat, axis=1, keepdims=True)
+                    norms[norms == 0] = 1.0
+                    cache[p.name] = mat / norms
 
             self._known_embeddings = cache
             self._db_loaded = True
@@ -332,6 +338,8 @@ class FaceService:
 
     def _detect_faces_raw(self, img_bgr: np.ndarray) -> list:
         """Run raw UniFace analyzer detection on BGR image."""
+        if self._analyzer is None:
+            self._load_model()
         if self._analyzer is None or self._analyzer == "disabled":
             return []
         try:
@@ -341,7 +349,7 @@ class FaceService:
             return []
 
     def _match_embedding(self, emb: np.ndarray) -> Tuple[Optional[str], float]:
-        """Find the best matching known person and similarity score."""
+        """Find the best matching known person and similarity score across all registered angles & session poses."""
         if emb is None or len(self._known_embeddings) == 0:
             return None, 0.0
 
@@ -349,10 +357,18 @@ class FaceService:
         best_sim = -1.0
         emb_norm = emb / (np.linalg.norm(emb) + 1e-7)
 
-        for name, known_vec in self._known_embeddings.items():
-            sim = self._cosine_similarity(emb_norm, known_vec)
-            if sim > best_sim:
-                best_sim = sim
+        for name, known_mat in self._known_embeddings.items():
+            sims = np.dot(known_mat, emb_norm)
+            max_sim = float(np.max(sims))
+            # Also check session cached angles if any
+            if hasattr(self, "_session_cache") and name in self._session_cache:
+                for s_vec in self._session_cache[name]:
+                    s_sim = float(np.dot(s_vec, emb_norm))
+                    if s_sim > max_sim:
+                        max_sim = s_sim
+
+            if max_sim > best_sim:
+                best_sim = max_sim
                 best_name = name
 
         return best_name, max(0.0, best_sim)
@@ -793,17 +809,11 @@ class FaceService:
         if not target_faces:
             return {"is_match": False, "match_percentage": 0.0, "error": "No face detected in reference image."}
 
-        target_face = max(target_faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-        if target_face.embedding is None:
-            return {"is_match": False, "match_percentage": 0.0, "error": "Could not extract face embedding from reference image."}
-
-        target_emb = target_face.embedding
-
         candidates = self._extract_faces_from_video_sync(
             video_bytes=video_bytes,
             sample_interval_sec=sample_interval_sec,
             min_confidence=0.5,
-            max_faces=50,
+            max_faces=60,
             include_raw=True,
         )
 
@@ -815,33 +825,96 @@ class FaceService:
                 "error": "No faces found in the video to compare against.",
             }
 
-        best_sim = -1.0
-        best_cand = None
+        # Compare EACH person in reference image against the video candidates
+        ref_faces_results = []
+        overall_best_sim = -1.0
+        overall_best_cand = None
+        overall_best_ref_crop = None
 
-        for cand in candidates:
-            emb = cand.get("_embedding")
-            if emb is not None:
-                sim = self._cosine_similarity(target_emb, emb)
-                if sim > best_sim:
-                    best_sim = sim
-                    best_cand = cand
+        for idx, target_face in enumerate(target_faces):
+            target_emb = target_face.embedding
+            if target_emb is None:
+                continue
 
-        best_sim = max(0.0, float(best_sim))
-        is_match = best_sim >= threshold
-        match_pct = self._calculate_match_percentage(best_sim, threshold)
+            crop = self._crop_face(img, target_face.bbox, margin_pct=0.25)
+            _, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+            b64_crop = base64.b64encode(buf).decode("utf-8")
+
+            face_best_sim = -1.0
+            face_best_cand = None
+
+            for cand in candidates:
+                cand_emb = cand.get("_embedding")
+                if cand_emb is not None:
+                    sim = self._cosine_similarity(target_emb, cand_emb)
+                    if sim > face_best_sim:
+                        face_best_sim = sim
+                        face_best_cand = cand
+
+            face_best_sim = max(0.0, float(face_best_sim))
+            is_match = face_best_sim >= threshold
+            match_pct = self._calculate_match_percentage(face_best_sim, threshold)
+
+            item = {
+                "face_index": idx + 1,
+                "bbox": [int(v) for v in target_face.bbox],
+                "confidence": round(float(target_face.confidence), 4),
+                "crop_base64": f"data:image/jpeg;base64,{b64_crop}",
+                "is_match": is_match,
+                "similarity": round(face_best_sim, 4),
+                "match_percentage": match_pct,
+                "best_match_timestamp": face_best_cand["formatted_time"] if is_match and face_best_cand else None,
+                "best_match_timestamp_sec": face_best_cand["timestamp_sec"] if is_match and face_best_cand else None,
+                "best_match_crop_base64": face_best_cand["crop_base64"] if is_match and face_best_cand else None,
+            }
+            ref_faces_results.append(item)
+
+            if face_best_sim > overall_best_sim:
+                overall_best_sim = face_best_sim
+                overall_best_cand = face_best_cand
+                overall_best_ref_crop = f"data:image/jpeg;base64,{b64_crop}"
+
+        if not ref_faces_results:
+            return {"is_match": False, "match_percentage": 0.0, "error": "Could not extract face embeddings from reference image."}
+
+        # Sort: matched faces first, then by match percentage
+        ref_faces_results.sort(key=lambda x: (x["is_match"], x["match_percentage"]), reverse=True)
+
+        matched_count = sum(1 for r in ref_faces_results if r["is_match"])
+        unmatched_count = len(ref_faces_results) - matched_count
+        overall_is_match = matched_count > 0
+        overall_best_sim = max(0.0, float(overall_best_sim))
+        overall_match_pct = self._calculate_match_percentage(overall_best_sim, threshold) if overall_is_match else 0.0
+
+        if len(ref_faces_results) > 1:
+            if matched_count > 0:
+                summary = f"تم العثور على شخص من الصورة داخل مقطع الفيديو بنسبة {overall_match_pct:.1f}%. وباقي الأشخاص في الصورة ({unmatched_count} شخص) لم يظهروا في الفيديو."
+            else:
+                summary = f"لم يظهر أي شخص من الأشخاص الموجودين بالصورة ({len(ref_faces_results)} أشخاص) في مقطع الفيديو."
+        else:
+            if overall_is_match:
+                summary = f"تم التطابق بنجاح بنسبة {overall_match_pct:.1f}% عند الدقيقة {overall_best_cand.get('formatted_time', '00:00')}."
+            else:
+                summary = f"الشخص الموجود بالصورة لم يتطابق مع أي وجه في الفيديو."
 
         res = {
-            "is_match": is_match,
-            "similarity": round(best_sim, 4),
-            "match_percentage": match_pct,
+            "is_match": overall_is_match,
+            "similarity": round(overall_best_sim, 4),
+            "match_percentage": overall_match_pct,
             "threshold": threshold,
             "total_video_faces_checked": len(candidates),
+            "total_ref_faces_detected": len(ref_faces_results),
+            "matched_count": matched_count,
+            "unmatched_count": unmatched_count,
+            "summary": summary,
+            "faces_in_image": ref_faces_results,
         }
 
-        if best_cand:
-            res["best_match_timestamp"] = best_cand["formatted_time"]
-            res["best_match_timestamp_sec"] = best_cand["timestamp_sec"]
-            res["best_match_crop_base64"] = best_cand["crop_base64"]
+        if overall_best_cand and overall_is_match:
+            res["best_match_timestamp"] = overall_best_cand["formatted_time"]
+            res["best_match_timestamp_sec"] = overall_best_cand["timestamp_sec"]
+            res["best_match_crop_base64"] = overall_best_cand["crop_base64"]
+            res["matched_ref_crop_base64"] = overall_best_ref_crop
 
         return res
 
@@ -854,6 +927,7 @@ class FaceService:
         name: str,
         image_bytes: bytes,
         db: AsyncSession,
+        append: bool = False,
     ) -> Dict[str, Any]:
         """Register a new person from an uploaded photo."""
         await self._ensure_model()
@@ -883,9 +957,21 @@ class FaceService:
         # Serialize embedding
         emb_bytes = best_face.embedding.astype(np.float32).tobytes()
 
-        # Check existing profile
+        # Check existing profile (support appending multiple angles)
         existing = (await db.execute(select(FaceProfile).where(FaceProfile.name == name))).scalar_one_or_none()
-        if existing:
+        if existing and append:
+            old_vec = existing.get_embedding_vector()
+            if old_vec is not None and old_vec.size % 512 == 0:
+                combined = np.vstack([old_vec.reshape(-1, 512), best_face.embedding.astype(np.float32).reshape(1, 512)])
+                # Keep up to 10 most informative angles
+                if len(combined) > 10:
+                    combined = combined[-10:]
+                existing.embedding = combined.astype(np.float32).tobytes()
+            else:
+                existing.embedding = emb_bytes
+            existing.photo_path = rel_photo_path
+            face_profile = existing
+        elif existing:
             existing.embedding = emb_bytes
             existing.photo_path = rel_photo_path
             face_profile = existing
@@ -1006,7 +1092,7 @@ class FaceService:
     def annotate_frame(
         self,
         frame_bgr: np.ndarray,
-        threshold: float = 0.40,
+        threshold: float = 0.35,
         fps: Optional[float] = None,
         draw_landmarks: bool = True,
     ) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
@@ -1029,20 +1115,66 @@ class FaceService:
             x1, y1, x2, y2 = bbox
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(w - 1, x2), min(h - 1, y2)
+            face_w = x2 - x1
+            face_h = y2 - y1
+
+            # Comprehensive 3D Head Pose Adaptation (Pitch-Up, Pitch-Down, Yaw, Distance):
+            eff_thresh = threshold
+            is_pose_variant = False
+
+            if hasattr(face, "landmarks") and face.landmarks is not None and len(face.landmarks) >= 5:
+                lm = face.landmarks
+                eye_y = (lm[0][1] + lm[1][1]) / 2.0
+                nose_y = lm[2][1]
+                mouth_y = (lm[3][1] + lm[4][1]) / 2.0
+                eye_to_nose = max(1.0, nose_y - eye_y)
+                nose_to_mouth = max(1.0, mouth_y - nose_y)
+
+                # 1. Pitch-Down (head tilted down, forehead dominates)
+                if nose_to_mouth < 0.65 * eye_to_nose:
+                    is_pose_variant = True
+
+                # 2. Pitch-Up (head raised up, chin dominates, nose moves near eye line)
+                if eye_to_nose < 0.65 * nose_to_mouth:
+                    is_pose_variant = True
+
+                # 3. Yaw (head turned to side)
+                eye_dist = max(1.0, abs(lm[1][0] - lm[0][0]))
+                nose_offset = abs(lm[2][0] - (lm[0][0] + lm[1][0]) / 2.0)
+                if nose_offset > 0.28 * eye_dist:
+                    is_pose_variant = True
+
+            # 4. Distant face (small bounding box)
+            if face_w < 95 or face_h < 95:
+                is_pose_variant = True
+
+            if is_pose_variant:
+                eff_thresh = max(0.28, threshold - 0.07)
 
             name, sim = self._match_embedding(face.embedding)
             conf = float(getattr(face, "confidence", 1.0))
 
-            if name and sim >= threshold:
+            if name and sim >= eff_thresh:
                 is_known = True
-                pct = self._calculate_match_percentage(sim, threshold)
+                pct = self._calculate_match_percentage(sim, eff_thresh)
                 label = f"{name} {pct:.1f}%"
                 primary_color = (16, 210, 110)  # Emerald green (BGR)
                 tag_bg = (10, 150, 75)
+
+                # Dynamically adapt session angles: if confidence is solid and pose is diverse, cache angle
+                if hasattr(self, "_session_cache") and face.embedding is not None and sim >= 0.40:
+                    v_norm = face.embedding / (np.linalg.norm(face.embedding) + 1e-7)
+                    if name not in self._session_cache:
+                        self._session_cache[name] = []
+                    # Keep up to 10 active session poses
+                    if len(self._session_cache[name]) < 10:
+                        # Avoid duplicates: only add if distinct
+                        if not any(np.dot(v_norm, existing_v) > 0.88 for existing_v in self._session_cache[name]):
+                            self._session_cache[name].append(v_norm)
             else:
                 is_known = False
-                pct = self._calculate_match_percentage(sim if sim else 0.0, threshold)
-                label = f"Unknown ({int(conf * 100)}%)"
+                pct = self._calculate_match_percentage(sim if sim else 0.0, eff_thresh)
+                label = "Unknown"
                 primary_color = (45, 60, 240)  # Coral / Red-Orange (BGR)
                 tag_bg = (30, 40, 180)
 
