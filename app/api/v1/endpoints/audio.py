@@ -95,24 +95,14 @@ async def transcribe_audio(
         from app.providers.stt.factory import get_stt_provider
         stt_instance = get_stt_provider(chosen_provider)
         transcript = await stt_instance.transcribe(wav_data)
-        if not transcript.strip() and chosen_provider != "whisper":
-            logger.info("Primary STT produced empty text; trying whisper fallback...")
-            whisper_inst = get_stt_provider("whisper")
-            transcript = await whisper_inst.transcribe(wav_data)
-            if transcript.strip():
-                chosen_provider = f"{chosen_provider} (fallback to whisper)"
+        if not transcript.strip():
+            logger.warning(f"STT provider '{chosen_provider}' produced empty transcript.")
     except Exception as exc:
-        logger.error(f"STT transcription failed with provider '{chosen_provider}': {exc}")
-        try:
-            from app.providers.stt.factory import get_stt_provider
-            whisper_inst = get_stt_provider("whisper")
-            transcript = await whisper_inst.transcribe(wav_data)
-            chosen_provider = f"{chosen_provider} (failed, fallback to whisper)"
-        except Exception as inner_exc:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Transcription failed: {exc} | Fallback failed: {inner_exc}",
-            )
+        logger.error(f"STT transcription failed with provider '{chosen_provider}': {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"STT transcription failed: {exc}",
+        ) from exc
 
     latency_ms = (time.perf_counter() - t0) * 1000
 
@@ -139,7 +129,7 @@ async def synthesize_voicetut(
     speaker: Optional[str] = Form(None, description="Pre-built speaker name (e.g. mohammed, yasmin, ahmed)"),
     file: Optional[UploadFile] = File(None, description="Optional audio file for zero-shot voice cloning"),
     ref_text: Optional[str] = Form(None, description="Optional transcript of the reference audio"),
-    num_steps: Optional[int] = Form(None, description="Denoising steps (4 for fast test, 10 for high fidelity)"),
+    num_steps: Optional[int] = Form(None, description="Denoising steps (default: 48 for high fidelity)"),
     _user: Optional[str] = Depends(get_optional_user),
 ):
     """
@@ -167,15 +157,27 @@ async def synthesize_voicetut(
             _save_and_convert_to_wav(raw_bytes, ext, temp_ref_path)
             ref_audio_path = str(temp_ref_path)
 
+    steps = num_steps or getattr(settings, "VOICETUT_NUM_STEPS", 48)
+    cfg = getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
+
     try:
         t0 = time.perf_counter()
-        wav_bytes = await _voicetut.synthesize(
+        from app.providers.tts.factory import get_tts_provider
+        tts = get_tts_provider(settings.TTS_PROVIDER)
+        wav_bytes = await tts.synthesize(
             text=cleaned_text,
             speaker=speaker,
             ref_audio=ref_audio_path,
             ref_text=ref_text,
-            num_step=num_steps,
+            num_step=steps,
+            guidance_scale=cfg,
         )
+        if not wav_bytes or len(wav_bytes) <= 1000:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="VoiceTut synthesis failed to produce audio.",
+            )
+
         latency_ms = (time.perf_counter() - t0) * 1000
         logger.info(f"VoiceTut synthesis completed in {latency_ms:.1f}ms ({len(wav_bytes):,} bytes)")
 
@@ -188,6 +190,14 @@ async def synthesize_voicetut(
                 "X-Latency-Ms": str(round(latency_ms, 1)),
             },
         )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"VoiceTut endpoint error: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"VoiceTut synthesis failed: {exc}",
+        ) from exc
     finally:
         if temp_ref_path and temp_ref_path.exists():
             try:

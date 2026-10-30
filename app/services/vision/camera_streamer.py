@@ -120,9 +120,9 @@ class CameraStreamer:
             logger.error(f"Failed to open camera device at index {self.camera_index}.")
             return None
 
-        # Set balanced resolution and FPS
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        # Set 720p HD resolution for high clarity at distance
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_FPS, 30)
 
         actual_w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
@@ -211,6 +211,8 @@ class CameraStreamer:
         from app.websocket.handlers import _get_face_service
 
         face_service = _get_face_service()
+        if face_service._analyzer is None:
+            face_service._load_model()
 
         frame_count = 0
         fps_start = time.time()
@@ -236,10 +238,10 @@ class CameraStreamer:
                 frame_count = 0
                 fps_start = now
 
-            # Annotate frame with high-tech HUD
+            # Annotate frame with high-tech HUD (threshold 0.35 supports natural angles and movement)
             annotated_frame, detections = face_service.annotate_frame(
                 frame_bgr=frame,
-                threshold=0.40,
+                threshold=0.35,
                 fps=self.fps,
                 draw_landmarks=True,
             )
