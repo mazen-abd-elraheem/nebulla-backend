@@ -219,3 +219,43 @@ async def test_compare_video_to_image_endpoint():
         )
         assert res.status_code in (200, 400)
 
+
+@pytest.mark.asyncio
+async def test_camera_management_endpoints():
+    """Test camera status, devices, and stop endpoints."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Camera status
+        res_status = await client.get("/api/v1/faces/camera/status")
+        assert res_status.status_code == 200
+        data = res_status.json()
+        assert "is_running" in data
+        assert "camera_index" in data
+        assert "active_clients" in data
+
+        # 2. Camera devices
+        res_devices = await client.get("/api/v1/faces/camera/devices")
+        assert res_devices.status_code == 200
+        devices = res_devices.json()
+        assert isinstance(devices, list)
+
+        # 3. Stop camera
+        res_stop = await client.post("/api/v1/faces/camera/stop")
+        assert res_stop.status_code == 200
+        assert "stopped" in res_stop.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_annotate_video_endpoint():
+    """Test POST /api/v1/faces/annotate-video endpoint."""
+    video_bytes = create_synthetic_video(duration_sec=0.4, fps=10.0)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        files = {"file": ("clip.mp4", video_bytes, "video/mp4")}
+        res = await client.post("/api/v1/faces/annotate-video?threshold=0.40", files=files)
+        assert res.status_code == 200
+        assert res.headers["content-type"] == "video/mp4"
+        assert len(res.content) > 0
+        assert "x-total-frames" in res.headers
+
+
