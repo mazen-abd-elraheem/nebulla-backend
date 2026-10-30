@@ -218,8 +218,15 @@ class RAGService:
         if not scored:
             return []
 
+        top_score = scored[0][0]
+        # Require confident topic relevance (disregard noise/unrecorded queries)
+        if top_score < 0.35:
+            return []
+
+        # Selective margin cutoff: only retain memories within 75% of the top match
+        cutoff = max(0.35, top_score * 0.75)
         top_k = top_k or settings.MEMORY_TOP_K
-        top = [mem for score, mem in scored if score >= 0.28][:top_k]
+        top = [mem for score, mem in scored if score >= cutoff][:top_k]
         if top:
             asyncio.create_task(self._update_access_times([m.id for m in top]))
 
@@ -243,8 +250,13 @@ class RAGService:
         if not scored:
             return []
 
+        top_score = scored[0][0]
+        if top_score < 0.35:
+            return []
+
+        cutoff = max(0.35, top_score * 0.75)
         top_k = top_k or settings.MEMORY_TOP_K
-        top_scored = [(score, mem) for score, mem in scored if score >= 0.28][:top_k]
+        top_scored = [(score, mem) for score, mem in scored if score >= cutoff][:top_k]
         if top_scored:
             asyncio.create_task(self._update_access_times([m.id for _, m in top_scored]))
 
