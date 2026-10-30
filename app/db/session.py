@@ -76,6 +76,10 @@ async def init_db() -> None:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN user_id INTEGER REFERENCES users(id)"))
                 if "updated_at" not in cols:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN updated_at DATETIME"))
+                try:
+                    connection.execute(text("DROP INDEX IF EXISTS ix_personalities_name"))
+                except Exception as e:
+                    logger.warning(f"Could not drop legacy ix_personalities_name index: {e}")
 
         await conn.run_sync(_migrate)
     logger.info("Database initialised")
