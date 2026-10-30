@@ -62,7 +62,25 @@ async def lifespan(app: FastAPI):
     await init_db()
     asyncio.create_task(_warmup_ollama())
     asyncio.create_task(_warmup_rag())
+
+    # Chapter 14: reminders (medicine / tasks) with family escalation
+    scheduler = None
+    if settings.PHONE_ACTIONS_ENABLED:
+        from app.services.phone_action import get_phone_action_service
+        from app.services.phone_action.reminders import ReminderScheduler
+        from app.websocket.handlers import get_ai_pipeline
+
+        async def _speak(text: str, mood=None) -> None:
+            await get_ai_pipeline().speak(text, mood)
+
+        svc = get_phone_action_service()
+        svc.set_speaker(_speak)
+        scheduler = ReminderScheduler(svc)
+        await scheduler.start()
+
     yield
+    if scheduler is not None:
+        await scheduler.stop()
     logger.info("Nebula backend shutting down...")
 
 

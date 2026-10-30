@@ -99,6 +99,64 @@ class ErrorMsg(BaseModel):
     message: str
 
 
+# ── Phone actions (benefits_section.docx §14.5) ──────────────────────────────
+
+class AppCmdMsg(BaseModel):
+    """Backend → Phone: open an app (optionally with a destination/query)."""
+    t: Literal["app"] = "app"
+    id: int
+    cmd: Literal["open", "read_notifications"] = "open"
+    app: Optional[str] = Field(default=None, max_length=32)
+    q: Optional[str] = Field(default=None, max_length=80)  # e.g. maps destination
+
+
+class CallCmdMsg(BaseModel):
+    """Backend → Phone: place a call to an allow-listed contact."""
+    t: Literal["call"] = "call"
+    id: int
+    contact: str = Field(..., max_length=64)
+    number: str = Field(..., max_length=32)
+    speaker: bool = True
+
+
+class MsgCmdMsg(BaseModel):
+    """Backend → Phone: prepare a message (final send policy is per-app)."""
+    t: Literal["msg"] = "msg"
+    id: int
+    app: Literal["whatsapp", "sms", "telegram"] = "whatsapp"
+    to: str = Field(..., max_length=64)
+    number: str = Field(..., max_length=32)
+    text: str = Field(..., max_length=500)
+
+
+class ActionResultMsg(BaseModel):
+    """Phone → Backend: outcome of a dispatched action command."""
+    t: Literal["action_result"] = "action_result"
+    id: int
+    ok: bool
+    error: Optional[str] = Field(default=None, max_length=64)
+
+
+class CallStateMsg(BaseModel):
+    """Phone → Backend: telephony state. While 'active' the AI line is muted."""
+    t: Literal["call_state"] = "call_state"
+    state: Literal["idle", "ringing", "active", "ended"]
+
+
+class ConfirmActionMsg(BaseModel):
+    """Desktop (control room) → Backend: Level-3 external confirmation."""
+    t: Literal["confirm_action"] = "confirm_action"
+    id: int
+    approve: bool
+
+
+class ReminderAckMsg(BaseModel):
+    """Phone/Desktop → Backend: user acknowledged a reminder (e.g. took medicine)."""
+    t: Literal["reminder_ack"] = "reminder_ack"
+    id: int
+
+
+
 # ── Union type for routing ────────────────────────────────────────────────────
 IncomingMsg = Union[
     DesktopCmdMsg,

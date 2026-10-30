@@ -53,3 +53,18 @@ class User(Base):
 
     # Biometric face profile
     face_profile: Mapped[Optional["FaceProfile"]] = relationship("FaceProfile", lazy="selectin")
+
+    # Enrolled speaker acoustic voiceprint (1:1)
+    voiceprint: Mapped[Optional["Voiceprint"]] = relationship(
+        "Voiceprint", uselist=False, cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    # Allowlisted phone contacts
+    contacts: Mapped[List["Contact"]] = relationship(
+        "Contact", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    # Scheduled reminders
+    reminders: Mapped[List["Reminder"]] = relationship(
+        "Reminder", cascade="all, delete-orphan", lazy="selectin"
+    )
