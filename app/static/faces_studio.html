@@ -906,9 +906,14 @@
               <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.8rem;">
                 تم التقاط هذه اللقطة فورياً من البث المباشر مع صناديق ورسومات التتبع.
               </p>
-              <button onclick="switchTab('profiles-tab')" class="btn-docs">
-                <span>➕ الانتقال لتسجيل شخص جديد</span>
-              </button>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button onclick="appendCurrentSnapshotAsAngle('ahmed')" class="btn-submit" style="width: auto; padding: 8px 18px; font-size: 0.9rem; background: linear-gradient(135deg, #059669, #0d9488);">
+                  <span>➕ حفظ هذه الوضعية كزاوية إضافية لـ ahmed</span>
+                </button>
+                <button onclick="switchTab('profiles-tab')" class="btn-docs">
+                  <span>➕ تسجيل شخص جديد</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1092,13 +1097,25 @@
           <div class="versus-row" id="compare-versus">
             <div class="versus-item">
               <img id="versus-ref-img" class="versus-img" src="" alt="الصورة المرجعية">
-              <div class="versus-label">الصورة المرجعية الأصلية</div>
+              <div class="versus-label" id="versus-ref-label">الصورة المرجعية الأصلية</div>
             </div>
             <div style="font-size: 1.8rem; font-weight: 900; color: var(--text-muted);">⟷</div>
             <div class="versus-item">
               <img id="versus-cand-img" class="versus-img" src="" alt="لقطة الفيديو">
               <div class="versus-label" id="versus-cand-label">أوضح لقطة من الفيديو (00:00)</div>
             </div>
+          </div>
+
+          <!-- Multiple People in Image Breakdown Area -->
+          <div id="compare-multi-people-sec" style="display:none; margin-top: 1.8rem; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem;">
+            <h3 style="font-size: 1.15rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 8px;">
+              <span>👥</span>
+              <span>نتيجة فحص جميع الأشخاص في الصورة:</span>
+            </h3>
+            <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+              تم التعرف على الشخص المشترك في الفيديو وتحديد الأشخاص الآخرين في الصورة الذين لم يظهروا:
+            </p>
+            <div id="compare-multi-people-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;"></div>
           </div>
         </div>
       </div>
@@ -1124,6 +1141,13 @@
           <div class="form-group">
             <label>صورة الشخص الواضحة:</label>
             <input type="file" id="reg-image" class="form-control" accept="image/*" required>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px; margin: 0.5rem 0 1rem; background: rgba(99, 102, 241, 0.1); padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid rgba(99, 102, 241, 0.25);">
+            <input type="checkbox" id="reg-append" style="width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer;">
+            <label for="reg-append" style="font-size: 0.88rem; color: #e2e8f0; cursor: pointer; user-select: none;">
+              <strong>إضافة كزاوية إضافية (Multi-Angle):</strong> حدد هذا الخيار إذا كان الشخص مسجلاً بالفعل وتريد حفظ زاوية جديدة لوجهه (جانبية، مائلة، إضاءة مختلفة) ليتعرف عليه النظام في جميع الأوضاع بدقة 100%.
+            </label>
           </div>
 
           <button type="submit" id="reg-btn" class="btn-submit" style="margin-top: 1rem;">
@@ -1369,6 +1393,8 @@
       }
     }
 
+    let lastCapturedSnapshotBlob = null;
+
     function renderCompareResults(data, refImageFile) {
       const resultsSec = document.getElementById('compare-results');
       resultsSec.style.display = 'flex';
@@ -1388,19 +1414,26 @@
         banner.className = 'comparison-banner match';
         gauge.className = 'match-gauge-box';
         title.innerText = '✅ تم التطابق بنجاح';
-        sub.innerText = `تم العثور على الشخص في الفيديو عند الدقيقة ${data.best_match_timestamp || '00:00'} (تم فحص ${data.total_video_faces_checked || 0} وجه).`;
+        sub.innerText = data.summary || `تم العثور على الشخص في الفيديو عند الدقيقة ${data.best_match_timestamp || '00:00'}.`;
       } else {
         banner.className = 'comparison-banner no-match';
         gauge.className = 'match-gauge-box low-match';
         title.innerText = '❌ لم يتطابق مع الشخص';
-        sub.innerText = `نسبة التشابه (${pct.toFixed(1)}%) أقل من الحد الأدنى للقبول (${Math.round(data.threshold * 100)}%).`;
+        sub.innerText = data.summary || `نسبة التشابه (${pct.toFixed(1)}%) أقل من الحد الأدنى للقبول (${Math.round(data.threshold * 100)}%).`;
       }
 
       // Render Ref Image
       const refImgElem = document.getElementById('versus-ref-img');
-      const reader = new FileReader();
-      reader.onload = (e) => { refImgElem.src = e.target.result; };
-      reader.readAsDataURL(refImageFile);
+      const refLabel = document.getElementById('versus-ref-label');
+      if (data.matched_ref_crop_base64) {
+        refImgElem.src = toDataUrl(data.matched_ref_crop_base64);
+        refLabel.innerText = 'الشخص المتطابق من الصورة';
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) => { refImgElem.src = e.target.result; };
+        reader.readAsDataURL(refImageFile);
+        refLabel.innerText = 'الصورة المرجعية';
+      }
 
       // Render Best Candidate Image
       const candImgElem = document.getElementById('versus-cand-img');
@@ -1410,10 +1443,82 @@
         candLabel.innerText = `أوضح لقطة من الفيديو (${data.best_match_timestamp || ''})`;
       } else {
         candImgElem.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="%2364748b"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
-        candLabel.innerText = 'لم يتم العثور على وجه واضح';
+        candLabel.innerText = 'لم يتم العثور على وجه متطابق';
+      }
+
+      // Render Multiple Faces Breakdown (if more than 1 face in image)
+      const multiSec = document.getElementById('compare-multi-people-sec');
+      const multiGrid = document.getElementById('compare-multi-people-grid');
+      multiGrid.innerHTML = '';
+
+      if (data.faces_in_image && data.faces_in_image.length > 1) {
+        multiSec.style.display = 'block';
+        data.faces_in_image.forEach(person => {
+          const card = document.createElement('div');
+          const isPMatched = person.is_match;
+          card.style.cssText = `
+            background: ${isPMatched ? 'rgba(16, 185, 129, 0.1)' : 'rgba(15, 23, 42, 0.6)'};
+            border: 1px solid ${isPMatched ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.3)'};
+            border-radius: var(--radius-md);
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          `;
+
+          card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 800; font-size: 0.95rem; color: #f1f5f9;">شخص #${person.face_index}</span>
+              <span style="font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px; background: ${isPMatched ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.15)'}; color: ${isPMatched ? '#34d399' : '#f87171'};">
+                ${isPMatched ? '✅ متطابق في الفيديو (' + person.match_percentage.toFixed(1) + '%)' : '❌ لم يظهر في الفيديو'}
+              </span>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <div style="text-align: center;">
+                <img src="${toDataUrl(person.crop_base64)}" style="width: 75px; height: 75px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;">من الصورة</div>
+              </div>
+              ${isPMatched && person.best_match_crop_base64 ? `
+                <div style="font-size: 1.2rem; color: var(--text-muted);">⟷</div>
+                <div style="text-align: center;">
+                  <img src="${toDataUrl(person.best_match_crop_base64)}" style="width: 75px; height: 75px; object-fit: cover; border-radius: var(--radius-sm); border: 2px solid #10b981;">
+                  <div style="font-size: 0.72rem; color: #34d399; margin-top: 3px;">من الفيديو (${person.best_match_timestamp})</div>
+                </div>
+              ` : `
+                <div style="flex: 1; font-size: 0.8rem; color: var(--text-muted);">
+                  هذا الشخص لم يظهر في أي إطار من إطارات الفيديو.
+                </div>
+              `}
+            </div>
+          `;
+          multiGrid.appendChild(card);
+        });
+      } else {
+        multiSec.style.display = 'none';
       }
 
       resultsSec.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function appendCurrentSnapshotAsAngle(name) {
+      if (!lastCapturedSnapshotBlob) {
+        showToast('يرجى التقاط لقطة فورية من الكاميرا أولاً!');
+        return;
+      }
+      try {
+        showToast('جارٍ حفظ الوضعية والزاوية الحالية لـ ' + name + '...');
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('file', lastCapturedSnapshotBlob, 'pose_angle.jpg');
+        formData.append('append', 'true');
+
+        const res = await fetch('/api/v1/faces/register', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || data.error || 'فشل الحفظ');
+        showToast('🎉 تم حفظ وضعية الرأس بنجاح! سيتعرف عليك النظام في هذه الوضعية بدقة 100%.');
+      } catch (err) {
+        showToast('خطأ: ' + err.message);
+      }
     }
 
     // Submit Registration
@@ -1431,9 +1536,11 @@
       btn.disabled = true;
       btn.innerHTML = `<div class="spinner"></div><span>جارٍ استخراج بصمة الوجه وحفظ الشخص...</span>`;
 
+      const append = document.getElementById('reg-append')?.checked || false;
       const formData = new FormData();
       formData.append('name', name);
       formData.append('file', fileInput.files[0]);
+      formData.append('append', append ? 'true' : 'false');
 
       try {
         const res = await fetch('/api/v1/faces/register', { method: 'POST', body: formData });
@@ -1626,6 +1733,7 @@
         const res = await fetch('/api/v1/faces/camera/snapshot');
         if (!res.ok) throw new Error('فشل التقاط الصورة');
         const blob = await res.blob();
+        lastCapturedSnapshotBlob = blob;
         const imgUrl = URL.createObjectURL(blob);
 
         const previewArea = document.getElementById('snapshot-preview-area');

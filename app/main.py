@@ -22,6 +22,17 @@ from app.db.session import init_db
 logger = get_logger(__name__)
 
 
+async def _warmup_vision():
+    """Pre-load UniFace face detection and recognition model in RAM on startup."""
+    try:
+        from app.websocket.handlers import _get_face_service
+        svc = _get_face_service()
+        await svc._ensure_model()
+        logger.info("[OK] UniFace FaceAnalyzer is warm and ready in RAM.")
+    except Exception as e:
+        logger.debug(f"Vision warm-up notice: {e}")
+
+
 async def _warmup_ollama():
     """Pre-warm the active Ollama model in RAM with 24h keep-alive to avoid cold-start delays."""
     try:
@@ -60,6 +71,7 @@ async def lifespan(app: FastAPI):
     import asyncio
     logger.info("🚀 Nebula backend starting up…")
     await init_db()
+    asyncio.create_task(_warmup_vision())
     asyncio.create_task(_warmup_ollama())
     asyncio.create_task(_warmup_rag())
     yield
