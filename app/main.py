@@ -6,8 +6,11 @@ Architecture: Phone/Desk/ESP32 all connect to THIS backend.
 No device talks to another device directly (design decision from doc §4).
 """
 
+import json
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -93,6 +96,114 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def repair_malformed_json(raw_text: str) -> str:
+    s = raw_text.strip()
+    if not s:
+        return s
+
+    try:
+        json.loads(s)
+        return s
+    except Exception:
+        pass
+
+    fixed = s
+    # Fix trailing commas before } or ]
+    fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+
+    # Convert Python-style set of strings: { "a", "b", "c" } -> [ "a", "b", "c" ]
+    if fixed.startswith('{') and fixed.endswith('}') and ':' not in fixed:
+        fixed = '[' + fixed[1:-1] + ']'
+        try:
+            json.loads(fixed)
+            return fixed
+        except Exception:
+            pass
+
+    # Fix unbracketed list of strings inside { "content": "str1", "str2" }
+    if fixed.startswith('{') and fixed.endswith('}'):
+        inner = fixed[1:-1].strip()
+        lines = [ln.strip() for ln in inner.splitlines() if ln.strip()]
+        new_lines = []
+        in_content_list = False
+        content_items = []
+        has_content_key = False
+
+        for line in lines:
+            line_clean = line.rstrip(',')
+            key_match = re.match(r'^"([^"]+)"\s*:\s*(.*)$', line_clean)
+            if key_match:
+                key = key_match.group(1)
+                val = key_match.group(2).strip()
+                if key in ("content", "text", "memory", "memories"):
+                    has_content_key = True
+                    in_content_list = True
+                    if val and val != '[':
+                        content_items.append(val.rstrip(','))
+                else:
+                    if in_content_list:
+                        in_content_list = False
+                    new_lines.append(f'"{key}": {val}')
+            elif in_content_list and line_clean.startswith('"') and line_clean.endswith('"'):
+                content_items.append(line_clean)
+            elif not has_content_key and line_clean.startswith('"') and line_clean.endswith('"'):
+                content_items.append(line_clean)
+            else:
+                new_lines.append(line_clean)
+
+        if content_items:
+            formatted_items = '[\n    ' + ',\n    '.join(content_items) + '\n  ]'
+            new_lines.append(f'"content": {formatted_items}')
+            rebuilt = '{\n  ' + ',\n  '.join(new_lines) + '\n}'
+            try:
+                json.loads(rebuilt)
+                return rebuilt
+            except Exception:
+                pass
+
+    return raw_text
+
+
+class JSONRepairMiddleware:
+    """Auto-repairs common JSON syntax slips (like missing list brackets around content)."""
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope.get("method") in ("POST", "PUT", "PATCH"):
+            body_bytes = b""
+            more_body = True
+            while more_body:
+                message = await receive()
+                body_bytes += message.get("body", b"")
+                more_body = message.get("more_body", False)
+
+            if body_bytes:
+                try:
+                    text = body_bytes.decode("utf-8")
+                    repaired = repair_malformed_json(text)
+                    if repaired != text:
+                        logger.info(f"Auto-repaired malformed JSON in request to {scope.get('path')}")
+                        body_bytes = repaired.encode("utf-8")
+                except Exception:
+                    pass
+
+            body_sent = False
+            async def custom_receive():
+                nonlocal body_sent
+                if not body_sent:
+                    body_sent = True
+                    return {"type": "http.request", "body": body_bytes, "more_body": False}
+                return {"type": "http.request", "body": b"", "more_body": False}
+
+            await self.app(scope, custom_receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+app.add_middleware(JSONRepairMiddleware)
 
 # ---------------------------------------------------------------------------
 # Validation & Malformed JSON Exception Handler
