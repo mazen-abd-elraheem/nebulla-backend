@@ -7,14 +7,23 @@ import asyncio
 import json
 
 from fastapi import WebSocket
+from pydantic import ValidationError
 
 from app.core.logger import get_logger
 from app.services.ai.pipeline import AIPipeline
+from app.services.phone_action import get_phone_action_service
 from app.services.vision.face_service import FaceService
 from app.services.motion.motion_guard import MotionGuard
 from app.services.motion.signal_planner import SignalPlanner
 from app.websocket.manager import manager
-from app.websocket.messages import TelemetryMsg, DesktopCmdMsg
+from app.websocket.messages import (
+    ActionResultMsg,
+    CallStateMsg,
+    ConfirmActionMsg,
+    DesktopCmdMsg,
+    ReminderAckMsg,
+    TelemetryMsg,
+)
 
 logger = get_logger(__name__)
 
@@ -75,6 +84,7 @@ async def phone_handler(ws: WebSocket) -> None:
     """
     pipeline = _get_ai_pipeline()
     face_service = _get_face_service()
+    actions = get_phone_action_service()
 
     while True:
         message = await ws.receive()
@@ -92,15 +102,26 @@ async def phone_handler(ws: WebSocket) -> None:
         elif "text" in message and message["text"]:
             try:
                 data = json.loads(message["text"])
+                if not isinstance(data, dict):
+                    continue
                 msg_type = data.get("t")
                 if msg_type == "status":
                     await ws.send_json(manager.status())
                 elif msg_type == "chat":
+                    # Typed text carries no voiceprint, so it can never trigger phone actions.
                     user_text = data.get("text", "")
                     if user_text.strip():
                         asyncio.create_task(_safe_process_text(pipeline, user_text.strip()))
+                elif msg_type == "action_result":
+                    await actions.on_action_result(ActionResultMsg(**data))
+                elif msg_type == "call_state":
+                    actions.set_call_state(CallStateMsg(**data).state)
+                elif msg_type == "reminder_ack":
+                    await actions.acknowledge_reminder(ReminderAckMsg(**data).id)
             except json.JSONDecodeError:
                 logger.warning("Phone sent invalid JSON")
+            except ValidationError:
+                logger.warning("Phone sent a malformed message (schema validation failed)")
 
 
 async def desk_handler(ws: WebSocket) -> None:
@@ -146,6 +167,12 @@ async def desk_handler(ws: WebSocket) -> None:
                     if user_text.strip():
                         pipeline = _get_ai_pipeline()
                         asyncio.create_task(_safe_process_text(pipeline, user_text.strip()))
+                elif msg_type == "confirm_action":
+                    # Level-3 external confirmation (benefits_section.docx §14.3 step 5)
+                    conf = ConfirmActionMsg(**data)
+                    await get_phone_action_service().confirm_external(conf.id, conf.approve)
+                elif msg_type == "reminder_ack":
+                    await get_phone_action_service().acknowledge_reminder(ReminderAckMsg(**data).id)
 
             except Exception as e:
                 logger.error(f"Desk handler error: {e}")

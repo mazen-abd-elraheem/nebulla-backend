@@ -24,7 +24,6 @@ from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import settings
 from app.core.logger import get_logger
-from app.providers.tts.xtts.provider import XTTSProvider
 from app.utils.masri_normalizer import clean_llm_output_for_speech
 
 logger = get_logger(__name__)
@@ -38,17 +37,17 @@ _MAX_DURATION_S = 120.0  # cap to avoid huge uploads
 
 class VoiceCloneService:
     """
-    Manages voice samples and drives XTTS / VoiceTut synthesis.
+    Manages voice samples and drives VoiceTut synthesis (in-process or microservice).
     Swaps reference audio per personality and applies Egyptian dialect normalizer.
     """
 
     def __init__(self):
-        self._xtts = XTTSProvider()
         from app.providers.tts.voicetut import VoiceTutProvider
         self._voicetut = VoiceTutProvider()
         from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
         self._voicetut_service = VoiceTutMicroserviceProvider()
         self._personality_voice_map: dict[int, str] = {}  # personality_id → wav path
+
 
     # ── Sample management ─────────────────────────────────────────────────────
 
@@ -241,58 +240,53 @@ class VoiceCloneService:
                     ref_text = txt_path.read_text(encoding="utf-8").strip()
                 except Exception:
                     pass
-        if not ref_text and hasattr(settings, "DEFAULT_VOICE_TRANSCRIPT"):
-            def_txt = Path(settings.DEFAULT_VOICE_TRANSCRIPT)
-            if def_txt.exists():
-                try:
-                    ref_text = def_txt.read_text(encoding="utf-8").strip()
-                except Exception:
-                    pass
+        steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", 48)
+        cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
+        spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
+        target_provider = getattr(settings, "TTS_PROVIDER", "voicetut_service")
 
-        # Method 2: Check if dedicated VoiceTuT Studio GPU microservice is online (highest reliability & isolated VRAM)
-        try:
-            if await self._voicetut_service.is_healthy():
-                logger.info("Synthesizing via dedicated VoiceTuT Studio microservice (Method 2)...")
+        # Synthesize using configured VoiceTut provider
+        if target_provider == "voicetut_service":
+            try:
                 res = await self._voicetut_service.synthesize(
                     clean_text,
                     ref_audio=wav_path,
                     ref_text=ref_text,
-                    num_step=num_step,
-                    guidance_scale=guidance_scale,
-                    speed=speed,
+                    num_step=steps,
+                    guidance_scale=cfg,
+                    speed=spd,
                     language=language,
                 )
-                if res and len(res) > 2000:
+                if res and len(res) > 1000:
                     return res
-        except Exception as exc:
-            logger.warning(f"VoiceTut microservice synthesis failed, falling back to local: {exc}")
-
-        # Method 1: In-process VoiceTut-TTS Native GPU engine
-        if wav_path and os.path.exists(wav_path):
-            logger.info(f"Synthesizing text using in-process cloned voice sample (Method 1): {wav_path}")
-            try:
-                res = await self._voicetut.synthesize(
-                    clean_text,
-                    ref_audio=wav_path,
-                    ref_text=ref_text,
-                    num_step=num_step,
-                    guidance_scale=guidance_scale,
-                    speed=speed,
-                    language=language,
-                )
-                if res and len(res) > 2000:
-                    return res
+                raise RuntimeError(f"VoiceTut microservice produced invalid audio ({len(res) if res else 0} bytes)")
             except Exception as exc:
-                logger.warning(f"VoiceTut local cloning failed: {exc}")
+                logger.error(f"VoiceTut microservice failed: {exc}", exc_info=True)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Voice synthesis failed via microservice: {exc}",
+                ) from exc
 
-        # Synthesize with active configured TTS provider
-        from app.providers.tts.factory import get_tts_provider
+        # Target provider is in-process voicetut
         try:
-            tts = get_tts_provider(settings.TTS_PROVIDER)
-            return await tts.synthesize(clean_text)
+            res = await self._voicetut.synthesize(
+                clean_text,
+                ref_audio=wav_path,
+                ref_text=ref_text,
+                num_step=steps,
+                guidance_scale=cfg,
+                speed=spd,
+                language=language,
+            )
+            if res and len(res) > 1000:
+                return res
+            raise RuntimeError(f"VoiceTut in-process engine produced invalid audio ({len(res) if res else 0} bytes)")
         except Exception as exc:
-            logger.error(f"TTS provider '{settings.TTS_PROVIDER}' synthesis failed: {exc}")
-            return b""
+            logger.error(f"VoiceTut in-process engine failed: {exc}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Voice synthesis failed via in-process VoiceTut: {exc}",
+            ) from exc
 
     async def synthesize_stream(
         self,

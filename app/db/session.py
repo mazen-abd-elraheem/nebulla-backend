@@ -51,7 +51,8 @@ async def init_db() -> None:
     """Create all tables on startup (dev/simple mode — use Alembic for production)."""
     from sqlalchemy import text
     from app.models import (  # noqa: F401  — import to register models
-        device, personality, memory, conversation, signal, calibration, tracking, log, face_profile, user
+        device, personality, memory, conversation, signal, calibration, tracking, log, face_profile, user,
+        contact, voiceprint, action_log, reminder,
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -75,14 +76,37 @@ async def init_db() -> None:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN user_id INTEGER REFERENCES users(id)"))
                 if "updated_at" not in cols:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN updated_at DATETIME"))
+                try:
+                    connection.execute(text("DROP INDEX IF EXISTS ix_personalities_name"))
+                except Exception as e:
+                    logger.warning(f"Could not drop legacy ix_personalities_name index: {e}")
 
         await conn.run_sync(_migrate)
     logger.info("Database initialised")
 
-    # Seed or configure default personality 1 (Mazen - Digital Twin)
+    # Seed default Admin/Developer User (Mazen)
     from sqlalchemy import select
+    from app.models.user import User
     from app.models.personality import Personality
+    from app.core.security import get_password_hash
+
     async with AsyncSessionLocal() as session:
+        u_res = await session.execute(select(User).order_by(User.id).limit(1))
+        existing_u = u_res.scalar_one_or_none()
+        if not existing_u:
+            default_user = User(
+                id=1,
+                full_name="مازن عبد الرحيم (Mazen)",
+                email="admin@nebula.local",
+                hashed_password=get_password_hash("nebula2026"),
+                is_active=True,
+                is_superuser=True,
+            )
+            session.add(default_user)
+            await session.commit()
+            logger.info("Default user seeded (id=1: Mazen)")
+
+        # Seed or configure default personality 1 (Mazen - Digital Twin)
         result = await session.execute(select(Personality).where(Personality.id == 1))
         existing_p = result.scalar_one_or_none()
         if not existing_p:
@@ -118,6 +142,9 @@ async def init_db() -> None:
             "مشروع تخرج مازن هو روبوت نيبولا (Nebula) للذكاء الاصطناعي والتوأم الرقمي.",
             "الروبوت نيبولا يمتلك 12 محرك سيرفو فائق الدقة ومتصل بنظام أمان متقدم.",
             "الروبوت نيبولا تم تزويده بكاميرا تدعم تتبع الوجوه بسرعة 60 إطار في الثانية.",
+            "مكان الباسبور وجواز السفر: في الدرج الأول على اليمين في مكتب مازن.",
+            "مكان الشاحن ومحول الهاتف: محطوط على الكومودينو جنب السرير في أوضة النوم.",
+            "مكان مفاتيح البيت والعربية: متعلقة على الحامل الخشبي جنب باب الشقة.",
         ]
         new_count = 0
         for text_content in personalized_seeds:

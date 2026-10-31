@@ -179,3 +179,96 @@ async def test_reload_known_faces():
     norm = np.linalg.norm(service._known_embeddings["TestPerson"])
     assert pytest.approx(norm, 0.01) == 1.0
 
+
+def test_annotate_frame():
+    service = FaceService()
+    service._known_embeddings = {"UserKnown": np.ones(128, dtype=np.float32)}
+
+    # Mock faces: one known, one unknown
+    face_known = MagicMock()
+    face_known.bbox = [20, 20, 80, 80]
+    face_known.confidence = 0.96
+    face_known.embedding = np.ones(128, dtype=np.float32)
+    face_known.landmarks = np.array([[30, 40], [50, 40], [40, 50], [35, 65], [45, 65]], dtype=np.int32)
+
+    face_unknown = MagicMock()
+    face_unknown.bbox = [100, 100, 160, 160]
+    face_unknown.confidence = 0.88
+    face_unknown.embedding = np.zeros(128, dtype=np.float32)
+    face_unknown.landmarks = None
+
+    mock_analyzer = MagicMock()
+    mock_analyzer.analyze.return_value = [face_known, face_unknown]
+    service._analyzer = mock_analyzer
+
+    frame = np.zeros((300, 300, 3), dtype=np.uint8)
+    annotated, detections = service.annotate_frame(frame, threshold=0.40, fps=25.0, draw_landmarks=True)
+
+    assert annotated is not None
+    assert annotated.shape == frame.shape
+    assert len(detections) == 2
+
+    # Check known face detection
+    d_known = next(d for d in detections if d["is_known"])
+    assert d_known["name"] == "UserKnown"
+    assert d_known["match_percentage"] > 90.0
+
+    # Check unknown face detection
+    d_unknown = next(d for d in detections if not d["is_known"])
+    assert d_unknown["name"] is None
+    assert d_unknown["confidence"] == 0.88
+
+
+@pytest.mark.asyncio
+async def test_recognize_faces(mock_uniface):
+    service = FaceService()
+    service._analyzer = mock_uniface.FaceAnalyzer()
+    service._known_embeddings = {"RecognizedAlice": np.array([0.1] * 128, dtype=np.float32)}
+
+    # Synthetic image
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    _, buf = cv2.imencode(".jpg", img)
+
+    results = await service.recognize_faces(buf.tobytes(), threshold=0.40)
+    assert len(results) == 1
+    assert results[0]["name"] == "RecognizedAlice"
+    assert results[0]["is_known"] is True
+    assert results[0]["match_percentage"] > 90.0
+
+
+@pytest.mark.asyncio
+async def test_compare_faces(mock_uniface):
+    service = FaceService()
+    service._analyzer = mock_uniface.FaceAnalyzer()
+
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    _, buf = cv2.imencode(".jpg", img)
+    img_bytes = buf.tobytes()
+
+    res = await service.compare_faces(img_bytes, img_bytes, threshold=0.40)
+    assert res["is_match"] is True
+    assert res["similarity"] > 0.99
+    assert res["match_percentage"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_delete_face():
+    service = FaceService()
+    service._known_embeddings = {"PersonToDelete": np.zeros(128, dtype=np.float32)}
+
+    mock_db = AsyncMock()
+    mock_profile = FaceProfile(name="PersonToDelete", photo_path=None)
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_profile
+    mock_db.execute.return_value = mock_result
+
+    success = await service.delete_face("PersonToDelete", mock_db)
+    assert success is True
+    assert "PersonToDelete" not in service._known_embeddings
+
+    # Deleting non-existent person
+    mock_result.scalar_one_or_none.return_value = None
+    not_found = await service.delete_face("NonExistent", mock_db)
+    assert not_found is False
+
+

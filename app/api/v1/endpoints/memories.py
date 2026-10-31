@@ -1,7 +1,8 @@
 """Memories CRUD + search endpoints (RAG)."""
 
+from typing import Any, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,18 +18,82 @@ _rag = RAGService()
 
 
 class MemoryCreate(BaseModel):
-    content: str
-    personality_id: int | None = None
-    source: str = "manual"
-    importance: int = 5
+    content: Union[str, list[str]] = Field(default="", description="The factual text (or list of texts) to store in memory")
+    text: Optional[Union[str, list[str]]] = Field(default=None, description="Alias for content")
+    memory: Optional[Union[str, list[str]]] = Field(default=None, description="Alias for content")
+    personality_id: int | str | None = Field(default=None, description="Personality ID (e.g. 1)")
+    source: str = Field(default="manual", description="Source of memory (manual, conversation, etc.)")
+    importance: int | str | None = Field(default=5, description="Importance score 1-10")
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            return {"content": data}
+        if isinstance(data, list):
+            return {"content": data}
+        if isinstance(data, dict):
+            # Resolve content from aliases
+            content = data.get("content")
+            if content is None:
+                content = data.get("text") or data.get("memory") or data.get("fact") or ""
+            
+            if isinstance(content, list):
+                data["content"] = [str(c).strip() for c in content if str(c).strip()]
+            else:
+                data["content"] = str(content).strip()
+
+            # Sanitize personality_id
+            pid = data.get("personality_id")
+            if pid in ("", "string", "null", 0, "0", None):
+                data["personality_id"] = None
+            elif isinstance(pid, str):
+                try:
+                    data["personality_id"] = int(pid)
+                except ValueError:
+                    data["personality_id"] = None
+
+            # Sanitize importance
+            imp = data.get("importance")
+            if imp in ("", "string", "null", None):
+                data["importance"] = 5
+            elif isinstance(imp, str):
+                try:
+                    data["importance"] = int(imp)
+                except ValueError:
+                    data["importance"] = 5
+        return data
 
 
 class RAGPromptRequest(BaseModel):
-    query: str
-    personality_id: int | None = None
-    person_name: str | None = None
-    top_k: int = 5
-    instructions: str | None = None
+    query: str = Field(default="", description="User query to ground with RAG memories")
+    personality_id: int | str | None = Field(default=None, description="Personality ID")
+    person_name: Optional[str] = Field(default=None, description="Optional recognized person name")
+    top_k: int | str | None = Field(default=5, description="Top K memories")
+    instructions: Optional[str] = Field(default=None, description="Custom prompt instructions")
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            pid = data.get("personality_id")
+            if pid in ("", "string", "null", 0, "0", None):
+                data["personality_id"] = None
+            elif isinstance(pid, str):
+                try:
+                    data["personality_id"] = int(pid)
+                except ValueError:
+                    data["personality_id"] = None
+
+            top_k = data.get("top_k")
+            if top_k in ("", "string", "null", None):
+                data["top_k"] = 5
+            elif isinstance(top_k, str):
+                try:
+                    data["top_k"] = int(top_k)
+                except ValueError:
+                    data["top_k"] = 5
+        return data
 
 
 @router.get("/", summary="List memories")
@@ -46,23 +111,74 @@ async def list_memories(
 
 @router.post("/", status_code=201, summary="Add a memory")
 async def add_memory(
-    body: MemoryCreate,
+    body: Optional[MemoryCreate] = None,
+    content: Optional[str] = Query(None, description="Content if provided as query param"),
+    personality_id: Optional[int] = Query(None, description="Personality ID query param"),
+    importance: Optional[int] = Query(None, description="Importance query param"),
     db: AsyncSession = Depends(get_db),
     _u: str | None = Depends(get_optional_user),
 ):
-    pid = body.personality_id
+    actual_content: Union[str, list[str]] = ""
+    pid = None
+    src = "manual"
+    imp = 5
+
+    if body:
+        actual_content = body.content
+        pid = body.personality_id
+        src = body.source or "manual"
+        imp = int(body.importance or 5)
+
+    if not actual_content and content:
+        actual_content = content.strip()
+        if personality_id is not None:
+            pid = personality_id
+        if importance is not None:
+            imp = importance
+
+    if not actual_content:
+        raise HTTPException(
+            status_code=400,
+            detail="Memory content cannot be empty. Please provide 'content' or 'text' in the request body.",
+        )
+
     if not pid:
         res = await db.execute(select(Personality.id).where(Personality.is_active == True).limit(1))  # noqa: E712
         active_id = res.scalar_one_or_none()
         pid = active_id or 1
 
+    # If a list of memories was provided, add all of them
+    if isinstance(actual_content, list):
+        created_ids = []
+        for text_item in actual_content:
+            item_str = str(text_item).strip()
+            if item_str:
+                mid = await _rag.add_memory(
+                    content=item_str,
+                    personality_id=pid,
+                    source=src,
+                    importance=imp,
+                )
+                created_ids.append(mid)
+        return {
+            "ids": created_ids,
+            "count": len(created_ids),
+            "personality_id": pid,
+            "message": f"Successfully added {len(created_ids)} memories and embedded them.",
+        }
+
     mid = await _rag.add_memory(
-        content=body.content,
+        content=actual_content,
         personality_id=pid,
-        source=body.source,
-        importance=body.importance,
+        source=src,
+        importance=imp,
     )
-    return {"id": mid, "content": body.content, "personality_id": pid, "message": "Memory added and embedded"}
+    return {
+        "id": mid,
+        "content": actual_content,
+        "personality_id": pid,
+        "message": "Memory added and embedded successfully",
+    }
 
 
 @router.delete("/{mid}", status_code=204, summary="Delete a memory")

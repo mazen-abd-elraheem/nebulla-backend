@@ -2,14 +2,15 @@
 
 import json
 import time
+import re
 import uuid
 import urllib.parse
-from typing import Optional, List, Dict, Any, Tuple, AsyncIterator
+from typing import Optional, List, Dict, Any, Tuple, AsyncIterator, Union
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Header, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +26,7 @@ from app.services.ai.pipeline import clean_text_for_tts, _extract_emotion
 from app.services.memory.rag_service import RAGService
 from app.websocket.manager import manager
 from app.websocket.handlers import get_face_service, get_ai_pipeline as _get_ai_pipeline
-from app.services.ai.context_builder import build_grounding_context, GroundingInfo
+from app.services.ai.context_builder import build_grounding_context, GroundingInfo, is_greeting_or_persona_inquiry
 
 logger = get_logger(__name__)
 
@@ -38,11 +39,29 @@ _rag_service = RAGService()
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="Text message to send to the LLM")
     session_id: Optional[str] = Field(None, description="Optional session UUID for multi-turn conversation tracking")
-    personality_id: Optional[int] = Field(None, description="Specific personality ID to use (defaults to active personality)")
+    personality_id: int | str | None = Field(None, description="Specific personality ID to use (defaults to active personality)")
     stream: bool = Field(False, description="Whether to stream tokens via chunked transfer")
     broadcast_to_clients: bool = Field(False, description="Whether to broadcast live tokens to connected desks/phones")
     provider: Optional[str] = Field(None, description="Override LLM provider ('local', 'nile', 'huggingface', 'openai', etc.)")
     model: Optional[str] = Field(None, description="Override model name (e.g. 'MBZUAI-Paris/Nile-Chat-3x4B-A6B' or 'nebula-rag')")
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            pid = data.get("personality_id")
+            if pid in ("", "string", "null", 0, "0", None):
+                data["personality_id"] = None
+            elif isinstance(pid, str):
+                try:
+                    data["personality_id"] = int(pid)
+                except ValueError:
+                    data["personality_id"] = None
+
+            sid = data.get("session_id")
+            if sid in ("", "string", "null", None):
+                data["session_id"] = None
+        return data
 
     model_config = {
         "json_schema_extra": {
@@ -173,6 +192,61 @@ async def chat_with_llm(
         if hasattr(llm, "model"):
             llm.model = body.model
     t_start = time.perf_counter()
+
+    # ── Strict Zero-Hallucination & Sub-10ms Speed Optimization ───────────────
+    is_ar = bool(re.search(r"[؀-ۿ]", body.message))
+    refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
+    has_memories = bool(memories)
+    is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+
+    # If no memories were retrieved and query is a factual question (not greeting/persona)
+    if not has_memories and not is_greeting_persona:
+        reply = refusal_reply
+        cleaned_reply = clean_text_for_tts(reply)
+        emotion = "wave"
+
+        user_msg = Message(
+            conversation_id=conv_id,
+            role="user",
+            content=body.message,
+        )
+        robot_msg = Message(
+            conversation_id=conv_id,
+            role="assistant",
+            content=reply,
+            llm_latency_ms=0.0,
+            total_latency_ms=0.0,
+            emotion=emotion,
+        )
+        db.add_all([user_msg, robot_msg])
+        await db.commit()
+
+        if body.stream and "application/json" not in request.headers.get("accept", ""):
+            async def fast_refusal_stream():
+                yield reply
+            return StreamingResponse(
+                fast_refusal_stream(),
+                media_type="text/plain; charset=utf-8",
+                headers={"X-Memories-Used": urllib.parse.quote("[]")},
+            )
+
+        active_model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or settings.LLM_MODEL
+        return ChatResponse(
+            reply=reply,
+            cleaned_reply=cleaned_reply,
+            response=reply,
+            session_id=session_id,
+            conversation_id=conv_id,
+            emotion=emotion,
+            llm_latency_ms=0.0,
+            latency={"llm_ms": 0.0, "total_ms": 0.0},
+            retrieved_memories=[],
+            llm_model=str(active_model_name),
+            llm_provider=str(target_provider),
+            memories_used=[],
+            personality_id=active_pid,
+            grounding=grounding,
+        )
 
     # If requested by Swagger UI (accept: application/json), always return non-streaming JSON
     # Swagger UI cannot parse raw streaming text under JSON response models.
@@ -336,6 +410,48 @@ async def chat_stream(
 
     # Commit read transaction to release all SQLite locks before LLM generation
     await db.commit()
+
+    # ── Strict Zero-Hallucination & Speed Optimization (SSE Stream) ───────────
+    is_ar = bool(re.search(r"[؀-ۿ]", body.message))
+    refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
+    has_memories = bool(memories)
+    is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+
+    if not has_memories and not is_greeting_persona:
+        async def fast_refusal_sse():
+            import json
+            yield f"data: {json.dumps({'type': 'context', 'memories': []}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'token', 'content': refusal_reply}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+            try:
+                async with AsyncSessionLocal() as session:
+                    user_msg = Message(
+                        conversation_id=conv_id,
+                        role="user",
+                        content=body.message,
+                    )
+                    robot_msg = Message(
+                        conversation_id=conv_id,
+                        role="robot",
+                        content=refusal_reply,
+                        llm_latency_ms=0.0,
+                        total_latency_ms=0.0,
+                        emotion="wave",
+                    )
+                    session.add_all([user_msg, robot_msg])
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to persist SSE refusal: {e}")
+
+        return StreamingResponse(
+            fast_refusal_sse(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     t_start = time.perf_counter()
 

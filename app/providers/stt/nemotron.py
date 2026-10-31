@@ -10,5 +10,5 @@ class NemotronProvider(BaseSTTProvider):
     async def transcribe(self, audio_bytes: bytes) -> str:
         raise NotImplementedError(
             "Nemotron STT provider is not yet implemented. "
-            "Set STT_PROVIDER=qwencleo or STT_PROVIDER=whisper in your .env file."
+            "Set STT_PROVIDER=qwencleo in your .env file."
         )

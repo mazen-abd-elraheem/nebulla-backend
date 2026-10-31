@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user_model, get_optional_user_model
@@ -75,8 +76,15 @@ async def create_personality(
 
     p = Personality(**data)
     db.add(p)
-    await db.flush()
-    await db.refresh(p)
+    try:
+        await db.flush()
+        await db.refresh(p)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Personality could not be created due to database constraint: {exc.orig}",
+        )
     return _p(p)
 
 
@@ -126,7 +134,14 @@ async def update_personality(
 
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(p, k, v)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Personality update violates database constraint: {exc.orig}",
+        )
     return _p(p)
 
 

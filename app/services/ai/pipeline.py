@@ -31,10 +31,15 @@ from app.models.conversation import Conversation, Message
 from app.providers.stt.base import BaseSTTProvider
 from app.providers.tts.base import BaseTTSProvider
 from app.providers.llm.base import BaseLLMProvider
-from app.services.ai.context_builder import build_grounding_context
+from app.services.ai.context_builder import build_grounding_context, is_greeting_or_persona_inquiry
 from app.services.memory.rag_service import RAGService
 from app.services.motion.signal_planner import SignalPlanner
 from app.services.voice_clone.voice_clone_service import VoiceCloneService
+from app.services.phone_action import ActionOutcome, get_phone_action_service
+from app.services.voice_verification.speaker_service import (
+    VerificationResult,
+    get_speaker_service,
+)
 from app.utils.masri_normalizer import (
     clean_llm_output_for_speech,
     extract_thoughts_and_actions,
@@ -68,6 +73,10 @@ class AIPipeline:
         self._audio_buffer: bytearray = bytearray()
         self.session_id: str = session_id or str(uuid.uuid4())
         self._active_task: Optional[asyncio.Task] = None
+        # Chapter 14: phone actions + voice verification
+        self._actions = get_phone_action_service()
+        self._verifier = get_speaker_service()
+        self._actions.set_speaker(self.speak)
 
     def reload_providers(self) -> None:
         """Reload STT, LLM, and TTS providers dynamically when settings change."""
@@ -102,6 +111,12 @@ class AIPipeline:
         Accumulate audio from the phone, detect end-of-speech (VAD),
         then run the full pipeline. Handles barge-in cancellation if user speaks again.
         """
+        # Privacy mute (benefits_section.docx §14.5): while a phone call is ringing/active the
+        # mic belongs to the call. Drop the audio — never buffer, transcribe or verify it.
+        if settings.PHONE_ACTIONS_ENABLED and self._actions.in_call():
+            self._audio_buffer.clear()
+            return
+
         # Cap incoming chunk and total buffer to prevent unbounded memory growth (DoS)
         MAX_AUDIO_BUFFER_BYTES = 320_000  # ~10s of 16kHz 16-bit mono audio
         if len(self._audio_buffer) + len(chunk) > MAX_AUDIO_BUFFER_BYTES:
@@ -124,17 +139,61 @@ class AIPipeline:
                 self._active_task.cancel()
             self._active_task = asyncio.create_task(self._run_pipeline(audio))
 
+    async def speak(self, text: str, mood: Optional[str] = None) -> None:
+        """Speak `text` on the phone with the active personality's voice (used by phone actions)."""
+        pid, _ = await self._get_active_personality()
+        if mood:
+            await manager.send_to_phone({"t": "eyes", "mood": mood})
+        audio_out = await self._generate_tts(clean_text_for_tts(text), pid)
+        await manager.send_to_phone(audio_out)
+
+    async def _transcribe_and_verify(
+        self, audio: bytes
+    ) -> Tuple[str, Optional[VerificationResult]]:
+        """Run STT and speaker verification concurrently (no added latency). Verification fails closed."""
+        if not (settings.PHONE_ACTIONS_ENABLED and settings.SPEAKER_VERIFICATION_ENABLED):
+            return await self._stt.transcribe(audio), None
+        transcript, verification = await asyncio.gather(
+            self._stt.transcribe(audio),
+            self._verifier.verify(audio),
+            return_exceptions=True,
+        )
+        if isinstance(transcript, BaseException):
+            raise transcript
+        if isinstance(verification, BaseException):
+            logger.warning(f"Speaker verification error (treated as unverified): {verification}")
+            verification = None
+        return transcript, verification
+
     async def _run_pipeline(self, audio: bytes) -> None:
         t_start = time.perf_counter()
 
-        # ── 1. STT ────────────────────────────────────────────────────────
-        transcript = await self._stt.transcribe(audio)
+        # ── 1. STT (+ speaker verification in parallel) ───────────────────
+        transcript, verification = await self._transcribe_and_verify(audio)
         t_stt = time.perf_counter()
         stt_ms = (t_stt - t_start) * 1000
-        logger.info(f"STT ({stt_ms:.0f}ms): {transcript!r}")
+        logger.info(f"STT ({stt_ms:.0f}ms): {len(transcript)} chars")
 
         if not transcript.strip():
             return
+
+        # ── 1b. Phone actions («كلّم ماما», open maps, reminders …) ───────
+        # Deterministic planner + security Guard; the LLM is never involved in deciding
+        # whether a phone action runs. Action turns are NOT persisted to conversation
+        # history (they can contain message bodies / challenge phrases).
+        if settings.PHONE_ACTIONS_ENABLED:
+            outcome: ActionOutcome = await self._actions.handle_utterance(transcript, verification)
+            if outcome.handled:
+                if outcome.speech:
+                    try:
+                        await self.speak(outcome.speech, outcome.mood)
+                    except Exception as ex:
+                        logger.error(f"TTS error while speaking action response: {ex}")
+                    await manager.broadcast_to_desks({
+                        "t": "action_event",
+                        "speech": outcome.speech,
+                    })
+                return
 
         # Acknowledge receipt immediately (doc §6.3 "head nod trick")
         await manager.send_to_phone({"t": "eyes", "mood": "thinking"})
@@ -326,8 +385,54 @@ class AIPipeline:
         else:
             pid, sys_prompt = await self._get_active_personality()
 
-        # 1. RAG retrieval
-        memories = await self._rag.retrieve(text, personality_id=pid)
+        # 1. Full Grounding Context & RAG retrieval
+        try:
+            async with AsyncSessionLocal() as db:
+                sys_prompt, memories, _, pid = await build_grounding_context(
+                    db=db,
+                    personality_id=pid,
+                    message=text,
+                )
+        except Exception as e:
+            logger.warning(f"Could not build grounding context in process_text: {e}")
+            memories = await self._rag.retrieve(text, personality_id=pid)
+
+        # Strict Zero-Hallucination Guardrail
+        is_ar = bool(re.search(r"[؀-ۿ]", text))
+        refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
+        has_memories = bool(memories)
+        is_greeting_persona = is_greeting_or_persona_inquiry(text)
+
+        if not has_memories and not is_greeting_persona:
+            full_response = refusal_reply
+            emotion = "wave"
+            total_ms = (time.perf_counter() - t_start) * 1000
+            if broadcast_to_clients:
+                await manager.broadcast_to_desks({
+                    "t": "text_stream",
+                    "token": full_response,
+                    "is_final": True,
+                    "response": full_response,
+                    "latency": {"llm_ms": 0, "total_ms": round(total_ms)},
+                })
+                await manager.send_to_phone({"t": "eyes", "mood": emotion})
+            asyncio.create_task(
+                self._record_turn(
+                    session_id=session_id,
+                    user_text=text,
+                    assistant_text=full_response,
+                    emotion=emotion,
+                    llm_ms=0.0,
+                    total_ms=total_ms,
+                    personality_id=pid,
+                )
+            )
+            return {
+                "session_id": session_id,
+                "response": full_response,
+                "retrieved_memories": [],
+                "personality_id": pid,
+            }
 
         # 2. LLM response generation
         t_llm_start = time.perf_counter()
