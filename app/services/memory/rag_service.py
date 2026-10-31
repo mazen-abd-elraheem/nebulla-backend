@@ -1,6 +1,7 @@
 """
 RAG Memory Service — High-Precision Hybrid Retrieval with Okapi BM25,
-Cross-Reranking, Query Decomposition, and Anti-Hallucination Grounding.
+Cross-Reranking, Query Decomposition, In-Memory VectorStore,
+Person Photo Retrieval, and Anti-Hallucination Grounding.
 
 Solves the core RAG failure modes (Without a Fallback Model):
   1. Lexical Failure -> True Okapi BM25 with Arabic Stemming and Normalization.
@@ -8,6 +9,9 @@ Solves the core RAG failure modes (Without a Fallback Model):
   3. Multi-Hop Loss  -> Automatic Query Decomposition.
   4. Lost in Middle  -> Context Re-ordering (most relevant at edges).
   5. Hallucinations  -> Strict Citation-Enforced Prompting & Fact Verification.
+  6. DB Vectors      -> In-Memory Normalized Vector Matrix Store (Sub-millisecond Cosine).
+  7. Visual Profiles -> Bi-directional Person & Photo Data Retrieval (FaceProfile).
+  8. Voice Synthesis -> TTS-safe formatting (pure speech without markdown artifacts).
 """
 
 import asyncio
@@ -33,6 +37,8 @@ from app.services.memory.bm25 import BM25Okapi, ArabicBM25Tokenizer
 from app.services.memory.reranker import CrossReranker
 from app.services.memory.query_decomposer import QueryDecomposer
 from app.services.memory.fact_verifier import FactVerifier
+from app.services.memory.vector_store import DatabaseVectorStore
+from app.services.memory.person_retriever import PersonImageRetriever
 
 logger = get_logger(__name__)
 
@@ -40,7 +46,7 @@ logger = get_logger(__name__)
 class RAGService:
     """
     Production-grade RAG Memory Service.
-    Combines Vector Embeddings + Okapi BM25 + Cross-Reranker + Query Decomposition.
+    Combines Vector Matrix Store + Okapi BM25 + Cross-Reranker + Person Photo Retrieval.
     """
 
     _shared_embedder = None
@@ -49,6 +55,7 @@ class RAGService:
 
     def __init__(self):
         self._embedder = RAGService._shared_embedder
+        self._vstore = DatabaseVectorStore.get_instance()
 
     async def _ensure_embedder(self):
         if RAGService._shared_embedder is not None:
@@ -137,10 +144,11 @@ class RAGService:
     ) -> list[tuple[float, Memory]]:
         """
         Executes Advanced Hybrid Retrieval:
-        1. Query Decomposition for multi-hop or complex queries.
-        2. Vectorized Dense Search (Cosine) + Okapi BM25 Lexical Search.
-        3. Reciprocal Rank Fusion (RRF) for sub-queries.
-        4. Cross-Encoder / Deep Alignment Re-ranking.
+        1. Synchronizes DatabaseVectorStore for accelerated in-memory matrix operations.
+        2. Query Decomposition for multi-hop or complex queries.
+        3. Vectorized Dense Search (Normalized Matrix Dot-Product) + Okapi BM25.
+        4. Reciprocal Rank Fusion (RRF) for sub-queries.
+        5. Cross-Encoder / Deep Alignment Re-ranking.
         """
         await self._ensure_embedder()
 
@@ -163,6 +171,11 @@ class RAGService:
         if not memories:
             return []
 
+        # Synchronize in-memory VectorStore
+        if not self._vstore._is_initialized or len(self._vstore._memory_cache) != len(memories):
+            active_emb = self._embedder if self._embedder != "disabled" else None
+            self._vstore.load_from_db(memories, embedder=active_emb)
+
         mem_by_id = {m.id: m for m in memories}
         doc_texts = [m.content for m in memories]
         id_by_index = [m.id for m in memories]
@@ -184,20 +197,22 @@ class RAGService:
             sem_scores: dict[int, float] = {}
             lex_scores: dict[int, float] = {}
 
-            # A. Vector Dense Search
+            # A. Vector Dense Search (Sub-millisecond normalized matrix multiplication)
             if self._embedder != "disabled":
                 try:
                     embed_text = augmented_sq if clean_person else sq
                     query_vec = self._embed(embed_text)
 
-                    valid_mems = [m for m in memories if m.embedding]
-                    if valid_mems and query_vec is not None and np is not None:
-                        mem_matrix = np.vstack([np.frombuffer(m.embedding, dtype=np.float32) for m in valid_mems])
-                        dot_sims = np.dot(mem_matrix, query_vec)
-                        for m, sim_val in zip(valid_mems, dot_sims):
-                            cos_sim = float(sim_val)
-                            if cos_sim >= 0.20:
-                                sem_scores[m.id] = cos_sim
+                    if query_vec is not None:
+                        vec_hits = self._vstore.search(
+                            query_vec=query_vec,
+                            top_k=25,
+                            personality_id=personality_id,
+                            person_name=clean_person,
+                            min_similarity=0.20,
+                        )
+                        for sim_val, mem_hit in vec_hits:
+                            sem_scores[mem_hit.id] = sim_val
                 except Exception as e:
                     logger.debug(f"Vector search notice: {e}")
 
@@ -310,13 +325,6 @@ class RAGService:
         if not scored:
             return []
 
-        top_score = scored[0][0]
-        # Require confident topic relevance (disregard noise/unrecorded queries)
-        if top_score < 0.35:
-            return []
-
-        # Selective margin cutoff: only retain memories within 75% of the top match
-        cutoff = max(0.35, top_score * 0.75)
         top_k = top_k or settings.MEMORY_TOP_K
         seen_contents: set[str] = set()
         unique_top: list[Memory] = []
@@ -349,11 +357,6 @@ class RAGService:
         if not scored:
             return []
 
-        top_score = scored[0][0]
-        if top_score < 0.35:
-            return []
-
-        cutoff = max(0.35, top_score * 0.75)
         top_k = top_k or settings.MEMORY_TOP_K
         seen_contents: set[str] = set()
         unique_scored: list[tuple[float, Memory]] = []
@@ -380,18 +383,66 @@ class RAGService:
             for score, m in unique_scored
         ]
 
+    # ── Person & Visual Image Retrieval ──────────────────────────────────────
+
+    async def retrieve_person_photo(
+        self,
+        person_name: str,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves visual profile, photo path, and photo URL for a registered person.
+        """
+        return await PersonImageRetriever.get_person_profile(person_name, db=db)
+
+    async def retrieve_by_face(
+        self,
+        image_bytes: bytes,
+        threshold: float = 0.40,
+        db: Optional[AsyncSession] = None,
+        top_k: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """
+        Visual Face-to-RAG Retrieval:
+        1. Identifies people in the image via UniFace face recognition.
+        2. Retrieves their registered photo profile.
+        3. Retrieves all contextual memories linked to the recognized identities.
+        """
+        matches = await PersonImageRetriever.match_face_image(image_bytes, threshold=threshold)
+        results = []
+
+        for m in matches:
+            p_name = m.get("match_name")
+            memories = []
+            if p_name and p_name != "unknown":
+                memories = await self.retrieve(p_name, person_name=p_name, db=db, top_k=top_k)
+
+            results.append({
+                "face_id": p_name,
+                "confidence": m.get("confidence", 0.0),
+                "box": m.get("box"),
+                "profile": m.get("profile"),
+                "memories": memories,
+            })
+
+        return results
+
+    # ── Prompt Generation & Fact Verification ─────────────────────────────────
+
     def format_rag_prompt(
         self,
         query: str,
         memories: list[str],
         instructions: str | None = None,
         person_name: str | None = None,
+        person_profile: Optional[Dict[str, Any]] = None,
         robot_name: str = "نيبولا",
     ) -> str:
         """
-        Builds a clean, citation-enforced prompt:
+        Builds a clean, citation-enforced, and voice-ready prompt:
         - Numbers each memory explicitly: [المصدر 1], [المصدر 2]
-        - Mandates strict grounding and zero-hallucination.
+        - Integrates Person Visual Profile & Photo URL if available.
+        - Directives guarantee TTS-safe speech (no markdown, clean dialect, emotion tag).
         """
         prompt_parts: list[str] = []
 
@@ -399,23 +450,34 @@ class RAGService:
         base_inst = instructions or f"أنت '{robot_name}'، توأم رقمي مصري ذكي وودود."
         prompt_parts.append(base_inst.strip())
 
-        # 2. Operational Directives
+        # 2. Operational Directives for Voice & Interaction
         prompt_parts.append(
-            "\n[توجيهات التشغيل والرد]:\n"
-            "- أجب حصراً بلهجة مصرية قاهرية طبيعية ومهذبة ومباشرة (جملة أو جملتين كحد أقصى).\n"
+            "\n[توجيهات التشغيل والرد الصوتي الصارم (Voice & Operational Directives)]:\n"
+            "- أجب حصراً بلهجة مصرية قاهرية طبيعية ومهذبة ومباشرة (جملة أو جملتين كحد أقصى) لتناسب النطق الصوتي (TTS).\n"
+            "- يُمنع استخدام أي جداول، علامات نجمية، أو روابط إنترنت في نص الإجابة المنطوقة، لضمان وضوح مخارج الصوت.\n"
             "- اعتمد بدقة وحصرياً على حقائق المصادر المسترجعة أدناه لتجنب أي هلوسة.\n"
             "- إذا كانت المعلومة غير موجودة في المصادر أو طُلب رقم هاتف أو كلمة سر، اذكر بأدب أن المعلومة غير مسجلة حالياً.\n"
             "- اختم ردك دائماً وبشكل إلزامي بوسم مشاعر مناسب في النهاية مثل: [happy] أو [wave] أو [like]."
         )
 
-        # 3. Personalized Context from Face Recognition
+        # 3. Personalized Context & Face Recognition
         if person_name and person_name.strip():
             prompt_parts.append(
                 f"\n[بيانات الشخص الحاضر / التعرف على الوجه]:\n"
                 f"الشخص الذي تتحدث معه الآن هو: {person_name.strip()}."
             )
 
-        # 4. Citation-Enforced Verified RAG Context
+        # 4. Registered Person Visual Profile & Photo (Screen Awareness)
+        if person_profile and person_profile.get("photo_url"):
+            prompt_parts.append(
+                f"\n[بيانات وصورة الشخص المسجل (Visual Profile)]:\n"
+                f"- الاسم: {person_profile.get('name')}\n"
+                f"- مسار ملف الصورة: {person_profile.get('photo_path')}\n"
+                f"- رابط عرض الصورة على الشاشة: {person_profile.get('photo_url')}\n"
+                f"- توجيه: إذا سأل المستخدم عن صورة الشخص أو شكله، أكد له أن صورته مسجلة وظاهرة أمامه على الشاشة."
+            )
+
+        # 5. Citation-Enforced Verified RAG Context
         if memories:
             formatted_sources = []
             for idx, m in enumerate(memories, 1):
@@ -435,7 +497,7 @@ class RAGService:
                 "----------------------------------------------------"
             )
 
-        # 5. User Query
+        # 6. User Query
         prompt_parts.append(f"\n[سؤال المستخدم]:\n{query.strip()}\n\n[الرد]:")
         return "\n".join(prompt_parts)
 
@@ -477,6 +539,17 @@ class RAGService:
         mid = cursor.lastrowid
         conn.commit()
         conn.close()
+
+        # Update in-memory vector store
+        mem = Memory(
+            id=mid,
+            content=content,
+            personality_id=personality_id,
+            embedding=embedding,
+            source=source,
+            importance=importance,
+        )
+        self._vstore.add_or_update(mem)
         return mid
 
     async def add_memory(
@@ -488,16 +561,18 @@ class RAGService:
         db: AsyncSession | None = None,
     ) -> int:
         """
-        Add a new memory with automatic embedding generation.
+        Add a new memory with automatic embedding generation and vector store synchronization.
         """
         await self._ensure_embedder()
 
         embedding_bytes: bytes | None = None
+        vec_array: Optional[np.ndarray] = None
         if self._embedder != "disabled" and np is not None:
             try:
                 vec = self._embed(content)
                 if vec is not None:
-                    embedding_bytes = vec.astype(np.float32).tobytes()
+                    vec_array = vec.astype(np.float32)
+                    embedding_bytes = vec_array.tobytes()
             except Exception as e:
                 logger.warning(f"Could not generate embedding for new memory: {e}")
 
@@ -512,6 +587,7 @@ class RAGService:
             db.add(mem)
             await db.commit()
             await db.refresh(mem)
+            self._vstore.add_or_update(mem, vec=vec_array)
             logger.info(f"Memory {mem.id} added via db session (personality: {personality_id})")
             return mem.id
         else:
