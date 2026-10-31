@@ -2423,32 +2423,110 @@
     function renderDiarizeResult(data) {
       const box = document.getElementById('diarize-result-box');
       const isMultiPresent = data.multilingual_speakers && data.multilingual_speakers.length > 0;
+      const hasKnown = data.has_known_speaker;
+      const knownCount = data.known_speakers_count || (data.known_speakers ? data.known_speakers.length : 0);
+      const unknownCount = data.unknown_speakers_count || (data.unknown_speakers ? data.unknown_speakers.length : 0);
 
       // 1. KPI Cards
       const kpisHtml = `
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
           <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
-            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">👥 إجمالي المتحدثين (Count)</div>
-            <div style="font-size: 1.85rem; font-weight: 900; color: #a5f3fc; font-family: monospace;">${data.total_speakers_count} شخص</div>
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">👥 إجمالي من يتكلم</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: #a5f3fc; font-family: monospace;">${data.total_speakers_count} أشخاص</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: #a7f3d0; margin-bottom: 4px;">✅ مسجل بالسيستم (نعم)</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: #10b981; font-family: monospace;">${knownCount} شخص</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid ${unknownCount > 0 ? 'rgba(239, 68, 68, 0.4)' : 'var(--border)'}; border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: ${unknownCount > 0 ? '#fca5a5' : 'var(--text-muted)'}; margin-bottom: 4px;">❌ غير مسجل (لا)</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: ${unknownCount > 0 ? '#ef4444' : '#94a3b8'}; font-family: monospace;">${unknownCount} أشخاص</div>
           </div>
           <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
             <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">🌐 اللغات المرصودة</div>
-            <div style="font-size: 1.1rem; font-weight: 800; color: #6ee7b7; margin-top: 6px;">${data.all_detected_languages.length > 0 ? data.all_detected_languages.map(l => l.split(' ')[0]).join(' + ') : 'غير محدد'}</div>
-          </div>
-          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
-            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">⏱️ إجمالي مدة التسجيل</div>
-            <div style="font-size: 1.85rem; font-weight: 900; color: #fed7aa; font-family: monospace;">${data.audio_duration_seconds}s</div>
-          </div>
-          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid ${isMultiPresent ? 'rgba(239, 68, 68, 0.5)' : 'var(--border)'}; border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
-            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">🗣️ متحدثون بعدة لغات</div>
-            <div style="font-size: 1.85rem; font-weight: 900; color: ${isMultiPresent ? '#f87171' : '#a7f3d0'}; font-family: monospace;">
-              ${data.multilingual_speakers.length}
-            </div>
+            <div style="font-size: 1rem; font-weight: 800; color: #6ee7b7; margin-top: 6px;">${data.all_detected_languages && data.all_detected_languages.length > 0 ? data.all_detected_languages.map(l => l.split(' ')[0]).join(' + ') : 'غير محدد'}</div>
           </div>
         </div>
       `;
 
-      // 2. Multilingual Alert Banner ("لو واحد اتكلم بكذا لغة يقولي مين")
+      // 2. Presence Verdict Card ("لو في شخص من المجموعه دا موجود يقولي مين هو و الباقي يقولي لا")
+      let presenceHtml = '';
+      if (hasKnown) {
+        presenceHtml = `
+          <div style="background: rgba(16, 185, 129, 0.08); border: 2px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 1rem;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.6rem;">🎯</span>
+                <div>
+                  <span style="font-size: 0.78rem; font-weight: 800; color: #6ee7b7; text-transform: uppercase;">نتيجة فحص هوية المجموعة</span>
+                  <h3 style="font-size: 1.25rem; font-weight: 900; color: #fff; margin-top: 2px;">${data.presence_verdict || ''}</h3>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+              <!-- Known Speakers Column -->
+              <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: var(--radius-md); padding: 1.25rem;">
+                <h4 style="font-size: 0.95rem; font-weight: 800; color: #34d399; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                  <span>✅</span> الأشخاص الموجودون في السيستم (نعم):
+                </h4>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  ${(data.known_speakers || []).map(k => `
+                    <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); padding: 10px 14px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #fff;">👤 ${k.name}</span>
+                        <span style="font-size: 0.9rem; font-weight: 900; color: #10b981; font-family: monospace;">${k.match_percentage ? k.match_percentage + '%' : ''}</span>
+                      </div>
+                      <div style="font-size: 0.8rem; color: #a7f3d0; margin-top: 4px;">
+                        تحدث باللغة: ${k.languages.map(l => getLanguageFlagBadge(l)).join(' ')} (المدة: ${k.total_speaking_seconds}s)
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+
+              <!-- Unknown Speakers Column -->
+              <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 1.25rem;">
+                <h4 style="font-size: 0.95rem; font-weight: 800; color: #f87171; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                  <span>❌</span> باقي المتحدثين غير المسجلين (لا):
+                </h4>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  ${(data.unknown_speakers && data.unknown_speakers.length > 0) ? data.unknown_speakers.map(u => `
+                    <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: var(--radius-sm); padding: 10px 14px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 1rem; font-weight: 800; color: #fca5a5;">❓ ${u.name}</span>
+                        <span style="font-size: 0.75rem; font-weight: 800; color: #ef4444; background: rgba(239, 68, 68, 0.2); padding: 2px 8px; border-radius: 9999px;">غير مسجل (لا)</span>
+                      </div>
+                      <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 4px;">
+                        تحدث باللغة: ${u.languages.map(l => getLanguageFlagBadge(l)).join(' ')} (المدة: ${u.total_speaking_seconds}s)
+                      </div>
+                    </div>
+                  `).join('') : '<p style="font-size: 0.85rem; color: #94a3b8; font-style: italic;">لا يوجد متحدثون غرباء؛ الجميع مسجلون بالسيستم.</p>'}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        presenceHtml = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 2px solid rgba(239, 68, 68, 0.4); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.6rem;">❌</span>
+              <div>
+                <span style="font-size: 0.78rem; font-weight: 800; color: #fca5a5; text-transform: uppercase;">نتيجة فحص هوية المجموعة</span>
+                <h3 style="font-size: 1.15rem; font-weight: 900; color: #fff; margin-top: 2px;">
+                  ${data.presence_verdict || 'لا يوجد أي شخص من المتحدثين مسجل في السيستم (جميع المتحدثين غير معروفين - لا)'}
+                </h3>
+                <p style="font-size: 0.82rem; color: #fecaca; margin-top: 4px;">
+                  جميع الأصوات المرصودة وعددهم (${unknownCount}) هي أصوات جديدة أو غير مسجلة بقاعدة البيانات.
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 3. Multilingual Alert Banner ("لو واحد اتكلم بكذا لغة يقولي مين")
       let multiBannerHtml = '';
       if (isMultiPresent) {
         multiBannerHtml = `
@@ -2471,41 +2549,7 @@
             </div>
           </div>
         `;
-      } else {
-        multiBannerHtml = `
-          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); padding: 0.9rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px;">
-            <span style="color: #34d399; font-size: 1.2rem;">✓</span>
-            <span style="color: #a7f3d0; font-size: 0.9rem; font-weight: 700;">كل متحدث التزم بلغة واحدة طوال التسجيل، ولم يُرصد أي تغيير في اللغات للمتحدث الواحد.</span>
-          </div>
-        `;
       }
-
-      // 3. Speakers Summary Cards
-      const speakersCardsHtml = `
-        <div style="margin-bottom: 1.5rem;">
-          <h4 style="font-size: 1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.75rem;">قائمة المتحدثين المرصودين في التسجيل:</h4>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
-            ${data.speakers.map(spk => `
-              <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid ${spk.is_multilingual ? 'rgba(239, 68, 68, 0.4)' : (spk.is_enrolled ? 'rgba(16, 185, 129, 0.4)' : 'var(--border)')}; border-radius: var(--radius-md); padding: 1.25rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                  <div style="font-weight: 800; font-size: 1.05rem; color: #fff;">
-                    ${spk.name}
-                  </div>
-                  <span style="font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 9999px; ${spk.is_enrolled ? 'color: #34d399; background: rgba(52, 211, 153, 0.15); border: 1px solid rgba(52, 211, 153, 0.3);' : 'color: #cbd5e1; background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.3);'}">
-                    ${spk.is_enrolled ? '✓ مسجل بالسيستم' : 'صوت غير مسجل'}
-                  </span>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: #94a3b8;">
-                  <div>اللغات المستخدمة: <span style="display: inline-flex; gap: 4px; flex-wrap: wrap; margin-top: 4px;">${spk.languages.map(l => getLanguageFlagBadge(l)).join('')}</span></div>
-                  <div>عدد مقاطع الكلام: <strong style="color: #fff;">${spk.turns_count}</strong> مقطع</div>
-                  <div>إجمالي وقت الحديث: <strong style="color: #fff;">${spk.total_speaking_seconds}</strong> ثانية</div>
-                  ${spk.is_multilingual ? '<div style="color: #fca5a5; font-weight: 700; margin-top: 4px;">⚠️ متحدث متعدد اللغات (Multilingual Speaker)</div>' : ''}
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `;
 
       // 4. Timeline Breakdown Table
       const timelineHtml = `
@@ -2518,19 +2562,25 @@
                   <th style="padding: 10px 14px;">المقطع</th>
                   <th style="padding: 10px 14px;">التوقيت الزمني</th>
                   <th style="padding: 10px 14px;">المتحدث</th>
+                  <th style="padding: 10px 14px;">حالة التسجيل</th>
                   <th style="padding: 10px 14px;">اللغة المرصودة</th>
                   <th style="padding: 10px 14px;">التشابه</th>
                   <th style="padding: 10px 14px;">النص / الملاحظة</th>
                 </tr>
               </thead>
               <tbody>
-                ${data.timeline_segments.map(seg => `
+                ${(data.timeline_segments || []).map(seg => `
                   <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
                     <td style="padding: 10px 14px; font-weight: 800; color: var(--accent-cyan);">#${seg.segment_index}</td>
                     <td style="padding: 10px 14px; font-family: monospace; color: #cbd5e1;">${seg.start_time}s - ${seg.end_time}s (${seg.duration}s)</td>
                     <td style="padding: 10px 14px;">
                       <span style="font-weight: 700; color: ${seg.is_enrolled ? '#6ee7b7' : '#e2e8f0'};">
                         ${seg.speaker}
+                      </span>
+                    </td>
+                    <td style="padding: 10px 14px;">
+                      <span style="font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 9999px; ${seg.is_enrolled ? 'color: #34d399; background: rgba(52, 211, 153, 0.15);' : 'color: #f87171; background: rgba(239, 68, 68, 0.15);'}">
+                        ${seg.is_enrolled ? '✓ نعم (مسجل)' : '✕ لا (غير مسجل)'}
                       </span>
                     </td>
                     <td style="padding: 10px 14px;">${getLanguageFlagBadge(seg.language)}</td>
@@ -2551,8 +2601,8 @@
       box.innerHTML = `
         <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.75rem;">
           ${kpisHtml}
+          ${presenceHtml}
           ${multiBannerHtml}
-          ${speakersCardsHtml}
           ${timelineHtml}
         </div>
       `;

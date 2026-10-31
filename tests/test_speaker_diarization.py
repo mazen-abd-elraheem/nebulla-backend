@@ -65,3 +65,13 @@ async def test_diarization_service_and_endpoint():
         assert "العربية (Arabic)" in multi_spk["languages"]
         assert "الإنجليزية (English)" in multi_spk["languages"]
         assert len(payload["timeline_segments"]) == 3
+
+        # Check presence breakdown (كم شخص بيتكلم، من موجود في السيستم والباقي لا)
+        assert payload["total_speakers_count"] == 2
+        assert "presence_verdict" in payload
+        assert "known_speakers" in payload
+        assert "unknown_speakers" in payload
+        assert payload["unknown_speakers_count"] == 2
+        assert payload["known_speakers_count"] == 0
+        assert payload["has_known_speaker"] is False
+
