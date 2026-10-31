@@ -165,14 +165,12 @@ async def build_grounding_context(
 
     # 3. Memories (RAG grounded in Question, Face Recognition & Persona)
     rag_person = detected_face_name
-    if not rag_person and target_p:
-        p_name = target_p.name or ""
-        if "مازن" in p_name or "mazen" in p_name.lower():
-            rag_person = "مازن"
-        elif "منه" in p_name or "منّة" in p_name or "menna" in p_name.lower():
-            rag_person = "منه"
-        else:
-            rag_person = p_name.split()[0]
+    # Only assign person context if a face is detected or person name is explicitly in user message
+    if not rag_person and target_p and target_p.name:
+        p_name = target_p.name.strip()
+        first_name = p_name.split()[0]
+        if first_name in message or p_name in message:
+            rag_person = first_name
 
     memories = await _rag_service.retrieve(
         message,
@@ -277,22 +275,15 @@ async def build_grounding_context(
         if active_reminders_list:
             grounded_system_prompt += f"- التذكيرات الحالية: {', '.join(active_reminders_list)}.\n"
 
-أمثلة توضيحية لأسلوب الإجابة المباشر:
-الذاكرة المعتمدة:
-- أحمد مهندس برمجيات في حلوان.
-سؤال: أحمد شغال إيه؟
-إجابة: أحمد شغال مهندس برمجيات في حلوان. [like]
-
-الذاكرة المعتمدة:
-- سارة تحب القراءة وممارسة الرياضة.
-سؤال: سارة بتحب إيه؟
-إجابة: سارة بتحب القراءة وممارسة الرياضة. [happy]
-
-الذاكرة المعتمدة:
-{mem_bullets}
-
-تنبيه صارم: أجب مباشرة فقط عن المطلوب باستخدام الذاكرة أعلاه، وبدون أي حشو أو كلام إضافي.
-"""
+        if memories:
+            mem_bullets = "\n".join(f"[المصدر {idx}]: {m}" for idx, m in enumerate(memories, 1))
+            grounded_system_prompt += (
+                f"\nالذاكرة المعتمدة:\n{mem_bullets}\n"
+                "قواعد صارمة لمنع الهلوسة والردود الخارجة عن موضوع البحث:\n"
+                "1. أجب فقط وبدقة متناهية عن موضوع السؤال المطروح نصاً؛ يُحظر تماماً ذكر أي معلومات لا ترتبط مباشرة بموضوع السؤال.\n"
+                "2. إذا كان السؤال يسأل عن تفصيلة غير متوفرة نصاً في الذاكرة أعلاه، أو طُلب رقم هاتف أو كود سري، يجب أن تجيب حصراً بـ:\n"
+                "\"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]\"\n"
+            )
         else:
             if is_greeting_or_persona_inquiry(message):
                 grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
@@ -311,16 +302,14 @@ async def build_grounding_context(
         # User is speaking English
         from scripts.generate_rag_dataset import to_english_memory
         if memories:
-            mem_bullets = "\n".join(f"- {to_english_memory(m)}" for m in memories)
-            grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
-Directives:
-1. Extract the direct factual answer exclusively from the verified memory below without adding extra details.
-2. Reply in concise natural English (single sentence).
-3. Conclude with exactly one emotion tag (e.g. [happy], [wave], [like]).
-
-Verified Memory:
-{mem_bullets}
-"""
+            mem_bullets = "\n".join(f"[Source {idx}]: {to_english_memory(m)}" for idx, m in enumerate(memories, 1))
+            grounded_system_prompt += (
+                f"\nVerified Memory:\n{mem_bullets}\n"
+                "STRICT ZERO-HALLUCINATION DIRECTIVES:\n"
+                "1. Answer strictly and exclusively about the specific topic asked. Do not volunteer unrelated facts.\n"
+                "2. If the inquiry asks for unrecorded details, phone numbers, or passwords, you MUST reply with:\n"
+                "\"I do not have this information recorded in my memory. [wave]\"\n"
+            )
         else:
             if is_greeting_or_persona_inquiry(message):
                 grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
