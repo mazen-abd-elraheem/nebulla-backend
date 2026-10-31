@@ -129,7 +129,7 @@ class AcousticVoiceprintBackend:
     Runs 100% locally with zero external network or heavy dependencies.
     """
 
-    model_id = "acoustic-vocal-tract-v2-192d"
+    model_id = "acoustic-vocal-tract-v3-192d"
 
     def available(self) -> bool:
         return True
@@ -280,31 +280,30 @@ class AcousticVoiceprintBackend:
             float(np.percentile(r85, 10)) / 4000.0, float(np.percentile(r85, 90)) / 4000.0,
         ], dtype=np.float32)
 
-        # Block 8: 16-D Cepstral Peak Prominence (CPP)
+        # Block 8: 16-D Cepstral Quefrency Harmonic Profile
         ceps = np.fft.irfft(np.log(np.maximum(1e-9, mag)), axis=1)
-        quefrency_speech = ceps[:, int(sr / 400): int(sr / 65)]
-        cpp = np.max(quefrency_speech, axis=1) - np.mean(quefrency_speech, axis=1)
-        b_cpp = np.array([
-            float(np.mean(cpp)), float(np.std(cpp)),
-            float(np.percentile(cpp, 10)), float(np.percentile(cpp, 90)),
-            float(np.max(cpp)), float(np.min(cpp)),
-            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
-        ], dtype=np.float32)
+        q_start, q_end = int(sr / 400), int(sr / 65)
+        quef = np.mean(np.abs(ceps[:, q_start:q_end]), axis=0)
+        idx_q = np.linspace(0, len(quef) - 1, 16).astype(int)
+        b_cpp = quef[idx_q].astype(np.float32)
 
-        # Unit normalize each block individually
-        def u(x: np.ndarray) -> np.ndarray:
-            n = np.linalg.norm(x)
-            return (x / n).astype(np.float32) if n > 0 else x.astype(np.float32)
+        # Zero-mean center and unit-normalize each block individually
+        # to strictly eliminate universal vocal tract DC bias and shared microphone transfer function!
+        def u_center(x: np.ndarray) -> np.ndarray:
+            x = np.asarray(x, dtype=np.float32)
+            xc = x - float(np.mean(x))
+            n = float(np.linalg.norm(xc))
+            return (xc / n).astype(np.float32) if n > 1e-9 else np.zeros_like(xc)
 
         vec = np.concatenate([
-            u(b_fb),        # 40
-            u(b_mfcc),      # 24
-            u(b_d1),        # 24
-            u(b_lpc),       # 24
-            u(b_pitch),     # 24
-            u(b_contrast),  # 24
-            u(b_moments),   # 16
-            u(b_cpp),       # 16
+            u_center(b_fb),        # 40
+            u_center(b_mfcc),      # 24
+            u_center(b_d1),        # 24
+            u_center(b_lpc),       # 24
+            u_center(b_pitch),     # 24
+            u_center(b_contrast),  # 24
+            u_center(b_moments),   # 16
+            u_center(b_cpp),       # 16
         ])
         # Total: 40 + 24 + 24 + 24 + 24 + 24 + 16 + 16 = 192 dimensions
         n_full = np.linalg.norm(vec)
@@ -604,21 +603,18 @@ class SpeakerVerificationService:
     def default_threshold(self) -> float:
         """Adaptive similarity threshold depending on active backend."""
         if isinstance(self._backend, AcousticVoiceprintBackend):
-            return 0.86
+            return 0.82
         return settings.SPEAKER_THRESHOLD_L1
 
     @staticmethod
-    def _calculate_match_percentage(sim: float, threshold: float = 0.86) -> float:
+    def _calculate_match_percentage(sim: float, threshold: float = 0.82) -> float:
         """Calibrate raw cosine similarity into an intuitive biometric match percentage [0.0% - 100.0%]."""
-        if sim <= 0.0:
+        if sim < threshold:
             return 0.0
         if sim >= 1.0:
             return 100.0
-        if sim < threshold:
-            pct = (sim / max(0.01, threshold)) * 49.0
-            return round(max(0.0, pct), 1)
-        # Confirmed match (85% to 99.9%)
-        progress = min(1.0, (sim - threshold) / max(0.01, (0.97 - threshold)))
+        # Confirmed match (85.0% to 99.9%)
+        progress = min(1.0, (sim - threshold) / max(0.01, (0.95 - threshold)))
         pct = 85.0 + (progress * 14.9)
         return round(min(99.9, pct), 1)
 
