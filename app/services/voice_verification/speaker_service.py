@@ -908,16 +908,68 @@ class SpeakerVerificationService:
 
         total_speakers_count = len(speakers_list)
 
-        # 5. Build human-readable Arabic summary
-        summary_lines = [
-            f"تم رصد {total_speakers_count} متحدث(ين) في هذا التسجيل الصوتي (المدة الإجمالية: {total_duration} ثانية)."
+        # 5. Group Presence & Enrolled Recognition Breakdown
+        known_speakers = [
+            {
+                "name": spk["name"],
+                "user_id": spk["user_id"],
+                "best_similarity": spk["best_similarity"],
+                "match_percentage": self._calculate_match_percentage(spk["best_similarity"], thresh),
+                "total_speaking_seconds": spk["total_speaking_seconds"],
+                "languages": spk["languages"],
+                "status": "موجود ومسجل في السيستم (نعم)",
+            }
+            for spk in speakers_list
+            if spk["is_enrolled"]
         ]
-        summary_lines.append("تفاصيل المتحدثين واللغات:")
-        for spk in speakers_list:
-            role_tag = "مسجل في السيستم" if spk["is_enrolled"] else "غير مسجل"
-            spk_langs = "، ".join(spk["languages"])
-            multi_note = f" (تحدث بـ {len(spk['languages'])} لغات!)" if spk["is_multilingual"] else ""
-            summary_lines.append(f" • {spk['name']} ({role_tag}): تحدث باللغة [{spk_langs}]{multi_note}")
+
+        unknown_speakers = [
+            {
+                "name": spk["name"],
+                "total_speaking_seconds": spk["total_speaking_seconds"],
+                "languages": spk["languages"],
+                "status": "غير مسجل في السيستم (لا)",
+                "message": f"الشخص '{spk['name']}' صوته غير مسجل في قاعدة البيانات (لا).",
+            }
+            for spk in speakers_list
+            if not spk["is_enrolled"]
+        ]
+
+        if known_speakers and unknown_speakers:
+            known_names = "، ".join([k["name"] for k in known_speakers])
+            presence_verdict = (
+                f"تم العثور على ({len(known_speakers)}) شخص مسجل في السيستم وهو: [{known_names}]، "
+                f"بينما باقي المتحدثين وعددهم ({len(unknown_speakers)}) غير مسجلين في السيستم (لا)."
+            )
+        elif known_speakers and not unknown_speakers:
+            known_names = "، ".join([k["name"] for k in known_speakers])
+            presence_verdict = f"جميع المتحدثين في المجموعة ({len(known_speakers)}) مسجلون في السيستم: [{known_names}]."
+        else:
+            presence_verdict = f"لم يتم العثور على أي شخص مسجل في السيستم؛ جميع المتحدثين وعددهم ({len(unknown_speakers)}) غير مسجلين (لا)."
+
+        # 6. Build human-readable Arabic summary
+        summary_lines = [
+            f"📊 تحليل المجموعة: تم رصد {total_speakers_count} شخص يتكلم في هذا التسجيل الصوتي (المدة الإجمالية: {total_duration} ثانية).",
+            f"🔍 نتيجة التحقق: {presence_verdict}",
+        ]
+
+        if known_speakers:
+            summary_lines.append("\n✅ الأشخاص المسجلون والموجودون في المجموعة (نعم):")
+            for k in known_speakers:
+                langs_str = "، ".join(k["languages"])
+                summary_lines.append(
+                    f" • {k['name']}: موجود في السيستم بنسبة تطابق {k['match_percentage']:.1f}% "
+                    f"(تحدث: {langs_str} لمدة {k['total_speaking_seconds']} ثانية)"
+                )
+
+        if unknown_speakers:
+            summary_lines.append("\n❌ باقي المتحدثين غير المسجلين (لا):")
+            for u in unknown_speakers:
+                langs_str = "، ".join(u["languages"])
+                summary_lines.append(
+                    f" • {u['name']}: غير مسجل في السيستم (لا) "
+                    f"(تحدث: {langs_str} لمدة {u['total_speaking_seconds']} ثانية)"
+                )
 
         if multilingual_speakers:
             summary_lines.append("\n⚠️ تنبيه تعدد اللغات للمتحدث الواحد:")
@@ -929,6 +981,12 @@ class SpeakerVerificationService:
         return {
             "success": True,
             "total_speakers_count": total_speakers_count,
+            "known_speakers_count": len(known_speakers),
+            "unknown_speakers_count": len(unknown_speakers),
+            "has_known_speaker": len(known_speakers) > 0,
+            "known_speakers": known_speakers,
+            "unknown_speakers": unknown_speakers,
+            "presence_verdict": presence_verdict,
             "audio_duration_seconds": total_duration,
             "speakers": speakers_list,
             "multilingual_speakers": multilingual_speakers,
