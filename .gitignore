@@ -26,3 +26,5 @@ data/uniface_test_result.jpg
 .ruff_cache/
 htmlcov/
 .coverage
+
+*.wav
