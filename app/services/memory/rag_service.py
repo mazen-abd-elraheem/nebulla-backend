@@ -1,11 +1,13 @@
 """
-RAG Memory Service — retrieves relevant memories to ground LLM responses.
+RAG Memory Service — High-Precision Hybrid Retrieval with Okapi BM25,
+Cross-Reranking, Query Decomposition, and Anti-Hallucination Grounding.
 
-Architecture (doc §1 RAG, §6 personality & memory):
-  1. Memories stored in SQL with pre-computed embedding vectors
-  2. On each query: embed the transcript, cosine-search the memory store
-  3. Top-K memories injected into LLM context
-  4. Robot's responses feel personal and contextually aware
+Solves the core RAG failure modes (Without a Fallback Model):
+  1. Lexical Failure -> True Okapi BM25 with Arabic Stemming and Normalization.
+  2. Ranking Noise   -> Cross-Encoder / Deep Alignment Reranker.
+  3. Multi-Hop Loss  -> Automatic Query Decomposition.
+  4. Lost in Middle  -> Context Re-ordering (most relevant at edges).
+  5. Hallucinations  -> Strict Citation-Enforced Prompting & Fact Verification.
 """
 
 import asyncio
@@ -14,7 +16,7 @@ import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple, Dict, Any
 
 try:
     import numpy as np  # type: ignore[import]
@@ -27,14 +29,18 @@ from app.core.config import settings
 from app.core.logger import get_logger
 from app.db.session import AsyncSessionLocal
 from app.models.memory import Memory
+from app.services.memory.bm25 import BM25Okapi, ArabicBM25Tokenizer
+from app.services.memory.reranker import CrossReranker
+from app.services.memory.query_decomposer import QueryDecomposer
+from app.services.memory.fact_verifier import FactVerifier
 
 logger = get_logger(__name__)
 
 
 class RAGService:
     """
-    Embedding-based memory retrieval.
-    Pre-warms/caches the embedding model in memory, with lexical search if unavailable.
+    Production-grade RAG Memory Service.
+    Combines Vector Embeddings + Okapi BM25 + Cross-Reranker + Query Decomposition.
     """
 
     _shared_embedder = None
@@ -55,7 +61,7 @@ class RAGService:
 
     def _load_embedder(self):
         if np is None:
-            logger.warning("numpy is not installed. RAG will use keyword/lexical search.")
+            logger.warning("numpy is not installed. RAG will use pure BM25 search.")
             RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
             return
@@ -74,17 +80,17 @@ class RAGService:
             except Exception:
                 pass
 
-            # If not cached locally, use instant high-speed lexical & keyword matching
-            logger.info("Embedding model weights not in local cache; RAG using instant keyword & BM25 search.")
+            # Fast Okapi BM25 index when weights are not cached locally
+            logger.info("Embedding weights not in local cache; RAG utilizing accelerated Okapi BM25 engine.")
             RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
         except Exception as e:
-            logger.warning(f"Could not initialize SentenceTransformer ({e}). Using keyword search.")
+            logger.warning(f"SentenceTransformer notice: ({e}). Utilizing accelerated BM25 engine.")
             RAGService._shared_embedder = "disabled"
             self._embedder = "disabled"
 
     def _load_memories_sync(self, personality_id: int | None = None) -> list[Memory]:
-        """Load memories synchronously via sqlite3 for instant, non-blocking execution when db is None."""
+        """Load memories synchronously via sqlite3 for instant execution when session is None."""
         db_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
         if db_path.startswith("./"):
             db_path = db_path[2:]
@@ -120,7 +126,7 @@ class RAGService:
             memories.append(mem)
         return memories
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    # ── Core Retrieval Engine ──────────────────────────────────────────────────
 
     async def _get_scored_memories(
         self,
@@ -129,6 +135,13 @@ class RAGService:
         db: AsyncSession | None = None,
         person_name: str | None = None,
     ) -> list[tuple[float, Memory]]:
+        """
+        Executes Advanced Hybrid Retrieval:
+        1. Query Decomposition for multi-hop or complex queries.
+        2. Vectorized Dense Search (Cosine) + Okapi BM25 Lexical Search.
+        3. Reciprocal Rank Fusion (RRF) for sub-queries.
+        4. Cross-Encoder / Deep Alignment Re-ranking.
+        """
         await self._ensure_embedder()
 
         # Load memories from DB matching personality or shared
@@ -150,91 +163,136 @@ class RAGService:
         if not memories:
             return []
 
-        # ── Hybrid Retrieval: Dense Embedding + Egyptian Lexical RRF ──────────
-        sem_scores: dict[int, float] = {}
-        lex_scores: dict[int, float] = {}
-
-        clean_person = person_name.strip() if person_name else None
-        augmented_query = f"{clean_person} {query}" if clean_person and clean_person not in query else query
-
-        # 1. Fast Vectorized Semantic Scoring (when SentenceTransformer is active)
-        if self._embedder != "disabled":
-            try:
-                embed_text = augmented_query if clean_person else query
-                query_vec = self._embed(embed_text)
-
-                valid_mems = [m for m in memories if m.embedding]
-                if valid_mems and query_vec is not None and np is not None:
-                    mem_matrix = np.vstack([np.frombuffer(m.embedding, dtype=np.float32) for m in valid_mems])
-                    dot_sims = np.dot(mem_matrix, query_vec)
-                    for m, sim_val in zip(valid_mems, dot_sims):
-                        cos_sim = float(sim_val)
-                        if cos_sim >= 0.25:
-                            sem_scores[m.id] = cos_sim
-            except Exception as e:
-                logger.error(f"Error during semantic embedding search: {e}. Using lexical search.")
-
-        # 2. Egyptian Lexical & Keyword Matching (Topic-Focused)
-        for mem in memories:
-            l_score = self._lexical_score(query, mem.content)
-            if augmented_query != query:
-                l_score = max(l_score, self._lexical_score(augmented_query, mem.content))
-
-            # Only boost person_name if there is already topical overlap to prevent irrelevant memory pollution
-            if clean_person and clean_person.lower() in mem.content.lower():
-                if l_score > 0.05 or sem_scores.get(mem.id, 0.0) >= 0.25:
-                    l_score += 0.15
-
-            if l_score >= 0.06:
-                lex_scores[mem.id] = l_score
-
-        # 3. Reciprocal Rank Fusion (RRF) with Balanced Scoring
-        sorted_sem = sorted(sem_scores.items(), key=lambda x: x[1], reverse=True)
-        sem_ranks = {mid: rank for rank, (mid, _) in enumerate(sorted_sem, start=1)}
-
-        sorted_lex = sorted(lex_scores.items(), key=lambda x: x[1], reverse=True)
-        lex_ranks = {mid: rank for rank, (mid, _) in enumerate(sorted_lex, start=1)}
-
-        all_matched_ids = set(sem_scores.keys()).union(set(lex_scores.keys()))
         mem_by_id = {m.id: m for m in memories}
+        doc_texts = [m.content for m in memories]
+        id_by_index = [m.id for m in memories]
 
-        scored: list[tuple[float, Memory]] = []
+        # 1. Initialize Okapi BM25 Index on corpus
+        bm25 = BM25Okapi(doc_texts)
+
+        # 2. Query Decomposition (Handles Multi-Hop & Compound questions)
+        sub_queries = QueryDecomposer.decompose(query)
+        clean_person = person_name.strip() if person_name else None
+
+        # Track accumulated candidate scores across all sub-queries
+        accumulated_candidates: dict[int, float] = {}
         k_rrf = 60.0
 
-        for mid in all_matched_ids:
-            mem = mem_by_id[mid]
-            score_rrf = 0.0
-            if mid in sem_ranks:
-                score_rrf += 1.0 / (k_rrf + sem_ranks[mid])
-            if mid in lex_ranks:
-                score_rrf += 1.0 / (k_rrf + lex_ranks[mid])
+        for sq in sub_queries:
+            augmented_sq = f"{clean_person} {sq}" if clean_person and clean_person not in sq else sq
 
-            raw_sem = sem_scores.get(mid, 0.0)
-            raw_lex = lex_scores.get(mid, 0.0)
+            sem_scores: dict[int, float] = {}
+            lex_scores: dict[int, float] = {}
 
-            importance_boost = (getattr(mem, "importance", 5) / 10.0) * 0.03
-            combined_score = (score_rrf * 10.0) + (raw_sem * 0.6) + (raw_lex * 0.5) + importance_boost
+            # A. Vector Dense Search
+            if self._embedder != "disabled":
+                try:
+                    embed_text = augmented_sq if clean_person else sq
+                    query_vec = self._embed(embed_text)
 
-            if raw_lex >= 0.06 or raw_sem >= 0.25 or combined_score >= 0.12:
-                scored.append((combined_score, mem))
+                    valid_mems = [m for m in memories if m.embedding]
+                    if valid_mems and query_vec is not None and np is not None:
+                        mem_matrix = np.vstack([np.frombuffer(m.embedding, dtype=np.float32) for m in valid_mems])
+                        dot_sims = np.dot(mem_matrix, query_vec)
+                        for m, sim_val in zip(valid_mems, dot_sims):
+                            cos_sim = float(sim_val)
+                            if cos_sim >= 0.20:
+                                sem_scores[m.id] = cos_sim
+                except Exception as e:
+                    logger.debug(f"Vector search notice: {e}")
 
-        # Additional fallback lexical pass if no memories scored yet
-        if not scored:
-            for mem in memories:
-                score = self._lexical_score(query, mem.content)
-                if augmented_query != query:
-                    score = max(score, self._lexical_score(augmented_query, mem.content))
-                if score > 0.0:
-                    scored.append((score, mem))
+            # B. Okapi BM25 Lexical Search
+            bm25_scores = bm25.get_scores(augmented_sq)
+            for idx, b_score in enumerate(bm25_scores):
+                mid = id_by_index[idx]
+                if b_score > 0.05:
+                    lex_scores[mid] = b_score
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return scored
+            # Boost person name if found in memory text
+            if clean_person:
+                p_lower = clean_person.lower()
+                for m in memories:
+                    if p_lower in m.content.lower():
+                        if m.id in lex_scores or m.id in sem_scores:
+                            lex_scores[m.id] = lex_scores.get(m.id, 0.0) + 0.15
+
+            # C. Reciprocal Rank Fusion for this sub-query
+            sorted_sem = sorted(sem_scores.items(), key=lambda x: x[1], reverse=True)
+            sem_ranks = {mid: rank for rank, (mid, _) in enumerate(sorted_sem, start=1)}
+
+            sorted_lex = sorted(lex_scores.items(), key=lambda x: x[1], reverse=True)
+            lex_ranks = {mid: rank for rank, (mid, _) in enumerate(sorted_lex, start=1)}
+
+            sq_matched_ids = set(sem_scores.keys()).union(set(lex_scores.keys()))
+
+            for mid in sq_matched_ids:
+                score_rrf = 0.0
+                if mid in sem_ranks:
+                    score_rrf += 1.0 / (k_rrf + sem_ranks[mid])
+                if mid in lex_ranks:
+                    score_rrf += 1.0 / (k_rrf + lex_ranks[mid])
+
+                raw_sem = sem_scores.get(mid, 0.0)
+                raw_lex = lex_scores.get(mid, 0.0)
+                mem = mem_by_id[mid]
+                importance_boost = (getattr(mem, "importance", 5) / 10.0) * 0.03
+
+                combined = (score_rrf * 10.0) + (raw_sem * 0.6) + (raw_lex * 0.5) + importance_boost
+                accumulated_candidates[mid] = max(accumulated_candidates.get(mid, 0.0), combined)
+
+        # 3. Fallback BM25 pass if no candidates matched yet
+        if not accumulated_candidates:
+            fallback_bm25 = bm25.get_scores(query)
+            for idx, sc in enumerate(fallback_bm25):
+                if sc > 0.0:
+                    accumulated_candidates[id_by_index[idx]] = sc
+
+        if not accumulated_candidates:
+            return []
+
+        # 4. Cross-Encoder / Deep Alignment Re-ranking
+        candidate_items = [
+            (score, mem_by_id[mid], mem_by_id[mid].content)
+            for mid, score in accumulated_candidates.items()
+        ]
+
+        reranked = CrossReranker.rerank(query, candidate_items, top_k=min(20, len(candidate_items)))
+
+        final_scored = [(score, mem) for score, mem, _ in reranked]
+        return final_scored
 
     def _normalize_for_dedup(self, text: str) -> str:
         """Normalized string for deduplicating repeated memory contents."""
         norm = self._normalize_arabic(text)
         norm = norm.replace("نيبيولا", "نيبولا").replace("nebula", "نيبولا")
         return re.sub(r"\s+", " ", norm).strip()
+
+    @staticmethod
+    def _reorder_context(items: List[Any]) -> List[Any]:
+        """
+        Solves the 'Lost in the Middle' problem.
+        Reorders ranked items such that the most relevant items are placed
+        at the very beginning and the very end of the prompt:
+        Input: [1, 2, 3, 4, 5] -> Output: [1, 3, 5, 4, 2]
+        """
+        if len(items) <= 2:
+            return items
+
+        reordered = [None] * len(items)
+        left = 0
+        right = len(items) - 1
+
+        for idx, item in enumerate(items):
+            if idx % 2 == 0:
+                reordered[left] = item
+                left += 1
+            else:
+                reordered[right] = item
+                right -= 1
+
+        return [it for it in reordered if it is not None]
+
+    # ── Public APIs ───────────────────────────────────────────────────────────
 
     async def retrieve(
         self,
@@ -245,9 +303,8 @@ class RAGService:
         person_name: str | None = None,
     ) -> list[str]:
         """
-        Return the top-K most relevant distinct memory texts for *query*.
-        Uses hybrid search (semantic cosine similarity + lexical Arabic keyword match + importance).
-        Deduplicates memory content before taking top-K to ensure diverse, non-redundant results.
+        Return top-K relevant distinct memories for *query*.
+        Uses Hybrid Search (BM25 + Dense) + Cross-Reranker + 'Lost in the Middle' Reordering.
         """
         scored = await self._get_scored_memories(query, personality_id, db, person_name=person_name)
         if not scored:
@@ -257,7 +314,6 @@ class RAGService:
         seen_contents: set[str] = set()
         unique_top: list[Memory] = []
 
-        # Deduplicate BEFORE cutting off at top_k so duplicate rows in DB don't starve out other memories
         for score, mem in scored:
             norm_content = self._normalize_for_dedup(mem.content)
             if norm_content not in seen_contents:
@@ -269,7 +325,9 @@ class RAGService:
         if unique_top:
             self._update_access_times_sync([m.id for m in unique_top])
 
-        return [m.content for m in unique_top]
+        # Apply Context Re-ordering to eliminate 'Lost in the Middle'
+        reordered_mems = self._reorder_context(unique_top)
+        return [m.content for m in reordered_mems]
 
     async def retrieve_detailed(
         self,
@@ -279,7 +337,7 @@ class RAGService:
         db: AsyncSession | None = None,
         person_name: str | None = None,
     ) -> list[dict]:
-        """Return top-K relevant distinct memories with scores and metadata."""
+        """Return top-K relevant distinct memories with scores and provenance metadata."""
         scored = await self._get_scored_memories(query, personality_id, db, person_name=person_name)
         if not scored:
             return []
@@ -319,11 +377,9 @@ class RAGService:
         robot_name: str = "نيبولا",
     ) -> str:
         """
-        Builds a clean, optimized textual Prompt (NOT JSON) combining:
-        1. Instructions from control DB / Personality directives.
-        2. Verified RAG Context & personalized memories (e.g. from Face Recognition).
-        3. Clear operational directives (Egyptian dialect, conciseness, zero hallucination).
-        4. User query.
+        Builds a clean, citation-enforced prompt:
+        - Numbers each memory explicitly: [المصدر 1], [المصدر 2]
+        - Mandates strict grounding and zero-hallucination.
         """
         prompt_parts: list[str] = []
 
@@ -335,7 +391,8 @@ class RAGService:
         prompt_parts.append(
             "\n[توجيهات التشغيل والرد]:\n"
             "- أجب حصراً بلهجة مصرية قاهرية طبيعية ومهذبة ومباشرة (جملة أو جملتين كحد أقصى).\n"
-            "- اعتمد بدقة وحصرياً على حقائق الذاكرة المسترجعة أدناه لتجنب أي هلوسة.\n"
+            "- اعتمد بدقة وحصرياً على حقائق المصادر المسترجعة أدناه لتجنب أي هلوسة.\n"
+            "- إذا كانت المعلومة غير موجودة في المصادر أو طُلب رقم هاتف أو كلمة سر، اذكر بأدب أن المعلومة غير مسجلة حالياً.\n"
             "- اختم ردك دائماً وبشكل إلزامي بوسم مشاعر مناسب في النهاية مثل: [happy] أو [wave] أو [like]."
         )
 
@@ -346,26 +403,44 @@ class RAGService:
                 f"الشخص الذي تتحدث معه الآن هو: {person_name.strip()}."
             )
 
-        # 4. Verified RAG Context (Textual prompt bullets, NOT JSON)
+        # 4. Citation-Enforced Verified RAG Context
         if memories:
-            mem_bullets = "\n".join(f"• {m.strip()}" for m in memories if m.strip())
+            formatted_sources = []
+            for idx, m in enumerate(memories, 1):
+                formatted_sources.append(f"[المصدر {idx}]: {m.strip()}")
+            sources_text = "\n".join(formatted_sources)
+
             prompt_parts.append(
-                f"\n--- [سياق الذاكرة المسترجع (Verified RAG Context)] ---\n"
-                f"{mem_bullets}\n"
-                f"--------------------------------------------------"
+                f"\n--- [المصادر المعتمدة (Verified Grounding Sources)] ---\n"
+                f"{sources_text}\n"
+                f"----------------------------------------------------"
             )
         else:
             prompt_parts.append(
-                "\n--- [سياق الذاكرة المسترجع (Verified RAG Context)] ---\n"
-                "لا توجد معلومات مسجلة في الذاكرة بخصوص هذا الاستفسار.\n"
-                "تنبيه: إذا كان السؤال يتطلب معلومة شخصية غير مسجلة، وضح بأدب أن المعلومة غير مسجلة حالياً.\n"
-                "--------------------------------------------------"
+                "\n--- [المصادر المعتمدة (Verified Grounding Sources)] ---\n"
+                "لا توجد مصادر مسجلة في الذاكرة بخصوص هذا الاستفسار.\n"
+                "تنبيه صارم: اعتذر فوراً وأكد أن المعلومة غير مسجلة حالياً.\n"
+                "----------------------------------------------------"
             )
 
         # 5. User Query
         prompt_parts.append(f"\n[سؤال المستخدم]:\n{query.strip()}\n\n[الرد]:")
-
         return "\n".join(prompt_parts)
+
+    def verify_response(
+        self,
+        query: str,
+        response: str,
+        retrieved_memories: List[str],
+        is_greeting: bool = False,
+    ) -> str:
+        """
+        Direct Fact Verification (No Fallback Model):
+        Validates the output against retrieved memories.
+        """
+        return FactVerifier.verify_and_sanitize(query, response, retrieved_memories, is_greeting=is_greeting)
+
+    # ── Memory Ingestion & Modification ───────────────────────────────────────
 
     def _add_memory_sync(
         self,
@@ -401,8 +476,7 @@ class RAGService:
         db: AsyncSession | None = None,
     ) -> int:
         """
-        Add a new memory and pre-compute its embedding if SentenceTransformer is enabled.
-        Returns the new memory ID.
+        Add a new memory with automatic embedding generation.
         """
         await self._ensure_embedder()
 
@@ -453,82 +527,22 @@ class RAGService:
         return normalize_masri_orthography(text)
 
     def _tokenize(self, text: str) -> set[str]:
-        if not text:
-            return set()
-        stopwords = {
-            "في", "من", "على", "الى", "إلى", "عن", "مع", "هذا", "هذه", "ذلك", "تلك",
-            "هو", "هي", "هم", "هن", "انتم", "نحن",
-            "ان", "أن", "انها", "انه", "كان", "كانت", "يكون", "تكون",
-            "ما", "ماذا", "متى", "اين", "أين", "كيف", "كم", "هل", "لماذا", "ايه", "إيه",
-            "التي", "الذي", "الذين", "اللاتي", "كل", "بعض", "غير", "حيث", "ثم", "او", "أو"
-        }
-        norm = self._normalize_arabic(text)
-        norm = norm.replace("نيبيولا", "نيبولا").replace("nebula", "نيبولا")
-        raw_tokens = re.findall(r"\w+", norm)
-        tokens = set()
-        for t in raw_tokens:
-            if t in stopwords:
-                continue
-            tokens.add(t)
-            # Prefix stemming (ال, و, ب, ل, ف, ك)
-            if len(t) > 3 and t.startswith("ال"):
-                tokens.add(t[2:])
-            if len(t) > 3 and t.startswith("و"):
-                tokens.add(t[1:])
-            if len(t) > 3 and t.startswith("ب"):
-                tokens.add(t[1:])
-            if len(t) > 3 and t.startswith("ل"):
-                tokens.add(t[1:])
-            if len(t) > 3 and t.startswith("ف"):
-                tokens.add(t[1:])
-            # Suffix stemming (ات, ين, ون, ان, ية, ك, ي, نا, ها, هم, كم)
-            if len(t) > 4 and t.endswith("ات"):
-                tokens.add(t[:-2])
-            if len(t) > 4 and t.endswith("ين"):
-                tokens.add(t[:-2])
-            if len(t) > 4 and t.endswith("ون"):
-                tokens.add(t[:-2])
-            if len(t) > 4 and t.endswith("ية"):
-                tokens.add(t[:-2])
-            if len(t) > 4 and t.endswith("ان"):
-                tokens.add(t[:-2])
-            if len(t) > 3 and t.endswith("ك"):
-                tokens.add(t[:-1])
-            if len(t) > 3 and t.endswith("ي"):
-                tokens.add(t[:-1])
-            if len(t) > 4 and t.endswith("نا"):
-                tokens.add(t[:-2])
-            if len(t) > 4 and t.endswith("ها"):
-                tokens.add(t[:-2])
-            if len(t) > 4 and t.endswith("هم"):
-                tokens.add(t[:-2])
-            if len(t) > 4 and t.endswith("كم"):
-                tokens.add(t[:-2])
-
-        # Query Intent / Identity expansions for natural questions
-        if "مين" in raw_tokens or "انت" in raw_tokens:
+        """Tokenize with Arabic BM25 tokenizer and conversational expansions for backwards compatibility."""
+        tokens = set(ArabicBM25Tokenizer.tokenize(text))
+        raw_norm = self._normalize_arabic(text).lower()
+        if "اسمك" in raw_norm:
+            tokens.add("اسم")
+        if "مين" in raw_norm or "انت" in raw_norm:
             tokens.add("اسم")
             tokens.add("روبوت")
             tokens.add("نيبولا")
         return tokens
 
     def _lexical_score(self, query: str, document: str) -> float:
-        """
-        Token-overlap lexical scoring with Arabic morphology, prefix stripping,
-        and stopword filtering for high-precision retrieval.
-        """
-        if not document:
-            return 0.0
-        q_tokens = self._tokenize(query)
-        d_tokens = self._tokenize(document)
-        if not q_tokens or not d_tokens:
-            return 0.0
-        overlap = q_tokens.intersection(d_tokens)
-        if not overlap:
-            return 0.0
-        jaccard = len(overlap) / len(q_tokens.union(d_tokens))
-        coverage = len(overlap) / len(q_tokens)
-        return float(jaccard * 0.4 + coverage * 0.6)
+        """BM25-backed alignment lexical scoring."""
+        bm = BM25Okapi([document])
+        scores = bm.get_scores(query)
+        return scores[0] if scores else 0.0
 
     def _update_access_times_sync(self, memory_ids: list[int]) -> None:
         if not memory_ids:

@@ -407,6 +407,9 @@ class AIPipeline:
         t_llm = time.perf_counter()
         llm_ms = (t_llm - t_llm_start) * 1000
         total_ms = (time.perf_counter() - t_start) * 1000
+
+        # Strict Fact Verification against retrieved memories (No Fallback Model)
+        full_response = self._rag.verify_response(text, full_response, memories)
         emotion = _extract_emotion(full_response)
 
         if broadcast_to_clients:
@@ -720,6 +723,7 @@ class AIPipeline:
             ):
                 full_response += token
 
+            full_response = self._rag.verify_response(clean_text, full_response, memories)
             emotion = _extract_emotion(full_response)
             cleaned = clean_text_for_tts(full_response)
             await manager.send_to_phone({"t": "eyes", "mood": emotion})

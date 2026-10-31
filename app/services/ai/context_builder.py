@@ -246,7 +246,7 @@ async def build_grounding_context(
             grounded_system_prompt += f"- التذكيرات الحالية: {', '.join(active_reminders_list)}.\n"
 
         if memories:
-            mem_bullets = "\n".join(f"- {m}" for m in memories)
+            mem_bullets = "\n".join(f"[المصدر {idx}]: {m}" for idx, m in enumerate(memories, 1))
             grounded_system_prompt += (
                 f"\nالذاكرة المعتمدة:\n{mem_bullets}\n"
                 "قواعد صارمة لمنع الهلوسة والردود الخارجة عن موضوع البحث:\n"
@@ -287,7 +287,7 @@ async def build_grounding_context(
             grounded_system_prompt += f"- Vision: Person in front of camera is {current_face['face_id']}.\n"
 
         if memories:
-            mem_bullets = "\n".join(f"- {to_english_memory(m)}" for m in memories)
+            mem_bullets = "\n".join(f"[Source {idx}]: {to_english_memory(m)}" for idx, m in enumerate(memories, 1))
             grounded_system_prompt += (
                 f"\nVerified Memory:\n{mem_bullets}\n"
                 "STRICT ZERO-HALLUCINATION DIRECTIVES:\n"
