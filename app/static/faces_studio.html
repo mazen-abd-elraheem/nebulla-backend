@@ -1191,7 +1191,7 @@
             البصمات المسجلة: <span id="voice-enrolled-count">--</span>
           </span>
           <span style="font-size: 0.8rem; font-weight: 700; color: #fed7aa; background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.3); padding: 5px 12px; border-radius: 9999px;">
-            حد التطابق الافتراضي: <span id="voice-threshold-badge">78%</span>
+            حد التطابق الافتراضي: <span id="voice-threshold-badge">86%</span>
           </span>
         </div>
       </div>
@@ -1255,11 +1255,11 @@
         <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
           <div>
             <span style="font-size: 0.88rem; font-weight: 700; color: #e2e8f0;">حد قبول التطابق المخصص (Threshold):</span>
-            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 78% للتعرف الفائق الدقة)</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 86% للتعرف الفائق الدقة ومنع التشابه الخاطئ)</span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="range" id="voice-threshold-slider" min="0.50" max="0.95" step="0.02" value="0.78" oninput="document.getElementById('voice-thresh-val-display').innerText = Math.round(this.value * 100) + '%'" style="width: 140px;">
-            <span id="voice-thresh-val-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">78%</span>
+            <input type="range" id="voice-threshold-slider" min="0.60" max="0.96" step="0.01" value="0.86" oninput="document.getElementById('voice-thresh-val-display').innerText = Math.round(this.value * 100) + '%'" style="width: 140px;">
+            <span id="voice-thresh-val-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">86%</span>
           </div>
         </div>
 
@@ -2157,7 +2157,7 @@
       `;
       box.scrollIntoView({ behavior: 'smooth' });
 
-      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.78;
+      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.86;
       const formData = new FormData();
       formData.append('file', wavBlob, 'recording.wav');
 

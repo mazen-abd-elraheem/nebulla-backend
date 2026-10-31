@@ -123,12 +123,13 @@ class EmbeddingBackend(Protocol):
 class AcousticVoiceprintBackend:
     """
     High-accuracy, lightweight 192-D acoustic voiceprint encoder using NumPy and SciPy.
-    Extracts vocal-tract formants (LPC), Mel-frequency cepstral features (c1..c20 MFCCs),
-    spectral dynamics (Deltas & Delta-Deltas), filterbank spectral timbre, and vectorized pitch (F0).
+    Extracts vocal-tract formants (LPC), Mel-frequency cepstral features (c1..c24 MFCCs),
+    spectral dynamics, 40-band filterbank spectral timbre, and vectorized pitch (F0) histograms
+    on Voice-Activity-Detected (VAD) speech frames.
     Runs 100% locally with zero external network or heavy dependencies.
     """
 
-    model_id = "acoustic-vocal-tract-192d"
+    model_id = "acoustic-vocal-tract-v2-192d"
 
     def available(self) -> bool:
         return True
@@ -138,63 +139,75 @@ class AcousticVoiceprintBackend:
         if len(pcm) < int(sr * 0.4):
             raise ValueError("Audio too short (minimum 0.4 seconds required for voiceprint extraction)")
 
-        # 1. Pre-emphasis filter
-        pcm_emph = np.append(pcm[0], pcm[1:] - 0.97 * pcm[:-1])
-
-        # 2. Framing (25ms window, 10ms hop)
-        frame_len = int(sr * 0.025)  # 400 samples
-        frame_step = int(sr * 0.010)  # 160 samples
-        n_frames = max(1, 1 + int((len(pcm_emph) - frame_len) / frame_step))
+        # 1. Voice Activity Detection (VAD) & Energy Gating
+        frame_len, frame_step = int(sr * 0.025), int(sr * 0.010)  # 400, 160
+        n_frames = max(1, 1 + int((len(pcm) - frame_len) / frame_step))
         pad_len = (n_frames - 1) * frame_step + frame_len
-        if len(pcm_emph) < pad_len:
-            pcm_emph = np.pad(pcm_emph, (0, pad_len - len(pcm_emph)))
+        if len(pcm) < pad_len:
+            pcm = np.pad(pcm, (0, pad_len - len(pcm)))
 
         indices = (
             np.tile(np.arange(0, frame_len), (n_frames, 1))
             + np.tile(np.arange(0, n_frames * frame_step, frame_step), (frame_len, 1)).T
         )
-        frames = pcm_emph[indices] * np.hamming(frame_len)
+        raw_frames = pcm[indices]
+        frame_energies = np.sum(raw_frames ** 2, axis=1)
 
-        # 3. FFT & Power Spectrum
+        # Filter out background room noise and silent pauses (keep top energy speech frames)
+        energy_thresh = max(1e-5, float(np.percentile(frame_energies, 35)))
+        speech_mask = frame_energies >= energy_thresh
+        if np.sum(speech_mask) < 10:
+            speech_mask = frame_energies >= (float(np.mean(frame_energies)) * 0.1)
+        if np.sum(speech_mask) < 5:
+            speech_mask = np.ones(n_frames, dtype=bool)
+
+        speech_frames = raw_frames[speech_mask] * np.hamming(frame_len)
+
+        # 2. FFT Power Spectrum
         n_fft = 512
-        mag = np.absolute(np.fft.rfft(frames, n_fft))
+        mag = np.absolute(np.fft.rfft(speech_frames, n_fft))
         pow_frames = (1.0 / n_fft) * (mag ** 2)
         freqs = np.fft.rfftfreq(n_fft, d=1.0 / sr)
 
-        # 4. Mel Filterbank (32 channels between 80 Hz and sr/2)
-        mel_min = 2595.0 * np.log10(1.0 + 80.0 / 700.0)
-        mel_max = 2595.0 * np.log10(1.0 + (sr / 2.0) / 700.0)
-        mel_pts = np.linspace(mel_min, mel_max, 34)
-        hz_pts = 700.0 * (10.0 ** (mel_pts / 2595.0) - 1.0)
-        bin_pts = np.floor((n_fft + 1) * hz_pts / sr).astype(int)
+        # 3. 40-Channel Mel Filterbank
+        def hz_to_mel(hz: float) -> float:
+            return 2595.0 * np.log10(1.0 + hz / 700.0)
 
-        fbank = np.zeros((32, n_fft // 2 + 1), dtype=np.float32)
-        for m in range(1, 33):
+        def mel_to_hz(mel: float) -> float:
+            return 700.0 * (10.0 ** (mel / 2595.0) - 1.0)
+
+        mel_pts = np.linspace(hz_to_mel(80.0), hz_to_mel(sr / 2.0), 42)
+        bin_pts = np.floor((n_fft + 1) * mel_to_hz(mel_pts) / sr).astype(int)
+
+        fbank = np.zeros((40, n_fft // 2 + 1), dtype=np.float32)
+        for m in range(1, 41):
             f_m_minus, f_m, f_m_plus = bin_pts[m - 1], bin_pts[m], bin_pts[m + 1]
             for k in range(f_m_minus, f_m):
                 fbank[m - 1, k] = (k - f_m_minus) / max(1, (f_m - f_m_minus))
             for k in range(f_m, f_m_plus):
                 fbank[m - 1, k] = (f_m_plus - k) / max(1, (f_m_plus - f_m))
 
-        fb = np.maximum(1e-9, np.dot(pow_frames, fbank.T))
-        lfb = np.log(fb)
+        fb_energies = np.maximum(1e-9, np.dot(pow_frames, fbank.T))
+        log_fb = np.log(fb_energies)
 
-        # 5. MFCCs (c1..c20, ignoring c0 total energy so identity is volume-invariant)
-        mfcc = dct(lfb, type=2, axis=1, norm="ortho")[:, 1:21]
-        d1 = np.gradient(mfcc, axis=0)
-        d2 = np.gradient(d1, axis=0)
+        # Block 1: 40-D Mel Spectral Envelope (Normalized per frame to be loudness-invariant)
+        log_fb_norm = log_fb - np.mean(log_fb, axis=1, keepdims=True)
+        b_fb = np.mean(log_fb_norm, axis=0).astype(np.float32)
 
-        mfcc_mean = np.mean(mfcc, axis=0)        # 20 dims
-        mfcc_std  = np.std(mfcc, axis=0)         # 20 dims
-        d1_mean   = np.mean(np.abs(d1), axis=0)  # 20 dims
-        d1_std    = np.std(d1, axis=0)           # 20 dims
-        d2_std    = np.std(d2, axis=0)           # 20 dims
+        # Block 2: 24-D MFCCs (c1..c24, ignoring c0 loudness)
+        mfcc = dct(log_fb, type=2, axis=1, norm="ortho")[:, 1:25]
+        b_mfcc = np.mean(mfcc, axis=0).astype(np.float32)
 
-        # 6. Filterbank Timbre Shape (32 dims, energy-normalized)
-        lfb_shape = np.mean(lfb - np.mean(lfb, axis=1, keepdims=True), axis=0).astype(np.float32)
+        # Block 3: 24-D Delta MFCCs (relative velocity of vocal tract changes)
+        if len(mfcc) > 2:
+            d1 = np.gradient(mfcc, axis=0)
+            b_d1 = (np.mean(np.abs(d1), axis=0) - np.mean(np.mean(np.abs(d1)))).astype(np.float32)
+        else:
+            b_d1 = np.zeros(24, dtype=np.float32)
 
-        # 7. LPC Reflection & Formant Poles (24 dims)
-        cut = pcm[: min(len(pcm), sr * 3)]
+        # Block 4: 24-D LPC Formants & Resonances on Voiced Frames
+        speech_pcm = speech_frames.reshape(-1)
+        cut = speech_pcm[: min(len(speech_pcm), sr * 3)]
         order = 16
         r = np.correlate(cut, cut, mode="full")[len(cut) - 1: len(cut) + order]
         a = np.zeros(order + 1, dtype=np.float32)
@@ -211,12 +224,12 @@ class AcousticVoiceprintBackend:
         f_vec = np.zeros(8, dtype=np.float32)
         for i in range(min(8, len(formants))):
             f_vec[i] = formants[i] / 4000.0
-        lpc_block = np.concatenate([a[1:17], f_vec]).astype(np.float32)  # 16 + 8 = 24 dims
+        b_lpc = np.concatenate([a[1:17], f_vec]).astype(np.float32)
 
-        # 8. Pitch F0 & Harmonics Contour (16 dims)
+        # Block 5: 24-D Pitch (F0) & Harmonics Histogram
         w_len, step = 800, 320
         p_cnt = max(1, (len(pcm) - w_len) // step)
-        f0s, peaks = [], []
+        f0s = []
         for i in range(p_cnt):
             fr = pcm[i * step: i * step + w_len] * np.hamming(w_len)
             if np.sum(fr ** 2) < 0.001:
@@ -224,88 +237,78 @@ class AcousticVoiceprintBackend:
             ac = np.correlate(fr, fr, mode="full")[w_len - 1:]
             min_lag, max_lag = int(sr / 400), int(sr / 65)
             lag = np.argmax(ac[min_lag:max_lag]) + min_lag
-            pk_r = ac[lag] / (ac[0] + 1e-7)
-            if pk_r > 0.35:
+            if ac[lag] > 0.35 * (ac[0] + 1e-7):
                 f0s.append(sr / lag)
-                peaks.append(pk_r)
-
         if f0s:
             f0_arr = np.array(f0s, dtype=np.float32)
-            pitch_block = np.array([
-                np.mean(f0_arr) / 400.0,
-                np.median(f0_arr) / 400.0,
-                np.std(f0_arr) / 100.0,
-                np.min(f0_arr) / 400.0,
-                np.max(f0_arr) / 400.0,
-                np.percentile(f0_arr, 10) / 400.0,
-                np.percentile(f0_arr, 90) / 400.0,
-                (np.max(f0_arr) - np.min(f0_arr)) / 400.0,
-                len(f0s) / float(p_cnt),
-                float(np.mean(peaks)),
-                float(np.std(peaks)),
-                float(np.percentile(peaks, 10)),
-                float(np.percentile(peaks, 90)),
-                float(np.mean(np.diff(f0_arr) ** 2)) / 500.0 if len(f0_arr) > 1 else 0.0,
-                0.5,
-                0.5,
-            ], dtype=np.float32)
+            hist, _ = np.histogram(f0_arr, bins=24, range=(70.0, 350.0), density=True)
+            b_pitch = hist.astype(np.float32)
         else:
-            pitch_block = np.zeros(16, dtype=np.float32)
+            b_pitch = np.zeros(24, dtype=np.float32)
 
-        # 9. Spectral Shape & Contrast (20 dims)
-        tot_pow = np.sum(pow_frames, axis=1, keepdims=True) + 1e-9
-        sc = np.sum(pow_frames * freqs, axis=1, keepdims=True) / tot_pow
-        cum_pow = np.cumsum(pow_frames, axis=1) / tot_pow
-        r85 = freqs[np.argmax(cum_pow >= 0.85, axis=1)]
-        gmean = np.exp(np.mean(np.log(pow_frames + 1e-12), axis=1))
-        flatness = gmean / (np.mean(pow_frames, axis=1) + 1e-9)
-        bw = np.sqrt(np.sum(pow_frames * ((freqs - sc) ** 2), axis=1, keepdims=True) / tot_pow)
-
-        bands = np.array_split(np.arange(len(freqs)), 6)
-        contrast_means, contrast_stds = [], []
+        # Block 6: 24-D Spectral Contrast across 8 sub-bands
+        bands = np.array_split(np.arange(len(freqs)), 8)
+        cntr_means, cntr_stds, cntr_maxs = [], [], []
         for b in bands:
             b_mag = mag[:, b]
             pk = np.percentile(b_mag, 90, axis=1)
             vl = np.percentile(b_mag, 10, axis=1)
             cntr = np.log((pk + 1e-6) / (vl + 1e-6))
-            contrast_means.append(float(np.mean(cntr) / 5.0))
-            contrast_stds.append(float(np.std(cntr) / 5.0))
+            cntr_means.append(float(np.mean(cntr)))
+            cntr_stds.append(float(np.std(cntr)))
+            cntr_maxs.append(float(np.max(cntr)))
+        b_contrast = np.concatenate([cntr_means, cntr_stds, cntr_maxs]).astype(np.float32)
 
-        spec_block = np.concatenate([
-            np.array([
-                float(np.mean(sc)) / 4000.0,
-                float(np.std(sc)) / 2000.0,
-                float(np.mean(r85)) / 4000.0,
-                float(np.std(r85)) / 2000.0,
-                float(np.mean(flatness)),
-                float(np.std(flatness)),
-                float(np.mean(bw)) / 2000.0,
-                float(np.std(bw)) / 1000.0,
-            ], dtype=np.float32),
-            np.array(contrast_means, dtype=np.float32),
-            np.array(contrast_stds, dtype=np.float32),
+        # Block 7: 16-D Spectral Shape Moments
+        tot_pow = np.sum(pow_frames, axis=1, keepdims=True) + 1e-9
+        sc = np.sum(pow_frames * freqs, axis=1, keepdims=True) / tot_pow
+        bw = np.sqrt(np.sum(pow_frames * ((freqs - sc) ** 2), axis=1, keepdims=True) / tot_pow)
+        cum_pow = np.cumsum(pow_frames, axis=1) / tot_pow
+        r85 = freqs[np.argmax(cum_pow >= 0.85, axis=1)]
+        r95 = freqs[np.argmax(cum_pow >= 0.95, axis=1)]
+        gmean = np.exp(np.mean(np.log(pow_frames + 1e-12), axis=1))
+        flatness = gmean / (np.mean(pow_frames, axis=1) + 1e-9)
+
+        b_moments = np.array([
+            float(np.mean(sc)) / 3000.0, float(np.std(sc)) / 1500.0,
+            float(np.mean(bw)) / 2000.0, float(np.std(bw)) / 1000.0,
+            float(np.mean(r85)) / 4000.0, float(np.std(r85)) / 2000.0,
+            float(np.mean(r95)) / 4000.0, float(np.std(r95)) / 2000.0,
+            float(np.mean(flatness)), float(np.std(flatness)),
+            float(np.percentile(sc, 10)) / 3000.0, float(np.percentile(sc, 90)) / 3000.0,
+            float(np.percentile(bw, 10)) / 2000.0, float(np.percentile(bw, 90)) / 2000.0,
+            float(np.percentile(r85, 10)) / 4000.0, float(np.percentile(r85, 90)) / 4000.0,
+        ], dtype=np.float32)
+
+        # Block 8: 16-D Cepstral Peak Prominence (CPP)
+        ceps = np.fft.irfft(np.log(np.maximum(1e-9, mag)), axis=1)
+        quefrency_speech = ceps[:, int(sr / 400): int(sr / 65)]
+        cpp = np.max(quefrency_speech, axis=1) - np.mean(quefrency_speech, axis=1)
+        b_cpp = np.array([
+            float(np.mean(cpp)), float(np.std(cpp)),
+            float(np.percentile(cpp, 10)), float(np.percentile(cpp, 90)),
+            float(np.max(cpp)), float(np.min(cpp)),
+            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
+        ], dtype=np.float32)
+
+        # Unit normalize each block individually
+        def u(x: np.ndarray) -> np.ndarray:
+            n = np.linalg.norm(x)
+            return (x / n).astype(np.float32) if n > 0 else x.astype(np.float32)
+
+        vec = np.concatenate([
+            u(b_fb),        # 40
+            u(b_mfcc),      # 24
+            u(b_d1),        # 24
+            u(b_lpc),       # 24
+            u(b_pitch),     # 24
+            u(b_contrast),  # 24
+            u(b_moments),   # 16
+            u(b_cpp),       # 16
         ])
-
-        # Block-wise unit normalization so every acoustic component has balanced influence
-        def norm_b(v: np.ndarray) -> np.ndarray:
-            n = np.linalg.norm(v)
-            return (v / n).astype(np.float32) if n > 0 else v.astype(np.float32)
-
-        blocks = [
-            norm_b(mfcc_mean),   # 20
-            norm_b(mfcc_std),    # 20
-            norm_b(d1_mean),     # 20
-            norm_b(d1_std),      # 20
-            norm_b(d2_std),      # 20
-            norm_b(lfb_shape),   # 32
-            norm_b(lpc_block),   # 24
-            norm_b(pitch_block), # 16
-            norm_b(spec_block),  # 20
-        ]
-        # Total: 20 + 20 + 20 + 20 + 20 + 32 + 24 + 16 + 20 = 192 dimensions
-        full_v = np.concatenate(blocks).astype(np.float32)
-        norm = np.linalg.norm(full_v)
-        return (full_v / norm if norm > 0 else full_v).astype(np.float32)
+        # Total: 40 + 24 + 24 + 24 + 24 + 24 + 16 + 16 = 192 dimensions
+        n_full = np.linalg.norm(vec)
+        return (vec / n_full).astype(np.float32)
 
 
 class SpeechBrainBackend:
@@ -415,6 +418,14 @@ class SpeakerVerificationService:
                 async with session_factory() as db:
                     rows = (await db.execute(select(Voiceprint))).scalars().all()
                 for r in rows:
+                    if r.model_id and r.model_id != self._backend.model_id:
+                        logger.warning(
+                            "Skipping outdated voiceprint for '%s' (model %s != active %s). Please re-enroll.",
+                            r.speaker_name,
+                            r.model_id,
+                            self._backend.model_id,
+                        )
+                        continue
                     try:
                         vec = _unit(np.frombuffer(r.embedding, dtype=np.float32))
                     except ValueError:
@@ -428,11 +439,11 @@ class SpeakerVerificationService:
     def default_threshold(self) -> float:
         """Adaptive similarity threshold depending on active backend."""
         if isinstance(self._backend, AcousticVoiceprintBackend):
-            return 0.78
+            return 0.86
         return settings.SPEAKER_THRESHOLD_L1
 
     @staticmethod
-    def _calculate_match_percentage(sim: float, threshold: float = 0.78) -> float:
+    def _calculate_match_percentage(sim: float, threshold: float = 0.86) -> float:
         """Calibrate raw cosine similarity into an intuitive biometric match percentage [0.0% - 100.0%]."""
         if sim <= 0.0:
             return 0.0
@@ -442,7 +453,7 @@ class SpeakerVerificationService:
             pct = (sim / max(0.01, threshold)) * 49.0
             return round(max(0.0, pct), 1)
         # Confirmed match (85% to 99.9%)
-        progress = min(1.0, (sim - threshold) / max(0.01, (0.95 - threshold)))
+        progress = min(1.0, (sim - threshold) / max(0.01, (0.97 - threshold)))
         pct = 85.0 + (progress * 14.9)
         return round(min(99.9, pct), 1)
 

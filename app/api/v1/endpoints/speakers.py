@@ -216,8 +216,9 @@ async def speaker_engine_status(
         "backend_model": speaker_service._backend.model_id,
         "backend_available": speaker_service._backend.available(),
         "enrolled_count": len(rows),
-        "threshold_l1": settings.SPEAKER_THRESHOLD_L1,
+        "threshold_l1": speaker_service.default_threshold,
         "threshold_l2": settings.SPEAKER_THRESHOLD_L2,
         "sample_rate": settings.SPEAKER_SAMPLE_RATE,
         "verification_enabled": settings.SPEAKER_VERIFICATION_ENABLED,
     }
+
