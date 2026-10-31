@@ -2,6 +2,7 @@
 
 import json
 import time
+import re
 import uuid
 import urllib.parse
 from typing import Optional, List, Dict, Any, Tuple, AsyncIterator, Union
@@ -25,7 +26,7 @@ from app.services.ai.pipeline import clean_text_for_tts, _extract_emotion
 from app.services.memory.rag_service import RAGService
 from app.websocket.manager import manager
 from app.websocket.handlers import get_face_service, get_ai_pipeline as _get_ai_pipeline
-from app.services.ai.context_builder import build_grounding_context, GroundingInfo
+from app.services.ai.context_builder import build_grounding_context, GroundingInfo, is_greeting_or_persona_inquiry
 
 logger = get_logger(__name__)
 
@@ -192,6 +193,61 @@ async def chat_with_llm(
             llm.model = body.model
     t_start = time.perf_counter()
 
+    # ── Strict Zero-Hallucination & Sub-10ms Speed Optimization ───────────────
+    is_ar = bool(re.search(r"[؀-ۿ]", body.message))
+    refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
+    has_memories = bool(memories)
+    is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+
+    # If no memories were retrieved and query is a factual question (not greeting/persona)
+    if not has_memories and not is_greeting_persona:
+        reply = refusal_reply
+        cleaned_reply = clean_text_for_tts(reply)
+        emotion = "wave"
+
+        user_msg = Message(
+            conversation_id=conv_id,
+            role="user",
+            content=body.message,
+        )
+        robot_msg = Message(
+            conversation_id=conv_id,
+            role="assistant",
+            content=reply,
+            llm_latency_ms=0.0,
+            total_latency_ms=0.0,
+            emotion=emotion,
+        )
+        db.add_all([user_msg, robot_msg])
+        await db.commit()
+
+        if body.stream and "application/json" not in request.headers.get("accept", ""):
+            async def fast_refusal_stream():
+                yield reply
+            return StreamingResponse(
+                fast_refusal_stream(),
+                media_type="text/plain; charset=utf-8",
+                headers={"X-Memories-Used": urllib.parse.quote("[]")},
+            )
+
+        active_model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or settings.LLM_MODEL
+        return ChatResponse(
+            reply=reply,
+            cleaned_reply=cleaned_reply,
+            response=reply,
+            session_id=session_id,
+            conversation_id=conv_id,
+            emotion=emotion,
+            llm_latency_ms=0.0,
+            latency={"llm_ms": 0.0, "total_ms": 0.0},
+            retrieved_memories=[],
+            llm_model=str(active_model_name),
+            llm_provider=str(target_provider),
+            memories_used=[],
+            personality_id=active_pid,
+            grounding=grounding,
+        )
+
     # If requested by Swagger UI (accept: application/json), always return non-streaming JSON
     # Swagger UI cannot parse raw streaming text under JSON response models.
     accept_hdr = request.headers.get("accept", "")
@@ -354,6 +410,48 @@ async def chat_stream(
 
     # Commit read transaction to release all SQLite locks before LLM generation
     await db.commit()
+
+    # ── Strict Zero-Hallucination & Speed Optimization (SSE Stream) ───────────
+    is_ar = bool(re.search(r"[؀-ۿ]", body.message))
+    refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
+    has_memories = bool(memories)
+    is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+
+    if not has_memories and not is_greeting_persona:
+        async def fast_refusal_sse():
+            import json
+            yield f"data: {json.dumps({'type': 'context', 'memories': []}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'token', 'content': refusal_reply}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+            try:
+                async with AsyncSessionLocal() as session:
+                    user_msg = Message(
+                        conversation_id=conv_id,
+                        role="user",
+                        content=body.message,
+                    )
+                    robot_msg = Message(
+                        conversation_id=conv_id,
+                        role="robot",
+                        content=refusal_reply,
+                        llm_latency_ms=0.0,
+                        total_latency_ms=0.0,
+                        emotion="wave",
+                    )
+                    session.add_all([user_msg, robot_msg])
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to persist SSE refusal: {e}")
+
+        return StreamingResponse(
+            fast_refusal_sse(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     t_start = time.perf_counter()
 

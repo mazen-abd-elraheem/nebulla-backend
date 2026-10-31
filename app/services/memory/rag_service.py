@@ -310,6 +310,13 @@ class RAGService:
         if not scored:
             return []
 
+        top_score = scored[0][0]
+        # Require confident topic relevance (disregard noise/unrecorded queries)
+        if top_score < 0.35:
+            return []
+
+        # Selective margin cutoff: only retain memories within 75% of the top match
+        cutoff = max(0.35, top_score * 0.75)
         top_k = top_k or settings.MEMORY_TOP_K
         seen_contents: set[str] = set()
         unique_top: list[Memory] = []
@@ -342,6 +349,11 @@ class RAGService:
         if not scored:
             return []
 
+        top_score = scored[0][0]
+        if top_score < 0.35:
+            return []
+
+        cutoff = max(0.35, top_score * 0.75)
         top_k = top_k or settings.MEMORY_TOP_K
         seen_contents: set[str] = set()
         unique_scored: list[tuple[float, Memory]] = []

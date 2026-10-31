@@ -31,7 +31,7 @@ from app.models.conversation import Conversation, Message
 from app.providers.stt.base import BaseSTTProvider
 from app.providers.tts.base import BaseTTSProvider
 from app.providers.llm.base import BaseLLMProvider
-from app.services.ai.context_builder import build_grounding_context
+from app.services.ai.context_builder import build_grounding_context, is_greeting_or_persona_inquiry
 from app.services.memory.rag_service import RAGService
 from app.services.motion.signal_planner import SignalPlanner
 from app.services.voice_clone.voice_clone_service import VoiceCloneService
@@ -385,8 +385,54 @@ class AIPipeline:
         else:
             pid, sys_prompt = await self._get_active_personality()
 
-        # 1. RAG retrieval
-        memories = await self._rag.retrieve(text, personality_id=pid)
+        # 1. Full Grounding Context & RAG retrieval
+        try:
+            async with AsyncSessionLocal() as db:
+                sys_prompt, memories, _, pid = await build_grounding_context(
+                    db=db,
+                    personality_id=pid,
+                    message=text,
+                )
+        except Exception as e:
+            logger.warning(f"Could not build grounding context in process_text: {e}")
+            memories = await self._rag.retrieve(text, personality_id=pid)
+
+        # Strict Zero-Hallucination Guardrail
+        is_ar = bool(re.search(r"[؀-ۿ]", text))
+        refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
+        has_memories = bool(memories)
+        is_greeting_persona = is_greeting_or_persona_inquiry(text)
+
+        if not has_memories and not is_greeting_persona:
+            full_response = refusal_reply
+            emotion = "wave"
+            total_ms = (time.perf_counter() - t_start) * 1000
+            if broadcast_to_clients:
+                await manager.broadcast_to_desks({
+                    "t": "text_stream",
+                    "token": full_response,
+                    "is_final": True,
+                    "response": full_response,
+                    "latency": {"llm_ms": 0, "total_ms": round(total_ms)},
+                })
+                await manager.send_to_phone({"t": "eyes", "mood": emotion})
+            asyncio.create_task(
+                self._record_turn(
+                    session_id=session_id,
+                    user_text=text,
+                    assistant_text=full_response,
+                    emotion=emotion,
+                    llm_ms=0.0,
+                    total_ms=total_ms,
+                    personality_id=pid,
+                )
+            )
+            return {
+                "session_id": session_id,
+                "response": full_response,
+                "retrieved_memories": [],
+                "personality_id": pid,
+            }
 
         # 2. LLM response generation
         t_llm_start = time.perf_counter()
