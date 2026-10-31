@@ -9,9 +9,10 @@ No device talks to another device directly (design decision from doc §4).
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
 
 from app.core.config import settings
 from app.core.logger import get_logger
@@ -94,13 +95,58 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
+# Validation & Malformed JSON Exception Handler
+# ---------------------------------------------------------------------------
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    for err in errors:
+        if err.get("type") == "json_invalid":
+            body_bytes = await request.body()
+            body_str = body_bytes.decode("utf-8", errors="replace")
+            loc = err.get("loc", [])
+            pos = loc[1] if len(loc) > 1 and isinstance(loc[1], int) else None
+
+            snippet = ""
+            if pos is not None and 0 <= pos <= len(body_str):
+                start = max(0, pos - 30)
+                end = min(len(body_str), pos + 30)
+                snippet = body_str[start:end]
+                logger.error(
+                    f"❌ Malformed JSON syntax in request to {request.url.path} near character {pos}:\n"
+                    f"   Snippet: '{snippet}'\n"
+                    f"   Detail: {err.get('ctx', {}).get('error', '')}"
+                )
+
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": "خطأ في صياغة الـ JSON (JSON syntax error). تأكد من علامات التنصيص المزدوجة \"، ووضع نقطتين : بعد اسم كل حقل، والفواصل بين الحقول.",
+                    "error_type": "json_invalid",
+                    "position": pos,
+                    "near": snippet,
+                    "syntax_error": err.get("ctx", {}).get("error", "Malformed JSON"),
+                    "raw_errors": errors,
+                },
+            )
+    serialized_errors = []
+    for err in errors:
+        err_copy = dict(err)
+        if "ctx" in err_copy and isinstance(err_copy["ctx"], dict):
+            ctx_copy = dict(err_copy["ctx"])
+            if "error" in ctx_copy and isinstance(ctx_copy["error"], Exception):
+                ctx_copy["error"] = str(ctx_copy["error"])
+            err_copy["ctx"] = ctx_copy
+        serialized_errors.append(err_copy)
+
+    return JSONResponse(status_code=422, content={"detail": serialized_errors})
+
+
+# ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
 app.include_router(api_router, prefix="/api/v1")   # REST endpoints
 app.include_router(ws_router)                       # WebSocket hub (ws/phone, ws/desk, ws/esp)
-
-
-from fastapi.responses import HTMLResponse, RedirectResponse
 
 @app.get("/health", tags=["health"])
 async def health_check():
