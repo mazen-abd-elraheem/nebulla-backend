@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # ── AI Providers (swappable without code changes, doc §6) ──────────────
     # STT: "qwencleo" | "whisper" | "nemotron"
-    STT_PROVIDER: Literal["qwencleo", "whisper", "nemotron", "groq", "openai"] = "whisper"
+    STT_PROVIDER: Literal["qwencleo", "whisper", "nemotron", "groq", "openai"] = "qwencleo"
 
     # TTS: "voicetut" | "voicetut_service" | "ar_eg_free" | "xtts"
     TTS_PROVIDER: Literal["voicetut", "voicetut_service", "ar_eg_free", "xtts"] = "voicetut"

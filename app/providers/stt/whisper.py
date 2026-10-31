@@ -1,15 +1,23 @@
 """
-Whisper STT Provider — Fast and accurate Speech-to-Text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Whisper STT Provider — Fast, in-memory, thread-safe Speech-to-Text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Uses OpenAI's Whisper model (runs locally on CUDA GPU or CPU).
-Optimized for low latency on local hardware with Arabic support.
+Features:
+- Pure in-memory transcription directly from numpy arrays (avoids disk I/O and ffmpeg subprocesses).
+- Thread-safety locks for concurrent multithreaded chunk processing.
+- Automatic fallback to disk/ffmpeg only for exotic compressed formats.
 """
 
 import asyncio
+import io
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
+
+import numpy as np
+import soundfile as sf
 
 from app.providers.tts.base import BaseSTTProvider
 from app.core.config import settings
@@ -37,11 +45,13 @@ def _ensure_ffmpeg():
 
 
 class WhisperProvider(BaseSTTProvider):
-    """Local OpenAI Whisper STT with CUDA acceleration and singleton caching."""
+    """Local OpenAI Whisper STT with CUDA acceleration, singleton caching, and in-memory execution."""
 
     _shared_model = None
     _shared_device = None
     _shared_lock = asyncio.Lock()
+    _shared_thread_lock = threading.Lock()
+    _shared_infer_lock = threading.Lock()
 
     def __init__(self, model_size: str | None = None):
         self._model_size = model_size or getattr(settings, "WHISPER_MODEL", "base")
@@ -64,28 +74,71 @@ class WhisperProvider(BaseSTTProvider):
                 await loop.run_in_executor(None, self._load)
 
     def _load(self):
-        try:
-            import torch
-            import whisper
+        with WhisperProvider._shared_thread_lock:
+            if WhisperProvider._shared_model is not None:
+                return
+            try:
+                import torch
+                import whisper
 
-            _ensure_ffmpeg()
+                _ensure_ffmpeg()
 
-            device = getattr(settings, "WHISPER_DEVICE", "cuda")
-            if device == "cuda" and not torch.cuda.is_available():
-                logger.warning("CUDA requested for Whisper but not available. Falling back to CPU.")
-                device = "cpu"
+                device = getattr(settings, "WHISPER_DEVICE", "cuda")
+                if device == "cuda" and not torch.cuda.is_available():
+                    logger.warning("CUDA requested for Whisper but not available. Falling back to CPU.")
+                    device = "cpu"
 
-            logger.info(f"Loading Whisper STT model '{self._model_size}' on {device}...")
-            loaded_model = whisper.load_model(self._model_size, device=device)
-            WhisperProvider._shared_model = loaded_model
-            WhisperProvider._shared_device = device
-            logger.info(f"Whisper STT model '{self._model_size}' ready on {device} ✓")
-        except ImportError:
-            logger.error("openai-whisper not installed. Run: pip install openai-whisper")
-            WhisperProvider._shared_model = "disabled"
-        except Exception as e:
-            logger.error(f"Whisper load error: {e}")
-            WhisperProvider._shared_model = "disabled"
+                logger.info(f"Loading Whisper STT model '{self._model_size}' on {device}...")
+                loaded_model = whisper.load_model(self._model_size, device=device)
+                WhisperProvider._shared_model = loaded_model
+                WhisperProvider._shared_device = device
+                logger.info(f"Whisper STT model '{self._model_size}' ready on {device} ✓")
+            except ImportError:
+                logger.error("openai-whisper not installed. Run: pip install openai-whisper")
+                WhisperProvider._shared_model = "disabled"
+            except Exception as e:
+                logger.error(f"Whisper load error: {e}")
+                WhisperProvider._shared_model = "disabled"
+
+    def transcribe_array(self, audio_array: np.ndarray, sample_rate: int = 16000) -> str:
+        """
+        Transcribe an in-memory numpy float32 audio array directly.
+        Bypasses disk writes and ffmpeg subprocesses completely.
+        """
+        if self._model is None or self._model == "disabled":
+            self._load()
+
+        if len(audio_array) == 0:
+            return ""
+
+        if audio_array.ndim > 1:
+            audio_array = audio_array.mean(axis=1)
+
+        audio_array = audio_array.astype(np.float32)
+
+        # Resample to Whisper's required 16,000 Hz if needed
+        if sample_rate != 16000:
+            try:
+                import librosa
+                audio_array = librosa.resample(audio_array, orig_sr=sample_rate, target_sr=16000)
+            except Exception as resample_err:
+                logger.debug(f"Librosa resample warning: {resample_err}")
+
+        lang = getattr(settings, "WHISPER_LANGUAGE", "ar")
+        device = WhisperProvider._shared_device or "cpu"
+        use_fp16 = (device == "cuda")
+
+        with WhisperProvider._shared_infer_lock:
+            result = self._model.transcribe(
+                audio_array,
+                language=lang,
+                fp16=use_fp16,
+                beam_size=1,
+                best_of=1,
+                temperature=0.0,
+                condition_on_previous_text=False,
+            )
+        return result.get("text", "").strip()
 
     async def transcribe(self, audio_bytes: bytes) -> str:
         """Transcribe raw audio bytes to text."""
@@ -100,8 +153,18 @@ class WhisperProvider(BaseSTTProvider):
         return await loop.run_in_executor(None, self._run_transcription, audio_bytes)
 
     def _run_transcription(self, audio_bytes: bytes) -> str:
+        """Decode audio in memory and transcribe without subprocess calls."""
         _ensure_ffmpeg()
 
+        # Try fast in-memory soundfile decoding first
+        try:
+            with io.BytesIO(audio_bytes) as bio:
+                audio_array, sample_rate = sf.read(bio)
+            return self.transcribe_array(audio_array, sample_rate)
+        except Exception:
+            pass
+
+        # Fallback to temp file path for exotic compressed formats
         tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -112,17 +175,17 @@ class WhisperProvider(BaseSTTProvider):
             device = WhisperProvider._shared_device or "cpu"
             use_fp16 = (device == "cuda")
 
-            result = self._model.transcribe(
-                tmp_path,
-                language=lang,
-                fp16=use_fp16,
-                beam_size=1,
-                best_of=1,
-                temperature=0.0,
-                condition_on_previous_text=False,
-            )
-            text = result.get("text", "").strip()
-            return text
+            with WhisperProvider._shared_infer_lock:
+                result = self._model.transcribe(
+                    tmp_path,
+                    language=lang,
+                    fp16=use_fp16,
+                    beam_size=1,
+                    best_of=1,
+                    temperature=0.0,
+                    condition_on_previous_text=False,
+                )
+            return result.get("text", "").strip()
         except Exception as e:
             logger.error(f"Whisper transcription error: {e}")
             raise RuntimeError(f"Whisper transcription failed: {e}")
