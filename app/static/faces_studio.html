@@ -1191,7 +1191,7 @@
             البصمات المسجلة: <span id="voice-enrolled-count">--</span>
           </span>
           <span style="font-size: 0.8rem; font-weight: 700; color: #fed7aa; background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.3); padding: 5px 12px; border-radius: 9999px;">
-            حد التطابق الافتراضي: <span id="voice-threshold-badge">86%</span>
+            حد التطابق الافتراضي: <span id="voice-threshold-badge">82%</span>
           </span>
         </div>
       </div>
@@ -1255,11 +1255,11 @@
         <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
           <div>
             <span style="font-size: 0.88rem; font-weight: 700; color: #e2e8f0;">حد قبول التطابق المخصص (Threshold):</span>
-            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 86% للتعرف الفائق الدقة ومنع التشابه الخاطئ)</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 82% للتعرف الفائق الدقة وعزل الأصوات الغريبة)</span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="range" id="voice-threshold-slider" min="0.60" max="0.96" step="0.01" value="0.86" oninput="document.getElementById('voice-thresh-val-display').innerText = Math.round(this.value * 100) + '%'" style="width: 140px;">
-            <span id="voice-thresh-val-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">86%</span>
+            <input type="range" id="voice-threshold-slider" min="0.60" max="0.96" step="0.01" value="0.82" oninput="document.getElementById('voice-thresh-val-display').innerText = Math.round(this.value * 100) + '%'" style="width: 140px;">
+            <span id="voice-thresh-val-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">82%</span>
           </div>
         </div>
 
@@ -1302,8 +1302,8 @@
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
             <div style="display: flex; align-items: center; gap: 10px;">
               <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">حد التطابق لفرز المتحدثين:</span>
-              <input type="range" id="diarize-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.86" oninput="document.getElementById('diarize-thresh-display').innerText = Math.round(this.value * 100) + '%'" style="width: 120px;">
-              <span id="diarize-thresh-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">86%</span>
+              <input type="range" id="diarize-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.82" oninput="document.getElementById('diarize-thresh-display').innerText = Math.round(this.value * 100) + '%'" style="width: 120px;">
+              <span id="diarize-thresh-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">82%</span>
             </div>
 
             <button type="button" id="btn-diarize-submit" onclick="handleDiarizeSubmit()" class="btn-submit" style="width: auto; padding: 10px 28px; background: linear-gradient(135deg, #8b5cf6, #3b82f6); box-shadow: 0 4px 18px rgba(139, 92, 246, 0.4);">
@@ -2206,7 +2206,7 @@
       `;
       box.scrollIntoView({ behavior: 'smooth' });
 
-      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.86;
+      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.82;
       const formData = new FormData();
       formData.append('file', wavBlob, 'recording.wav');
 
@@ -2350,7 +2350,7 @@
 
       try {
         const wavBlob = await convertBlobToWav16k(diarizeFileBlob);
-        const threshold = parseFloat(document.getElementById('diarize-thresh-slider').value) || 0.86;
+        const threshold = parseFloat(document.getElementById('diarize-thresh-slider').value) || 0.82;
         const transcriptText = (document.getElementById('diarize-transcripts-input').value || '').trim();
 
         const formData = new FormData();
