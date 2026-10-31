@@ -16,12 +16,14 @@ from app.api.v1.endpoints import (
     diagnostics,
     faces,
     phone_actions,
+    speakers,
 )
 
 api_router = APIRouter()
 
 api_router.include_router(auth_router)
 api_router.include_router(faces.router,          prefix="/faces",          tags=["faces"])
+api_router.include_router(speakers.router,       prefix="/speakers",       tags=["speakers"])
 api_router.include_router(devices.router,        prefix="/devices",        tags=["devices"])
 api_router.include_router(personalities.router,  prefix="/personalities",  tags=["personalities"])
 api_router.include_router(memories.router,       prefix="/memories",       tags=["memories"])

@@ -1,0 +1,223 @@
+"""
+Speaker Management & Voiceprint Verification / Identification API Endpoints.
+(benefits_section.docx §14.3, "التحقق بالصوت").
+
+Endpoints:
+  - POST /api/v1/speakers/identify: 1:N Speaker identification from recorded audio.
+      Returns speaker identity or "الصوت غير مسجل في السيستم" (Unknown Speaker).
+  - POST /api/v1/speakers/enroll: Enroll/register a new speaker voiceprint.
+  - GET  /api/v1/speakers: List all enrolled speakers.
+  - DELETE /api/v1/speakers/{speaker_name}: Delete a speaker voiceprint.
+  - GET  /api/v1/speakers/status: Get voice engine backend & enrollment statistics.
+"""
+
+import io
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.core.logger import get_logger
+from app.db.session import get_db
+from app.models.voiceprint import Voiceprint
+from app.services.voice_verification.speaker_service import (
+    AudioDecodeError,
+    VoiceprintError,
+    decode_audio,
+    get_speaker_service,
+)
+
+logger = get_logger(__name__)
+
+router = APIRouter()
+
+
+@router.post(
+    "/identify",
+    summary="Identify speaker from audio (1:N identification)",
+    description=(
+        "Identify who is speaking from recorded audio. "
+        "Returns the matching speaker name, match percentage, and status. "
+        "If unrecognized or score is below threshold, returns 'unknown' ('الصوت غير مسجل في السيستم')."
+    ),
+    status_code=status.HTTP_200_OK,
+)
+async def identify_speaker(
+    request: Request,
+    file: Optional[UploadFile] = File(None, description="WAV / Audio file to identify"),
+    threshold: Optional[float] = Query(None, description="Cosine similarity threshold override (default: from settings)"),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Identify speaker from multipart audio file or raw request body bytes."""
+    speaker_service = get_speaker_service()
+
+    audio_bytes: Optional[bytes] = None
+    if file is not None:
+        audio_bytes = await file.read()
+    else:
+        # Check raw body
+        body = await request.body()
+        if body and len(body) > 0:
+            audio_bytes = body
+
+    if not audio_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No audio data provided. Send a WAV file via form-data ('file') or raw body bytes.",
+        )
+
+    res = await speaker_service.identify(audio_bytes, threshold=threshold)
+    return res
+
+
+@router.post(
+    "/enroll",
+    summary="Enroll a speaker voiceprint",
+    description="Registers or updates a speaker's voiceprint from one or more audio sample clips.",
+    status_code=status.HTTP_200_OK,
+)
+async def enroll_speaker(
+    speaker_name: str = Form(..., description="Name or identifier of the speaker"),
+    file: Optional[UploadFile] = File(None, description="Primary audio recording sample (WAV)"),
+    files: Optional[List[UploadFile]] = File(None, description="Multiple audio sample clips for averaging"),
+    max_level: int = Form(2, description="Security clearance level (0: child, 1: guest, 2: standard, 3: admin)"),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Enroll a speaker into the database."""
+    clean_name = speaker_name.strip()
+    if not clean_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Speaker name cannot be empty.",
+        )
+
+    audio_samples: List[bytes] = []
+
+    if file is not None:
+        data = await file.read()
+        if data:
+            audio_samples.append(data)
+
+    if files:
+        for f in files:
+            data = await f.read()
+            if data:
+                audio_samples.append(data)
+
+    if not audio_samples:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one audio recording sample is required for voiceprint enrollment.",
+        )
+
+    speaker_service = get_speaker_service()
+    try:
+        voiceprint = await speaker_service.enroll(
+            db=db,
+            speaker_name=clean_name,
+            samples=audio_samples,
+            max_level=max_level,
+        )
+        await db.commit()
+    except VoiceprintError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"فشل تسجيل البصمة الصوتية: {e}",
+        )
+    except Exception as e:
+        await db.rollback()
+        logger.exception("Unexpected error enrolling speaker '%s': %s", clean_name, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"حدث خطأ داخلي أثناء تسجيل بصمة الصوت: {e}",
+        )
+
+    return {
+        "success": True,
+        "speaker_name": voiceprint.speaker_name,
+        "user_id": voiceprint.user_id,
+        "samples_count": voiceprint.samples_count,
+        "embedding_dim": voiceprint.embedding_dim,
+        "model_id": voiceprint.model_id,
+        "message": f"تم تسجيل بصمة الصوت للمتحدث '{clean_name}' بنجاح",
+    }
+
+
+@router.get(
+    "",
+    summary="List enrolled speakers",
+    description="Returns all enrolled speaker voiceprints stored in the database.",
+    status_code=status.HTTP_200_OK,
+)
+async def list_speakers(
+    db: AsyncSession = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """List all voiceprints."""
+    rows = (await db.execute(select(Voiceprint).order_by(Voiceprint.created_at.desc()))).scalars().all()
+    return [
+        {
+            "id": r.id,
+            "user_id": r.user_id,
+            "speaker_name": r.speaker_name,
+            "samples_count": r.samples_count,
+            "embedding_dim": r.embedding_dim,
+            "model_id": r.model_id,
+            "max_level": r.max_level,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in rows
+    ]
+
+
+@router.delete(
+    "/{speaker_name}",
+    summary="Delete a speaker voiceprint",
+    description="Deletes all voiceprints associated with the specified speaker name.",
+    status_code=status.HTTP_200_OK,
+)
+async def delete_speaker(
+    speaker_name: str,
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Delete speaker voiceprint by name."""
+    clean_name = speaker_name.strip()
+    speaker_service = get_speaker_service()
+    deleted = await speaker_service.delete_by_name(db, clean_name)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"المتحدث '{clean_name}' غير موجود في النظام.",
+        )
+    await db.commit()
+    return {
+        "success": True,
+        "speaker_name": clean_name,
+        "message": f"تم حذف بصمة الصوت للمتحدث '{clean_name}' بنجاح.",
+    }
+
+
+@router.get(
+    "/status",
+    summary="Voiceprint engine status",
+    description="Returns status of the speaker recognition engine, active backend, and count of enrolled speakers.",
+    status_code=status.HTTP_200_OK,
+)
+async def speaker_engine_status(
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """System voiceprint status."""
+    speaker_service = get_speaker_service()
+    rows = (await db.execute(select(Voiceprint))).scalars().all()
+    return {
+        "backend_model": speaker_service._backend.model_id,
+        "backend_available": speaker_service._backend.available(),
+        "enrolled_count": len(rows),
+        "threshold_l1": settings.SPEAKER_THRESHOLD_L1,
+        "threshold_l2": settings.SPEAKER_THRESHOLD_L2,
+        "sample_rate": settings.SPEAKER_SAMPLE_RATE,
+        "verification_enabled": settings.SPEAKER_VERIFICATION_ENABLED,
+    }
