@@ -1269,6 +1269,55 @@
         </div>
       </div>
 
+      <!-- Multi-Speaker Diarization & Language Detection Card -->
+      <div class="card" style="margin-top: 2rem;">
+        <div class="card-title">
+          <span>👥</span>
+          <span>تحليل المتحدثين المتعددين وتتبع اللغات (Multi-Speaker Diarization & Languages)</span>
+        </div>
+        <div class="card-desc">
+          تحليل المحادثات والتسجيلات الجماعية: <strong>1. كشف كم شخص تحدث</strong> في التسجيل، <strong>2. تحديد لغة كل مقطع ومتحدث</strong> (العربية، الإنجليزية، الفرنسية...)، و<strong>3. رصد ما إذا كان أي شخص قد تحدث بأكثر من لغة وكشف هويته فورياً</strong>.
+        </div>
+
+        <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.5rem;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 1.25rem;">
+            <!-- File Upload -->
+            <div>
+              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📁 اختيار ملف التسجيل الصوتي للمحادثة:</label>
+              <div class="dropzone" id="diarize-dropzone" onclick="document.getElementById('diarize-file-input').click()" style="padding: 1.25rem 1rem;">
+                <div class="dropzone-icon" style="font-size: 1.6rem;">👥</div>
+                <div class="dropzone-title" style="font-size: 0.95rem;">اضغط لاختيار ملف محادثة صوتية (WAV / MP3 / M4A)</div>
+                <input type="file" id="diarize-file-input" class="file-input" accept="audio/*" onchange="handleDiarizeFileSelected(this)">
+                <div id="diarize-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
+              </div>
+            </div>
+
+            <!-- Optional Transcripts or Options -->
+            <div>
+              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📝 نصوص الحوار المكتوبة (اختياري / Transcripts):</label>
+              <textarea id="diarize-transcripts-input" class="form-control" rows="4" style="font-size: 0.82rem; font-family: monospace; background: #0f172a;" placeholder="اختياري: يمكنك كتابة نصوص الجمل أو لصق JSON من Whisper، أو اترك الحقل فارغاً ليعتمد المحرك على التحليل الصوتي التلقائي (Acoustic Phonetics)."></textarea>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">حد التطابق لفرز المتحدثين:</span>
+              <input type="range" id="diarize-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.86" oninput="document.getElementById('diarize-thresh-display').innerText = Math.round(this.value * 100) + '%'" style="width: 120px;">
+              <span id="diarize-thresh-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">86%</span>
+            </div>
+
+            <button type="button" id="btn-diarize-submit" onclick="handleDiarizeSubmit()" class="btn-submit" style="width: auto; padding: 10px 28px; background: linear-gradient(135deg, #8b5cf6, #3b82f6); box-shadow: 0 4px 18px rgba(139, 92, 246, 0.4);">
+              <span>👥 بدء تحليل المتحدثين واللغات</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Diarization Results Container -->
+        <div id="diarize-result-box" style="display: none; animation: fadeIn 0.4s ease forwards;">
+          <!-- Populated via JS -->
+        </div>
+      </div>
+
       <!-- Voiceprint Enrollment Card -->
       <div class="card" style="margin-top: 2rem;">
         <div class="card-title">
@@ -2266,6 +2315,247 @@
         `;
       }
       box.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ── Multi-Speaker Diarization & Language Analysis Logic ────────────
+    let diarizeFileBlob = null;
+
+    function handleDiarizeFileSelected(input) {
+      if (!input.files || !input.files[0]) return;
+      diarizeFileBlob = input.files[0];
+      const badge = document.getElementById('diarize-selected-file-badge');
+      badge.innerText = `🎵 ${diarizeFileBlob.name} (${(diarizeFileBlob.size / 1024).toFixed(1)} KB)`;
+      badge.style.display = 'inline-block';
+    }
+
+    async function handleDiarizeSubmit() {
+      if (!diarizeFileBlob) {
+        showToast('يرجى اختيار ملف صوتي لتحليله أولاً!');
+        return;
+      }
+
+      const box = document.getElementById('diarize-result-box');
+      box.style.display = 'block';
+      box.innerHTML = `
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center;">
+          <div class="spinner" style="margin: 0 auto 1rem;"></div>
+          <h4 style="font-size: 1.1rem; color: #fff; margin-bottom: 0.3rem;">جارٍ تقسيم المقاطع وتحليل المتحدثين وكشف اللغات...</h4>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">يقوم المحرك بفرز كل متحدث وتتبع تعدد اللغات للشخص الواحد</p>
+        </div>
+      `;
+      box.scrollIntoView({ behavior: 'smooth' });
+
+      const btn = document.getElementById('btn-diarize-submit');
+      btn.disabled = true;
+
+      try {
+        const wavBlob = await convertBlobToWav16k(diarizeFileBlob);
+        const threshold = parseFloat(document.getElementById('diarize-thresh-slider').value) || 0.86;
+        const transcriptText = (document.getElementById('diarize-transcripts-input').value || '').trim();
+
+        const formData = new FormData();
+        formData.append('file', wavBlob, 'diarize_recording.wav');
+        if (transcriptText) {
+          // If user provided raw text or JSON array
+          let payloadJson = transcriptText;
+          if (!transcriptText.startsWith('[')) {
+            payloadJson = JSON.stringify([{ turn_index: 1, text: transcriptText }]);
+          }
+          formData.append('transcripts_json', payloadJson);
+        }
+
+        const res = await fetch(`/api/v1/speakers/diarize?threshold=${threshold}`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'فشل تحليل الصوت');
+        }
+
+        const data = await res.json();
+        renderDiarizeResult(data);
+      } catch (err) {
+        box.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 1.5rem; text-align: center;">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">⚠️</div>
+            <h4 style="color: #f87171; font-weight: 800;">حدث خطأ أثناء تحليل المتحدثين</h4>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">${err.message}</p>
+          </div>
+        `;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function getLanguageFlagBadge(langName) {
+      let flag = '🌐';
+      let color = '#38bdf8';
+      let bg = 'rgba(56, 189, 248, 0.12)';
+      let border = 'rgba(56, 189, 248, 0.3)';
+
+      if (langName.includes('العربية') || langName.includes('Arabic')) {
+        flag = '🇪🇬';
+        color = '#34d399';
+        bg = 'rgba(52, 211, 153, 0.12)';
+        border = 'rgba(52, 211, 153, 0.35)';
+      } else if (langName.includes('الإنجليزية') || langName.includes('English')) {
+        flag = '🇬🇧';
+        color = '#60a5fa';
+        bg = 'rgba(96, 165, 250, 0.12)';
+        border = 'rgba(96, 165, 250, 0.35)';
+      } else if (langName.includes('الفرنسية') || langName.includes('French')) {
+        flag = '🇫🇷';
+        color = '#c084fc';
+        bg = 'rgba(192, 132, 252, 0.12)';
+        border = 'rgba(192, 132, 252, 0.35)';
+      } else if (langName.includes('الألمانية') || langName.includes('German')) {
+        flag = '🇩🇪';
+        color = '#fbbf24';
+        bg = 'rgba(251, 191, 36, 0.12)';
+        border = 'rgba(251, 191, 36, 0.35)';
+      }
+
+      return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 9999px; font-size: 0.78rem; font-weight: 700; color: ${color}; background: ${bg}; border: 1px solid ${border};">${flag} ${langName}</span>`;
+    }
+
+    function renderDiarizeResult(data) {
+      const box = document.getElementById('diarize-result-box');
+      const isMultiPresent = data.multilingual_speakers && data.multilingual_speakers.length > 0;
+
+      // 1. KPI Cards
+      const kpisHtml = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">👥 إجمالي المتحدثين (Count)</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: #a5f3fc; font-family: monospace;">${data.total_speakers_count} شخص</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">🌐 اللغات المرصودة</div>
+            <div style="font-size: 1.1rem; font-weight: 800; color: #6ee7b7; margin-top: 6px;">${data.all_detected_languages.length > 0 ? data.all_detected_languages.map(l => l.split(' ')[0]).join(' + ') : 'غير محدد'}</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">⏱️ إجمالي مدة التسجيل</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: #fed7aa; font-family: monospace;">${data.audio_duration_seconds}s</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid ${isMultiPresent ? 'rgba(239, 68, 68, 0.5)' : 'var(--border)'}; border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">🗣️ متحدثون بعدة لغات</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: ${isMultiPresent ? '#f87171' : '#a7f3d0'}; font-family: monospace;">
+              ${data.multilingual_speakers.length}
+            </div>
+          </div>
+        </div>
+      `;
+
+      // 2. Multilingual Alert Banner ("لو واحد اتكلم بكذا لغة يقولي مين")
+      let multiBannerHtml = '';
+      if (isMultiPresent) {
+        multiBannerHtml = `
+          <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.18), rgba(245, 158, 11, 0.18)); border: 2px solid rgba(239, 68, 68, 0.55); border-radius: var(--radius-md); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 0 25px rgba(239, 68, 68, 0.25);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 0.6rem;">
+              <span style="font-size: 1.5rem;">⚠️</span>
+              <h4 style="font-size: 1.1rem; font-weight: 900; color: #fca5a5;">رصد متحدث(ين) تحدثوا بأكثر من لغة واحدة:</h4>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${data.multilingual_speakers.map(m => `
+                <div style="background: rgba(0, 0, 0, 0.35); padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.3); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                  <div style="font-size: 0.95rem; color: #fff; font-weight: 700;">
+                    👤 <strong>${m.speaker_name}</strong>: ${m.message}
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    ${m.languages.map(l => getLanguageFlagBadge(l)).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else {
+        multiBannerHtml = `
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); padding: 0.9rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px;">
+            <span style="color: #34d399; font-size: 1.2rem;">✓</span>
+            <span style="color: #a7f3d0; font-size: 0.9rem; font-weight: 700;">كل متحدث التزم بلغة واحدة طوال التسجيل، ولم يُرصد أي تغيير في اللغات للمتحدث الواحد.</span>
+          </div>
+        `;
+      }
+
+      // 3. Speakers Summary Cards
+      const speakersCardsHtml = `
+        <div style="margin-bottom: 1.5rem;">
+          <h4 style="font-size: 1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.75rem;">قائمة المتحدثين المرصودين في التسجيل:</h4>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+            ${data.speakers.map(spk => `
+              <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid ${spk.is_multilingual ? 'rgba(239, 68, 68, 0.4)' : (spk.is_enrolled ? 'rgba(16, 185, 129, 0.4)' : 'var(--border)')}; border-radius: var(--radius-md); padding: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                  <div style="font-weight: 800; font-size: 1.05rem; color: #fff;">
+                    ${spk.name}
+                  </div>
+                  <span style="font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 9999px; ${spk.is_enrolled ? 'color: #34d399; background: rgba(52, 211, 153, 0.15); border: 1px solid rgba(52, 211, 153, 0.3);' : 'color: #cbd5e1; background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.3);'}">
+                    ${spk.is_enrolled ? '✓ مسجل بالسيستم' : 'صوت غير مسجل'}
+                  </span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: #94a3b8;">
+                  <div>اللغات المستخدمة: <span style="display: inline-flex; gap: 4px; flex-wrap: wrap; margin-top: 4px;">${spk.languages.map(l => getLanguageFlagBadge(l)).join('')}</span></div>
+                  <div>عدد مقاطع الكلام: <strong style="color: #fff;">${spk.turns_count}</strong> مقطع</div>
+                  <div>إجمالي وقت الحديث: <strong style="color: #fff;">${spk.total_speaking_seconds}</strong> ثانية</div>
+                  ${spk.is_multilingual ? '<div style="color: #fca5a5; font-weight: 700; margin-top: 4px;">⚠️ متحدث متعدد اللغات (Multilingual Speaker)</div>' : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      // 4. Timeline Breakdown Table
+      const timelineHtml = `
+        <div>
+          <h4 style="font-size: 1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.75rem;">الجدول الزمني لمقاطع الحديث (Speech Turns Timeline):</h4>
+          <div style="overflow-x: auto; background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md);">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: right;">
+              <thead>
+                <tr style="background: rgba(15, 23, 42, 0.9); border-bottom: 1px solid var(--border); color: #94a3b8;">
+                  <th style="padding: 10px 14px;">المقطع</th>
+                  <th style="padding: 10px 14px;">التوقيت الزمني</th>
+                  <th style="padding: 10px 14px;">المتحدث</th>
+                  <th style="padding: 10px 14px;">اللغة المرصودة</th>
+                  <th style="padding: 10px 14px;">التشابه</th>
+                  <th style="padding: 10px 14px;">النص / الملاحظة</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${data.timeline_segments.map(seg => `
+                  <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
+                    <td style="padding: 10px 14px; font-weight: 800; color: var(--accent-cyan);">#${seg.segment_index}</td>
+                    <td style="padding: 10px 14px; font-family: monospace; color: #cbd5e1;">${seg.start_time}s - ${seg.end_time}s (${seg.duration}s)</td>
+                    <td style="padding: 10px 14px;">
+                      <span style="font-weight: 700; color: ${seg.is_enrolled ? '#6ee7b7' : '#e2e8f0'};">
+                        ${seg.speaker}
+                      </span>
+                    </td>
+                    <td style="padding: 10px 14px;">${getLanguageFlagBadge(seg.language)}</td>
+                    <td style="padding: 10px 14px; font-family: monospace; color: ${seg.is_enrolled ? '#34d399' : '#94a3b8'};">
+                      ${seg.similarity > 0 ? seg.similarity : '--'}
+                    </td>
+                    <td style="padding: 10px 14px; color: #94a3b8; font-style: italic;">
+                      ${seg.transcript ? seg.transcript : 'تحليل فيزيائي حيوي (Acoustic)'}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      box.innerHTML = `
+        <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.75rem;">
+          ${kpisHtml}
+          ${multiBannerHtml}
+          ${speakersCardsHtml}
+          ${timelineHtml}
+        </div>
+      `;
     }
 
     function handleEnrollFileSelected(input) {

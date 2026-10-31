@@ -73,6 +73,62 @@ async def identify_speaker(
 
 
 @router.post(
+    "/diarize",
+    summary="Multi-speaker diarization, count, language detection & multilingual tracking",
+    description=(
+        "Analyzes an audio file to determine: "
+        "1. How many people spoke in total (speaker diarization & count). "
+        "2. The spoken language of each speech turn (Arabic, English, French, etc.). "
+        "3. Identifies if any speaker switched between multiple languages."
+    ),
+    status_code=status.HTTP_200_OK,
+)
+async def diarize_speakers(
+    request: Request,
+    file: Optional[UploadFile] = File(None, description="Audio file to analyze"),
+    threshold: Optional[float] = Query(None, description="Cosine similarity threshold override (default: 0.86)"),
+    transcripts_json: Optional[str] = Form(None, description="Optional JSON list of transcript segments with timestamps and text"),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Diarize speakers and detect languages from audio file or raw bytes."""
+    speaker_service = get_speaker_service()
+
+    audio_bytes: Optional[bytes] = None
+    if file is not None:
+        audio_bytes = await file.read()
+    else:
+        body = await request.body()
+        if body and len(body) > 0:
+            audio_bytes = body
+
+    if not audio_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No audio data provided. Send an audio file via form-data ('file') or raw body bytes.",
+        )
+
+    transcripts_list = None
+    if transcripts_json:
+        try:
+            import json
+            transcripts_list = json.loads(transcripts_json)
+        except Exception:
+            pass
+
+    res = await speaker_service.diarize_and_identify(
+        audio=audio_bytes,
+        threshold=threshold,
+        transcripts=transcripts_list,
+    )
+    if not res.get("success", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=res.get("error", "فشل تحليل المتحدثين في الصوت."),
+        )
+    return res
+
+
+@router.post(
     "/enroll",
     summary="Enroll a speaker voiceprint",
     description="Registers or updates a speaker's voiceprint from one or more audio sample clips.",
