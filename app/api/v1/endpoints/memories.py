@@ -202,6 +202,7 @@ async def search_memories(
     top_k: int = Query(5, ge=1, le=20),
     detailed: bool = Query(False, description="Whether to include similarity score and metadata"),
     _u: str | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
 ):
     if detailed:
         results = await _rag.retrieve_detailed(
@@ -209,6 +210,7 @@ async def search_memories(
             personality_id=personality_id,
             top_k=top_k,
             person_name=person_name,
+            db=db,
         )
     else:
         results = await _rag.retrieve(
@@ -216,6 +218,7 @@ async def search_memories(
             personality_id=personality_id,
             top_k=top_k,
             person_name=person_name,
+            db=db,
         )
     return {"query": q, "person_name": person_name, "results": results}
 

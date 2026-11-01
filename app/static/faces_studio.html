@@ -820,6 +820,10 @@
         <span>👤</span>
         <span>إدارة الأشخاص المسجلين</span>
       </button>
+      <button class="tab-btn" onclick="switchTab('voice-tab')">
+        <span>🎙️</span>
+        <span>بصمة الصوت والتعرف على المتحدث (Speaker VoiceID)</span>
+      </button>
     </div>
 
     <!-- TAB 0: Live Webcam Stream (بث كاميرا اللاب المباشر) -->
@@ -1167,6 +1171,221 @@
         </div>
       </div>
     </div>
+    <!-- TAB 4: Speaker Voice Identification (بصمة الصوت والتعرف على المتحدث) -->
+    <div id="voice-tab" class="tab-content" style="display:none;">
+      <!-- Voice Engine Telemetry Card -->
+      <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem 1.75rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 40px; height: 40px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #10b981, #06b6d4); display: flex; align-items: center; justify-content: center; font-size: 20px;">🎙️</div>
+          <div>
+            <h3 style="font-size: 1.05rem; font-weight: 800; color: #fff;">محرك بصمة الصوت الحيوي (Biometric VoiceID Engine)</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted);" id="voice-backend-desc">نموذج التشفير الصوتي 192-D (MFCCs + LPC Formants + Pitch Harmonics)</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <span class="badge-status" id="voice-engine-pill">
+            <span class="status-dot"></span>
+            <span id="voice-engine-status-text">جاهز للتعرف</span>
+          </span>
+          <span style="font-size: 0.8rem; font-weight: 700; color: #a5f3fc; background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.3); padding: 5px 12px; border-radius: 9999px;">
+            البصمات المسجلة: <span id="voice-enrolled-count">--</span>
+          </span>
+          <span style="font-size: 0.8rem; font-weight: 700; color: #fed7aa; background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.3); padding: 5px 12px; border-radius: 9999px;">
+            حد التطابق الافتراضي: <span id="voice-threshold-badge">82%</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Main Identification Card -->
+      <div class="card">
+        <div class="card-title">
+          <span>🎙️</span>
+          <span>فحص والتعرف على هوية المتحدث (1:N Voice Identification)</span>
+        </div>
+        <div class="card-desc">
+          تحدث مباشرة عبر المايك أو ارفع تسجيلاً صوتياً (WAV/MP3/M4A). سيقوم محرك البصمة الصوتية بتحليل الترددات الحيوية وطبقات الحنجرة وتحديد هوية صاحب الصوت ونسبة تطابقه فورياً، أو إشعارك بأن الصوت غير مسجل في السيستم.
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+          <!-- Option 1: Live Microphone Recording -->
+          <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: space-between;">
+            <div>
+              <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🎙️</div>
+              <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem;">التسجيل المباشر من المايك</h4>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.25rem;">اضغط على الزر وتحدث لمدة 2 - 5 ثوانٍ، ثم أوقف التسجيل لفحص الصوت لحظياً.</p>
+            </div>
+
+            <!-- Recording HUD / Timer -->
+            <div id="voice-rec-hud" style="display: none; align-items: center; gap: 10px; margin-bottom: 1rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); padding: 6px 16px; border-radius: 9999px;">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444; animation: pulse 1s infinite;"></span>
+              <span style="font-size: 0.9rem; font-weight: 800; color: #fca5a5; font-family: monospace;" id="voice-rec-timer">00:00</span>
+              <span style="font-size: 0.75rem; color: #fca5a5;">(جارٍ تسجيل الصوت...)</span>
+            </div>
+
+            <div style="width: 100%;">
+              <button type="button" id="btn-mic-toggle" onclick="toggleVoiceRecording('identify')" class="btn-submit" style="background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 18px rgba(239, 68, 68, 0.4);">
+                <span id="btn-mic-icon">🔴</span>
+                <span id="btn-mic-text">بدء تسجيل الصوت وفحصه</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Option 2: Upload Audio File -->
+          <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div style="font-size: 2.5rem; text-align: center; margin-bottom: 0.5rem;">📁</div>
+              <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem; text-align: center;">رفع ملف صوتي للفحص</h4>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; text-align: center;">يدعم ملفات WAV, MP3, M4A, OGG, WebM.</p>
+            </div>
+
+            <div class="dropzone" id="voice-file-dropzone" onclick="document.getElementById('voice-file-input').click()" style="padding: 1.25rem 1rem; margin-bottom: 1rem;">
+              <div class="dropzone-icon" style="font-size: 1.6rem;">🎵</div>
+              <div class="dropzone-title" style="font-size: 0.95rem;">اضغط لاختيار ملف صوتي</div>
+              <input type="file" id="voice-file-input" class="file-input" accept="audio/*" onchange="handleVoiceFileSelected(this)">
+              <div id="voice-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
+            </div>
+
+            <button type="button" id="btn-identify-file" onclick="handleIdentifyFileSubmit()" class="btn-submit" style="background: linear-gradient(135deg, #06b6d4, #0284c7); box-shadow: 0 4px 18px rgba(6, 182, 212, 0.35);">
+              <span>⚡ فحص الملف الصوتي المرفوع</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Threshold Setting -->
+        <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <span style="font-size: 0.88rem; font-weight: 700; color: #e2e8f0;">حد قبول التطابق المخصص (Threshold):</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 82% للتعرف الفائق الدقة وعزل الأصوات الغريبة)</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="range" id="voice-threshold-slider" min="0.60" max="0.96" step="0.01" value="0.82" oninput="document.getElementById('voice-thresh-val-display').innerText = Math.round(this.value * 100) + '%'" style="width: 140px;">
+            <span id="voice-thresh-val-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">82%</span>
+          </div>
+        </div>
+
+        <!-- Identification Result Box -->
+        <div id="voice-result-box" style="display: none; animation: fadeIn 0.4s ease forwards;">
+          <!-- Dynamically populated via JS -->
+        </div>
+      </div>
+
+      <!-- Multi-Speaker Diarization & Language Detection Card -->
+      <div class="card" style="margin-top: 2rem;">
+        <div class="card-title">
+          <span>👥</span>
+          <span>تحليل المتحدثين المتعددين وتتبع اللغات (Multi-Speaker Diarization & Languages)</span>
+        </div>
+        <div class="card-desc">
+          تحليل المحادثات والتسجيلات الجماعية: <strong>1. كشف كم شخص تحدث</strong> في التسجيل، <strong>2. تحديد لغة كل مقطع ومتحدث</strong> (العربية، الإنجليزية، الفرنسية...)، و<strong>3. رصد ما إذا كان أي شخص قد تحدث بأكثر من لغة وكشف هويته فورياً</strong>.
+        </div>
+
+        <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.5rem;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 1.25rem;">
+            <!-- File Upload -->
+            <div>
+              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📁 اختيار ملف التسجيل الصوتي للمحادثة:</label>
+              <div class="dropzone" id="diarize-dropzone" onclick="document.getElementById('diarize-file-input').click()" style="padding: 1.25rem 1rem;">
+                <div class="dropzone-icon" style="font-size: 1.6rem;">👥</div>
+                <div class="dropzone-title" style="font-size: 0.95rem;">اضغط لاختيار ملف محادثة صوتية (WAV / MP3 / M4A)</div>
+                <input type="file" id="diarize-file-input" class="file-input" accept="audio/*" onchange="handleDiarizeFileSelected(this)">
+                <div id="diarize-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
+              </div>
+            </div>
+
+            <!-- Optional Transcripts or Options -->
+            <div>
+              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📝 نصوص الحوار المكتوبة (اختياري / Transcripts):</label>
+              <textarea id="diarize-transcripts-input" class="form-control" rows="4" style="font-size: 0.82rem; font-family: monospace; background: #0f172a;" placeholder="اختياري: يمكنك كتابة نصوص الجمل أو لصق JSON من Whisper، أو اترك الحقل فارغاً ليعتمد المحرك على التحليل الصوتي التلقائي (Acoustic Phonetics)."></textarea>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">حد التطابق لفرز المتحدثين:</span>
+              <input type="range" id="diarize-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.82" oninput="document.getElementById('diarize-thresh-display').innerText = Math.round(this.value * 100) + '%'" style="width: 120px;">
+              <span id="diarize-thresh-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">82%</span>
+            </div>
+
+            <button type="button" id="btn-diarize-submit" onclick="handleDiarizeSubmit()" class="btn-submit" style="width: auto; padding: 10px 28px; background: linear-gradient(135deg, #8b5cf6, #3b82f6); box-shadow: 0 4px 18px rgba(139, 92, 246, 0.4);">
+              <span>👥 بدء تحليل المتحدثين واللغات</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Diarization Results Container -->
+        <div id="diarize-result-box" style="display: none; animation: fadeIn 0.4s ease forwards;">
+          <!-- Populated via JS -->
+        </div>
+      </div>
+
+      <!-- Voiceprint Enrollment Card -->
+      <div class="card" style="margin-top: 2rem;">
+        <div class="card-title">
+          <span>➕</span>
+          <span>تسجيل بصمة صوت جديدة (Voiceprint Enrollment)</span>
+        </div>
+        <div class="card-desc">
+          قم بتسجيل بصمة صوت جديدة لشخص ما ليتمكن النظام من التعرف على صوته آلياً في أي وقت.
+        </div>
+
+        <form id="voice-enroll-form" onsubmit="handleVoiceEnrollSubmit(event)">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="enroll-speaker-name" style="font-weight: 700; color: #e2e8f0;">اسم المتحدث بالكامل أو المعرف:</label>
+              <input type="text" id="enroll-speaker-name" class="form-control" placeholder="مثال: أحمد / ahmed" required>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="enroll-speaker-level" style="font-weight: 700; color: #e2e8f0;">مستوى الأمان والصلاحية:</label>
+              <select id="enroll-speaker-level" class="form-control" style="background: #0f172a;">
+                <option value="2" selected>المستوى القياسي (Level 2 - Standard User)</option>
+                <option value="3">المستوى الإداري (Level 3 - System Owner/Admin)</option>
+                <option value="1">مستوى الضيف (Level 1 - Guest/Restricted)</option>
+                <option value="0">مستوى الأطفال (Level 0 - Child Safe)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Audio Input for Enrollment -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+            <!-- Mic for enrollment -->
+            <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem; text-align: center;">
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 1: تسجيل صوتي مباشر للتسجيل</p>
+              <button type="button" id="btn-enroll-mic" onclick="toggleVoiceRecording('enroll')" class="btn-submit" style="width: auto; padding: 8px 20px; font-size: 0.95rem; margin: 0 auto; background: linear-gradient(135deg, #10b981, #059669);">
+                <span id="btn-enroll-mic-icon">🎙️</span>
+                <span id="btn-enroll-mic-text">تسجيل عينة الصوت</span>
+              </button>
+              <div id="enroll-rec-timer-badge" style="display:none; margin-top: 8px; font-size: 0.8rem; font-weight: 700; color: #86efac;">
+                تم تسجيل: <span id="enroll-rec-sec">0.0</span> ثانية
+              </div>
+            </div>
+
+            <!-- File for enrollment -->
+            <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 2: رفع ملف صوتي جاهز (WAV/MP3)</p>
+              <input type="file" id="enroll-file-input" class="form-control" accept="audio/*" onchange="handleEnrollFileSelected(this)">
+            </div>
+          </div>
+
+          <button type="submit" id="btn-submit-enroll" class="btn-submit" style="background: linear-gradient(135deg, #6366f1, #06b6d4);">
+            <span>➕ حفظ وتثبيت بصمة الصوت في قاعدة البيانات</span>
+          </button>
+        </form>
+
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 2rem 0;">
+
+        <!-- Enrolled Voiceprints List -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h3 style="font-size: 1.15rem; font-weight: 800; color: #fff;">البصمات الصوتية المسجلة حالياً في النظام:</h3>
+          <button onclick="loadEnrolledSpeakers()" class="btn-docs">🔄 تحديث القائمة</button>
+        </div>
+
+        <div id="speakers-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+          <!-- Populated via JS -->
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <div id="toast"></div>
@@ -1184,6 +1403,10 @@
 
       if (tabId === 'profiles-tab') {
         loadRegisteredProfiles();
+      }
+      if (tabId === 'voice-tab') {
+        loadEnrolledSpeakers();
+        loadVoiceEngineStatus();
       }
     }
 
@@ -1801,6 +2024,736 @@
         btn.innerHTML = originalText;
       }
     }
+  
+    // ─────────────────────────────────────────────────────────────
+    // Voiceprint & Speaker Verification (التحقق بالصوت)
+    // ─────────────────────────────────────────────────────────────
+    let voiceMediaRecorder = null;
+    let voiceAudioChunks = [];
+    let voiceRecordStartTime = 0;
+    let voiceRecordTimer = null;
+    let voiceRecordMode = null; // 'identify' or 'enroll'
+    let enrollWavBlob = null;
+    let identifyFileBlob = null;
+
+    // Helper: Convert any AudioBuffer to a 16kHz 16-bit mono PCM WAV blob
+    async function audioBufferToWav16k(audioBuffer) {
+      const targetSr = 16000;
+      const offlineCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * targetSr), targetSr);
+      const source = offlineCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(offlineCtx.destination);
+      source.start(0);
+
+      const rendered = await offlineCtx.startRendering();
+      const samples = rendered.getChannelData(0);
+      const dataLen = samples.length * 2;
+      const buffer = new ArrayBuffer(44 + dataLen);
+      const view = new DataView(buffer);
+
+      function writeStr(offset, str) {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      }
+
+      writeStr(0, 'RIFF');
+      view.setUint32(4, 36 + dataLen, true);
+      writeStr(8, 'WAVE');
+      writeStr(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // Mono
+      view.setUint32(24, targetSr, true);
+      view.setUint32(28, targetSr * 2, true);
+      view.setUint16(32, 2, true); // Block align
+      view.setUint16(34, 16, true); // Bits per sample
+      writeStr(36, 'data');
+      view.setUint32(40, dataLen, true);
+
+      let offset = 44;
+      for (let i = 0; i < samples.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      return new Blob([view], { type: 'audio/wav' });
+    }
+
+    async function convertBlobToWav16k(blob) {
+      const arrayBuffer = await blob.arrayBuffer();
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      return await audioBufferToWav16k(audioBuffer);
+    }
+
+    // Toggle Microphone Recording
+    async function toggleVoiceRecording(mode) {
+      if (voiceMediaRecorder && voiceMediaRecorder.state === 'recording') {
+        // Stop recording
+        voiceMediaRecorder.stop();
+        return;
+      }
+
+      voiceRecordMode = mode;
+      voiceAudioChunks = [];
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        voiceMediaRecorder = new MediaRecorder(stream);
+        voiceMediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) voiceAudioChunks.push(e.data);
+        };
+
+        voiceMediaRecorder.onstop = async () => {
+          clearInterval(voiceRecordTimer);
+          stream.getTracks().forEach(t => t.stop());
+
+          if (voiceRecordMode === 'identify') {
+            document.getElementById('voice-rec-hud').style.display = 'none';
+            document.getElementById('btn-mic-text').innerText = 'بدء تسجيل الصوت وفحصه';
+            document.getElementById('btn-mic-icon').innerText = '🔴';
+            document.getElementById('btn-mic-toggle').style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+
+            const rawBlob = new Blob(voiceAudioChunks, { type: voiceMediaRecorder.mimeType || 'audio/webm' });
+            showToast('جارٍ معالجة الصوت واستخراج البصمة (16kHz WAV)...');
+            try {
+              const wavBlob = await convertBlobToWav16k(rawBlob);
+              await executeVoiceIdentification(wavBlob);
+            } catch (err) {
+              showToast('خطأ أثناء فك ترميز الصوت: ' + err.message);
+            }
+          } else if (voiceRecordMode === 'enroll') {
+            document.getElementById('btn-enroll-mic-text').innerText = 'تسجيل عينة الصوت';
+            document.getElementById('btn-enroll-mic-icon').innerText = '🎙️';
+            document.getElementById('btn-enroll-mic').style.background = 'linear-gradient(135deg, #10b981, #059669)';
+
+            const rawBlob = new Blob(voiceAudioChunks, { type: voiceMediaRecorder.mimeType || 'audio/webm' });
+            showToast('تم التقاط عينة الصوت، جارٍ التحويل...');
+            try {
+              enrollWavBlob = await convertBlobToWav16k(rawBlob);
+              const badge = document.getElementById('enroll-rec-timer-badge');
+              badge.style.display = 'block';
+              showToast('عينة الصوت جاهزة للتسجيل!');
+            } catch (err) {
+              showToast('خطأ أثناء تحويل الصوت: ' + err.message);
+            }
+          }
+        };
+
+        voiceMediaRecorder.start();
+        voiceRecordStartTime = Date.now();
+
+        if (mode === 'identify') {
+          document.getElementById('voice-rec-hud').style.display = 'flex';
+          document.getElementById('btn-mic-text').innerText = '⏹ إيقاف التسجيل وفحص الهوية الآن';
+          document.getElementById('btn-mic-icon').innerText = '⏹';
+          document.getElementById('btn-mic-toggle').style.background = 'linear-gradient(135deg, #dc2626, #991b1b)';
+
+          voiceRecordTimer = setInterval(() => {
+            const sec = Math.floor((Date.now() - voiceRecordStartTime) / 1000);
+            const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+            const ss = String(sec % 60).padStart(2, '0');
+            document.getElementById('voice-rec-timer').innerText = `${mm}:${ss}`;
+          }, 500);
+        } else if (mode === 'enroll') {
+          document.getElementById('btn-enroll-mic-text').innerText = '⏹ إيقاف التسجيل';
+          document.getElementById('btn-enroll-mic-icon').innerText = '⏹';
+          document.getElementById('btn-enroll-mic').style.background = 'linear-gradient(135deg, #dc2626, #991b1b)';
+          const badge = document.getElementById('enroll-rec-timer-badge');
+          badge.style.display = 'block';
+
+          voiceRecordTimer = setInterval(() => {
+            const sec = ((Date.now() - voiceRecordStartTime) / 1000).toFixed(1);
+            document.getElementById('enroll-rec-sec').innerText = sec;
+          }, 200);
+        }
+      } catch (err) {
+        showToast('تعذر الوصول إلى الميكروفون: ' + err.message);
+      }
+    }
+
+    function handleVoiceFileSelected(input) {
+      if (!input.files || !input.files[0]) return;
+      const file = input.files[0];
+      identifyFileBlob = file;
+      const badge = document.getElementById('voice-selected-file-badge');
+      badge.innerText = `الملف المختار: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      badge.style.display = 'inline-block';
+    }
+
+    async function handleIdentifyFileSubmit() {
+      if (!identifyFileBlob) {
+        showToast('يرجى اختيار ملف صوتي أولاً أو تسجيل الصوت من المايك!');
+        return;
+      }
+      showToast('جارٍ قراءة وفك ترميز الملف الصوتي...');
+      try {
+        const wavBlob = await convertBlobToWav16k(identifyFileBlob);
+        await executeVoiceIdentification(wavBlob);
+      } catch (err) {
+        showToast('فشل فك ترميز الملف الصوتي: ' + err.message);
+      }
+    }
+
+    // Call API /api/v1/speakers/identify
+    async function executeVoiceIdentification(wavBlob) {
+      const box = document.getElementById('voice-result-box');
+      box.style.display = 'block';
+      box.innerHTML = `
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center;">
+          <div class="spinner" style="margin: 0 auto 1rem;"></div>
+          <h4 style="font-size: 1.1rem; color: #fff; margin-bottom: 0.3rem;">جارٍ فحص البصمة الصوتية ومطابقتها...</h4>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">يقوم محرك VoiceID بمطابقة الخصائص الصوتية مع البصمات المسجلة</p>
+        </div>
+      `;
+      box.scrollIntoView({ behavior: 'smooth' });
+
+      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.82;
+      const formData = new FormData();
+      formData.append('file', wavBlob, 'recording.wav');
+
+      try {
+        const res = await fetch(`/api/v1/speakers/identify?threshold=${threshold}`, {
+          method: 'POST',
+          body: formData
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'فشل فحص الصوت');
+        }
+
+        const data = await res.json();
+        renderIdentificationResult(data);
+      } catch (err) {
+        box.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 1.5rem; text-align: center;">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">⚠️</div>
+            <h4 style="color: #f87171; font-weight: 800;">حدث خطأ أثناء فحص الصوت</h4>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">${err.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    function renderIdentificationResult(data) {
+      const box = document.getElementById('voice-result-box');
+
+      if (data.is_identified) {
+        // MATCH FOUND
+        box.innerHTML = `
+          <div style="background: rgba(16, 185, 129, 0.12); border: 2px solid rgba(16, 185, 129, 0.45); border-radius: var(--radius-lg); padding: 2rem; position: relative; overflow: hidden; box-shadow: 0 0 30px rgba(16, 185, 129, 0.2);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 56px; height: 56px; border-radius: 50%; background: #10b981; display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);">
+                  ✓
+                </div>
+                <div>
+                  <span style="font-size: 0.8rem; font-weight: 800; color: #6ee7b7; text-transform: uppercase; letter-spacing: 0.05em;">تم التعرف على هوية المتحدث بنجاح</span>
+                  <h2 style="font-size: 1.85rem; font-weight: 900; color: #fff; margin-top: 2px;">
+                    ${data.speaker_name}
+                  </h2>
+                </div>
+              </div>
+              <div style="text-align: left;">
+                <div style="font-size: 2.2rem; font-weight: 900; color: #10b981; font-family: 'Fira Code', monospace;">
+                  ${data.match_percentage}%
+                </div>
+                <div style="font-size: 0.78rem; color: #a7f3d0;">نسبة التطابق البيومتري</div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0, 0, 0, 0.25); padding: 12px 18px; border-radius: var(--radius-sm); border: 1px solid rgba(16, 185, 129, 0.2);">
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>معامل التشابه (Cosine):</strong> ${data.similarity}</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>مدة التسجيل:</strong> ${data.audio_seconds}s</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>معرف المستخدم:</strong> #${data.user_id}</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #6ee7b7;"><strong>الحالة:</strong> مصرح به (Authorized)</span>
+            </div>
+          </div>
+        `;
+      } else {
+        // UNKNOWN SPEAKER
+        box.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.12); border: 2px solid rgba(239, 68, 68, 0.45); border-radius: var(--radius-lg); padding: 2rem; position: relative; overflow: hidden; box-shadow: 0 0 30px rgba(239, 68, 68, 0.2);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 56px; height: 56px; border-radius: 50%; background: #ef4444; display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);">
+                  ✕
+                </div>
+                <div>
+                  <span style="font-size: 0.8rem; font-weight: 800; color: #fca5a5; text-transform: uppercase; letter-spacing: 0.05em;">نتيجة الفحص البيومتري</span>
+                  <h2 style="font-size: 1.6rem; font-weight: 900; color: #fff; margin-top: 2px;">
+                    هذا الصوت غير مسجل في السيستم
+                  </h2>
+                  <p style="font-size: 0.85rem; color: #fecaca; margin-top: 4px;">
+                    (صوت غير معروف - لم يتطابق مع أي بصمة مسجلة في قاعدة البيانات)
+                  </p>
+                </div>
+              </div>
+              <div style="text-align: left;">
+                <div style="font-size: 2rem; font-weight: 900; color: #ef4444; font-family: 'Fira Code', monospace;">
+                  0.0%
+                </div>
+                <div style="font-size: 0.78rem; color: #fca5a5;">نسبة التطابق المعتمدة</div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0, 0, 0, 0.25); padding: 12px 18px; border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.2); margin-bottom: 1rem;">
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>أعلى معامل تشابه:</strong> ${data.similarity}</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>حد القبول المطلوب:</strong> ${data.threshold}</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>مدة الصوت:</strong> ${data.audio_seconds || 0}s</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #f87171;"><strong>الحالة:</strong> غير مصرح به (Unknown)</span>
+            </div>
+
+            <p style="font-size: 0.85rem; color: #e2e8f0;">
+              💡 <strong>ملاحظة:</strong> إذا كان هذا الصوت لشخص جديد، يمكنك إدخال اسمه في نموذج <strong>"تسجيل بصمة صوت جديدة"</strong> بالأسفل وحفظ بصمته في السيستم.
+            </p>
+          </div>
+        `;
+      }
+      box.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ── Multi-Speaker Diarization & Language Analysis Logic ────────────
+    let diarizeFileBlob = null;
+
+    function handleDiarizeFileSelected(input) {
+      if (!input.files || !input.files[0]) return;
+      diarizeFileBlob = input.files[0];
+      const badge = document.getElementById('diarize-selected-file-badge');
+      badge.innerText = `🎵 ${diarizeFileBlob.name} (${(diarizeFileBlob.size / 1024).toFixed(1)} KB)`;
+      badge.style.display = 'inline-block';
+    }
+
+    async function handleDiarizeSubmit() {
+      if (!diarizeFileBlob) {
+        showToast('يرجى اختيار ملف صوتي لتحليله أولاً!');
+        return;
+      }
+
+      const box = document.getElementById('diarize-result-box');
+      box.style.display = 'block';
+      box.innerHTML = `
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center;">
+          <div class="spinner" style="margin: 0 auto 1rem;"></div>
+          <h4 style="font-size: 1.1rem; color: #fff; margin-bottom: 0.3rem;">جارٍ تقسيم المقاطع وتحليل المتحدثين وكشف اللغات...</h4>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">يقوم المحرك بفرز كل متحدث وتتبع تعدد اللغات للشخص الواحد</p>
+        </div>
+      `;
+      box.scrollIntoView({ behavior: 'smooth' });
+
+      const btn = document.getElementById('btn-diarize-submit');
+      btn.disabled = true;
+
+      try {
+        const wavBlob = await convertBlobToWav16k(diarizeFileBlob);
+        const threshold = parseFloat(document.getElementById('diarize-thresh-slider').value) || 0.82;
+        const transcriptText = (document.getElementById('diarize-transcripts-input').value || '').trim();
+
+        const formData = new FormData();
+        formData.append('file', wavBlob, 'diarize_recording.wav');
+        if (transcriptText) {
+          // If user provided raw text or JSON array
+          let payloadJson = transcriptText;
+          if (!transcriptText.startsWith('[')) {
+            payloadJson = JSON.stringify([{ turn_index: 1, text: transcriptText }]);
+          }
+          formData.append('transcripts_json', payloadJson);
+        }
+
+        const res = await fetch(`/api/v1/speakers/diarize?threshold=${threshold}`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'فشل تحليل الصوت');
+        }
+
+        const data = await res.json();
+        renderDiarizeResult(data);
+      } catch (err) {
+        box.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 1.5rem; text-align: center;">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">⚠️</div>
+            <h4 style="color: #f87171; font-weight: 800;">حدث خطأ أثناء تحليل المتحدثين</h4>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">${err.message}</p>
+          </div>
+        `;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function getLanguageFlagBadge(langName) {
+      let flag = '🌐';
+      let color = '#38bdf8';
+      let bg = 'rgba(56, 189, 248, 0.12)';
+      let border = 'rgba(56, 189, 248, 0.3)';
+
+      if (langName.includes('العربية') || langName.includes('Arabic')) {
+        flag = '🇪🇬';
+        color = '#34d399';
+        bg = 'rgba(52, 211, 153, 0.12)';
+        border = 'rgba(52, 211, 153, 0.35)';
+      } else if (langName.includes('الإنجليزية') || langName.includes('English')) {
+        flag = '🇬🇧';
+        color = '#60a5fa';
+        bg = 'rgba(96, 165, 250, 0.12)';
+        border = 'rgba(96, 165, 250, 0.35)';
+      } else if (langName.includes('الفرنسية') || langName.includes('French')) {
+        flag = '🇫🇷';
+        color = '#c084fc';
+        bg = 'rgba(192, 132, 252, 0.12)';
+        border = 'rgba(192, 132, 252, 0.35)';
+      } else if (langName.includes('الألمانية') || langName.includes('German')) {
+        flag = '🇩🇪';
+        color = '#fbbf24';
+        bg = 'rgba(251, 191, 36, 0.12)';
+        border = 'rgba(251, 191, 36, 0.35)';
+      }
+
+      return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 9999px; font-size: 0.78rem; font-weight: 700; color: ${color}; background: ${bg}; border: 1px solid ${border};">${flag} ${langName}</span>`;
+    }
+
+    function renderDiarizeResult(data) {
+      const box = document.getElementById('diarize-result-box');
+      const isMultiPresent = data.multilingual_speakers && data.multilingual_speakers.length > 0;
+      const hasKnown = data.has_known_speaker;
+      const knownCount = data.known_speakers_count || (data.known_speakers ? data.known_speakers.length : 0);
+      const unknownCount = data.unknown_speakers_count || (data.unknown_speakers ? data.unknown_speakers.length : 0);
+
+      // 1. KPI Cards
+      const kpisHtml = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">👥 إجمالي من يتكلم</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: #a5f3fc; font-family: monospace;">${data.total_speakers_count} أشخاص</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: #a7f3d0; margin-bottom: 4px;">✅ مسجل بالسيستم (نعم)</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: #10b981; font-family: monospace;">${knownCount} شخص</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid ${unknownCount > 0 ? 'rgba(239, 68, 68, 0.4)' : 'var(--border)'}; border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: ${unknownCount > 0 ? '#fca5a5' : 'var(--text-muted)'}; margin-bottom: 4px;">❌ غير مسجل (لا)</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: ${unknownCount > 0 ? '#ef4444' : '#94a3b8'}; font-family: monospace;">${unknownCount} أشخاص</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">🌐 اللغات المرصودة</div>
+            <div style="font-size: 1rem; font-weight: 800; color: #6ee7b7; margin-top: 6px;">${data.all_detected_languages && data.all_detected_languages.length > 0 ? data.all_detected_languages.map(l => l.split(' ')[0]).join(' + ') : 'غير محدد'}</div>
+          </div>
+        </div>
+      `;
+
+      // 2. Presence Verdict Card ("لو في شخص من المجموعه دا موجود يقولي مين هو و الباقي يقولي لا")
+      let presenceHtml = '';
+      if (hasKnown) {
+        presenceHtml = `
+          <div style="background: rgba(16, 185, 129, 0.08); border: 2px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 1rem;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.6rem;">🎯</span>
+                <div>
+                  <span style="font-size: 0.78rem; font-weight: 800; color: #6ee7b7; text-transform: uppercase;">نتيجة فحص هوية المجموعة</span>
+                  <h3 style="font-size: 1.25rem; font-weight: 900; color: #fff; margin-top: 2px;">${data.presence_verdict || ''}</h3>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+              <!-- Known Speakers Column -->
+              <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: var(--radius-md); padding: 1.25rem;">
+                <h4 style="font-size: 0.95rem; font-weight: 800; color: #34d399; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                  <span>✅</span> الأشخاص الموجودون في السيستم (نعم):
+                </h4>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  ${(data.known_speakers || []).map(k => `
+                    <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); padding: 10px 14px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #fff;">👤 ${k.name}</span>
+                        <span style="font-size: 0.9rem; font-weight: 900; color: #10b981; font-family: monospace;">${k.match_percentage ? k.match_percentage + '%' : ''}</span>
+                      </div>
+                      <div style="font-size: 0.8rem; color: #a7f3d0; margin-top: 4px;">
+                        تحدث باللغة: ${k.languages.map(l => getLanguageFlagBadge(l)).join(' ')} (المدة: ${k.total_speaking_seconds}s)
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+
+              <!-- Unknown Speakers Column -->
+              <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 1.25rem;">
+                <h4 style="font-size: 0.95rem; font-weight: 800; color: #f87171; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                  <span>❌</span> باقي المتحدثين غير المسجلين (لا):
+                </h4>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  ${(data.unknown_speakers && data.unknown_speakers.length > 0) ? data.unknown_speakers.map(u => `
+                    <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: var(--radius-sm); padding: 10px 14px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 1rem; font-weight: 800; color: #fca5a5;">❓ ${u.name}</span>
+                        <span style="font-size: 0.75rem; font-weight: 800; color: #ef4444; background: rgba(239, 68, 68, 0.2); padding: 2px 8px; border-radius: 9999px;">غير مسجل (لا)</span>
+                      </div>
+                      <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 4px;">
+                        تحدث باللغة: ${u.languages.map(l => getLanguageFlagBadge(l)).join(' ')} (المدة: ${u.total_speaking_seconds}s)
+                      </div>
+                    </div>
+                  `).join('') : '<p style="font-size: 0.85rem; color: #94a3b8; font-style: italic;">لا يوجد متحدثون غرباء؛ الجميع مسجلون بالسيستم.</p>'}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        presenceHtml = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 2px solid rgba(239, 68, 68, 0.4); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.6rem;">❌</span>
+              <div>
+                <span style="font-size: 0.78rem; font-weight: 800; color: #fca5a5; text-transform: uppercase;">نتيجة فحص هوية المجموعة</span>
+                <h3 style="font-size: 1.15rem; font-weight: 900; color: #fff; margin-top: 2px;">
+                  ${data.presence_verdict || 'لا يوجد أي شخص من المتحدثين مسجل في السيستم (جميع المتحدثين غير معروفين - لا)'}
+                </h3>
+                <p style="font-size: 0.82rem; color: #fecaca; margin-top: 4px;">
+                  جميع الأصوات المرصودة وعددهم (${unknownCount}) هي أصوات جديدة أو غير مسجلة بقاعدة البيانات.
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 3. Multilingual Alert Banner ("لو واحد اتكلم بكذا لغة يقولي مين")
+      let multiBannerHtml = '';
+      if (isMultiPresent) {
+        multiBannerHtml = `
+          <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.18), rgba(245, 158, 11, 0.18)); border: 2px solid rgba(239, 68, 68, 0.55); border-radius: var(--radius-md); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 0 25px rgba(239, 68, 68, 0.25);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 0.6rem;">
+              <span style="font-size: 1.5rem;">⚠️</span>
+              <h4 style="font-size: 1.1rem; font-weight: 900; color: #fca5a5;">رصد متحدث(ين) تحدثوا بأكثر من لغة واحدة:</h4>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${data.multilingual_speakers.map(m => `
+                <div style="background: rgba(0, 0, 0, 0.35); padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.3); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                  <div style="font-size: 0.95rem; color: #fff; font-weight: 700;">
+                    👤 <strong>${m.speaker_name}</strong>: ${m.message}
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    ${m.languages.map(l => getLanguageFlagBadge(l)).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // 4. Timeline Breakdown Table
+      const timelineHtml = `
+        <div>
+          <h4 style="font-size: 1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.75rem;">الجدول الزمني لمقاطع الحديث (Speech Turns Timeline):</h4>
+          <div style="overflow-x: auto; background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md);">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: right;">
+              <thead>
+                <tr style="background: rgba(15, 23, 42, 0.9); border-bottom: 1px solid var(--border); color: #94a3b8;">
+                  <th style="padding: 10px 14px;">المقطع</th>
+                  <th style="padding: 10px 14px;">التوقيت الزمني</th>
+                  <th style="padding: 10px 14px;">المتحدث</th>
+                  <th style="padding: 10px 14px;">حالة التسجيل</th>
+                  <th style="padding: 10px 14px;">اللغة المرصودة</th>
+                  <th style="padding: 10px 14px;">التشابه</th>
+                  <th style="padding: 10px 14px;">النص / الملاحظة</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(data.timeline_segments || []).map(seg => `
+                  <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
+                    <td style="padding: 10px 14px; font-weight: 800; color: var(--accent-cyan);">#${seg.segment_index}</td>
+                    <td style="padding: 10px 14px; font-family: monospace; color: #cbd5e1;">${seg.start_time}s - ${seg.end_time}s (${seg.duration}s)</td>
+                    <td style="padding: 10px 14px;">
+                      <span style="font-weight: 700; color: ${seg.is_enrolled ? '#6ee7b7' : '#e2e8f0'};">
+                        ${seg.speaker}
+                      </span>
+                    </td>
+                    <td style="padding: 10px 14px;">
+                      <span style="font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 9999px; ${seg.is_enrolled ? 'color: #34d399; background: rgba(52, 211, 153, 0.15);' : 'color: #f87171; background: rgba(239, 68, 68, 0.15);'}">
+                        ${seg.is_enrolled ? '✓ نعم (مسجل)' : '✕ لا (غير مسجل)'}
+                      </span>
+                    </td>
+                    <td style="padding: 10px 14px;">${getLanguageFlagBadge(seg.language)}</td>
+                    <td style="padding: 10px 14px; font-family: monospace; color: ${seg.is_enrolled ? '#34d399' : '#94a3b8'};">
+                      ${seg.similarity > 0 ? seg.similarity : '--'}
+                    </td>
+                    <td style="padding: 10px 14px; color: #94a3b8; font-style: italic;">
+                      ${seg.transcript ? seg.transcript : 'تحليل فيزيائي حيوي (Acoustic)'}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      box.innerHTML = `
+        <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.75rem;">
+          ${kpisHtml}
+          ${presenceHtml}
+          ${multiBannerHtml}
+          ${timelineHtml}
+        </div>
+      `;
+    }
+
+    function handleEnrollFileSelected(input) {
+      if (!input.files || !input.files[0]) return;
+      showToast('تم اختيار الملف الصوتي للتسجيل.');
+    }
+
+    // Voice Enrollment Form Submission
+    async function handleVoiceEnrollSubmit(e) {
+      if (e) e.preventDefault();
+
+      const name = document.getElementById('enroll-speaker-name').value.trim();
+      const level = document.getElementById('enroll-speaker-level').value;
+      const fileInput = document.getElementById('enroll-file-input');
+
+      let audioToEnroll = null;
+      if (enrollWavBlob) {
+        audioToEnroll = enrollWavBlob;
+      } else if (fileInput.files && fileInput.files[0]) {
+        try {
+          showToast('جارٍ تحويل الملف الصوتي المرفوع للتسجيل...');
+          audioToEnroll = await convertBlobToWav16k(fileInput.files[0]);
+        } catch (err) {
+          showToast('فشل تحويل الملف الصوتي: ' + err.message);
+          return;
+        }
+      } else {
+        showToast('يرجى تسجيل مقطع صوتي عبر المايك أو اختيار ملف صوتي للتسجيل أولاً!');
+        return;
+      }
+
+      const btn = document.getElementById('btn-submit-enroll');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<div class="spinner"></div><span>جارٍ استخراج وتثبيت البصمة الصوتية 192-D...</span>`;
+
+      const formData = new FormData();
+      formData.append('speaker_name', name);
+      formData.append('max_level', level);
+      formData.append('file', audioToEnroll, 'enroll_sample.wav');
+
+      try {
+        const res = await fetch('/api/v1/speakers/enroll', {
+          method: 'POST',
+          body: formData
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'فشل تسجيل بصمة الصوت');
+        }
+
+        const data = await res.json();
+        showToast(`تم تسجيل بصمة الصوت للمتحدث '${data.speaker_name}' بنجاح!`);
+        document.getElementById('voice-enroll-form').reset();
+        enrollWavBlob = null;
+        document.getElementById('enroll-rec-timer-badge').style.display = 'none';
+
+        await loadEnrolledSpeakers();
+        await loadVoiceEngineStatus();
+      } catch (err) {
+        showToast('خطأ: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+
+    // Load list of enrolled speakers
+    async function loadEnrolledSpeakers() {
+      const grid = document.getElementById('speakers-grid');
+      grid.innerHTML = '<div style="color:var(--text-muted); font-size:0.9rem;">جارٍ تحميل البصمات المسجلة...</div>';
+
+      try {
+        const res = await fetch('/api/v1/speakers');
+        if (!res.ok) throw new Error('فشل جلب البصمات الصوتية');
+        const list = await res.json();
+
+        document.getElementById('voice-enrolled-count').innerText = `${list.length} بصمات`;
+
+        if (!list || list.length === 0) {
+          grid.innerHTML = `
+            <div style="grid-column: 1 / -1; background: rgba(15, 23, 42, 0.4); border: 1px dashed var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center; color: var(--text-muted);">
+              لا توجد أي بصمات صوتية مسجلة في السيستم حالياً.<br>
+              استخدم النموذج أعلاه لتسجيل أول بصمة صوت.
+            </div>
+          `;
+          return;
+        }
+
+        grid.innerHTML = list.map(s => `
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #4f46e5, #06b6d4); display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff;">
+                  🗣️
+                </div>
+                <div>
+                  <h4 style="font-size: 1.1rem; font-weight: 800; color: #fff;">${s.speaker_name}</h4>
+                  <span style="font-size: 0.75rem; color: var(--accent-cyan);">معرف: #${s.user_id}</span>
+                </div>
+              </div>
+              <span style="font-size: 0.75rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); padding: 4px 10px; border-radius: 9999px;">
+                Level ${s.max_level}
+              </span>
+            </div>
+
+            <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.6; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: var(--radius-sm);">
+              <div><strong>أبعاد التشفير:</strong> ${s.embedding_dim}-D vector</div>
+              <div><strong>النموذج:</strong> ${s.model_id || 'Acoustic-192D'}</div>
+              <div><strong>تاريخ التسجيل:</strong> ${s.created_at ? new Date(s.created_at).toLocaleDateString('ar-EG') : '--'}</div>
+            </div>
+
+            <button onclick="deleteSpeakerVoiceprint('${s.speaker_name}')" class="btn-docs" style="width: 100%; justify-content: center; border-color: rgba(239, 68, 68, 0.3); color: #fca5a5;">
+              <span>🗑️ حذف البصمة الصوتية</span>
+            </button>
+          </div>
+        `).join('');
+      } catch (err) {
+        grid.innerHTML = `<div style="color:#f87171;">فشل جلب البصمات: ${err.message}</div>`;
+      }
+    }
+
+    async function deleteSpeakerVoiceprint(name) {
+      if (!confirm(`هل أنت متأكد من حذف البصمة الصوتية للمتحدث '${name}'؟`)) return;
+      try {
+        const res = await fetch(`/api/v1/speakers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('فشل الحذف');
+        showToast(`تم حذف البصمة الصوتية للمتحدث '${name}' بنجاح!`);
+        await loadEnrolledSpeakers();
+        await loadVoiceEngineStatus();
+      } catch (err) {
+        showToast('خطأ أثناء الحذف: ' + err.message);
+      }
+    }
+
+    async function loadVoiceEngineStatus() {
+      try {
+        const res = await fetch('/api/v1/speakers/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        document.getElementById('voice-enrolled-count').innerText = `${data.enrolled_count} بصمات`;
+        document.getElementById('voice-threshold-badge').innerText = `${Math.round((data.threshold_l1 || 0.78) * 100)}%`;
+        if (data.backend_model) {
+          document.getElementById('voice-backend-desc').innerText = `محرك التشفير: ${data.backend_model} (192-D Biometric Vectors)`;
+        }
+      } catch (_) {}
+    }
+
   </script>
 </body>
 </html>

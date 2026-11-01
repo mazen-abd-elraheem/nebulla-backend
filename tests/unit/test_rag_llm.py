@@ -97,3 +97,61 @@ def test_rag_service_lexical_scoring():
     assert score_high > 0.0
     assert score_zero == 0.0
 
+
+
+def test_rag_service_arabic_stemming_and_variants():
+    rag = RAGService()
+    # Test pronoun suffixes (ك, ي, نا)
+    tokens_ismak = rag._tokenize("ما هو اسمك؟")
+    assert "اسم" in tokens_ismak
+
+    # Test spelling variants
+    tok_nebula1 = rag._tokenize("نيبولا")
+    tok_nebula2 = rag._tokenize("نيبيولا")
+    assert tok_nebula1.intersection(tok_nebula2) == {"نيبولا"}
+
+    # Test conversational question expansion
+    tok_meen = rag._tokenize("مين انت؟")
+    assert "روبوت" in tok_meen
+    assert "اسم" in tok_meen
+
+
+def test_rag_deduplication_before_top_k():
+    rag = RAGService()
+    from unittest.mock import MagicMock
+    mem1 = MagicMock(id=1, content="اسم الروبوت هو نيبيولا ومهمته هي المساعدة والتحكم الذكي في الأجهزة.")
+    mem2 = MagicMock(id=2, content="اسم الروبوت هو نيبيولا ومهمته هي المساعدة والتحكم الذكي في الأجهزة.")
+    mem3 = MagicMock(id=3, content="اسم الروبوت هو نيبيولا ومهمته هي المساعدة والتحكم الذكي في الأجهزة.")
+    mem4 = MagicMock(id=4, content="الروبوت نيبولا يمتلك 12 محرك سيرفو فائق الدقة.")
+    mem5 = MagicMock(id=5, content="الروبوت مزود بكاميرا تتبع الوجوه.")
+
+    scored = [
+        (0.95, mem1),
+        (0.95, mem2),
+        (0.95, mem3),
+        (0.85, mem4),
+        (0.80, mem5),
+    ]
+
+    top_k = 3
+    seen = set()
+    unique_top = []
+    for score, mem in scored:
+        norm = rag._normalize_for_dedup(mem.content)
+        if norm not in seen:
+            seen.add(norm)
+            unique_top.append(mem)
+            if len(unique_top) >= top_k:
+                break
+
+    assert len(unique_top) == 3
+    assert unique_top[0].id == 1
+    assert unique_top[1].id == 4
+    assert unique_top[2].id == 5
+
+
+def test_rag_load_memories_sync():
+    rag = RAGService()
+    mems = rag._load_memories_sync(personality_id=1)
+    assert len(mems) > 0
+    assert any(m.id == 1 for m in mems)

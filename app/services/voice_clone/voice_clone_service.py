@@ -105,8 +105,17 @@ class VoiceCloneService:
         if transcript and transcript.strip():
             txt_dest.write_text(transcript.strip(), encoding="utf-8")
             logger.info(f"Saved transcript for personality {personality_id}")
-        elif txt_dest.exists():
-            txt_dest.unlink()
+        else:
+            # Auto-transcribe using Whisper STT on CUDA for maximum zero-shot cloning fidelity
+            try:
+                from app.providers.stt.factory import get_stt_provider
+                stt = get_stt_provider("whisper")
+                auto_txt = await stt.transcribe(dest.read_bytes())
+                if auto_txt and auto_txt.strip():
+                    txt_dest.write_text(auto_txt.strip(), encoding="utf-8")
+                    logger.info(f"Auto-transcribed reference audio with Whisper for maximum cloning likeness: {auto_txt.strip()[:60]}...")
+            except Exception as stt_err:
+                logger.warning(f"Could not auto-transcribe reference audio: {stt_err}")
 
         self._personality_voice_map[personality_id] = str(dest)
         logger.info(f"Voice sample saved for personality {personality_id}: {dest} ({duration:.1f}s)")
