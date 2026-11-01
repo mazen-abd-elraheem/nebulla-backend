@@ -1,20 +1,65 @@
 // Models for Nebula API responses
 
+class UserModel {
+  final int id;
+  final String fullName;
+  final String email;
+  final bool isActive;
+  final bool hasBiometric;
+  final int personalitiesCount;
+  final String? createdAt;
+
+  UserModel({
+    required this.id,
+    required this.fullName,
+    required this.email,
+    required this.isActive,
+    this.hasBiometric = false,
+    this.personalitiesCount = 0,
+    this.createdAt,
+  });
+
+  factory UserModel.fromJson(Map<String, dynamic> json) => UserModel(
+        id: json['id'] as int,
+        fullName: json['full_name'] as String? ?? '',
+        email: json['email'] as String? ?? '',
+        isActive: json['is_active'] as bool? ?? true,
+        hasBiometric: json['has_biometric'] as bool? ?? false,
+        personalitiesCount: json['personalities_count'] as int? ?? 0,
+        createdAt: json['created_at'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'full_name': fullName,
+        'email': email,
+        'is_active': isActive,
+        'has_biometric': hasBiometric,
+        'personalities_count': personalitiesCount,
+        'created_at': createdAt,
+      };
+}
+
 class TokenResponse {
   final String accessToken;
   final String tokenType;
   final int expiresIn;
+  final UserModel? user;
 
   TokenResponse({
     required this.accessToken,
     required this.tokenType,
     required this.expiresIn,
+    this.user,
   });
 
   factory TokenResponse.fromJson(Map<String, dynamic> json) => TokenResponse(
         accessToken: json['access_token'] as String,
         tokenType: json['token_type'] as String? ?? 'bearer',
         expiresIn: json['expires_in'] as int? ?? 28800,
+        user: json['user'] != null
+            ? UserModel.fromJson(json['user'] as Map<String, dynamic>)
+            : null,
       );
 }
 

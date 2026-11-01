@@ -75,17 +75,17 @@ async def test_reminders_crud_endpoints(auth_headers):
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         target_iso = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
         payload = {
-            "title": "دوا السكر",
+            "title": "دوا الضغط",
             "reminder_type": "medicine",
             "target_time": target_iso,
-            "recurrence": "daily",
+            "recurrence": "once",
             "escalation_mode": "msg",
         }
         # 1. Create reminder
         res = await client.post("/api/v1/actions/reminders", json=payload, headers=auth_headers)
         assert res.status_code == 201, res.text
         data = res.json()
-        assert data["title"] == "دوا السكر"
+        assert data["title"] == "دوا الضغط"
         assert data["status"] == "pending"
         rid = data["id"]
 
@@ -94,7 +94,7 @@ async def test_reminders_crud_endpoints(auth_headers):
         assert list_res.status_code == 200
         assert any(r["id"] == rid for r in list_res.json())
 
-        # 3. Acknowledge reminder
+        # 3. Acknowledge once reminder -> status becomes 'acknowledged'
         ack_res = await client.patch(f"/api/v1/actions/reminders/{rid}/acknowledge", headers=auth_headers)
         assert ack_res.status_code == 200
         assert ack_res.json()["status"] == "acknowledged"

@@ -7,6 +7,9 @@ class AppConstants {
   static const String prefBaseUrl = 'base_url';
   static const String prefToken = 'auth_token';
   static const String prefDeviceName = 'device_name';
+  static const String prefUser = 'cached_user';
+  static const String prefSavedEmail = 'saved_email';
+  static const String prefRememberMe = 'remember_me';
 
   // WebSocket paths
   static String wsPhone(String base) =>
@@ -14,6 +17,11 @@ class AppConstants {
 
   // API paths
   static const String authToken = '/api/v1/auth/token';
+  static const String authLogin = '/api/v1/auth/login';
+  static const String authRegister = '/api/v1/auth/register';
+  static const String authBiometric = '/api/v1/auth/login/biometric';
+  static const String authForgotPassword = '/api/v1/auth/forgot-password';
+  static const String authResetPassword = '/api/v1/auth/reset-password';
   static const String authMe = '/api/v1/auth/me';
   static const String deviceStatus = '/api/v1/devices/status';
   static const String devices = '/api/v1/devices/';

@@ -363,7 +363,7 @@ Greet warmly in English as {robot_name} and ask how you can help. Conclude with 
                     "\nالذاكرة: لا توجد معلومات مسجلة لهذا السؤال.\n"
                     "تنبيه صارم: اعتذر فوراً بعبارة:\n\"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]\"\n"
                 )
-    else:
+   
         # User is speaking English
         from scripts.generate_rag_dataset import to_english_memory
         grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
