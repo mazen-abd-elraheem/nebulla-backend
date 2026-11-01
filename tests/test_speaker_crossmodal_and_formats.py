@@ -79,3 +79,4 @@ async def test_universal_recorder_and_crossmodal_ids():
 
         # Clean up enrolled test speaker
         await client.delete("/api/v1/speakers/TestCrossModal")
+
