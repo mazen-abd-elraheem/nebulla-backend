@@ -19,6 +19,7 @@ import asyncio
 import re
 import time
 import uuid
+import numpy as np
 from typing import AsyncIterator, List, Dict, Optional, Tuple, Any
 
 from sqlalchemy import select
@@ -832,12 +833,51 @@ class AIPipeline:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _is_end_of_utterance(buffer: bytearray, min_bytes: int = 8000) -> bool:
+def _is_end_of_utterance(buffer: bytearray, min_bytes: int = 16000) -> bool:
     """
-    Simplified VAD: considers silence if buffer is large enough.
-    Replace with proper WebRTC VAD in production.
+    Robust energy-based VAD & endpointing for streaming audio.
+    - Prevents empty silence from triggering premature pipelines or hanging.
+    - Detects natural pause (trailing silence) after user speech has finished.
+    - Trims excess dead-air lead silence to keep latency minimal.
     """
-    return len(buffer) >= min_bytes
+    if len(buffer) < 16_000:  # Need at least 0.5s of 16kHz 16-bit audio
+        return False
+
+    usable_bytes = len(buffer) - (len(buffer) % 2)
+    samples = np.frombuffer(buffer[:usable_bytes], dtype=np.int16)
+
+    max_amp = int(np.max(np.abs(samples)))
+    rms = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2) + 1e-6))
+
+    # Speech presence thresholds in 16-bit PCM
+    SPEECH_RMS_THRESHOLD = 320.0
+    SPEECH_PEAK_THRESHOLD = 1100
+
+    has_speech = (max_amp >= SPEECH_PEAK_THRESHOLD) and (rms >= SPEECH_RMS_THRESHOLD)
+
+    # If the buffer is dead air / pure silence:
+    if not has_speech:
+        if len(buffer) > 48_000:
+            del buffer[:-9_600]
+        return False
+
+    # Force utterance flush if speech buffer exceeds max turn length (~8 seconds)
+    if len(buffer) >= 256_000:
+        return True
+
+    # Speech was detected. Check trailing pause (~500ms = 8000 samples)
+    trailing_samples_count = min(len(samples), 8_000)
+    trailing_samples = samples[-trailing_samples_count:]
+    trailing_rms = float(np.sqrt(np.mean(trailing_samples.astype(np.float32) ** 2) + 1e-6))
+    trailing_peak = int(np.max(np.abs(trailing_samples)))
+
+    SILENCE_RMS_THRESHOLD = 260.0
+    SILENCE_PEAK_THRESHOLD = 900
+
+    if (trailing_rms < SILENCE_RMS_THRESHOLD) and (trailing_peak < SILENCE_PEAK_THRESHOLD):
+        return True
+
+    return False
 
 
 def _is_sentence_end(text: str) -> bool:
