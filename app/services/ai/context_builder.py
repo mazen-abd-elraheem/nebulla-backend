@@ -254,9 +254,43 @@ async def build_grounding_context(
 
     # Formulate System Prompt
     if is_arabic:
-        grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
+        if memories:
+            mem_bullets = "\n".join(f"- {m}" for m in memories)
+            grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
 {persona_extra}
 
+المهمة: استخرج الإجابة حصراً وبدقة متناهية من نص الذاكرة المعتمدة أدناه.
+القواعد:
+1. أجب بجملة واحدة مباشرة بالعامية المصرية القاهرية بدون أي تأليف أو تفاصيل إضافية غير مذكورة.
+2. اختم إجابتك دائماً بوسم مشاعر واحد فقط في النهاية: [happy] أو [wave] أو [like].
+
+أمثلة توضيحية لأسلوب الإجابة المباشر:
+الذاكرة المعتمدة:
+- أحمد مهندس برمجيات في حلوان.
+سؤال: أحمد شغال إيه؟
+إجابة: أحمد شغال مهندس برمجيات في حلوان. [like]
+
+الذاكرة المعتمدة:
+- سارة تحب القراءة وممارسة الرياضة.
+سؤال: سارة بتحب إيه؟
+إجابة: سارة بتحب القراءة وممارسة الرياضة. [happy]
+
+الذاكرة المعتمدة:
+{mem_bullets}
+
+تنبيه صارم: أجب مباشرة فقط عن المطلوب باستخدام الذاكرة أعلاه، وبدون أي حشو أو كلام إضافي.
+"""
+        else:
+            if is_greeting_or_persona_inquiry(message):
+                grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
+{persona_extra}
+المستخدم يحييك أو يسأل عنك: رحب به بلطف بلهجة مصرية وعرفه بنفسك كـ {robot_name} وصانعك {creator_name}، واسأله كيف تساعده اليوم. اختم إجابتك بوسم مشاعر مثل [happy] أو [wave].
+"""
+            else:
+                grounded_system_prompt = f"""أنت "{robot_name}" (Nebula).
+الذاكرة: لا توجد معلومات مسجلة لهذا السؤال.
+تنبيه صارم: اعتذر فوراً بعبارة:
+"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
 قواعد التشغيل والتوجيه الصوتي والشاشي (Voice & Screen Operational Directives):
 1. تطابق لغة الحوار واللهجة (Strict Language Mirroring & Cairo Dialect):
    - أجب حصراً بلهجة مصرية قاهرية مهذبة وطبيعية ومباشرة (جملة أو جملتين كحد أقصى) لتناسب النطق الصوتي (TTS).
@@ -290,6 +324,25 @@ async def build_grounding_context(
             grounded_system_prompt += f"- جهات الاتصال المسموحة (أسماء فقط): {', '.join(trusted_contacts)}.\n"
         if active_reminders_list:
             grounded_system_prompt += f"- التذكيرات الحالية: {', '.join(active_reminders_list)}.\n"
+    else:
+        # User is speaking English
+        from scripts.generate_rag_dataset import to_english_memory
+        if memories:
+            mem_bullets = "\n".join(f"- {to_english_memory(m)}" for m in memories)
+            grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
+Directives:
+1. Extract the direct factual answer exclusively from the verified memory below without adding extra details.
+2. Reply in concise natural English (single sentence).
+3. Conclude with exactly one emotion tag (e.g. [happy], [wave], [like]).
+
+Verified Memory:
+{mem_bullets}
+"""
+        else:
+            if is_greeting_or_persona_inquiry(message):
+                grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
+Greet warmly in English as {robot_name} and ask how you can help. Conclude with [wave] or [happy].
+"""
 
         if memories:
             mem_bullets = "\n".join(f"[المصدر {idx}]: {m}" for idx, m in enumerate(memories, 1))
@@ -343,10 +396,13 @@ Operational Directives:
             if is_greeting_or_persona_inquiry(message):
                 grounded_system_prompt += f"\nGreeting: Greet warmly in English as {robot_name} and ask how you can help. Conclude with [wave] or [happy].\n"
             else:
-                grounded_system_prompt += (
-                    "\nVerified Memory: None found.\n"
-                    "Strict Directive: Reply with:\n\"I do not have this information recorded in my memory. [wave]\"\n"
-                )
+                grounded_system_prompt = f"""You are "{robot_name}".
+Verified Memory: None found.
+Strict Directive: Reply with:
+"I do not have this information recorded in my memory. [wave]"
+"""
+        if face_detected and current_face.get("face_id"):
+            grounded_system_prompt += f"- Vision: Person in front of camera is {current_face['face_id']}.\n"
 
     grounding_data = GroundingInfo(
         personality=p_info,
