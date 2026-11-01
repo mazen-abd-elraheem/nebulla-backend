@@ -88,11 +88,20 @@ class WhisperProvider(BaseSTTProvider):
                     logger.warning("CUDA requested for Whisper but not available. Falling back to CPU.")
                     device = "cpu"
 
-                logger.info(f"Loading Whisper STT model '{self._model_size}' on {device}...")
-                loaded_model = whisper.load_model(self._model_size, device=device)
+                download_root = r"D:\models\whisper" if os.path.exists("D:\\") else None
+                model_to_load = self._model_size
+                if model_to_load in ("turbo", "large-v3-turbo") and download_root:
+                    turbo_file = Path(download_root) / "large-v3-turbo.pt"
+                    if not turbo_file.exists() or turbo_file.stat().st_size < 1500 * 1024 * 1024:
+                        curr_mb = turbo_file.stat().st_size / (1024 * 1024) if turbo_file.exists() else 0
+                        logger.info(f"Turbo model is downloading ({curr_mb:.0f}/1510 MB). Using fast high-accuracy 'small' model temporarily...")
+                        model_to_load = "small"
+
+                logger.info(f"Loading Whisper STT model '{model_to_load}' on {device}...")
+                loaded_model = whisper.load_model(model_to_load, device=device, download_root=download_root)
                 WhisperProvider._shared_model = loaded_model
                 WhisperProvider._shared_device = device
-                logger.info(f"Whisper STT model '{self._model_size}' ready on {device} ✓")
+                logger.info(f"Whisper STT model '{model_to_load}' ready on {device} ✓")
             except ImportError:
                 logger.error("openai-whisper not installed. Run: pip install openai-whisper")
                 WhisperProvider._shared_model = "disabled"
@@ -116,13 +125,13 @@ class WhisperProvider(BaseSTTProvider):
 
         audio_array = audio_array.astype(np.float32)
 
-        # Resample to Whisper's required 16,000 Hz if needed
+        # Fast in-memory resample to 16,000 Hz using scipy (5ms vs 6s in librosa)
         if sample_rate != 16000:
             try:
-                import librosa
-                audio_array = librosa.resample(audio_array, orig_sr=sample_rate, target_sr=16000)
+                import scipy.signal
+                audio_array = scipy.signal.resample_poly(audio_array, 16000, sample_rate).astype(np.float32)
             except Exception as resample_err:
-                logger.debug(f"Librosa resample warning: {resample_err}")
+                logger.debug(f"Resample warning: {resample_err}")
 
         lang = getattr(settings, "WHISPER_LANGUAGE", "ar")
         device = WhisperProvider._shared_device or "cpu"

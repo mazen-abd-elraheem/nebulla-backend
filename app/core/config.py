@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     QWENCLEO_MODEL_PATH: str = "models/qwencleo-asr"
     QWENCLEO_DEVICE: str = "cuda"  # "cuda" | "cpu"
     QWENCLEO_LANGUAGE: str = "Arabic"
-    WHISPER_MODEL: str = "base"    # "tiny" | "base" | "small" | "medium" | "turbo" | "large-v3"
+    WHISPER_MODEL: str = "turbo"   # "tiny" | "base" | "small" | "medium" | "turbo" | "large-v3"
     WHISPER_DEVICE: str = "cuda"   # "cuda" | "cpu"
     WHISPER_LANGUAGE: str = "ar"
     GROQ_API_KEY: str = ""
