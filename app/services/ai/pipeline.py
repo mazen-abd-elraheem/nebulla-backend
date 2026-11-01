@@ -202,17 +202,43 @@ class AIPipeline:
         active_pid: Optional[int] = None
         active_prompt: Optional[str] = None
         memories: List[str] = []
+        grounding = None
+        speaker_id_name = None
+        if verification and (getattr(verification, "passed_l1", False) or getattr(verification, "passed_l2", False)):
+            speaker_id_name = getattr(verification, "speaker_name", None)
+
         try:
             async with AsyncSessionLocal() as session:
                 active_prompt, memories, grounding, active_pid = await build_grounding_context(
                     db=session,
                     personality_id=None,
                     message=transcript,
+                    verified_speaker=speaker_id_name,
                 )
         except Exception as e:
             logger.warning(f"Could not build full grounding context, falling back: {e}")
             active_pid, active_prompt = await self._get_active_personality()
             memories = await self._rag.retrieve(transcript, personality_id=active_pid)
+
+        # Broadcast RAG & Visual telemetry to desktop screens
+        if grounding and getattr(grounding, "faces", None):
+            photo_url = grounding.faces.get("photo_url")
+            rag_person_name = grounding.faces.get("active_person")
+            await manager.broadcast_to_desks({
+                "t": "rag_telemetry",
+                "query": transcript,
+                "detected_person": rag_person_name,
+                "person_photo_url": photo_url,
+                "memories_count": len(memories),
+                "memories": memories,
+            })
+            if photo_url and (grounding.faces.get("is_photo_inquiry") or grounding.faces.get("currently_detected")):
+                await manager.broadcast_to_desks({
+                    "t": "screen_action",
+                    "action": "show_person_photo",
+                    "name": rag_person_name,
+                    "url": photo_url,
+                })
 
         history = await self._get_recent_history(limit=6)
 
@@ -386,9 +412,10 @@ class AIPipeline:
             pid, sys_prompt = await self._get_active_personality()
 
         # 1. Full Grounding Context & RAG retrieval
+        grounding = None
         try:
             async with AsyncSessionLocal() as db:
-                sys_prompt, memories, _, pid = await build_grounding_context(
+                sys_prompt, memories, grounding, pid = await build_grounding_context(
                     db=db,
                     personality_id=pid,
                     message=text,
@@ -396,6 +423,26 @@ class AIPipeline:
         except Exception as e:
             logger.warning(f"Could not build grounding context in process_text: {e}")
             memories = await self._rag.retrieve(text, personality_id=pid)
+
+        # Broadcast RAG & Visual telemetry to desktop screens
+        if broadcast_to_clients and grounding and getattr(grounding, "faces", None):
+            photo_url = grounding.faces.get("photo_url")
+            rag_person_name = grounding.faces.get("active_person")
+            await manager.broadcast_to_desks({
+                "t": "rag_telemetry",
+                "query": text,
+                "detected_person": rag_person_name,
+                "person_photo_url": photo_url,
+                "memories_count": len(memories),
+                "memories": memories,
+            })
+            if photo_url and (grounding.faces.get("is_photo_inquiry") or grounding.faces.get("currently_detected")):
+                await manager.broadcast_to_desks({
+                    "t": "screen_action",
+                    "action": "show_person_photo",
+                    "name": rag_person_name,
+                    "url": photo_url,
+                })
 
         # Strict Zero-Hallucination Guardrail
         is_ar = bool(re.search(r"[؀-ۿ]", text))
@@ -453,6 +500,9 @@ class AIPipeline:
         t_llm = time.perf_counter()
         llm_ms = (t_llm - t_llm_start) * 1000
         total_ms = (time.perf_counter() - t_start) * 1000
+
+        # Strict Fact Verification against retrieved memories (No Fallback Model)
+        full_response = self._rag.verify_response(text, full_response, memories)
         emotion = _extract_emotion(full_response)
 
         if broadcast_to_clients:
@@ -766,6 +816,7 @@ class AIPipeline:
             ):
                 full_response += token
 
+            full_response = self._rag.verify_response(clean_text, full_response, memories)
             emotion = _extract_emotion(full_response)
             cleaned = clean_text_for_tts(full_response)
             await manager.send_to_phone({"t": "eyes", "mood": emotion})

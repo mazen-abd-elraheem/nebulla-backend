@@ -25,6 +25,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.personality import Personality
 
+from app.core.config import settings
 from app.services.voice_clone.voice_clone_service import VoiceCloneService
 
 router = APIRouter()
@@ -152,14 +153,14 @@ async def delete_sample(
 # ── Synthesise ────────────────────────────────────────────────────────────────
 
 class SynthesizeRequest(BaseModel):
-    text: str
-    voice_id: int | str | None = None
-    personality_id: int | None = None
-    language: str = "arz"
-    ref_text: str | None = None
-    num_steps: int | None = None
-    guidance_scale: float | None = None
-    speed: float | None = None
+    text: str = Field(..., description="النص العربي المراد تحويله إلى صوت")
+    voice_id: int | str | None = Field(1, description="معرف الصوت المستنسخ (مثال: 1)")
+    personality_id: int | None = Field(None, description="معرف الشخصية (اختياري)")
+    language: str = Field("arz", description="اللهجة (arz للمصري)")
+    ref_text: str | None = Field(None, description="نص العينة المرجعية (اختياري، يتم جلبه تلقائياً)")
+    num_steps: int | None = Field(16, description="عدد خطوات التوليد (16 لجودة ونقاء صوت ونبرة ممتازة)")
+    guidance_scale: float | None = Field(2.6, description="مقياس مطابقة نبرة الصوت المرجعي بدقة (2.5 - 2.8)")
+    speed: float | None = Field(1.15, description="سرعة الكلام (1.15 للريتم الطبيعي السريع للعامية المصرية)")
 
 
 _AUDIO_RESPONSES = {
@@ -223,8 +224,9 @@ async def synthesize(
         target_pid = 1
 
     actual_ref_text = body.ref_text if (body.ref_text and body.ref_text.strip() and body.ref_text.strip() != "string") else None
-    steps = body.num_steps if (body.num_steps and body.num_steps > 0) else getattr(settings, "VOICETUT_NUM_STEPS", 48)
-    cfg = body.guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
+    steps = body.num_steps if (body.num_steps and body.num_steps > 0) else 16
+    cfg = body.guidance_scale if (body.guidance_scale and body.guidance_scale > 0) else 2.6
+    spd = body.speed if (body.speed and body.speed > 0) else 1.15
 
     wav_bytes = await svc.synthesize(
         text=cleaned_text,
@@ -233,7 +235,7 @@ async def synthesize(
         ref_text=actual_ref_text,
         num_step=steps,
         guidance_scale=cfg,
-        speed=body.speed,
+        speed=spd,
     )
 
     if not wav_bytes or len(wav_bytes) <= 1000:
@@ -273,7 +275,9 @@ async def synthesize_get(
     text: str | None = Query(None, description="النص المراد نطقه بالصوت المستنسخ"),
     voice_id: int | None = Query(None, description="معرف الصوت المستنسخ (ID مثل 1)"),
     personality_id: int | None = Query(None, description="معرف الشخصية (ID مثل 1)"),
-    num_steps: int | None = Query(48, description="عدد خطوات التوليد (الافتراضي: 48)"),
+    num_steps: int | None = Query(16, description="عدد خطوات التوليد (الافتراضي: 16 لدقة النبرة والوضوح)"),
+    speed: float | None = Query(1.15, description="سرعة الكلام (الافتراضي: 1.15 للعامية المصرية)"),
+    guidance_scale: float | None = Query(2.6, description="مطابقة نبرة الصوت المستنسخ"),
     _user: str | None = Depends(get_optional_user),
     svc: VoiceCloneService = Depends(_svc),
 ):
@@ -288,7 +292,9 @@ async def synthesize_get(
             text=text,
             voice_id=voice_id,
             personality_id=personality_id,
-            num_steps=num_steps or 48,
+            num_steps=num_steps or 16,
+            guidance_scale=guidance_scale or 2.6,
+            speed=speed or 1.15,
         )
         return await synthesize(req, _user=_user, svc=svc)
 
