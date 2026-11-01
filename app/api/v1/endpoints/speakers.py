@@ -128,6 +128,49 @@ async def diarize_speakers(
     return res
 
 
+
+@router.post(
+    "/compare",
+    summary="Compare two voice clips & identify speaker and spoken language",
+    description=(
+        "Compares two uploaded voice clips directly: "
+        "1. Checks if they belong to the same person or different people. "
+        "2. Identifies Voice 1 from enrolled database voiceprints (with Face ID, Personality ID, Memory ID). "
+        "3. Identifies Voice 2 from enrolled database voiceprints (with Face ID, Personality ID, Memory ID). "
+        "4. Detects whether each person spoke Arabic (العربية) or English (الإنجليزية)."
+    ),
+    status_code=status.HTTP_200_OK,
+)
+async def compare_speakers(
+    file1: UploadFile = File(..., description="First audio file (Voice 1)"),
+    file2: UploadFile = File(..., description="Second audio file (Voice 2)"),
+    threshold: Optional[float] = Query(None, description="Cosine similarity threshold override (default: 0.82)"),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Compare two voice recordings and detect spoken language."""
+    audio_bytes1 = await file1.read()
+    audio_bytes2 = await file2.read()
+
+    if not audio_bytes1 or not audio_bytes2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="يجب إرسال كلا الملفين الصوتيين (file1 و file2) لإجراء المقارنة.",
+        )
+
+    speaker_service = get_speaker_service()
+    res = await speaker_service.compare_two_speakers(
+        audio1=audio_bytes1,
+        audio2=audio_bytes2,
+        threshold=threshold,
+    )
+    if not res.get("success", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=res.get("error", "فشلت عملية مقارنة الصوتين."),
+        )
+    return res
+
+
 @router.post(
     "/enroll",
     summary="Enroll a speaker voiceprint",
@@ -136,9 +179,12 @@ async def diarize_speakers(
 )
 async def enroll_speaker(
     speaker_name: str = Form(..., description="Name or identifier of the speaker"),
-    file: Optional[UploadFile] = File(None, description="Primary audio recording sample (WAV)"),
+    file: Optional[UploadFile] = File(None, description="Primary audio recording sample (any audio format: WAV/MP3/M4A/OGG/WebM/AAC/AMR)"),
     files: Optional[List[UploadFile]] = File(None, description="Multiple audio sample clips for averaging"),
-    max_level: int = Form(2, description="Security clearance level (0: child, 1: guest, 2: standard, 3: admin)"),
+    face_id: Optional[int] = Form(None, description="Optional linked Neural Face ID"),
+    personality_id: Optional[int] = Form(None, description="Optional linked Personality ID"),
+    memory_id: Optional[int] = Form(None, description="Optional linked Memory ID"),
+    max_level: int = Form(2, description="Security level (default: 2)"),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Enroll a speaker into the database."""
@@ -175,6 +221,9 @@ async def enroll_speaker(
             speaker_name=clean_name,
             samples=audio_samples,
             max_level=max_level,
+            face_id=face_id,
+            personality_id=personality_id,
+            memory_id=memory_id,
         )
         await db.commit()
     except VoiceprintError as e:
@@ -195,6 +244,9 @@ async def enroll_speaker(
         "success": True,
         "speaker_name": voiceprint.speaker_name,
         "user_id": voiceprint.user_id,
+        "face_id": getattr(voiceprint, "face_id", None),
+        "personality_id": getattr(voiceprint, "personality_id", None),
+        "memory_id": getattr(voiceprint, "memory_id", None),
         "samples_count": voiceprint.samples_count,
         "embedding_dim": voiceprint.embedding_dim,
         "model_id": voiceprint.model_id,
@@ -222,6 +274,9 @@ async def list_speakers(
             "embedding_dim": r.embedding_dim,
             "model_id": r.model_id,
             "max_level": r.max_level,
+            "face_id": getattr(r, "face_id", None),
+            "personality_id": getattr(r, "personality_id", None),
+            "memory_id": getattr(r, "memory_id", None),
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }
