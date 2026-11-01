@@ -136,9 +136,12 @@ async def diarize_speakers(
 )
 async def enroll_speaker(
     speaker_name: str = Form(..., description="Name or identifier of the speaker"),
-    file: Optional[UploadFile] = File(None, description="Primary audio recording sample (WAV)"),
+    file: Optional[UploadFile] = File(None, description="Primary audio recording sample (any audio format: WAV/MP3/M4A/OGG/WebM/AAC/AMR)"),
     files: Optional[List[UploadFile]] = File(None, description="Multiple audio sample clips for averaging"),
-    max_level: int = Form(2, description="Security clearance level (0: child, 1: guest, 2: standard, 3: admin)"),
+    face_id: Optional[int] = Form(None, description="Optional linked Neural Face ID"),
+    personality_id: Optional[int] = Form(None, description="Optional linked Personality ID"),
+    memory_id: Optional[int] = Form(None, description="Optional linked Memory ID"),
+    max_level: int = Form(2, description="Security level (default: 2)"),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Enroll a speaker into the database."""
@@ -175,6 +178,9 @@ async def enroll_speaker(
             speaker_name=clean_name,
             samples=audio_samples,
             max_level=max_level,
+            face_id=face_id,
+            personality_id=personality_id,
+            memory_id=memory_id,
         )
         await db.commit()
     except VoiceprintError as e:
@@ -195,6 +201,9 @@ async def enroll_speaker(
         "success": True,
         "speaker_name": voiceprint.speaker_name,
         "user_id": voiceprint.user_id,
+        "face_id": getattr(voiceprint, "face_id", None),
+        "personality_id": getattr(voiceprint, "personality_id", None),
+        "memory_id": getattr(voiceprint, "memory_id", None),
         "samples_count": voiceprint.samples_count,
         "embedding_dim": voiceprint.embedding_dim,
         "model_id": voiceprint.model_id,
@@ -222,6 +231,9 @@ async def list_speakers(
             "embedding_dim": r.embedding_dim,
             "model_id": r.model_id,
             "max_level": r.max_level,
+            "face_id": getattr(r, "face_id", None),
+            "personality_id": getattr(r, "personality_id", None),
+            "memory_id": getattr(r, "memory_id", None),
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }
