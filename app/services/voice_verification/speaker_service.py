@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Protocol, Set, Tuple, Union
 
 import numpy as np
 import scipy.signal
+import subprocess
 from scipy.fftpack import dct
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,14 +45,20 @@ class AudioDecodeError(ValueError):
     pass
 
 
-def decode_audio(data: bytes, target_sr: Optional[int] = None) -> np.ndarray:
-    """PCM WAV (16/24/32-bit or float) or raw PCM16 mono -> float32 [-1, 1] at `target_sr`."""
-    sr_target = target_sr or settings.SPEAKER_SAMPLE_RATE
+def decode_audio(data: bytes, sr_target: int = 16000) -> np.ndarray:
+    """
+    Universal audio decoder supporting all recording types:
+    WAV, MP3, M4A, AAC, OGG, Opus, WebM, FLAC, AMR, 3GP, MP4 audio,
+    and raw PCM. Decodes and resamples to 1-D float32 numpy array [-1.0, 1.0] at sr_target (16kHz).
+    """
+    if not data or len(data) < 8:
+        raise AudioDecodeError("Audio data is empty or too short")
+
     src_sr = sr_target
     pcm: Optional[np.ndarray] = None
 
+    # 1. Fast path for standard WAV files
     if data[:4] == b"RIFF":
-        # 1. Attempt scipy.io.wavfile (handles int16, int32, uint8, float32)
         try:
             from scipy.io import wavfile
             src_sr, pcm_raw = wavfile.read(io.BytesIO(data))
@@ -70,7 +77,6 @@ def decode_audio(data: bytes, target_sr: Optional[int] = None) -> np.ndarray:
         except Exception:
             pcm = None
 
-        # 2. Fallback to wave module
         if pcm is None:
             try:
                 with wave.open(io.BytesIO(data)) as w:
@@ -82,19 +88,49 @@ def decode_audio(data: bytes, target_sr: Optional[int] = None) -> np.ndarray:
                         pcm = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
                     elif width == 1:
                         pcm = (np.frombuffer(frames, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
-                    else:
-                        raise AudioDecodeError(f"Unsupported WAV sample width: {width}")
-                    if channels > 1:
+                    if pcm is not None and channels > 1:
                         pcm = pcm[: len(pcm) - (len(pcm) % channels)].reshape(-1, channels).mean(axis=1)
-            except Exception as e:
-                raise AudioDecodeError(f"Invalid WAV file: {e}") from e
-    else:
+            except Exception:
+                pcm = None
+
+    # 2. Universal FFmpeg pipe (MP3, M4A, AAC, OGG, Opus, WebM, AMR, FLAC, 3GP, MP4, etc.)
+    if pcm is None:
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            proc = subprocess.Popen(
+                [
+                    ffmpeg_exe, "-y",
+                    "-i", "pipe:0",
+                    "-f", "s16le",
+                    "-acodec", "pcm_s16le",
+                    "-ar", str(sr_target),
+                    "-ac", "1",
+                    "pipe:1",
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            raw_pcm, _ = proc.communicate(input=data, timeout=12)
+            if raw_pcm and len(raw_pcm) > 0:
+                pcm = np.frombuffer(raw_pcm, dtype="<i2").astype(np.float32) / 32768.0
+                src_sr = sr_target
+        except Exception as e:
+            logger.debug("FFmpeg universal decode error: %s", e)
+            pcm = None
+
+    # 3. Fallback to raw int16 PCM
+    if pcm is None:
         usable = len(data) - (len(data) % 2)
-        pcm = np.frombuffer(data[:usable], dtype="<i2").astype(np.float32) / 32768.0
+        if usable >= 320:
+            pcm = np.frombuffer(data[:usable], dtype="<i2").astype(np.float32) / 32768.0
+            src_sr = sr_target
 
     if pcm is None or len(pcm) == 0:
-        raise AudioDecodeError("Audio data is empty or corrupted")
+        raise AudioDecodeError("تعذر فك ترميز الملف الصوتي. يرجى التأكد من سلامة الملف الصوتي أو اختيار صيغة مسجلة مدعومة.")
 
+    # Resample if needed
     if src_sr != sr_target and len(pcm) > 1:
         n_out = int(round(len(pcm) * sr_target / src_sr))
         pcm = np.interp(
@@ -376,7 +412,11 @@ class VerificationResult:
 class _Entry:
     vector: np.ndarray
     speaker_name: str
-    max_level: int
+    max_level: int = 2
+    user_id: Optional[int] = None
+    face_id: Optional[int] = None
+    personality_id: Optional[int] = None
+    memory_id: Optional[int] = None
 
 
 class VoiceprintError(ValueError):
@@ -595,7 +635,15 @@ class SpeakerVerificationService:
                     except ValueError:
                         logger.warning("Skipping corrupt voiceprint for user %s", r.user_id)
                         continue
-                    entries[r.user_id] = _Entry(vec, r.speaker_name, int(r.max_level))
+                    entries[r.user_id] = _Entry(
+                        vector=vec,
+                        speaker_name=r.speaker_name,
+                        max_level=int(r.max_level),
+                        user_id=r.user_id,
+                        face_id=getattr(r, "face_id", None),
+                        personality_id=getattr(r, "personality_id", None),
+                        memory_id=getattr(r, "memory_id", None),
+                    )
                 self._cache = entries
         return self._cache
 
@@ -687,7 +735,7 @@ class SpeakerVerificationService:
             }
 
         emb = _unit(await asyncio.to_thread(self._backend.embed, samples))
-        best_uid, best_sim, best_name = None, -1.0, None
+        best_uid, best_sim, best_name, best_entry = None, -1.0, None, None
 
         for uid, entry in entries.items():
             s = float(np.dot(emb, entry.vector))
@@ -695,6 +743,7 @@ class SpeakerVerificationService:
                 best_sim = s
                 best_uid = uid
                 best_name = entry.speaker_name
+                best_entry = entry
 
         best_sim = max(0.0, float(best_sim))
         is_identified = best_sim >= thresh
@@ -711,6 +760,9 @@ class SpeakerVerificationService:
             "is_identified": is_identified,
             "speaker_name": best_name if is_identified else None,
             "user_id": best_uid if is_identified else None,
+            "face_id": getattr(best_entry, "face_id", None) if (is_identified and best_entry) else None,
+            "personality_id": getattr(best_entry, "personality_id", None) if (is_identified and best_entry) else None,
+            "memory_id": getattr(best_entry, "memory_id", None) if (is_identified and best_entry) else None,
             "similarity": round(best_sim, 4),
             "match_percentage": pct if is_identified else 0.0,
             "audio_seconds": round(seconds, 2),
@@ -773,6 +825,9 @@ class SpeakerVerificationService:
             best_name = None
             best_sim = -1.0
             best_uid = None
+            best_face_id = None
+            best_personality_id = None
+            best_memory_id = None
             is_enrolled = False
 
             for uid, entry in entries.items():
@@ -781,6 +836,9 @@ class SpeakerVerificationService:
                     best_sim = s
                     best_uid = uid
                     best_name = entry.speaker_name
+                    best_face_id = getattr(entry, "face_id", None)
+                    best_personality_id = getattr(entry, "personality_id", None)
+                    best_memory_id = getattr(entry, "memory_id", None)
 
             if best_sim >= thresh and best_name:
                 is_enrolled = True
@@ -841,6 +899,9 @@ class SpeakerVerificationService:
                 "speaker": speaker_id,
                 "is_enrolled": is_enrolled,
                 "user_id": best_uid if is_enrolled else None,
+                "face_id": best_face_id if is_enrolled else None,
+                "personality_id": best_personality_id if is_enrolled else None,
+                "memory_id": best_memory_id if is_enrolled else None,
                 "similarity": round(sim_score, 4),
                 "match_percentage": match_pct,
                 "language": lang_info["language"],
@@ -862,6 +923,9 @@ class SpeakerVerificationService:
                     "name": name,
                     "is_enrolled": seg["is_enrolled"],
                     "user_id": seg.get("user_id"),
+                    "face_id": seg.get("face_id"),
+                    "personality_id": seg.get("personality_id"),
+                    "memory_id": seg.get("memory_id"),
                     "turns_count": 0,
                     "total_speaking_seconds": 0.0,
                     "languages_set": set(),
@@ -884,6 +948,9 @@ class SpeakerVerificationService:
                 "name": name,
                 "is_enrolled": stat["is_enrolled"],
                 "user_id": stat["user_id"],
+                "face_id": stat.get("face_id"),
+                "personality_id": stat.get("personality_id"),
+                "memory_id": stat.get("memory_id"),
                 "turns_count": stat["turns_count"],
                 "total_speaking_seconds": stat["total_speaking_seconds"],
                 "languages": langs,
@@ -909,6 +976,9 @@ class SpeakerVerificationService:
             {
                 "name": spk["name"],
                 "user_id": spk["user_id"],
+                "face_id": spk.get("face_id"),
+                "personality_id": spk.get("personality_id"),
+                "memory_id": spk.get("memory_id"),
                 "best_similarity": spk["best_similarity"],
                 "match_percentage": self._calculate_match_percentage(spk["best_similarity"], thresh),
                 "total_speaking_seconds": spk["total_speaking_seconds"],
@@ -1063,6 +1133,9 @@ class SpeakerVerificationService:
         speaker_name: str,
         samples: Union[List[bytes], bytes],
         max_level: int = 2,
+        face_id: Optional[int] = None,
+        personality_id: Optional[int] = None,
+        memory_id: Optional[int] = None,
     ) -> Voiceprint:
         """
         Build and store a voiceprint from audio enrolment samples.
@@ -1124,6 +1197,28 @@ class SpeakerVerificationService:
             await db.execute(select(Voiceprint).where(Voiceprint.user_id == user_id))
         ).scalar_one_or_none()
 
+        # Auto-resolve face_id, personality_id, memory_id if not explicitly provided
+        from app.models.face_profile import FaceProfile
+        from app.models.personality import Personality
+        from app.models.memory import Memory
+
+        if face_id is None:
+            face_row = (await db.execute(select(FaceProfile).where(FaceProfile.name.ilike(f"%{clean_name}%")))).scalar_one_or_none()
+            if face_row:
+                face_id = face_row.id
+            elif user_row and getattr(user_row, "face_profile_id", None):
+                face_id = user_row.face_profile_id
+
+        if personality_id is None:
+            p_row = (await db.execute(select(Personality).where((Personality.user_id == user_id) | (Personality.name.ilike(f"%{clean_name}%"))))).scalar_one_or_none()
+            if p_row:
+                personality_id = p_row.id
+
+        if memory_id is None and personality_id:
+            m_row = (await db.execute(select(Memory).where(Memory.personality_id == personality_id).order_by(Memory.id.desc()).limit(1))).scalar_one_or_none()
+            if m_row:
+                memory_id = m_row.id
+
         blob = mean.astype(np.float32).tobytes()
         if existing:
             existing.speaker_name = clean_name
@@ -1132,6 +1227,12 @@ class SpeakerVerificationService:
             existing.samples_count = len(kept)
             existing.model_id = self._backend.model_id
             existing.max_level = max_level
+            if face_id is not None:
+                existing.face_id = face_id
+            if personality_id is not None:
+                existing.personality_id = personality_id
+            if memory_id is not None:
+                existing.memory_id = memory_id
             row = existing
         else:
             row = Voiceprint(
@@ -1142,6 +1243,9 @@ class SpeakerVerificationService:
                 samples_count=len(kept),
                 model_id=self._backend.model_id,
                 max_level=max_level,
+                face_id=face_id,
+                personality_id=personality_id,
+                memory_id=memory_id,
             )
             db.add(row)
 

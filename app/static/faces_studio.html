@@ -1235,7 +1235,7 @@
             <div>
               <div style="font-size: 2.5rem; text-align: center; margin-bottom: 0.5rem;">📁</div>
               <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem; text-align: center;">رفع ملف صوتي للفحص</h4>
-              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; text-align: center;">يدعم ملفات WAV, MP3, M4A, OGG, WebM.</p>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; text-align: center;">يدعم جميع أنواع المسجلات والتسجيلات: WAV, MP3, M4A (iPhone), OGG, Opus (WhatsApp), WebM, AAC, FLAC, AMR (Android).</p>
             </div>
 
             <div class="dropzone" id="voice-file-dropzone" onclick="document.getElementById('voice-file-input').click()" style="padding: 1.25rem 1rem; margin-bottom: 1rem;">
@@ -1329,20 +1329,25 @@
         </div>
 
         <form id="voice-enroll-form" onsubmit="handleVoiceEnrollSubmit(event)">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem;">
             <div class="form-group" style="margin-bottom: 0;">
-              <label for="enroll-speaker-name" style="font-weight: 700; color: #e2e8f0;">اسم المتحدث بالكامل أو المعرف:</label>
+              <label for="enroll-speaker-name" style="font-weight: 700; color: #e2e8f0;">👤 اسم المتحدث:</label>
               <input type="text" id="enroll-speaker-name" class="form-control" placeholder="مثال: أحمد / ahmed" required>
             </div>
 
             <div class="form-group" style="margin-bottom: 0;">
-              <label for="enroll-speaker-level" style="font-weight: 700; color: #e2e8f0;">مستوى الأمان والصلاحية:</label>
-              <select id="enroll-speaker-level" class="form-control" style="background: #0f172a;">
-                <option value="2" selected>المستوى القياسي (Level 2 - Standard User)</option>
-                <option value="3">المستوى الإداري (Level 3 - System Owner/Admin)</option>
-                <option value="1">مستوى الضيف (Level 1 - Guest/Restricted)</option>
-                <option value="0">مستوى الأطفال (Level 0 - Child Safe)</option>
-              </select>
+              <label for="enroll-face-id" style="font-weight: 700; color: #e2e8f0;">🎭 Face ID (معرف الوجه):</label>
+              <input type="number" id="enroll-face-id" class="form-control" placeholder="اختياري (أو يُكتشف تلقائياً)" min="1">
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="enroll-personality-id" style="font-weight: 700; color: #e2e8f0;">🤖 Personality ID (الشخصية):</label>
+              <input type="number" id="enroll-personality-id" class="form-control" placeholder="اختياري (أو يُكتشف تلقائياً)" min="1">
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="enroll-memory-id" style="font-weight: 700; color: #e2e8f0;">🧠 Memory ID (الذاكرة):</label>
+              <input type="number" id="enroll-memory-id" class="form-control" placeholder="اختياري (أو يُكتشف تلقائياً)" min="1">
             </div>
           </div>
 
@@ -1362,7 +1367,7 @@
 
             <!-- File for enrollment -->
             <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
-              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 2: رفع ملف صوتي جاهز (WAV/MP3)</p>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 2: رفع تسجيل صوتي (يقبل جميع أنواع المسجلات: WAV / MP3 / M4A / OGG / Opus / WebM / AAC / AMR)</p>
               <input type="file" id="enroll-file-input" class="form-control" accept="audio/*" onchange="handleEnrollFileSelected(this)">
             </div>
           </div>
@@ -2267,6 +2272,9 @@
               <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
               <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>معرف المستخدم:</strong> #${data.user_id}</span>
               <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              ${data.face_id ? `<span style="font-size: 0.85rem; color: #a5f3fc;"><strong>Face ID:</strong> #${data.face_id}</span><span style="font-size: 0.85rem; color: #94a3b8;">|</span>` : ''}
+              ${data.personality_id ? `<span style="font-size: 0.85rem; color: #fed7aa;"><strong>Personality ID:</strong> #${data.personality_id}</span><span style="font-size: 0.85rem; color: #94a3b8;">|</span>` : ''}
+              ${data.memory_id ? `<span style="font-size: 0.85rem; color: #c084fc;"><strong>Memory ID:</strong> #${data.memory_id}</span><span style="font-size: 0.85rem; color: #94a3b8;">|</span>` : ''}
               <span style="font-size: 0.85rem; color: #6ee7b7;"><strong>الحالة:</strong> مصرح به (Authorized)</span>
             </div>
           </div>
@@ -2618,7 +2626,9 @@
       if (e) e.preventDefault();
 
       const name = document.getElementById('enroll-speaker-name').value.trim();
-      const level = document.getElementById('enroll-speaker-level').value;
+      const faceId = document.getElementById('enroll-face-id')?.value?.trim();
+      const personalityId = document.getElementById('enroll-personality-id')?.value?.trim();
+      const memoryId = document.getElementById('enroll-memory-id')?.value?.trim();
       const fileInput = document.getElementById('enroll-file-input');
 
       let audioToEnroll = null;
@@ -2644,7 +2654,9 @@
 
       const formData = new FormData();
       formData.append('speaker_name', name);
-      formData.append('max_level', level);
+      if (faceId) formData.append('face_id', faceId);
+      if (personalityId) formData.append('personality_id', personalityId);
+      if (memoryId) formData.append('memory_id', memoryId);
       formData.append('file', audioToEnroll, 'enroll_sample.wav');
 
       try {
@@ -2708,11 +2720,16 @@
                 </div>
               </div>
               <span style="font-size: 0.75rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); padding: 4px 10px; border-radius: 9999px;">
-                Level ${s.max_level}
+                ✓ مسجل
               </span>
             </div>
 
             <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.6; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: var(--radius-sm);">
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+                ${s.face_id ? `<span style="font-size:0.75rem; color:#a5f3fc; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); padding:2px 8px; border-radius:9999px;">🎭 Face #${s.face_id}</span>` : ''}
+                ${s.personality_id ? `<span style="font-size:0.75rem; color:#fed7aa; background:rgba(249,115,22,0.15); border:1px solid rgba(249,115,22,0.3); padding:2px 8px; border-radius:9999px;">🤖 Persona #${s.personality_id}</span>` : ''}
+                ${s.memory_id ? `<span style="font-size:0.75rem; color:#c084fc; background:rgba(192,132,252,0.15); border:1px solid rgba(192,132,252,0.3); padding:2px 8px; border-radius:9999px;">🧠 Memory #${s.memory_id}</span>` : ''}
+              </div>
               <div><strong>أبعاد التشفير:</strong> ${s.embedding_dim}-D vector</div>
               <div><strong>النموذج:</strong> ${s.model_id || 'Acoustic-192D'}</div>
               <div><strong>تاريخ التسجيل:</strong> ${s.created_at ? new Date(s.created_at).toLocaleDateString('ar-EG') : '--'}</div>

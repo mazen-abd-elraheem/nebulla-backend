@@ -39,6 +39,11 @@ class Voiceprint(Base):
     # Highest security level this speaker may reach (child = 0, owner = 2/3)
     max_level: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
 
+    # Cross-modal links (Face ID, Personality ID, Memory ID)
+    face_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    personality_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    memory_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     consent_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
