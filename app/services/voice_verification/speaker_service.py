@@ -1061,6 +1061,167 @@ class SpeakerVerificationService:
             "arabic_summary": "\n".join(summary_lines),
         }
 
+    # ── Compare Two Speakers (1:1 Comparison & Language Detection) ──────
+
+    async def compare_two_speakers(
+        self,
+        audio1: bytes,
+        audio2: bytes,
+        threshold: Optional[float] = None,
+        *,
+        session_factory=None,
+    ) -> Dict[str, Any]:
+        """
+        Directly compares two audio recordings:
+        1. Compares them against each other (same person or different people).
+        2. Identifies who Voice 1 belongs to (from enrolled DB voiceprints + Face ID, Personality ID, Memory ID).
+        3. Identifies who Voice 2 belongs to.
+        4. Detects the spoken language of each voice (Arabic vs English).
+        """
+        thresh = threshold if threshold is not None else self.default_threshold
+        entries = await self._entries(session_factory)
+
+        # 1. Decode both audio files
+        try:
+            pcm1 = decode_audio(audio1)
+        except Exception as e:
+            return {"success": False, "error": f"تعذر فك ترميز الصوت الأول: {e}"}
+
+        try:
+            pcm2 = decode_audio(audio2)
+        except Exception as e:
+            return {"success": False, "error": f"تعذر فك ترميز الصوت الثاني: {e}"}
+
+        sec1 = round(len(pcm1) / float(settings.SPEAKER_SAMPLE_RATE), 2)
+        sec2 = round(len(pcm2) / float(settings.SPEAKER_SAMPLE_RATE), 2)
+
+        if sec1 < 0.4:
+            return {"success": False, "error": f"الصوت الأول قصير جداً ({sec1} ثانية). يجب أن يكون 0.5 ثانية على الأقل."}
+        if sec2 < 0.4:
+            return {"success": False, "error": f"الصوت الثاني قصير جداً ({sec2} ثانية). يجب أن يكون 0.5 ثانية على الأقل."}
+
+        # 2. Extract embeddings
+        try:
+            emb1 = _unit(await asyncio.to_thread(self._backend.embed, pcm1))
+            emb2 = _unit(await asyncio.to_thread(self._backend.embed, pcm2))
+        except Exception as e:
+            return {"success": False, "error": f"فشل استخراج البصمة الصوتية: {e}"}
+
+        # 3. Direct comparison between Voice 1 and Voice 2
+        sim_12 = float(np.dot(emb1, emb2))
+        sim_12 = max(-1.0, min(1.0, sim_12))
+        is_same_speaker = sim_12 >= thresh
+        same_match_pct = self._calculate_match_percentage(sim_12, thresh)
+
+        # 4. Identify Voice 1 against enrolled DB speakers
+        best_uid1, best_sim1, best_name1, best_entry1 = None, -1.0, None, None
+        for uid, entry in entries.items():
+            s = float(np.dot(emb1, entry.vector))
+            if s > best_sim1:
+                best_sim1 = s
+                best_uid1 = uid
+                best_name1 = entry.speaker_name
+                best_entry1 = entry
+
+        is_identified1 = (best_sim1 >= thresh) and (best_name1 is not None)
+        pct1 = self._calculate_match_percentage(best_sim1, thresh) if is_identified1 else 0.0
+
+        # 5. Identify Voice 2 against enrolled DB speakers
+        best_uid2, best_sim2, best_name2, best_entry2 = None, -1.0, None, None
+        for uid, entry in entries.items():
+            s = float(np.dot(emb2, entry.vector))
+            if s > best_sim2:
+                best_sim2 = s
+                best_uid2 = uid
+                best_name2 = entry.speaker_name
+                best_entry2 = entry
+
+        is_identified2 = (best_sim2 >= thresh) and (best_name2 is not None)
+        pct2 = self._calculate_match_percentage(best_sim2, thresh) if is_identified2 else 0.0
+
+        # 6. Detect Spoken Language for each voice
+        lang_info1 = detect_spoken_language(pcm1, sr=settings.SPEAKER_SAMPLE_RATE)
+        lang_info2 = detect_spoken_language(pcm2, sr=settings.SPEAKER_SAMPLE_RATE)
+
+        lang1 = lang_info1["language"]
+        lang2 = lang_info2["language"]
+
+        # 7. Formulate Arabic Verdicts
+        # A. Comparison Verdict
+        if is_same_speaker:
+            if is_identified1 and is_identified2 and best_name1 == best_name2:
+                comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name1}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
+            elif is_identified1:
+                comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name1}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
+            elif is_identified2:
+                comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name2}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
+            else:
+                comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص (تطابق بنسبة {same_match_pct:.1f}%)، ولكنه غير مسجل في السيستم (صوت غير معروف)."
+        else:
+            name1_str = f"[{best_name1}]" if is_identified1 else "[شخص غير مسجل]"
+            name2_str = f"[{best_name2}]" if is_identified2 else "[شخص غير مسجل]"
+            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ {name1_str} والصوت الثاني لـ {name2_str} (معامل التشابه بينهما: {sim_12:.3f})."
+
+        # B. Language Verdict
+        if lang1 == lang2:
+            lang_verdict = f"كلا الشخصين تحدثا بنفس اللغة: [{lang1}]."
+        else:
+            lang_verdict = f"الصوت الأول تحدث بـ [{lang1}] بينما الصوت الثاني تحدث بـ [{lang2}]."
+
+        # C. Full Summary
+        summary_lines = [
+            f"🔍 نتيجة المقارنة بين التسجيلين الصوتين:",
+            f" • نتيجة التطابق: {comp_verdict}",
+            f" • نتيجة فحص اللغات: {lang_verdict}",
+            "",
+            f"📋 تفاصيل الصوت الأول ({sec1} ثانية):",
+            f"   - الهوية: {best_name1 if is_identified1 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct1) + '%' if is_identified1 else 'صوت غير معروف'})",
+            f"   - اللغة المرصودة: {lang1}",
+            f"   - المعرفات: User #{best_uid1 or '--'} | Face #{getattr(best_entry1, 'face_id', None) or '--'} | Persona #{getattr(best_entry1, 'personality_id', None) or '--'} | Memory #{getattr(best_entry1, 'memory_id', None) or '--'}",
+            "",
+            f"📋 تفاصيل الصوت الثاني ({sec2} ثانية):",
+            f"   - الهوية: {best_name2 if is_identified2 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct2) + '%' if is_identified2 else 'صوت غير معروف'})",
+            f"   - اللغة المرصودة: {lang2}",
+            f"   - المعرفات: User #{best_uid2 or '--'} | Face #{getattr(best_entry2, 'face_id', None) or '--'} | Persona #{getattr(best_entry2, 'personality_id', None) or '--'} | Memory #{getattr(best_entry2, 'memory_id', None) or '--'}",
+        ]
+
+        return {
+            "success": True,
+            "is_same_speaker": is_same_speaker,
+            "similarity": round(sim_12, 4),
+            "match_percentage": same_match_pct if is_same_speaker else 0.0,
+            "threshold": thresh,
+            "comparison_verdict": comp_verdict,
+            "language_verdict": lang_verdict,
+            "voice1": {
+                "speaker_name": best_name1 if is_identified1 else "شخص غير مسجل (لا)",
+                "is_enrolled": is_identified1,
+                "user_id": best_uid1 if is_identified1 else None,
+                "face_id": getattr(best_entry1, "face_id", None) if is_identified1 else None,
+                "personality_id": getattr(best_entry1, "personality_id", None) if is_identified1 else None,
+                "memory_id": getattr(best_entry1, "memory_id", None) if is_identified1 else None,
+                "similarity": round(best_sim1, 4),
+                "match_percentage": pct1,
+                "audio_seconds": sec1,
+                "language": lang1,
+                "language_code": lang_info1["language_code"],
+            },
+            "voice2": {
+                "speaker_name": best_name2 if is_identified2 else "شخص غير مسجل (لا)",
+                "is_enrolled": is_identified2,
+                "user_id": best_uid2 if is_identified2 else None,
+                "face_id": getattr(best_entry2, "face_id", None) if is_identified2 else None,
+                "personality_id": getattr(best_entry2, "personality_id", None) if is_identified2 else None,
+                "memory_id": getattr(best_entry2, "memory_id", None) if is_identified2 else None,
+                "similarity": round(best_sim2, 4),
+                "match_percentage": pct2,
+                "audio_seconds": sec2,
+                "language": lang2,
+                "language_code": lang_info2["language_code"],
+            },
+            "arabic_summary": "\n".join(summary_lines),
+        }
+
     # ── verification (Guard Pipeline) ────────────────────────────────────
 
     async def verify(self, audio: bytes, *, session_factory=None) -> VerificationResult:
