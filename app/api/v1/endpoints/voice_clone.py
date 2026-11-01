@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user, get_optional_user
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.personality import Personality
 
@@ -237,6 +238,12 @@ async def synthesize(
         speed=spd,
     )
 
+    if not wav_bytes or len(wav_bytes) <= 1000:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Voice cloning failed to produce valid audio output.",
+        )
+
     # Cache latest audio to disk and memory for immediate browser streaming
     try:
         LATEST_WAV_FILE.write_bytes(wav_bytes)
@@ -316,7 +323,7 @@ async def synthesize_get(
     req = SynthesizeRequest(
         text="أهلاً بيك يا صديقي! الصوت المصري المستنسخ شغال وجاهز تماماً.",
         personality_id=pid,
-        num_steps=4,
+        num_steps=48,
     )
     return await synthesize(req, _user=_user, svc=svc)
 
@@ -339,8 +346,9 @@ async def test_voice(
     wav_bytes = await svc.synthesize(
         text="أهلاً يا صديقي! الروبوت بيكلم بصوتك المستنسخ.",
         personality_id=pid,
-        language="ar",
-        num_step=4,
+        language="arz",
+        num_step=48,
+        guidance_scale=2.2,
     )
     try:
         LATEST_WAV_FILE.write_bytes(wav_bytes)

@@ -153,10 +153,12 @@ class QwenCleoProvider(BaseSTTProvider):
     """
 
     _shared_model = None
+    _shared_pipeline = None
     _shared_is_ready = False
     _shared_lock = asyncio.Lock()
     _shared_infer_lock = threading.Lock()
     _shared_thread_pool = None
+    _shared_error: str | None = None
 
     def __init__(self):
         self._fallback_whisper = None
@@ -166,15 +168,21 @@ class QwenCleoProvider(BaseSTTProvider):
             )
 
     async def _ensure_loaded(self):
-        if QwenCleoProvider._shared_is_ready and QwenCleoProvider._shared_model is not None:
+        if QwenCleoProvider._shared_is_ready and (
+            QwenCleoProvider._shared_model is not None or QwenCleoProvider._shared_pipeline is not None
+        ):
             return
         async with QwenCleoProvider._shared_lock:
-            if not QwenCleoProvider._shared_is_ready or QwenCleoProvider._shared_model is None:
+            if not QwenCleoProvider._shared_is_ready or (
+                QwenCleoProvider._shared_model is None and QwenCleoProvider._shared_pipeline is None
+            ):
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self._load)
 
     def _load(self):
-        if QwenCleoProvider._shared_is_ready and QwenCleoProvider._shared_model is not None:
+        if QwenCleoProvider._shared_is_ready and (
+            QwenCleoProvider._shared_model is not None or QwenCleoProvider._shared_pipeline is not None
+        ):
             return
         try:
             # Check local path on D: or configured path
@@ -190,27 +198,52 @@ class QwenCleoProvider(BaseSTTProvider):
                     break
 
             if local_model_dir:
-                logger.info(f"Loading local QwenCleo-ASR from {local_model_dir}...")
-                from qwencleo_asr import QwenCleoASR
-                dev = "cuda:0" if settings.QWENCLEO_DEVICE == "cuda" else "cpu"
-                asr = QwenCleoASR(
-                    model_id=local_model_dir,
-                    device=dev,
-                    default_language="Arabic",
-                )
-                # Eagerly load the underlying model weights into VRAM once
-                asr._ensure_model()
-                QwenCleoProvider._shared_model = asr
-                logger.info("QwenCleo-ASR loaded successfully from local weights ✓")
-                QwenCleoProvider._shared_is_ready = True
-            else:
-                logger.info(
-                    "Local QwenCleo weights are downloading/cached. "
-                    "Operating with multi-threaded chunk processing and silence trimming."
-                )
-                QwenCleoProvider._shared_is_ready = True
+                try:
+                    logger.info(f"Loading local QwenCleo-ASR from {local_model_dir}...")
+                    from qwencleo_asr import QwenCleoASR
+                    dev = "cuda:0" if settings.QWENCLEO_DEVICE == "cuda" else "cpu"
+                    asr = QwenCleoASR(
+                        model_id=local_model_dir,
+                        device=dev,
+                        default_language="Arabic",
+                    )
+                    asr._ensure_model()
+                    QwenCleoProvider._shared_model = asr
+                    logger.info("QwenCleo-ASR loaded successfully from local weights ✓")
+                    QwenCleoProvider._shared_is_ready = True
+                    return
+                except Exception as exc:
+                    logger.warning(f"Native QwenCleoASR load exception: {exc}. Trying transformers pipeline...")
+
+            import torch
+            from transformers import pipeline as hf_pipeline
+
+            model_path = local_model_dir or getattr(settings, "QWENCLEO_MODEL_PATH", "mohammedaly22/QwenCleo-ASR")
+            if not Path(model_path).exists():
+                logger.info(f"Local QwenCleo model not found at '{model_path}'. Using 'mohammedaly22/QwenCleo-ASR'...")
+                model_path = "mohammedaly22/QwenCleo-ASR"
+
+            device_idx = -1
+            if getattr(settings, "QWENCLEO_DEVICE", "cuda") == "cuda" and torch.cuda.is_available():
+                device_idx = 0
+
+            logger.info(f"Loading QwenCleo-ASR pipeline from {model_path} (device={device_idx})...")
+            QwenCleoProvider._shared_pipeline = hf_pipeline(
+                task="automatic-speech-recognition",
+                model=model_path,
+                device=device_idx,
+                chunk_length_s=30,
+                stride_length_s=5,
+                return_timestamps=False,
+                trust_remote_code=True,
+            )
+            QwenCleoProvider._shared_error = None
+            QwenCleoProvider._shared_is_ready = True
+            logger.info("QwenCleo-ASR ready ✓")
         except Exception as e:
-            logger.warning(f"QwenCleo native load note: {e} (will use optimized chunk pipeline)")
+            err_msg = f"Failed to load QwenCleo-ASR: {e}"
+            logger.warning(f"{err_msg} (Will use fallback Whisper transcription if needed)")
+            QwenCleoProvider._shared_error = err_msg
             QwenCleoProvider._shared_is_ready = True
 
     async def transcribe(self, audio_bytes: bytes) -> str:
@@ -228,6 +261,7 @@ class QwenCleoProvider(BaseSTTProvider):
             # 1. Decode audio to float32 mono
             with io.BytesIO(audio_bytes) as bio:
                 audio_array, sample_rate = sf.read(bio)
+
             if audio_array.ndim > 1:
                 audio_array = audio_array.mean(axis=1)
 
@@ -252,7 +286,11 @@ class QwenCleoProvider(BaseSTTProvider):
                 return self._transcribe_single_chunk(chunks[0], sample_rate)
 
             logger.info(f"Processing {len(chunks)} speech chunks concurrently via multithreading...")
-            pool = QwenCleoProvider._shared_thread_pool or self._thread_pool
+            pool = QwenCleoProvider._shared_thread_pool
+            if pool is None:
+                pool = ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 2))
+                QwenCleoProvider._shared_thread_pool = pool
+
             futures = [
                 pool.submit(self._transcribe_single_chunk, chunk, sample_rate)
                 for chunk in chunks
@@ -266,7 +304,7 @@ class QwenCleoProvider(BaseSTTProvider):
             return self._fallback_transcribe(audio_bytes)
 
     def _transcribe_single_chunk(self, chunk_array: np.ndarray, sample_rate: int) -> str:
-        """Transcribe an individual chunk using QwenCleo if local weights ready, or fallback."""
+        """Transcribe an individual chunk using QwenCleo or HF pipeline, or fallback."""
         if QwenCleoProvider._shared_model is not None:
             try:
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -282,6 +320,18 @@ class QwenCleoProvider(BaseSTTProvider):
                         os.unlink(tmp_name)
             except Exception as q_err:
                 logger.debug(f"QwenCleo chunk transcribe error: {q_err}")
+
+        if QwenCleoProvider._shared_pipeline is not None:
+            try:
+                with QwenCleoProvider._shared_infer_lock:
+                    result = QwenCleoProvider._shared_pipeline(
+                        {"raw": chunk_array, "sampling_rate": sample_rate}
+                    )
+                text = result.get("text", "").strip()
+                if text:
+                    return text
+            except Exception as hf_err:
+                logger.debug(f"QwenCleo HF pipeline chunk error: {hf_err}")
 
         # Fallback to local CUDA Whisper in-memory array transcription
         return self._fallback_transcribe_array(chunk_array, sample_rate)

@@ -804,9 +804,13 @@
   <main>
     <!-- Navigation Tabs -->
     <div class="tabs-nav">
-      <button class="tab-btn active" onclick="switchTab('recognize-tab')">
+      <button class="tab-btn active" onclick="switchTab('camera-tab')">
+        <span>📹</span>
+        <span>بث كاميرا اللاب المباشر (Live Webcam HUD)</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('recognize-tab')">
         <span>🎥</span>
-        <span>التعرف على الأشخاص في الفيديو (1:N)</span>
+        <span>التعرف على الأشخاص وتصدير الفيديو (1:N)</span>
       </button>
       <button class="tab-btn" onclick="switchTab('compare-tab')">
         <span>🔍</span>
@@ -816,10 +820,112 @@
         <span>👤</span>
         <span>إدارة الأشخاص المسجلين</span>
       </button>
+      <button class="tab-btn" onclick="switchTab('voice-tab')">
+        <span>🎙️</span>
+        <span>بصمة الصوت والتعرف على المتحدث (Speaker VoiceID)</span>
+      </button>
+    </div>
+
+    <!-- TAB 0: Live Webcam Stream (بث كاميرا اللاب المباشر) -->
+    <div id="camera-tab" class="tab-content" style="display:block;">
+      <div class="card">
+        <div class="card-title">
+          <span>📹</span>
+          <span>بث كاميرا اللاب توب المباشر مع رصد الوجوه (Live Face HUD)</span>
+        </div>
+        <div class="card-desc">
+          يفتح السيرفر كاميرا اللاب توب تلقائياً، ويقوم محرك UniFace برصد الوجوه لحظياً في كل إطار، وتحديد هوية الأشخاص المسجلين مع رسم صناديق التتبع التفاعلية ونقاط ملامح الوجه ونسبة التطابق في الزمن الفعلي.
+        </div>
+
+        <!-- Camera Toolbar -->
+        <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label for="camera-device-index" style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">رقم الكاميرا:</label>
+            <select id="camera-device-index" style="background: #0f172a; border: 1px solid var(--border); color: #fff; padding: 6px 12px; border-radius: var(--radius-sm); font-family: inherit;">
+              <option value="0" selected>الكاميرا الافتراضية (0 - Laptop Webcam)</option>
+              <option value="1">كاميرا خارجية (1 - External)</option>
+              <option value="2">كاميرا ثانية (2)</option>
+            </select>
+          </div>
+
+          <button id="btn-start-camera" onclick="startCameraStream()" class="btn-submit" style="padding: 9px 22px; width: auto; background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);">
+            <span>▶ تشغيل الكاميرا المباشرة</span>
+          </button>
+
+          <button id="btn-stop-camera" onclick="stopCameraStream()" class="btn-submit" style="padding: 9px 22px; width: auto; display: none; background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);">
+            <span>⏹ إيقاف الكاميرا</span>
+          </button>
+
+          <button id="btn-snapshot-camera" onclick="captureCameraSnapshot()" class="btn-docs" style="padding: 9px 18px;">
+            <span>📸 التقاط لقطة فورية</span>
+          </button>
+
+          <!-- Telemetry Badges -->
+          <div style="margin-right: auto; display: flex; gap: 10px; align-items: center;">
+            <span id="camera-status-pill" style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: rgba(100, 116, 139, 0.2); border: 1px solid rgba(100, 116, 139, 0.3); color: #94a3b8;">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: #64748b;"></span>
+              <span id="camera-status-text">متوقفة (Standby)</span>
+            </span>
+            <span id="camera-fps-badge" style="font-size: 0.8rem; font-weight: 700; color: #a5f3fc; background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.3); padding: 5px 12px; border-radius: 9999px;">
+              FPS: <span id="camera-fps-val">--</span>
+            </span>
+            <span id="camera-faces-badge" style="font-size: 0.8rem; font-weight: 700; color: #fed7aa; background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.3); padding: 5px 12px; border-radius: 9999px;">
+              الوجوه: <span id="camera-faces-val">0</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Video Display Port -->
+        <div id="camera-viewport-container" style="position: relative; width: 100%; min-height: 440px; background: #06090e; border: 2px solid var(--border); border-radius: var(--radius-md); overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">
+          <!-- Standby Screen -->
+          <div id="camera-standby-screen" style="text-align: center; padding: 3rem 1.5rem;">
+            <div style="font-size: 3.5rem; margin-bottom: 1rem; opacity: 0.8;">📹</div>
+            <h3 style="font-size: 1.25rem; font-weight: 800; color: #e2e8f0; margin-bottom: 0.5rem;">كاميرا اللاب توب في وضع الاستعداد</h3>
+            <p style="font-size: 0.88rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.5rem;">
+              اضغط على زر <strong>"▶ تشغيل الكاميرا المباشرة"</strong> لبدء البث اللحظي واكتشاف الوجوه وتتبعها مباشرة مع حساب نسب التطابق بالذكاء الاصطناعي.
+            </p>
+            <button onclick="startCameraStream()" class="btn-submit" style="width: auto; padding: 10px 24px; display: inline-flex; align-items: center; gap: 8px; margin: 0 auto;">
+              <span>⚡ تشغيل الكاميرا الآن</span>
+            </button>
+          </div>
+
+          <!-- Live Stream Image -->
+          <img id="camera-stream-display" src="" alt="Live Face HUD Stream" style="display: none; width: 100%; max-height: 640px; object-fit: contain; border-radius: var(--radius-md);">
+        </div>
+
+        <!-- Snapshot Capture Preview Area -->
+        <div id="snapshot-preview-area" style="display: none; margin-top: 1.5rem; background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h4 style="font-size: 1rem; font-weight: 700; color: #f1f5f9; display: flex; align-items: center; gap: 8px;">
+              <span>📸</span>
+              <span>اللقطة الملتقطة من الكاميرا:</span>
+            </h4>
+            <a id="download-snapshot-link" href="#" download="webcam_snapshot.jpg" class="btn-docs" style="padding: 6px 12px; font-size: 0.8rem;">
+              <span>⬇ تنزيل الصورة</span>
+            </a>
+          </div>
+          <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+            <img id="snapshot-img-preview" src="" style="max-width: 260px; max-height: 180px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+            <div style="flex: 1; min-width: 220px;">
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.8rem;">
+                تم التقاط هذه اللقطة فورياً من البث المباشر مع صناديق ورسومات التتبع.
+              </p>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button onclick="appendCurrentSnapshotAsAngle('ahmed')" class="btn-submit" style="width: auto; padding: 8px 18px; font-size: 0.9rem; background: linear-gradient(135deg, #059669, #0d9488);">
+                  <span>➕ حفظ هذه الوضعية كزاوية إضافية لـ ahmed</span>
+                </button>
+                <button onclick="switchTab('profiles-tab')" class="btn-docs">
+                  <span>➕ تسجيل شخص جديد</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- TAB 1: Recognize From Video (1:N) -->
-    <div id="recognize-tab" class="tab-content">
+    <div id="recognize-tab" class="tab-content" style="display:none;">
       <div class="card">
         <div class="card-title">
           <span>🎥</span>
@@ -865,13 +971,38 @@
             </div>
           </div>
 
-          <button type="submit" id="recognize-btn" class="btn-submit">
-            <span>⚡ بدء فحص الفيديو والتعرف على الشخص</span>
-          </button>
+          <div style="display: flex; gap: 12px; margin-top: 1rem; flex-wrap: wrap;">
+            <button type="submit" id="recognize-btn" class="btn-submit" style="flex: 1; min-width: 240px;">
+              <span>⚡ بدء فحص الفيديو والتعرف على الشخص</span>
+            </button>
+            <button type="button" id="annotate-video-btn" onclick="handleAnnotateVideoSubmit(event)" class="btn-submit" style="flex: 1; min-width: 240px; background: linear-gradient(135deg, #059669, #0d9488); box-shadow: 0 4px 15px rgba(13, 148, 136, 0.4);">
+              <span>🎬 رسم وتصدير الفيديو بالكامل (Annotate HUD)</span>
+            </button>
+          </div>
         </form>
+
+        <!-- Annotated Video Player Area -->
+        <div id="annotated-video-sec" style="display:none; margin-top: 2rem; background: rgba(10, 13, 20, 0.8); border: 1px solid var(--border-glow); border-radius: var(--radius-md); padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 12px;">
+            <div style="font-size: 1.15rem; font-weight: 800; color: #a7f3d0; display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.4rem;">🎬</span>
+              <span>الفيديو المعالج بعد رسم الوجوه وتتبعها (HUD Video):</span>
+            </div>
+            <a id="download-annotated-link" href="#" download="annotated_video.mp4" class="btn-docs" style="background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); color: #6ee7b7; padding: 8px 16px;">
+              <span>⬇ تحميل الفيديو المعالج (MP4)</span>
+            </a>
+          </div>
+          <video id="annotated-video-player" controls style="width: 100%; max-height: 520px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: #000;"></video>
+        </div>
 
         <!-- Results Area -->
         <div id="recognize-results" class="results-section">
+          <!-- Summary Banner -->
+          <div id="recognize-summary-card" style="display:none; padding: 1.1rem 1.4rem; background: rgba(99, 102, 241, 0.15); border: 1px solid var(--border-glow); border-radius: var(--radius-md); font-weight: 700; color: #e0e7ff; font-size: 1.05rem; align-items: center; gap: 12px; margin-bottom: 0.5rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);">
+            <span style="font-size: 1.6rem;">🎯</span>
+            <span id="recognize-summary-text"></span>
+          </div>
+
           <div class="stats-row">
             <div class="stat-card">
               <div class="stat-num" id="stat-persons-count">0</div>
@@ -970,13 +1101,25 @@
           <div class="versus-row" id="compare-versus">
             <div class="versus-item">
               <img id="versus-ref-img" class="versus-img" src="" alt="الصورة المرجعية">
-              <div class="versus-label">الصورة المرجعية الأصلية</div>
+              <div class="versus-label" id="versus-ref-label">الصورة المرجعية الأصلية</div>
             </div>
             <div style="font-size: 1.8rem; font-weight: 900; color: var(--text-muted);">⟷</div>
             <div class="versus-item">
               <img id="versus-cand-img" class="versus-img" src="" alt="لقطة الفيديو">
               <div class="versus-label" id="versus-cand-label">أوضح لقطة من الفيديو (00:00)</div>
             </div>
+          </div>
+
+          <!-- Multiple People in Image Breakdown Area -->
+          <div id="compare-multi-people-sec" style="display:none; margin-top: 1.8rem; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem;">
+            <h3 style="font-size: 1.15rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 8px;">
+              <span>👥</span>
+              <span>نتيجة فحص جميع الأشخاص في الصورة:</span>
+            </h3>
+            <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+              تم التعرف على الشخص المشترك في الفيديو وتحديد الأشخاص الآخرين في الصورة الذين لم يظهروا:
+            </p>
+            <div id="compare-multi-people-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;"></div>
           </div>
         </div>
       </div>
@@ -1004,6 +1147,13 @@
             <input type="file" id="reg-image" class="form-control" accept="image/*" required>
           </div>
 
+          <div style="display: flex; align-items: center; gap: 10px; margin: 0.5rem 0 1rem; background: rgba(99, 102, 241, 0.1); padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid rgba(99, 102, 241, 0.25);">
+            <input type="checkbox" id="reg-append" style="width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer;">
+            <label for="reg-append" style="font-size: 0.88rem; color: #e2e8f0; cursor: pointer; user-select: none;">
+              <strong>إضافة كزاوية إضافية (Multi-Angle):</strong> حدد هذا الخيار إذا كان الشخص مسجلاً بالفعل وتريد حفظ زاوية جديدة لوجهه (جانبية، مائلة، إضاءة مختلفة) ليتعرف عليه النظام في جميع الأوضاع بدقة 100%.
+            </label>
+          </div>
+
           <button type="submit" id="reg-btn" class="btn-submit" style="margin-top: 1rem;">
             <span>➕ حفظ وتثبيت الشخص في قاعدة البيانات</span>
           </button>
@@ -1021,6 +1171,221 @@
         </div>
       </div>
     </div>
+    <!-- TAB 4: Speaker Voice Identification (بصمة الصوت والتعرف على المتحدث) -->
+    <div id="voice-tab" class="tab-content" style="display:none;">
+      <!-- Voice Engine Telemetry Card -->
+      <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem 1.75rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 40px; height: 40px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #10b981, #06b6d4); display: flex; align-items: center; justify-content: center; font-size: 20px;">🎙️</div>
+          <div>
+            <h3 style="font-size: 1.05rem; font-weight: 800; color: #fff;">محرك بصمة الصوت الحيوي (Biometric VoiceID Engine)</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted);" id="voice-backend-desc">نموذج التشفير الصوتي 192-D (MFCCs + LPC Formants + Pitch Harmonics)</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <span class="badge-status" id="voice-engine-pill">
+            <span class="status-dot"></span>
+            <span id="voice-engine-status-text">جاهز للتعرف</span>
+          </span>
+          <span style="font-size: 0.8rem; font-weight: 700; color: #a5f3fc; background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.3); padding: 5px 12px; border-radius: 9999px;">
+            البصمات المسجلة: <span id="voice-enrolled-count">--</span>
+          </span>
+          <span style="font-size: 0.8rem; font-weight: 700; color: #fed7aa; background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.3); padding: 5px 12px; border-radius: 9999px;">
+            حد التطابق الافتراضي: <span id="voice-threshold-badge">82%</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Main Identification Card -->
+      <div class="card">
+        <div class="card-title">
+          <span>🎙️</span>
+          <span>فحص والتعرف على هوية المتحدث (1:N Voice Identification)</span>
+        </div>
+        <div class="card-desc">
+          تحدث مباشرة عبر المايك أو ارفع تسجيلاً صوتياً (WAV/MP3/M4A). سيقوم محرك البصمة الصوتية بتحليل الترددات الحيوية وطبقات الحنجرة وتحديد هوية صاحب الصوت ونسبة تطابقه فورياً، أو إشعارك بأن الصوت غير مسجل في السيستم.
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+          <!-- Option 1: Live Microphone Recording -->
+          <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: space-between;">
+            <div>
+              <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🎙️</div>
+              <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem;">التسجيل المباشر من المايك</h4>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.25rem;">اضغط على الزر وتحدث لمدة 2 - 5 ثوانٍ، ثم أوقف التسجيل لفحص الصوت لحظياً.</p>
+            </div>
+
+            <!-- Recording HUD / Timer -->
+            <div id="voice-rec-hud" style="display: none; align-items: center; gap: 10px; margin-bottom: 1rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); padding: 6px 16px; border-radius: 9999px;">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444; animation: pulse 1s infinite;"></span>
+              <span style="font-size: 0.9rem; font-weight: 800; color: #fca5a5; font-family: monospace;" id="voice-rec-timer">00:00</span>
+              <span style="font-size: 0.75rem; color: #fca5a5;">(جارٍ تسجيل الصوت...)</span>
+            </div>
+
+            <div style="width: 100%;">
+              <button type="button" id="btn-mic-toggle" onclick="toggleVoiceRecording('identify')" class="btn-submit" style="background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 18px rgba(239, 68, 68, 0.4);">
+                <span id="btn-mic-icon">🔴</span>
+                <span id="btn-mic-text">بدء تسجيل الصوت وفحصه</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Option 2: Upload Audio File -->
+          <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div style="font-size: 2.5rem; text-align: center; margin-bottom: 0.5rem;">📁</div>
+              <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem; text-align: center;">رفع ملف صوتي للفحص</h4>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; text-align: center;">يدعم ملفات WAV, MP3, M4A, OGG, WebM.</p>
+            </div>
+
+            <div class="dropzone" id="voice-file-dropzone" onclick="document.getElementById('voice-file-input').click()" style="padding: 1.25rem 1rem; margin-bottom: 1rem;">
+              <div class="dropzone-icon" style="font-size: 1.6rem;">🎵</div>
+              <div class="dropzone-title" style="font-size: 0.95rem;">اضغط لاختيار ملف صوتي</div>
+              <input type="file" id="voice-file-input" class="file-input" accept="audio/*" onchange="handleVoiceFileSelected(this)">
+              <div id="voice-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
+            </div>
+
+            <button type="button" id="btn-identify-file" onclick="handleIdentifyFileSubmit()" class="btn-submit" style="background: linear-gradient(135deg, #06b6d4, #0284c7); box-shadow: 0 4px 18px rgba(6, 182, 212, 0.35);">
+              <span>⚡ فحص الملف الصوتي المرفوع</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Threshold Setting -->
+        <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <span style="font-size: 0.88rem; font-weight: 700; color: #e2e8f0;">حد قبول التطابق المخصص (Threshold):</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 82% للتعرف الفائق الدقة وعزل الأصوات الغريبة)</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="range" id="voice-threshold-slider" min="0.60" max="0.96" step="0.01" value="0.82" oninput="document.getElementById('voice-thresh-val-display').innerText = Math.round(this.value * 100) + '%'" style="width: 140px;">
+            <span id="voice-thresh-val-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">82%</span>
+          </div>
+        </div>
+
+        <!-- Identification Result Box -->
+        <div id="voice-result-box" style="display: none; animation: fadeIn 0.4s ease forwards;">
+          <!-- Dynamically populated via JS -->
+        </div>
+      </div>
+
+      <!-- Multi-Speaker Diarization & Language Detection Card -->
+      <div class="card" style="margin-top: 2rem;">
+        <div class="card-title">
+          <span>👥</span>
+          <span>تحليل المتحدثين المتعددين وتتبع اللغات (Multi-Speaker Diarization & Languages)</span>
+        </div>
+        <div class="card-desc">
+          تحليل المحادثات والتسجيلات الجماعية: <strong>1. كشف كم شخص تحدث</strong> في التسجيل، <strong>2. تحديد لغة كل مقطع ومتحدث</strong> (العربية، الإنجليزية، الفرنسية...)، و<strong>3. رصد ما إذا كان أي شخص قد تحدث بأكثر من لغة وكشف هويته فورياً</strong>.
+        </div>
+
+        <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.5rem;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 1.25rem;">
+            <!-- File Upload -->
+            <div>
+              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📁 اختيار ملف التسجيل الصوتي للمحادثة:</label>
+              <div class="dropzone" id="diarize-dropzone" onclick="document.getElementById('diarize-file-input').click()" style="padding: 1.25rem 1rem;">
+                <div class="dropzone-icon" style="font-size: 1.6rem;">👥</div>
+                <div class="dropzone-title" style="font-size: 0.95rem;">اضغط لاختيار ملف محادثة صوتية (WAV / MP3 / M4A)</div>
+                <input type="file" id="diarize-file-input" class="file-input" accept="audio/*" onchange="handleDiarizeFileSelected(this)">
+                <div id="diarize-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
+              </div>
+            </div>
+
+            <!-- Optional Transcripts or Options -->
+            <div>
+              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📝 نصوص الحوار المكتوبة (اختياري / Transcripts):</label>
+              <textarea id="diarize-transcripts-input" class="form-control" rows="4" style="font-size: 0.82rem; font-family: monospace; background: #0f172a;" placeholder="اختياري: يمكنك كتابة نصوص الجمل أو لصق JSON من Whisper، أو اترك الحقل فارغاً ليعتمد المحرك على التحليل الصوتي التلقائي (Acoustic Phonetics)."></textarea>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">حد التطابق لفرز المتحدثين:</span>
+              <input type="range" id="diarize-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.82" oninput="document.getElementById('diarize-thresh-display').innerText = Math.round(this.value * 100) + '%'" style="width: 120px;">
+              <span id="diarize-thresh-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">82%</span>
+            </div>
+
+            <button type="button" id="btn-diarize-submit" onclick="handleDiarizeSubmit()" class="btn-submit" style="width: auto; padding: 10px 28px; background: linear-gradient(135deg, #8b5cf6, #3b82f6); box-shadow: 0 4px 18px rgba(139, 92, 246, 0.4);">
+              <span>👥 بدء تحليل المتحدثين واللغات</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Diarization Results Container -->
+        <div id="diarize-result-box" style="display: none; animation: fadeIn 0.4s ease forwards;">
+          <!-- Populated via JS -->
+        </div>
+      </div>
+
+      <!-- Voiceprint Enrollment Card -->
+      <div class="card" style="margin-top: 2rem;">
+        <div class="card-title">
+          <span>➕</span>
+          <span>تسجيل بصمة صوت جديدة (Voiceprint Enrollment)</span>
+        </div>
+        <div class="card-desc">
+          قم بتسجيل بصمة صوت جديدة لشخص ما ليتمكن النظام من التعرف على صوته آلياً في أي وقت.
+        </div>
+
+        <form id="voice-enroll-form" onsubmit="handleVoiceEnrollSubmit(event)">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="enroll-speaker-name" style="font-weight: 700; color: #e2e8f0;">اسم المتحدث بالكامل أو المعرف:</label>
+              <input type="text" id="enroll-speaker-name" class="form-control" placeholder="مثال: أحمد / ahmed" required>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="enroll-speaker-level" style="font-weight: 700; color: #e2e8f0;">مستوى الأمان والصلاحية:</label>
+              <select id="enroll-speaker-level" class="form-control" style="background: #0f172a;">
+                <option value="2" selected>المستوى القياسي (Level 2 - Standard User)</option>
+                <option value="3">المستوى الإداري (Level 3 - System Owner/Admin)</option>
+                <option value="1">مستوى الضيف (Level 1 - Guest/Restricted)</option>
+                <option value="0">مستوى الأطفال (Level 0 - Child Safe)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Audio Input for Enrollment -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+            <!-- Mic for enrollment -->
+            <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem; text-align: center;">
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 1: تسجيل صوتي مباشر للتسجيل</p>
+              <button type="button" id="btn-enroll-mic" onclick="toggleVoiceRecording('enroll')" class="btn-submit" style="width: auto; padding: 8px 20px; font-size: 0.95rem; margin: 0 auto; background: linear-gradient(135deg, #10b981, #059669);">
+                <span id="btn-enroll-mic-icon">🎙️</span>
+                <span id="btn-enroll-mic-text">تسجيل عينة الصوت</span>
+              </button>
+              <div id="enroll-rec-timer-badge" style="display:none; margin-top: 8px; font-size: 0.8rem; font-weight: 700; color: #86efac;">
+                تم تسجيل: <span id="enroll-rec-sec">0.0</span> ثانية
+              </div>
+            </div>
+
+            <!-- File for enrollment -->
+            <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 2: رفع ملف صوتي جاهز (WAV/MP3)</p>
+              <input type="file" id="enroll-file-input" class="form-control" accept="audio/*" onchange="handleEnrollFileSelected(this)">
+            </div>
+          </div>
+
+          <button type="submit" id="btn-submit-enroll" class="btn-submit" style="background: linear-gradient(135deg, #6366f1, #06b6d4);">
+            <span>➕ حفظ وتثبيت بصمة الصوت في قاعدة البيانات</span>
+          </button>
+        </form>
+
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 2rem 0;">
+
+        <!-- Enrolled Voiceprints List -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h3 style="font-size: 1.15rem; font-weight: 800; color: #fff;">البصمات الصوتية المسجلة حالياً في النظام:</h3>
+          <button onclick="loadEnrolledSpeakers()" class="btn-docs">🔄 تحديث القائمة</button>
+        </div>
+
+        <div id="speakers-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+          <!-- Populated via JS -->
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <div id="toast"></div>
@@ -1030,11 +1395,18 @@
     function switchTab(tabId) {
       document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-      document.getElementById(tabId).style.display = 'block';
-      event.currentTarget.classList.add('active');
+      const target = document.getElementById(tabId);
+      if (target) target.style.display = 'block';
+
+      const matchedBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick')?.includes(tabId));
+      if (matchedBtn) matchedBtn.classList.add('active');
 
       if (tabId === 'profiles-tab') {
         loadRegisteredProfiles();
+      }
+      if (tabId === 'voice-tab') {
+        loadEnrolledSpeakers();
+        loadVoiceEngineStatus();
       }
     }
 
@@ -1043,6 +1415,11 @@
       t.innerText = msg;
       t.classList.add('show');
       setTimeout(() => t.classList.remove('show'), 3500);
+    }
+
+    function toDataUrl(val) {
+      if (!val) return '';
+      return val.startsWith('data:') ? val : 'data:image/jpeg;base64,' + val;
     }
 
     // File Selection Handlers
@@ -1104,9 +1481,18 @@
       const resultsSec = document.getElementById('recognize-results');
       resultsSec.style.display = 'flex';
 
+      const summaryCard = document.getElementById('recognize-summary-card');
+      const summaryText = document.getElementById('recognize-summary-text');
+      if (data.summary && summaryCard && summaryText) {
+        summaryText.innerText = data.summary;
+        summaryCard.style.display = 'flex';
+      } else if (summaryCard) {
+        summaryCard.style.display = 'none';
+      }
+
       const persons = data.identified_persons || [];
       document.getElementById('stat-persons-count').innerText = persons.length;
-      document.getElementById('stat-total-detections').innerText = data.total_detections || 0;
+      document.getElementById('stat-total-detections').innerText = data.total_faces_analyzed || data.total_detections || 0;
 
       let highestPct = 0;
       persons.forEach(p => {
@@ -1134,7 +1520,7 @@
           card.className = 'person-card';
 
           const avatarSrc = p.best_crop_base64 
-            ? `data:image/jpeg;base64,${p.best_crop_base64}` 
+            ? toDataUrl(p.best_crop_base64) 
             : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="%2364748b"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
 
           const pct = p.highest_match_percentage || 0;
@@ -1173,7 +1559,7 @@
             const frame = document.createElement('div');
             frame.className = 'timeline-frame';
             frame.innerHTML = `
-              <img src="data:image/jpeg;base64,${item.crop_base64}" alt="frame">
+              <img src="${toDataUrl(item.crop_base64)}" alt="frame">
               <div class="timeline-time">${item.formatted_time || item.timestamp_sec + 's'}</div>
             `;
             gallery.appendChild(frame);
@@ -1230,6 +1616,8 @@
       }
     }
 
+    let lastCapturedSnapshotBlob = null;
+
     function renderCompareResults(data, refImageFile) {
       const resultsSec = document.getElementById('compare-results');
       resultsSec.style.display = 'flex';
@@ -1249,32 +1637,111 @@
         banner.className = 'comparison-banner match';
         gauge.className = 'match-gauge-box';
         title.innerText = '✅ تم التطابق بنجاح';
-        sub.innerText = `تم العثور على الشخص في الفيديو عند الدقيقة ${data.best_match_timestamp || '00:00'} (تم فحص ${data.total_video_faces_checked || 0} وجه).`;
+        sub.innerText = data.summary || `تم العثور على الشخص في الفيديو عند الدقيقة ${data.best_match_timestamp || '00:00'}.`;
       } else {
         banner.className = 'comparison-banner no-match';
         gauge.className = 'match-gauge-box low-match';
         title.innerText = '❌ لم يتطابق مع الشخص';
-        sub.innerText = `نسبة التشابه (${pct.toFixed(1)}%) أقل من الحد الأدنى للقبول (${Math.round(data.threshold * 100)}%).`;
+        sub.innerText = data.summary || `نسبة التشابه (${pct.toFixed(1)}%) أقل من الحد الأدنى للقبول (${Math.round(data.threshold * 100)}%).`;
       }
 
       // Render Ref Image
       const refImgElem = document.getElementById('versus-ref-img');
-      const reader = new FileReader();
-      reader.onload = (e) => { refImgElem.src = e.target.result; };
-      reader.readAsDataURL(refImageFile);
+      const refLabel = document.getElementById('versus-ref-label');
+      if (data.matched_ref_crop_base64) {
+        refImgElem.src = toDataUrl(data.matched_ref_crop_base64);
+        refLabel.innerText = 'الشخص المتطابق من الصورة';
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) => { refImgElem.src = e.target.result; };
+        reader.readAsDataURL(refImageFile);
+        refLabel.innerText = 'الصورة المرجعية';
+      }
 
       // Render Best Candidate Image
       const candImgElem = document.getElementById('versus-cand-img');
       const candLabel = document.getElementById('versus-cand-label');
       if (data.best_match_crop_base64) {
-        candImgElem.src = `data:image/jpeg;base64,${data.best_match_crop_base64}`;
+        candImgElem.src = toDataUrl(data.best_match_crop_base64);
         candLabel.innerText = `أوضح لقطة من الفيديو (${data.best_match_timestamp || ''})`;
       } else {
         candImgElem.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="%2364748b"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
-        candLabel.innerText = 'لم يتم العثور على وجه واضح';
+        candLabel.innerText = 'لم يتم العثور على وجه متطابق';
+      }
+
+      // Render Multiple Faces Breakdown (if more than 1 face in image)
+      const multiSec = document.getElementById('compare-multi-people-sec');
+      const multiGrid = document.getElementById('compare-multi-people-grid');
+      multiGrid.innerHTML = '';
+
+      if (data.faces_in_image && data.faces_in_image.length > 1) {
+        multiSec.style.display = 'block';
+        data.faces_in_image.forEach(person => {
+          const card = document.createElement('div');
+          const isPMatched = person.is_match;
+          card.style.cssText = `
+            background: ${isPMatched ? 'rgba(16, 185, 129, 0.1)' : 'rgba(15, 23, 42, 0.6)'};
+            border: 1px solid ${isPMatched ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.3)'};
+            border-radius: var(--radius-md);
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          `;
+
+          card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 800; font-size: 0.95rem; color: #f1f5f9;">شخص #${person.face_index}</span>
+              <span style="font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px; background: ${isPMatched ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.15)'}; color: ${isPMatched ? '#34d399' : '#f87171'};">
+                ${isPMatched ? '✅ متطابق في الفيديو (' + person.match_percentage.toFixed(1) + '%)' : '❌ لم يظهر في الفيديو'}
+              </span>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <div style="text-align: center;">
+                <img src="${toDataUrl(person.crop_base64)}" style="width: 75px; height: 75px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;">من الصورة</div>
+              </div>
+              ${isPMatched && person.best_match_crop_base64 ? `
+                <div style="font-size: 1.2rem; color: var(--text-muted);">⟷</div>
+                <div style="text-align: center;">
+                  <img src="${toDataUrl(person.best_match_crop_base64)}" style="width: 75px; height: 75px; object-fit: cover; border-radius: var(--radius-sm); border: 2px solid #10b981;">
+                  <div style="font-size: 0.72rem; color: #34d399; margin-top: 3px;">من الفيديو (${person.best_match_timestamp})</div>
+                </div>
+              ` : `
+                <div style="flex: 1; font-size: 0.8rem; color: var(--text-muted);">
+                  هذا الشخص لم يظهر في أي إطار من إطارات الفيديو.
+                </div>
+              `}
+            </div>
+          `;
+          multiGrid.appendChild(card);
+        });
+      } else {
+        multiSec.style.display = 'none';
       }
 
       resultsSec.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function appendCurrentSnapshotAsAngle(name) {
+      if (!lastCapturedSnapshotBlob) {
+        showToast('يرجى التقاط لقطة فورية من الكاميرا أولاً!');
+        return;
+      }
+      try {
+        showToast('جارٍ حفظ الوضعية والزاوية الحالية لـ ' + name + '...');
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('file', lastCapturedSnapshotBlob, 'pose_angle.jpg');
+        formData.append('append', 'true');
+
+        const res = await fetch('/api/v1/faces/register', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || data.error || 'فشل الحفظ');
+        showToast('🎉 تم حفظ وضعية الرأس بنجاح! سيتعرف عليك النظام في هذه الوضعية بدقة 100%.');
+      } catch (err) {
+        showToast('خطأ: ' + err.message);
+      }
     }
 
     // Submit Registration
@@ -1292,9 +1759,11 @@
       btn.disabled = true;
       btn.innerHTML = `<div class="spinner"></div><span>جارٍ استخراج بصمة الوجه وحفظ الشخص...</span>`;
 
+      const append = document.getElementById('reg-append')?.checked || false;
       const formData = new FormData();
       formData.append('name', name);
       formData.append('file', fileInput.files[0]);
+      formData.append('append', append ? 'true' : 'false');
 
       try {
         const res = await fetch('/api/v1/faces/register', { method: 'POST', body: formData });
@@ -1367,6 +1836,924 @@
         showToast('خطأ في الحذف: ' + err.message);
       }
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Webcam Live Stream Controls
+    // ─────────────────────────────────────────────────────────────
+    let cameraStatusTimer = null;
+    let isCameraStreaming = false;
+
+    async function startCameraStream() {
+      const cameraIndex = document.getElementById('camera-device-index').value || '0';
+      const streamImg = document.getElementById('camera-stream-display');
+      const standbyScreen = document.getElementById('camera-standby-screen');
+      const btnStart = document.getElementById('btn-start-camera');
+      const btnStop = document.getElementById('btn-stop-camera');
+
+      btnStart.disabled = true;
+      btnStart.innerHTML = `<div class="spinner"></div><span>جارٍ فتح الكاميرا...</span>`;
+
+      // Assign MJPEG feed URL
+      const streamUrl = `/api/v1/faces/live-feed?camera_index=${cameraIndex}&t=${Date.now()}`;
+      streamImg.src = streamUrl;
+
+      streamImg.onload = () => {
+        standbyScreen.style.display = 'none';
+        streamImg.style.display = 'block';
+        btnStart.style.display = 'none';
+        btnStop.style.display = 'inline-flex';
+        btnStart.disabled = false;
+        btnStart.innerHTML = `<span>▶ تشغيل الكاميرا المباشرة</span>`;
+        isCameraStreaming = true;
+
+        updateCameraBadge(true);
+        startPollingCameraStatus();
+        showToast('تم تشغيل كاميرا اللاب توب بنجاح ورصد الوجوه نشط!');
+      };
+
+      streamImg.onerror = () => {
+        btnStart.disabled = false;
+        btnStart.innerHTML = `<span>▶ تشغيل الكاميرا المباشرة</span>`;
+        showToast('تعذر فتح كاميرا اللاب توب. تأكد أن الكاميرا ليست قيد الاستخدام بتطبيق آخر.');
+        stopCameraStream();
+      };
+    }
+
+    async function stopCameraStream() {
+      const streamImg = document.getElementById('camera-stream-display');
+      const standbyScreen = document.getElementById('camera-standby-screen');
+      const btnStart = document.getElementById('btn-start-camera');
+      const btnStop = document.getElementById('btn-stop-camera');
+
+      isCameraStreaming = false;
+      stopPollingCameraStatus();
+
+      streamImg.src = '';
+      streamImg.style.display = 'none';
+      standbyScreen.style.display = 'block';
+
+      btnStop.style.display = 'none';
+      btnStart.style.display = 'inline-flex';
+      btnStart.disabled = false;
+
+      updateCameraBadge(false);
+
+      try {
+        await fetch('/api/v1/faces/camera/stop', { method: 'POST' });
+        showToast('تم إيقاف كاميرا اللاب توب وفصل الموارد.');
+      } catch (err) {
+        console.error('Error stopping camera:', err);
+      }
+    }
+
+    function updateCameraBadge(active) {
+      const pill = document.getElementById('camera-status-pill');
+      const txt = document.getElementById('camera-status-text');
+      if (active) {
+        pill.style.background = 'rgba(16, 185, 129, 0.15)';
+        pill.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+        pill.style.color = '#34d399';
+        pill.querySelector('span:first-child').style.background = '#10b981';
+        txt.innerText = 'بث مباشر نشط (Live)';
+      } else {
+        pill.style.background = 'rgba(100, 116, 139, 0.2)';
+        pill.style.borderColor = 'rgba(100, 116, 139, 0.3)';
+        pill.style.color = '#94a3b8';
+        pill.querySelector('span:first-child').style.background = '#64748b';
+        txt.innerText = 'متوقفة (Standby)';
+        document.getElementById('camera-fps-val').innerText = '--';
+        document.getElementById('camera-faces-val').innerText = '0';
+      }
+    }
+
+    function startPollingCameraStatus() {
+      stopPollingCameraStatus();
+      cameraStatusTimer = setInterval(async () => {
+        if (!isCameraStreaming) return;
+        try {
+          const res = await fetch('/api/v1/faces/camera/status');
+          if (res.ok) {
+            const data = await res.json();
+            document.getElementById('camera-fps-val').innerText = data.fps || '--';
+            document.getElementById('camera-faces-val').innerText = data.faces_detected ?? 0;
+          }
+        } catch (e) {
+          console.debug('Camera status poll:', e);
+        }
+      }, 1000);
+    }
+
+    function stopPollingCameraStatus() {
+      if (cameraStatusTimer) {
+        clearInterval(cameraStatusTimer);
+        cameraStatusTimer = null;
+      }
+    }
+
+    async function captureCameraSnapshot() {
+      try {
+        showToast('جارٍ التقاط لقطة فورية من الكاميرا...');
+        const res = await fetch('/api/v1/faces/camera/snapshot');
+        if (!res.ok) throw new Error('فشل التقاط الصورة');
+        const blob = await res.blob();
+        lastCapturedSnapshotBlob = blob;
+        const imgUrl = URL.createObjectURL(blob);
+
+        const previewArea = document.getElementById('snapshot-preview-area');
+        const previewImg = document.getElementById('snapshot-img-preview');
+        const downloadLink = document.getElementById('download-snapshot-link');
+
+        previewImg.src = imgUrl;
+        downloadLink.href = imgUrl;
+        downloadLink.download = `snapshot_${Date.now()}.jpg`;
+        previewArea.style.display = 'block';
+
+        showToast('تم التقاط الصورة بنجاح!');
+        previewArea.scrollIntoView({ behavior: 'smooth' });
+      } catch (err) {
+        showToast('تعذر التقاط لقطة: ' + err.message);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Annotate Full Video with HUD
+    // ─────────────────────────────────────────────────────────────
+    async function handleAnnotateVideoSubmit(e) {
+      if (e) e.preventDefault();
+      const videoInput = document.getElementById('video-input');
+      if (!videoInput.files || !videoInput.files[0]) {
+        showToast('يرجى اختيار ملف فيديو أولاً لرسم الوجوه عليه!');
+        return;
+      }
+
+      const btn = document.getElementById('annotate-video-btn');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<div class="spinner"></div><span>جارٍ تحليل ورسم الوجوه وترميز الفيديو...</span>`;
+
+      const threshold = document.getElementById('threshold-slider').value;
+      const formData = new FormData();
+      formData.append('file', videoInput.files[0]);
+
+      try {
+        const url = `/api/v1/faces/annotate-video?threshold=${threshold}`;
+        const res = await fetch(url, { method: 'POST', body: formData });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'فشلت معالجة الفيديو');
+        }
+
+        const videoBlob = await res.blob();
+        const videoBlobUrl = URL.createObjectURL(videoBlob);
+
+        const sec = document.getElementById('annotated-video-sec');
+        const player = document.getElementById('annotated-video-player');
+        const dlLink = document.getElementById('download-annotated-link');
+
+        player.src = videoBlobUrl;
+        dlLink.href = videoBlobUrl;
+        dlLink.download = `annotated_${videoInput.files[0].name}`;
+        sec.style.display = 'block';
+
+        showToast('تم رسم الوجوه وتصدير الفيديو بنجاح!');
+        sec.scrollIntoView({ behavior: 'smooth' });
+      } catch (err) {
+        showToast('خطأ أثناء تصدير الفيديو: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+  
+    // ─────────────────────────────────────────────────────────────
+    // Voiceprint & Speaker Verification (التحقق بالصوت)
+    // ─────────────────────────────────────────────────────────────
+    let voiceMediaRecorder = null;
+    let voiceAudioChunks = [];
+    let voiceRecordStartTime = 0;
+    let voiceRecordTimer = null;
+    let voiceRecordMode = null; // 'identify' or 'enroll'
+    let enrollWavBlob = null;
+    let identifyFileBlob = null;
+
+    // Helper: Convert any AudioBuffer to a 16kHz 16-bit mono PCM WAV blob
+    async function audioBufferToWav16k(audioBuffer) {
+      const targetSr = 16000;
+      const offlineCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * targetSr), targetSr);
+      const source = offlineCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(offlineCtx.destination);
+      source.start(0);
+
+      const rendered = await offlineCtx.startRendering();
+      const samples = rendered.getChannelData(0);
+      const dataLen = samples.length * 2;
+      const buffer = new ArrayBuffer(44 + dataLen);
+      const view = new DataView(buffer);
+
+      function writeStr(offset, str) {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      }
+
+      writeStr(0, 'RIFF');
+      view.setUint32(4, 36 + dataLen, true);
+      writeStr(8, 'WAVE');
+      writeStr(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // Mono
+      view.setUint32(24, targetSr, true);
+      view.setUint32(28, targetSr * 2, true);
+      view.setUint16(32, 2, true); // Block align
+      view.setUint16(34, 16, true); // Bits per sample
+      writeStr(36, 'data');
+      view.setUint32(40, dataLen, true);
+
+      let offset = 44;
+      for (let i = 0; i < samples.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      return new Blob([view], { type: 'audio/wav' });
+    }
+
+    async function convertBlobToWav16k(blob) {
+      const arrayBuffer = await blob.arrayBuffer();
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      return await audioBufferToWav16k(audioBuffer);
+    }
+
+    // Toggle Microphone Recording
+    async function toggleVoiceRecording(mode) {
+      if (voiceMediaRecorder && voiceMediaRecorder.state === 'recording') {
+        // Stop recording
+        voiceMediaRecorder.stop();
+        return;
+      }
+
+      voiceRecordMode = mode;
+      voiceAudioChunks = [];
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        voiceMediaRecorder = new MediaRecorder(stream);
+        voiceMediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) voiceAudioChunks.push(e.data);
+        };
+
+        voiceMediaRecorder.onstop = async () => {
+          clearInterval(voiceRecordTimer);
+          stream.getTracks().forEach(t => t.stop());
+
+          if (voiceRecordMode === 'identify') {
+            document.getElementById('voice-rec-hud').style.display = 'none';
+            document.getElementById('btn-mic-text').innerText = 'بدء تسجيل الصوت وفحصه';
+            document.getElementById('btn-mic-icon').innerText = '🔴';
+            document.getElementById('btn-mic-toggle').style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+
+            const rawBlob = new Blob(voiceAudioChunks, { type: voiceMediaRecorder.mimeType || 'audio/webm' });
+            showToast('جارٍ معالجة الصوت واستخراج البصمة (16kHz WAV)...');
+            try {
+              const wavBlob = await convertBlobToWav16k(rawBlob);
+              await executeVoiceIdentification(wavBlob);
+            } catch (err) {
+              showToast('خطأ أثناء فك ترميز الصوت: ' + err.message);
+            }
+          } else if (voiceRecordMode === 'enroll') {
+            document.getElementById('btn-enroll-mic-text').innerText = 'تسجيل عينة الصوت';
+            document.getElementById('btn-enroll-mic-icon').innerText = '🎙️';
+            document.getElementById('btn-enroll-mic').style.background = 'linear-gradient(135deg, #10b981, #059669)';
+
+            const rawBlob = new Blob(voiceAudioChunks, { type: voiceMediaRecorder.mimeType || 'audio/webm' });
+            showToast('تم التقاط عينة الصوت، جارٍ التحويل...');
+            try {
+              enrollWavBlob = await convertBlobToWav16k(rawBlob);
+              const badge = document.getElementById('enroll-rec-timer-badge');
+              badge.style.display = 'block';
+              showToast('عينة الصوت جاهزة للتسجيل!');
+            } catch (err) {
+              showToast('خطأ أثناء تحويل الصوت: ' + err.message);
+            }
+          }
+        };
+
+        voiceMediaRecorder.start();
+        voiceRecordStartTime = Date.now();
+
+        if (mode === 'identify') {
+          document.getElementById('voice-rec-hud').style.display = 'flex';
+          document.getElementById('btn-mic-text').innerText = '⏹ إيقاف التسجيل وفحص الهوية الآن';
+          document.getElementById('btn-mic-icon').innerText = '⏹';
+          document.getElementById('btn-mic-toggle').style.background = 'linear-gradient(135deg, #dc2626, #991b1b)';
+
+          voiceRecordTimer = setInterval(() => {
+            const sec = Math.floor((Date.now() - voiceRecordStartTime) / 1000);
+            const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+            const ss = String(sec % 60).padStart(2, '0');
+            document.getElementById('voice-rec-timer').innerText = `${mm}:${ss}`;
+          }, 500);
+        } else if (mode === 'enroll') {
+          document.getElementById('btn-enroll-mic-text').innerText = '⏹ إيقاف التسجيل';
+          document.getElementById('btn-enroll-mic-icon').innerText = '⏹';
+          document.getElementById('btn-enroll-mic').style.background = 'linear-gradient(135deg, #dc2626, #991b1b)';
+          const badge = document.getElementById('enroll-rec-timer-badge');
+          badge.style.display = 'block';
+
+          voiceRecordTimer = setInterval(() => {
+            const sec = ((Date.now() - voiceRecordStartTime) / 1000).toFixed(1);
+            document.getElementById('enroll-rec-sec').innerText = sec;
+          }, 200);
+        }
+      } catch (err) {
+        showToast('تعذر الوصول إلى الميكروفون: ' + err.message);
+      }
+    }
+
+    function handleVoiceFileSelected(input) {
+      if (!input.files || !input.files[0]) return;
+      const file = input.files[0];
+      identifyFileBlob = file;
+      const badge = document.getElementById('voice-selected-file-badge');
+      badge.innerText = `الملف المختار: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      badge.style.display = 'inline-block';
+    }
+
+    async function handleIdentifyFileSubmit() {
+      if (!identifyFileBlob) {
+        showToast('يرجى اختيار ملف صوتي أولاً أو تسجيل الصوت من المايك!');
+        return;
+      }
+      showToast('جارٍ قراءة وفك ترميز الملف الصوتي...');
+      try {
+        const wavBlob = await convertBlobToWav16k(identifyFileBlob);
+        await executeVoiceIdentification(wavBlob);
+      } catch (err) {
+        showToast('فشل فك ترميز الملف الصوتي: ' + err.message);
+      }
+    }
+
+    // Call API /api/v1/speakers/identify
+    async function executeVoiceIdentification(wavBlob) {
+      const box = document.getElementById('voice-result-box');
+      box.style.display = 'block';
+      box.innerHTML = `
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center;">
+          <div class="spinner" style="margin: 0 auto 1rem;"></div>
+          <h4 style="font-size: 1.1rem; color: #fff; margin-bottom: 0.3rem;">جارٍ فحص البصمة الصوتية ومطابقتها...</h4>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">يقوم محرك VoiceID بمطابقة الخصائص الصوتية مع البصمات المسجلة</p>
+        </div>
+      `;
+      box.scrollIntoView({ behavior: 'smooth' });
+
+      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.82;
+      const formData = new FormData();
+      formData.append('file', wavBlob, 'recording.wav');
+
+      try {
+        const res = await fetch(`/api/v1/speakers/identify?threshold=${threshold}`, {
+          method: 'POST',
+          body: formData
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'فشل فحص الصوت');
+        }
+
+        const data = await res.json();
+        renderIdentificationResult(data);
+      } catch (err) {
+        box.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 1.5rem; text-align: center;">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">⚠️</div>
+            <h4 style="color: #f87171; font-weight: 800;">حدث خطأ أثناء فحص الصوت</h4>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">${err.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    function renderIdentificationResult(data) {
+      const box = document.getElementById('voice-result-box');
+
+      if (data.is_identified) {
+        // MATCH FOUND
+        box.innerHTML = `
+          <div style="background: rgba(16, 185, 129, 0.12); border: 2px solid rgba(16, 185, 129, 0.45); border-radius: var(--radius-lg); padding: 2rem; position: relative; overflow: hidden; box-shadow: 0 0 30px rgba(16, 185, 129, 0.2);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 56px; height: 56px; border-radius: 50%; background: #10b981; display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);">
+                  ✓
+                </div>
+                <div>
+                  <span style="font-size: 0.8rem; font-weight: 800; color: #6ee7b7; text-transform: uppercase; letter-spacing: 0.05em;">تم التعرف على هوية المتحدث بنجاح</span>
+                  <h2 style="font-size: 1.85rem; font-weight: 900; color: #fff; margin-top: 2px;">
+                    ${data.speaker_name}
+                  </h2>
+                </div>
+              </div>
+              <div style="text-align: left;">
+                <div style="font-size: 2.2rem; font-weight: 900; color: #10b981; font-family: 'Fira Code', monospace;">
+                  ${data.match_percentage}%
+                </div>
+                <div style="font-size: 0.78rem; color: #a7f3d0;">نسبة التطابق البيومتري</div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0, 0, 0, 0.25); padding: 12px 18px; border-radius: var(--radius-sm); border: 1px solid rgba(16, 185, 129, 0.2);">
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>معامل التشابه (Cosine):</strong> ${data.similarity}</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>مدة التسجيل:</strong> ${data.audio_seconds}s</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>معرف المستخدم:</strong> #${data.user_id}</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #6ee7b7;"><strong>الحالة:</strong> مصرح به (Authorized)</span>
+            </div>
+          </div>
+        `;
+      } else {
+        // UNKNOWN SPEAKER
+        box.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.12); border: 2px solid rgba(239, 68, 68, 0.45); border-radius: var(--radius-lg); padding: 2rem; position: relative; overflow: hidden; box-shadow: 0 0 30px rgba(239, 68, 68, 0.2);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 56px; height: 56px; border-radius: 50%; background: #ef4444; display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);">
+                  ✕
+                </div>
+                <div>
+                  <span style="font-size: 0.8rem; font-weight: 800; color: #fca5a5; text-transform: uppercase; letter-spacing: 0.05em;">نتيجة الفحص البيومتري</span>
+                  <h2 style="font-size: 1.6rem; font-weight: 900; color: #fff; margin-top: 2px;">
+                    هذا الصوت غير مسجل في السيستم
+                  </h2>
+                  <p style="font-size: 0.85rem; color: #fecaca; margin-top: 4px;">
+                    (صوت غير معروف - لم يتطابق مع أي بصمة مسجلة في قاعدة البيانات)
+                  </p>
+                </div>
+              </div>
+              <div style="text-align: left;">
+                <div style="font-size: 2rem; font-weight: 900; color: #ef4444; font-family: 'Fira Code', monospace;">
+                  0.0%
+                </div>
+                <div style="font-size: 0.78rem; color: #fca5a5;">نسبة التطابق المعتمدة</div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0, 0, 0, 0.25); padding: 12px 18px; border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.2); margin-bottom: 1rem;">
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>أعلى معامل تشابه:</strong> ${data.similarity}</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>حد القبول المطلوب:</strong> ${data.threshold}</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>مدة الصوت:</strong> ${data.audio_seconds || 0}s</span>
+              <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              <span style="font-size: 0.85rem; color: #f87171;"><strong>الحالة:</strong> غير مصرح به (Unknown)</span>
+            </div>
+
+            <p style="font-size: 0.85rem; color: #e2e8f0;">
+              💡 <strong>ملاحظة:</strong> إذا كان هذا الصوت لشخص جديد، يمكنك إدخال اسمه في نموذج <strong>"تسجيل بصمة صوت جديدة"</strong> بالأسفل وحفظ بصمته في السيستم.
+            </p>
+          </div>
+        `;
+      }
+      box.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ── Multi-Speaker Diarization & Language Analysis Logic ────────────
+    let diarizeFileBlob = null;
+
+    function handleDiarizeFileSelected(input) {
+      if (!input.files || !input.files[0]) return;
+      diarizeFileBlob = input.files[0];
+      const badge = document.getElementById('diarize-selected-file-badge');
+      badge.innerText = `🎵 ${diarizeFileBlob.name} (${(diarizeFileBlob.size / 1024).toFixed(1)} KB)`;
+      badge.style.display = 'inline-block';
+    }
+
+    async function handleDiarizeSubmit() {
+      if (!diarizeFileBlob) {
+        showToast('يرجى اختيار ملف صوتي لتحليله أولاً!');
+        return;
+      }
+
+      const box = document.getElementById('diarize-result-box');
+      box.style.display = 'block';
+      box.innerHTML = `
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center;">
+          <div class="spinner" style="margin: 0 auto 1rem;"></div>
+          <h4 style="font-size: 1.1rem; color: #fff; margin-bottom: 0.3rem;">جارٍ تقسيم المقاطع وتحليل المتحدثين وكشف اللغات...</h4>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">يقوم المحرك بفرز كل متحدث وتتبع تعدد اللغات للشخص الواحد</p>
+        </div>
+      `;
+      box.scrollIntoView({ behavior: 'smooth' });
+
+      const btn = document.getElementById('btn-diarize-submit');
+      btn.disabled = true;
+
+      try {
+        const wavBlob = await convertBlobToWav16k(diarizeFileBlob);
+        const threshold = parseFloat(document.getElementById('diarize-thresh-slider').value) || 0.82;
+        const transcriptText = (document.getElementById('diarize-transcripts-input').value || '').trim();
+
+        const formData = new FormData();
+        formData.append('file', wavBlob, 'diarize_recording.wav');
+        if (transcriptText) {
+          // If user provided raw text or JSON array
+          let payloadJson = transcriptText;
+          if (!transcriptText.startsWith('[')) {
+            payloadJson = JSON.stringify([{ turn_index: 1, text: transcriptText }]);
+          }
+          formData.append('transcripts_json', payloadJson);
+        }
+
+        const res = await fetch(`/api/v1/speakers/diarize?threshold=${threshold}`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'فشل تحليل الصوت');
+        }
+
+        const data = await res.json();
+        renderDiarizeResult(data);
+      } catch (err) {
+        box.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 1.5rem; text-align: center;">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">⚠️</div>
+            <h4 style="color: #f87171; font-weight: 800;">حدث خطأ أثناء تحليل المتحدثين</h4>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">${err.message}</p>
+          </div>
+        `;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function getLanguageFlagBadge(langName) {
+      let flag = '🌐';
+      let color = '#38bdf8';
+      let bg = 'rgba(56, 189, 248, 0.12)';
+      let border = 'rgba(56, 189, 248, 0.3)';
+
+      if (langName.includes('العربية') || langName.includes('Arabic')) {
+        flag = '🇪🇬';
+        color = '#34d399';
+        bg = 'rgba(52, 211, 153, 0.12)';
+        border = 'rgba(52, 211, 153, 0.35)';
+      } else if (langName.includes('الإنجليزية') || langName.includes('English')) {
+        flag = '🇬🇧';
+        color = '#60a5fa';
+        bg = 'rgba(96, 165, 250, 0.12)';
+        border = 'rgba(96, 165, 250, 0.35)';
+      } else if (langName.includes('الفرنسية') || langName.includes('French')) {
+        flag = '🇫🇷';
+        color = '#c084fc';
+        bg = 'rgba(192, 132, 252, 0.12)';
+        border = 'rgba(192, 132, 252, 0.35)';
+      } else if (langName.includes('الألمانية') || langName.includes('German')) {
+        flag = '🇩🇪';
+        color = '#fbbf24';
+        bg = 'rgba(251, 191, 36, 0.12)';
+        border = 'rgba(251, 191, 36, 0.35)';
+      }
+
+      return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 9999px; font-size: 0.78rem; font-weight: 700; color: ${color}; background: ${bg}; border: 1px solid ${border};">${flag} ${langName}</span>`;
+    }
+
+    function renderDiarizeResult(data) {
+      const box = document.getElementById('diarize-result-box');
+      const isMultiPresent = data.multilingual_speakers && data.multilingual_speakers.length > 0;
+      const hasKnown = data.has_known_speaker;
+      const knownCount = data.known_speakers_count || (data.known_speakers ? data.known_speakers.length : 0);
+      const unknownCount = data.unknown_speakers_count || (data.unknown_speakers ? data.unknown_speakers.length : 0);
+
+      // 1. KPI Cards
+      const kpisHtml = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">👥 إجمالي من يتكلم</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: #a5f3fc; font-family: monospace;">${data.total_speakers_count} أشخاص</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: #a7f3d0; margin-bottom: 4px;">✅ مسجل بالسيستم (نعم)</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: #10b981; font-family: monospace;">${knownCount} شخص</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid ${unknownCount > 0 ? 'rgba(239, 68, 68, 0.4)' : 'var(--border)'}; border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: ${unknownCount > 0 ? '#fca5a5' : 'var(--text-muted)'}; margin-bottom: 4px;">❌ غير مسجل (لا)</div>
+            <div style="font-size: 1.85rem; font-weight: 900; color: ${unknownCount > 0 ? '#ef4444' : '#94a3b8'}; font-family: monospace;">${unknownCount} أشخاص</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px;">🌐 اللغات المرصودة</div>
+            <div style="font-size: 1rem; font-weight: 800; color: #6ee7b7; margin-top: 6px;">${data.all_detected_languages && data.all_detected_languages.length > 0 ? data.all_detected_languages.map(l => l.split(' ')[0]).join(' + ') : 'غير محدد'}</div>
+          </div>
+        </div>
+      `;
+
+      // 2. Presence Verdict Card ("لو في شخص من المجموعه دا موجود يقولي مين هو و الباقي يقولي لا")
+      let presenceHtml = '';
+      if (hasKnown) {
+        presenceHtml = `
+          <div style="background: rgba(16, 185, 129, 0.08); border: 2px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 1rem;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.6rem;">🎯</span>
+                <div>
+                  <span style="font-size: 0.78rem; font-weight: 800; color: #6ee7b7; text-transform: uppercase;">نتيجة فحص هوية المجموعة</span>
+                  <h3 style="font-size: 1.25rem; font-weight: 900; color: #fff; margin-top: 2px;">${data.presence_verdict || ''}</h3>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+              <!-- Known Speakers Column -->
+              <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: var(--radius-md); padding: 1.25rem;">
+                <h4 style="font-size: 0.95rem; font-weight: 800; color: #34d399; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                  <span>✅</span> الأشخاص الموجودون في السيستم (نعم):
+                </h4>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  ${(data.known_speakers || []).map(k => `
+                    <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); padding: 10px 14px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #fff;">👤 ${k.name}</span>
+                        <span style="font-size: 0.9rem; font-weight: 900; color: #10b981; font-family: monospace;">${k.match_percentage ? k.match_percentage + '%' : ''}</span>
+                      </div>
+                      <div style="font-size: 0.8rem; color: #a7f3d0; margin-top: 4px;">
+                        تحدث باللغة: ${k.languages.map(l => getLanguageFlagBadge(l)).join(' ')} (المدة: ${k.total_speaking_seconds}s)
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+
+              <!-- Unknown Speakers Column -->
+              <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-md); padding: 1.25rem;">
+                <h4 style="font-size: 0.95rem; font-weight: 800; color: #f87171; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                  <span>❌</span> باقي المتحدثين غير المسجلين (لا):
+                </h4>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  ${(data.unknown_speakers && data.unknown_speakers.length > 0) ? data.unknown_speakers.map(u => `
+                    <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: var(--radius-sm); padding: 10px 14px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 1rem; font-weight: 800; color: #fca5a5;">❓ ${u.name}</span>
+                        <span style="font-size: 0.75rem; font-weight: 800; color: #ef4444; background: rgba(239, 68, 68, 0.2); padding: 2px 8px; border-radius: 9999px;">غير مسجل (لا)</span>
+                      </div>
+                      <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 4px;">
+                        تحدث باللغة: ${u.languages.map(l => getLanguageFlagBadge(l)).join(' ')} (المدة: ${u.total_speaking_seconds}s)
+                      </div>
+                    </div>
+                  `).join('') : '<p style="font-size: 0.85rem; color: #94a3b8; font-style: italic;">لا يوجد متحدثون غرباء؛ الجميع مسجلون بالسيستم.</p>'}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        presenceHtml = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 2px solid rgba(239, 68, 68, 0.4); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.6rem;">❌</span>
+              <div>
+                <span style="font-size: 0.78rem; font-weight: 800; color: #fca5a5; text-transform: uppercase;">نتيجة فحص هوية المجموعة</span>
+                <h3 style="font-size: 1.15rem; font-weight: 900; color: #fff; margin-top: 2px;">
+                  ${data.presence_verdict || 'لا يوجد أي شخص من المتحدثين مسجل في السيستم (جميع المتحدثين غير معروفين - لا)'}
+                </h3>
+                <p style="font-size: 0.82rem; color: #fecaca; margin-top: 4px;">
+                  جميع الأصوات المرصودة وعددهم (${unknownCount}) هي أصوات جديدة أو غير مسجلة بقاعدة البيانات.
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 3. Multilingual Alert Banner ("لو واحد اتكلم بكذا لغة يقولي مين")
+      let multiBannerHtml = '';
+      if (isMultiPresent) {
+        multiBannerHtml = `
+          <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.18), rgba(245, 158, 11, 0.18)); border: 2px solid rgba(239, 68, 68, 0.55); border-radius: var(--radius-md); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 0 25px rgba(239, 68, 68, 0.25);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 0.6rem;">
+              <span style="font-size: 1.5rem;">⚠️</span>
+              <h4 style="font-size: 1.1rem; font-weight: 900; color: #fca5a5;">رصد متحدث(ين) تحدثوا بأكثر من لغة واحدة:</h4>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${data.multilingual_speakers.map(m => `
+                <div style="background: rgba(0, 0, 0, 0.35); padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.3); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                  <div style="font-size: 0.95rem; color: #fff; font-weight: 700;">
+                    👤 <strong>${m.speaker_name}</strong>: ${m.message}
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    ${m.languages.map(l => getLanguageFlagBadge(l)).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // 4. Timeline Breakdown Table
+      const timelineHtml = `
+        <div>
+          <h4 style="font-size: 1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.75rem;">الجدول الزمني لمقاطع الحديث (Speech Turns Timeline):</h4>
+          <div style="overflow-x: auto; background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md);">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: right;">
+              <thead>
+                <tr style="background: rgba(15, 23, 42, 0.9); border-bottom: 1px solid var(--border); color: #94a3b8;">
+                  <th style="padding: 10px 14px;">المقطع</th>
+                  <th style="padding: 10px 14px;">التوقيت الزمني</th>
+                  <th style="padding: 10px 14px;">المتحدث</th>
+                  <th style="padding: 10px 14px;">حالة التسجيل</th>
+                  <th style="padding: 10px 14px;">اللغة المرصودة</th>
+                  <th style="padding: 10px 14px;">التشابه</th>
+                  <th style="padding: 10px 14px;">النص / الملاحظة</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(data.timeline_segments || []).map(seg => `
+                  <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
+                    <td style="padding: 10px 14px; font-weight: 800; color: var(--accent-cyan);">#${seg.segment_index}</td>
+                    <td style="padding: 10px 14px; font-family: monospace; color: #cbd5e1;">${seg.start_time}s - ${seg.end_time}s (${seg.duration}s)</td>
+                    <td style="padding: 10px 14px;">
+                      <span style="font-weight: 700; color: ${seg.is_enrolled ? '#6ee7b7' : '#e2e8f0'};">
+                        ${seg.speaker}
+                      </span>
+                    </td>
+                    <td style="padding: 10px 14px;">
+                      <span style="font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 9999px; ${seg.is_enrolled ? 'color: #34d399; background: rgba(52, 211, 153, 0.15);' : 'color: #f87171; background: rgba(239, 68, 68, 0.15);'}">
+                        ${seg.is_enrolled ? '✓ نعم (مسجل)' : '✕ لا (غير مسجل)'}
+                      </span>
+                    </td>
+                    <td style="padding: 10px 14px;">${getLanguageFlagBadge(seg.language)}</td>
+                    <td style="padding: 10px 14px; font-family: monospace; color: ${seg.is_enrolled ? '#34d399' : '#94a3b8'};">
+                      ${seg.similarity > 0 ? seg.similarity : '--'}
+                    </td>
+                    <td style="padding: 10px 14px; color: #94a3b8; font-style: italic;">
+                      ${seg.transcript ? seg.transcript : 'تحليل فيزيائي حيوي (Acoustic)'}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      box.innerHTML = `
+        <div style="background: rgba(10, 13, 20, 0.7); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.75rem;">
+          ${kpisHtml}
+          ${presenceHtml}
+          ${multiBannerHtml}
+          ${timelineHtml}
+        </div>
+      `;
+    }
+
+    function handleEnrollFileSelected(input) {
+      if (!input.files || !input.files[0]) return;
+      showToast('تم اختيار الملف الصوتي للتسجيل.');
+    }
+
+    // Voice Enrollment Form Submission
+    async function handleVoiceEnrollSubmit(e) {
+      if (e) e.preventDefault();
+
+      const name = document.getElementById('enroll-speaker-name').value.trim();
+      const level = document.getElementById('enroll-speaker-level').value;
+      const fileInput = document.getElementById('enroll-file-input');
+
+      let audioToEnroll = null;
+      if (enrollWavBlob) {
+        audioToEnroll = enrollWavBlob;
+      } else if (fileInput.files && fileInput.files[0]) {
+        try {
+          showToast('جارٍ تحويل الملف الصوتي المرفوع للتسجيل...');
+          audioToEnroll = await convertBlobToWav16k(fileInput.files[0]);
+        } catch (err) {
+          showToast('فشل تحويل الملف الصوتي: ' + err.message);
+          return;
+        }
+      } else {
+        showToast('يرجى تسجيل مقطع صوتي عبر المايك أو اختيار ملف صوتي للتسجيل أولاً!');
+        return;
+      }
+
+      const btn = document.getElementById('btn-submit-enroll');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<div class="spinner"></div><span>جارٍ استخراج وتثبيت البصمة الصوتية 192-D...</span>`;
+
+      const formData = new FormData();
+      formData.append('speaker_name', name);
+      formData.append('max_level', level);
+      formData.append('file', audioToEnroll, 'enroll_sample.wav');
+
+      try {
+        const res = await fetch('/api/v1/speakers/enroll', {
+          method: 'POST',
+          body: formData
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'فشل تسجيل بصمة الصوت');
+        }
+
+        const data = await res.json();
+        showToast(`تم تسجيل بصمة الصوت للمتحدث '${data.speaker_name}' بنجاح!`);
+        document.getElementById('voice-enroll-form').reset();
+        enrollWavBlob = null;
+        document.getElementById('enroll-rec-timer-badge').style.display = 'none';
+
+        await loadEnrolledSpeakers();
+        await loadVoiceEngineStatus();
+      } catch (err) {
+        showToast('خطأ: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+
+    // Load list of enrolled speakers
+    async function loadEnrolledSpeakers() {
+      const grid = document.getElementById('speakers-grid');
+      grid.innerHTML = '<div style="color:var(--text-muted); font-size:0.9rem;">جارٍ تحميل البصمات المسجلة...</div>';
+
+      try {
+        const res = await fetch('/api/v1/speakers');
+        if (!res.ok) throw new Error('فشل جلب البصمات الصوتية');
+        const list = await res.json();
+
+        document.getElementById('voice-enrolled-count').innerText = `${list.length} بصمات`;
+
+        if (!list || list.length === 0) {
+          grid.innerHTML = `
+            <div style="grid-column: 1 / -1; background: rgba(15, 23, 42, 0.4); border: 1px dashed var(--border); border-radius: var(--radius-md); padding: 2rem; text-align: center; color: var(--text-muted);">
+              لا توجد أي بصمات صوتية مسجلة في السيستم حالياً.<br>
+              استخدم النموذج أعلاه لتسجيل أول بصمة صوت.
+            </div>
+          `;
+          return;
+        }
+
+        grid.innerHTML = list.map(s => `
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #4f46e5, #06b6d4); display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff;">
+                  🗣️
+                </div>
+                <div>
+                  <h4 style="font-size: 1.1rem; font-weight: 800; color: #fff;">${s.speaker_name}</h4>
+                  <span style="font-size: 0.75rem; color: var(--accent-cyan);">معرف: #${s.user_id}</span>
+                </div>
+              </div>
+              <span style="font-size: 0.75rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); padding: 4px 10px; border-radius: 9999px;">
+                Level ${s.max_level}
+              </span>
+            </div>
+
+            <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.6; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: var(--radius-sm);">
+              <div><strong>أبعاد التشفير:</strong> ${s.embedding_dim}-D vector</div>
+              <div><strong>النموذج:</strong> ${s.model_id || 'Acoustic-192D'}</div>
+              <div><strong>تاريخ التسجيل:</strong> ${s.created_at ? new Date(s.created_at).toLocaleDateString('ar-EG') : '--'}</div>
+            </div>
+
+            <button onclick="deleteSpeakerVoiceprint('${s.speaker_name}')" class="btn-docs" style="width: 100%; justify-content: center; border-color: rgba(239, 68, 68, 0.3); color: #fca5a5;">
+              <span>🗑️ حذف البصمة الصوتية</span>
+            </button>
+          </div>
+        `).join('');
+      } catch (err) {
+        grid.innerHTML = `<div style="color:#f87171;">فشل جلب البصمات: ${err.message}</div>`;
+      }
+    }
+
+    async function deleteSpeakerVoiceprint(name) {
+      if (!confirm(`هل أنت متأكد من حذف البصمة الصوتية للمتحدث '${name}'؟`)) return;
+      try {
+        const res = await fetch(`/api/v1/speakers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('فشل الحذف');
+        showToast(`تم حذف البصمة الصوتية للمتحدث '${name}' بنجاح!`);
+        await loadEnrolledSpeakers();
+        await loadVoiceEngineStatus();
+      } catch (err) {
+        showToast('خطأ أثناء الحذف: ' + err.message);
+      }
+    }
+
+    async function loadVoiceEngineStatus() {
+      try {
+        const res = await fetch('/api/v1/speakers/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        document.getElementById('voice-enrolled-count').innerText = `${data.enrolled_count} بصمات`;
+        document.getElementById('voice-threshold-badge').innerText = `${Math.round((data.threshold_l1 || 0.78) * 100)}%`;
+        if (data.backend_model) {
+          document.getElementById('voice-backend-desc').innerText = `محرك التشفير: ${data.backend_model} (192-D Biometric Vectors)`;
+        }
+      } catch (_) {}
+    }
+
   </script>
 </body>
 </html>

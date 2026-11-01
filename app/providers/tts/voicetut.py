@@ -139,8 +139,9 @@ class VoiceTutProvider(BaseTTSProvider):
 
         await self._ensure_loaded()
         if self._tts == "disabled" or self._tts is None:
-            logger.error("VoiceTut is not available or disabled")
-            return _silent_wav()
+            raise RuntimeError(
+                "VoiceTut-TTS engine is unavailable or disabled. Check logs for initialization errors."
+            )
 
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(
@@ -156,8 +157,9 @@ class VoiceTutProvider(BaseTTSProvider):
             language,
         )
         if not res or len(res) <= 1000:
-            logger.warning("VoiceTut returned empty audio")
-            return _silent_wav()
+            raise RuntimeError(
+                f"VoiceTut-TTS returned empty or corrupt audio ({len(res) if res else 0} bytes)."
+            )
         return res
 
     async def clone_voice(
@@ -248,8 +250,8 @@ class VoiceTutProvider(BaseTTSProvider):
                         except Exception:
                             pass
 
-            # Denoising steps from settings (defaults: 36 for Studio 99%, or override)
-            default_steps = getattr(settings, "VOICETUT_NUM_STEPS", 16)
+            # Denoising steps from settings (defaults: 48 for Studio quality)
+            default_steps = getattr(settings, "VOICETUT_NUM_STEPS", 48)
             steps = num_step or default_steps
             cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.6)
             spd = speed or getattr(settings, "VOICETUT_SPEED", 1.15)
@@ -289,34 +291,11 @@ class VoiceTutProvider(BaseTTSProvider):
             sr = getattr(self._tts, "sampling_rate", 24000)
             return _array_to_wav(wav_samples, sample_rate=sr)
         except Exception as e:
-            logger.error(f"VoiceTut synthesis error: {e}")
+            logger.error(f"VoiceTut synthesis error: {e}", exc_info=True)
             import torch
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-
-            # Retry once with fast 6 steps if CUDA memory was tight
-            if target_ref_audio and os.path.exists(target_ref_audio):
-                try:
-                    logger.info("Retrying voice clone with 6 steps to fit in memory...")
-                    from voicetut_tts import GenerationParams
-                    fast_params = GenerationParams(num_step=6, guidance_scale=1.8, speed=1.0, denoise=True)
-                    with torch.inference_mode():
-                        wav_samples = self._tts.synthesize(
-                            text=text,
-                            ref_audio=target_ref_audio,
-                            ref_text=actual_ref_text,
-                            language="arz",
-                            normalize=True,
-                            params=fast_params,
-                        )
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                    sr = getattr(self._tts, "sampling_rate", 24000)
-                    return _array_to_wav(wav_samples, sample_rate=sr)
-                except Exception as retry_err:
-                    logger.error(f"Voice clone retry failed: {retry_err}")
-
-            return _silent_wav()
+            raise RuntimeError(f"VoiceTut-TTS synthesis execution failed: {e}") from e
 
 
 def _array_to_wav(samples, sample_rate: int = 24000) -> bytes:
@@ -330,13 +309,3 @@ def _array_to_wav(samples, sample_rate: int = 24000) -> bytes:
         wf.writeframes(pcm.tobytes())
     return buf.getvalue()
 
-
-def _silent_wav(duration_ms: int = 500, sample_rate: int = 24000) -> bytes:
-    buf = io.BytesIO()
-    num_samples = int(sample_rate * duration_ms / 1000)
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(b"\x00\x00" * num_samples)
-    return buf.getvalue()
