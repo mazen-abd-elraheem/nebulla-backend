@@ -1,20 +1,17 @@
 """
-RAG Memory Service — High-Precision Hybrid Retrieval with Okapi BM25,
-Cross-Reranking, Query Decomposition, In-Memory VectorStore,
-Person Photo Retrieval, and Anti-Hallucination Grounding.
+RAG Memory Service — High-Performance Multithreaded Hybrid Retrieval.
 
-Solves the core RAG failure modes (Without a Fallback Model):
-  1. Lexical Failure -> True Okapi BM25 with Arabic Stemming and Normalization.
-  2. Ranking Noise   -> Cross-Encoder / Deep Alignment Reranker.
-  3. Multi-Hop Loss  -> Automatic Query Decomposition.
-  4. Lost in Middle  -> Context Re-ordering (most relevant at edges).
-  5. Hallucinations  -> Strict Citation-Enforced Prompting & Fact Verification.
-  6. DB Vectors      -> In-Memory Normalized Vector Matrix Store (Sub-millisecond Cosine).
-  7. Visual Profiles -> Bi-directional Person & Photo Data Retrieval (FaceProfile).
-  8. Voice Synthesis -> TTS-safe formatting (pure speech without markdown artifacts).
+Multithreading Architecture & Concurrency:
+- Dedicated ThreadPoolExecutor (_RAG_EXECUTOR) for non-blocking CPU-bound vector & NLP tasks.
+- Parallel Sub-Query Execution: Multiple sub-queries execute concurrently across worker threads.
+- Parallel Dense + Sparse Hybrid Search (VectorStore Matrix Multiply + Okapi BM25).
+- Thread-safe RLock-guarded embedding cache (_shared_cache) and in-memory VectorStore.
+- Asynchronous Non-blocking Cross-Reranking and access-time database updates.
+- Strictly Deterministic: ZERO Fallback Model.
 """
 
 import asyncio
+import concurrent.futures
 import os
 import re
 import sqlite3
@@ -42,15 +39,22 @@ from app.services.memory.person_retriever import PersonImageRetriever
 
 logger = get_logger(__name__)
 
+# Dedicated high-throughput thread pool for RAG operations
+_RAG_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=min(32, (os.cpu_count() or 4) + 4),
+    thread_name_prefix="rag-worker"
+)
+
 
 class RAGService:
     """
-    Production-grade RAG Memory Service.
-    Combines Vector Matrix Store + Okapi BM25 + Cross-Reranker + Person Photo Retrieval.
+    Multithreaded Production-Grade RAG Memory Service.
+    Combines In-Memory Vector Matrix Store + Okapi BM25 + Parallel Sub-Queries + Cross-Reranker.
     """
 
     _shared_embedder = None
-    _thread_lock = threading.Lock()
+    _init_lock = threading.RLock()
+    _cache_lock = threading.RLock()
     _shared_cache: dict = {}
 
     def __init__(self):
@@ -58,43 +62,47 @@ class RAGService:
         self._vstore = DatabaseVectorStore.get_instance()
 
     async def _ensure_embedder(self):
+        if self._embedder is not None:
+            return
         if RAGService._shared_embedder is not None:
             self._embedder = RAGService._shared_embedder
             return
-        with RAGService._thread_lock:
-            if RAGService._shared_embedder is None:
-                self._load_embedder()
-            self._embedder = RAGService._shared_embedder
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(_RAG_EXECUTOR, self._load_embedder)
+        self._embedder = RAGService._shared_embedder
 
     def _load_embedder(self):
-        if np is None:
-            logger.warning("numpy is not installed. RAG will use pure BM25 search.")
-            RAGService._shared_embedder = "disabled"
-            self._embedder = "disabled"
-            return
-        try:
-            from sentence_transformers import SentenceTransformer  # type: ignore[import]
-            try:
-                embedder = SentenceTransformer(
-                    settings.EMBEDDING_MODEL,
-                    device=settings.EMBEDDING_DEVICE,
-                    local_files_only=True,
-                )
-                logger.info(f"Embedding model loaded from local cache: {settings.EMBEDDING_MODEL}")
-                RAGService._shared_embedder = embedder
-                self._embedder = embedder
+        with RAGService._init_lock:
+            if RAGService._shared_embedder is not None:
+                self._embedder = RAGService._shared_embedder
                 return
-            except Exception:
-                pass
+            if np is None:
+                logger.warning("numpy is not installed. RAG will use pure BM25 search.")
+                RAGService._shared_embedder = "disabled"
+                self._embedder = "disabled"
+                return
+            try:
+                from sentence_transformers import SentenceTransformer  # type: ignore[import]
+                try:
+                    embedder = SentenceTransformer(
+                        settings.EMBEDDING_MODEL,
+                        device=settings.EMBEDDING_DEVICE,
+                        local_files_only=True,
+                    )
+                    logger.info(f"Embedding model loaded from local cache: {settings.EMBEDDING_MODEL}")
+                    RAGService._shared_embedder = embedder
+                    self._embedder = embedder
+                    return
+                except Exception:
+                    pass
 
-            # Fast Okapi BM25 index when weights are not cached locally
-            logger.info("Embedding weights not in local cache; RAG utilizing accelerated Okapi BM25 engine.")
-            RAGService._shared_embedder = "disabled"
-            self._embedder = "disabled"
-        except Exception as e:
-            logger.warning(f"SentenceTransformer notice: ({e}). Utilizing accelerated BM25 engine.")
-            RAGService._shared_embedder = "disabled"
-            self._embedder = "disabled"
+                logger.info("Embedding weights not in local cache; RAG utilizing accelerated Okapi BM25 engine.")
+                RAGService._shared_embedder = "disabled"
+                self._embedder = "disabled"
+            except Exception as e:
+                logger.warning(f"SentenceTransformer notice: ({e}). Utilizing accelerated BM25 engine.")
+                RAGService._shared_embedder = "disabled"
+                self._embedder = "disabled"
 
     def _load_memories_sync(self, personality_id: int | None = None) -> list[Memory]:
         """Load memories synchronously via sqlite3 for instant execution when session is None."""
@@ -133,7 +141,94 @@ class RAGService:
             memories.append(mem)
         return memories
 
-    # ── Core Retrieval Engine ──────────────────────────────────────────────────
+    # ── Core Multithreaded Retrieval Engine ───────────────────────────────────
+
+    def _score_single_subquery_sync(
+        self,
+        sub_query: str,
+        bm25: BM25Okapi,
+        memories: list[Memory],
+        id_by_index: list[int],
+        mem_by_id: dict[int, Memory],
+        clean_person: Optional[str],
+        personality_id: Optional[int],
+    ) -> dict[int, float]:
+        """
+        Worker function executed inside thread pool for each sub-query:
+        1. Encodes sub-query embedding and runs fast matrix vector search.
+        2. Computes Okapi BM25 lexical scores.
+        3. Fuses scores using Reciprocal Rank Fusion (RRF).
+        """
+        augmented_sq = f"{clean_person} {sub_query}" if clean_person and clean_person not in sub_query else sub_query
+
+        sem_scores: dict[int, float] = {}
+        lex_scores: dict[int, float] = {}
+
+        # 1. Vector Dense Search
+        if self._embedder != "disabled":
+            try:
+                embed_text = augmented_sq if clean_person else sub_query
+                query_vec = self._embed(embed_text)
+                if query_vec is not None:
+                    vec_hits = self._vstore.search(
+                        query_vec=query_vec,
+                        top_k=25,
+                        personality_id=personality_id,
+                        person_name=clean_person,
+                        min_similarity=0.20,
+                    )
+                    for sim_val, mem_hit in vec_hits:
+                        sem_scores[mem_hit.id] = sim_val
+            except Exception as e:
+                logger.debug(f"Sub-query vector search notice: {e}")
+
+        # 2. Okapi BM25 Lexical Search
+        bm25_scores = bm25.get_scores(augmented_sq)
+        for idx, b_score in enumerate(bm25_scores):
+            mid = id_by_index[idx]
+            if b_score > 0.05:
+                lex_scores[mid] = b_score
+
+        # Boost person name if found in memory text
+        if clean_person:
+            p_lower = clean_person.lower()
+            for m in memories:
+                if p_lower in m.content.lower():
+                    if m.id in lex_scores or m.id in sem_scores:
+                        lex_scores[m.id] = lex_scores.get(m.id, 0.0) + 0.15
+
+        # 3. Reciprocal Rank Fusion (RRF)
+        sorted_sem = sorted(sem_scores.items(), key=lambda x: x[1], reverse=True)
+        sem_ranks = {mid: rank for rank, (mid, _) in enumerate(sorted_sem, start=1)}
+
+        sorted_lex = sorted(lex_scores.items(), key=lambda x: x[1], reverse=True)
+        lex_ranks = {mid: rank for rank, (mid, _) in enumerate(sorted_lex, start=1)}
+
+        sq_matched_ids = set(sem_scores.keys()).union(set(lex_scores.keys()))
+        k_rrf = 60.0
+        sq_candidates: dict[int, float] = {}
+
+        for mid in sq_matched_ids:
+            mem = mem_by_id.get(mid)
+            if not mem:
+                continue
+
+            score_rrf = 0.0
+            if mid in sem_ranks:
+                score_rrf += 1.0 / (k_rrf + sem_ranks[mid])
+            if mid in lex_ranks:
+                score_rrf += 1.0 / (k_rrf + lex_ranks[mid])
+
+            raw_sem = sem_scores.get(mid, 0.0)
+            raw_lex = lex_scores.get(mid, 0.0)
+            imp = getattr(mem, "importance", 5)
+            imp_val = 5 if imp is None else imp
+            importance_boost = (float(imp_val) / 10.0) * 0.03
+
+            combined = (score_rrf * 10.0) + (raw_sem * 0.6) + (raw_lex * 0.5) + importance_boost
+            sq_candidates[mid] = combined
+
+        return sq_candidates
 
     async def _get_scored_memories(
         self,
@@ -143,12 +238,11 @@ class RAGService:
         person_name: str | None = None,
     ) -> list[tuple[float, Memory]]:
         """
-        Executes Advanced Hybrid Retrieval:
-        1. Synchronizes DatabaseVectorStore for accelerated in-memory matrix operations.
-        2. Query Decomposition for multi-hop or complex queries.
-        3. Vectorized Dense Search (Normalized Matrix Dot-Product) + Okapi BM25.
-        4. Reciprocal Rank Fusion (RRF) for sub-queries.
-        5. Cross-Encoder / Deep Alignment Re-ranking.
+        Executes Advanced Multithreaded Hybrid Retrieval:
+        1. Thread-safe VectorStore synchronization.
+        2. Decomposes query into sub-queries.
+        3. Spawns parallel worker threads for each sub-query (Concurrent RRF).
+        4. Multithreaded Cross-Encoder / Deep Alignment Reranking.
         """
         await self._ensure_embedder()
 
@@ -172,7 +266,10 @@ class RAGService:
             return []
 
         # Synchronize in-memory VectorStore
-        if not self._vstore._is_initialized or len(self._vstore._memory_cache) != len(memories):
+        incoming_ids = {m.id for m in memories}
+        with self._vstore._lock:
+            current_ids = set(self._vstore._memory_cache.keys())
+        if not self._vstore._is_initialized or current_ids != incoming_ids:
             active_emb = self._embedder if self._embedder != "disabled" else None
             self._vstore.load_from_db(memories, embedder=active_emb)
 
@@ -180,82 +277,40 @@ class RAGService:
         doc_texts = [m.content for m in memories]
         id_by_index = [m.id for m in memories]
 
-        # 1. Initialize Okapi BM25 Index on corpus
+        # Initialize Okapi BM25 Index on corpus
         bm25 = BM25Okapi(doc_texts)
 
-        # 2. Query Decomposition (Handles Multi-Hop & Compound questions)
+        # Decompose query into sub-queries
         sub_queries = QueryDecomposer.decompose(query)
         clean_person = person_name.strip() if person_name else None
 
-        # Track accumulated candidate scores across all sub-queries
+        loop = asyncio.get_running_loop()
+
+        # Multithreaded Parallel Execution of Sub-Queries across Worker Threads
+        tasks = [
+            loop.run_in_executor(
+                _RAG_EXECUTOR,
+                self._score_single_subquery_sync,
+                sq,
+                bm25,
+                memories,
+                id_by_index,
+                mem_by_id,
+                clean_person,
+                personality_id,
+            )
+            for sq in sub_queries
+        ]
+
+        sub_results = await asyncio.gather(*tasks)
+
+        # Merge candidate scores across parallel sub-query results
         accumulated_candidates: dict[int, float] = {}
-        k_rrf = 60.0
+        for sq_res in sub_results:
+            for mid, score in sq_res.items():
+                accumulated_candidates[mid] = max(accumulated_candidates.get(mid, 0.0), score)
 
-        for sq in sub_queries:
-            augmented_sq = f"{clean_person} {sq}" if clean_person and clean_person not in sq else sq
-
-            sem_scores: dict[int, float] = {}
-            lex_scores: dict[int, float] = {}
-
-            # A. Vector Dense Search (Sub-millisecond normalized matrix multiplication)
-            if self._embedder != "disabled":
-                try:
-                    embed_text = augmented_sq if clean_person else sq
-                    query_vec = self._embed(embed_text)
-
-                    if query_vec is not None:
-                        vec_hits = self._vstore.search(
-                            query_vec=query_vec,
-                            top_k=25,
-                            personality_id=personality_id,
-                            person_name=clean_person,
-                            min_similarity=0.20,
-                        )
-                        for sim_val, mem_hit in vec_hits:
-                            sem_scores[mem_hit.id] = sim_val
-                except Exception as e:
-                    logger.debug(f"Vector search notice: {e}")
-
-            # B. Okapi BM25 Lexical Search
-            bm25_scores = bm25.get_scores(augmented_sq)
-            for idx, b_score in enumerate(bm25_scores):
-                mid = id_by_index[idx]
-                if b_score > 0.05:
-                    lex_scores[mid] = b_score
-
-            # Boost person name if found in memory text
-            if clean_person:
-                p_lower = clean_person.lower()
-                for m in memories:
-                    if p_lower in m.content.lower():
-                        if m.id in lex_scores or m.id in sem_scores:
-                            lex_scores[m.id] = lex_scores.get(m.id, 0.0) + 0.15
-
-            # C. Reciprocal Rank Fusion for this sub-query
-            sorted_sem = sorted(sem_scores.items(), key=lambda x: x[1], reverse=True)
-            sem_ranks = {mid: rank for rank, (mid, _) in enumerate(sorted_sem, start=1)}
-
-            sorted_lex = sorted(lex_scores.items(), key=lambda x: x[1], reverse=True)
-            lex_ranks = {mid: rank for rank, (mid, _) in enumerate(sorted_lex, start=1)}
-
-            sq_matched_ids = set(sem_scores.keys()).union(set(lex_scores.keys()))
-
-            for mid in sq_matched_ids:
-                score_rrf = 0.0
-                if mid in sem_ranks:
-                    score_rrf += 1.0 / (k_rrf + sem_ranks[mid])
-                if mid in lex_ranks:
-                    score_rrf += 1.0 / (k_rrf + lex_ranks[mid])
-
-                raw_sem = sem_scores.get(mid, 0.0)
-                raw_lex = lex_scores.get(mid, 0.0)
-                mem = mem_by_id[mid]
-                importance_boost = (getattr(mem, "importance", 5) / 10.0) * 0.03
-
-                combined = (score_rrf * 10.0) + (raw_sem * 0.6) + (raw_lex * 0.5) + importance_boost
-                accumulated_candidates[mid] = max(accumulated_candidates.get(mid, 0.0), combined)
-
-        # 3. Fallback BM25 pass if no candidates matched yet
+        # Fallback BM25 pass if no candidates matched
         if not accumulated_candidates:
             fallback_bm25 = bm25.get_scores(query)
             for idx, sc in enumerate(fallback_bm25):
@@ -265,13 +320,18 @@ class RAGService:
         if not accumulated_candidates:
             return []
 
-        # 4. Cross-Encoder / Deep Alignment Re-ranking
+        # Multithreaded Cross-Encoder / Alignment Re-ranking
         candidate_items = [
             (score, mem_by_id[mid], mem_by_id[mid].content)
             for mid, score in accumulated_candidates.items()
         ]
 
-        reranked = CrossReranker.rerank(query, candidate_items, top_k=min(20, len(candidate_items)))
+        reranked = await CrossReranker.rerank_async(
+            query,
+            candidate_items,
+            top_k=min(20, len(candidate_items)),
+            executor=_RAG_EXECUTOR,
+        )
 
         final_scored = [(score, mem) for score, mem, _ in reranked]
         return final_scored
@@ -319,7 +379,7 @@ class RAGService:
     ) -> list[str]:
         """
         Return top-K relevant distinct memories for *query*.
-        Uses Hybrid Search (BM25 + Dense) + Cross-Reranker + 'Lost in the Middle' Reordering.
+        Uses Multithreaded Hybrid Search (BM25 + Dense) + Cross-Reranker + Context Reordering.
         """
         scored = await self._get_scored_memories(query, personality_id, db, person_name=person_name)
         if not scored:
@@ -345,7 +405,8 @@ class RAGService:
                     break
 
         if unique_top:
-            self._update_access_times_sync([m.id for m in unique_top])
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(_RAG_EXECUTOR, self._update_access_times_sync, [m.id for m in unique_top])
 
         # Apply Context Re-ordering to eliminate 'Lost in the Middle'
         reordered_mems = self._reorder_context(unique_top)
@@ -382,7 +443,8 @@ class RAGService:
                     break
 
         if unique_scored:
-            self._update_access_times_sync([m.id for _, m in unique_scored])
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(_RAG_EXECUTOR, self._update_access_times_sync, [m.id for _, m in unique_scored])
 
         return [
             {
@@ -581,7 +643,7 @@ class RAGService:
         vec_array: Optional[np.ndarray] = None
         if self._embedder != "disabled" and np is not None:
             try:
-                vec = self._embed(content)
+                vec = await self._embed_async(content)
                 if vec is not None:
                     vec_array = vec.astype(np.float32)
                     embedding_bytes = vec_array.tobytes()
@@ -614,13 +676,23 @@ class RAGService:
     # ── Internals ─────────────────────────────────────────────────────────────
 
     def _embed(self, text: str):
-        if text in RAGService._shared_cache:
-            return RAGService._shared_cache[text]
+        """Thread-safe embedding computation with RLock-guarded cache."""
+        with RAGService._cache_lock:
+            if text in RAGService._shared_cache:
+                return RAGService._shared_cache[text]
+
         vec = self._embedder.encode(text, normalize_embeddings=True)
-        if len(RAGService._shared_cache) > 2048:
-            RAGService._shared_cache.clear()
-        RAGService._shared_cache[text] = vec
+
+        with RAGService._cache_lock:
+            if len(RAGService._shared_cache) > 2048:
+                RAGService._shared_cache.clear()
+            RAGService._shared_cache[text] = vec
         return vec
+
+    async def _embed_async(self, text: str):
+        """Non-blocking asynchronous embedding offloaded to worker thread pool."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_RAG_EXECUTOR, self._embed, text)
 
     def _normalize_arabic(self, text: str) -> str:
         from app.utils.masri_normalizer import normalize_masri_orthography

@@ -1,16 +1,18 @@
 """
 VectorStore — High-Performance In-Memory Vector Store for Database Memories.
 
-Optimizes Database Vectors & Retrieval Performance:
+Optimizes Database Vectors & Retrieval Performance with Full Thread Safety:
 - Stores L2-normalized float32 vectors in an aligned NumPy matrix for sub-millisecond dot products:
     cos_sim(u, v) = u_norm · v_norm
-- Thread-safe in-memory cache synchronized with SQLite database.
+- Thread-safe in-memory cache synchronized with SQLite database using threading.RLock.
+- Non-blocking search_async offloading vector operations to worker threads.
 - Metadata filtering (by personality_id, person_name, source).
 - Automatically backfills missing embeddings in SQLite on startup.
 - Strictly deterministic vector operations (NO fallback models).
 """
 
 import asyncio
+import concurrent.futures
 import os
 import sqlite3
 import threading
@@ -31,13 +33,14 @@ class DatabaseVectorStore:
     """
     In-Memory Vector Matrix Cache & SQLite Vector Manager.
     Avoids repeatedly decoding BLOBs from the database on every search query.
+    Fully thread-safe with RLock and asynchronous worker offloading.
     """
 
     _instance = None
-    _lock = threading.Lock()
+    _singleton_lock = threading.RLock()
 
     def __init__(self):
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._matrix: Optional[np.ndarray] = None          # Shape: (N, D), float32, L2-normalized
         self._ids: List[int] = []                         # Corresponding Memory IDs
         self._memory_cache: Dict[int, Memory] = {}        # Cached Memory objects
@@ -47,7 +50,7 @@ class DatabaseVectorStore:
     @classmethod
     def get_instance(cls) -> "DatabaseVectorStore":
         if cls._instance is None:
-            with cls._lock:
+            with cls._singleton_lock:
                 if cls._instance is None:
                     cls._instance = cls()
         return cls._instance
@@ -74,6 +77,7 @@ class DatabaseVectorStore:
         """
         Builds the aligned in-memory vector matrix from SQLite memories.
         Optionally backfills missing embeddings if an active embedder is provided.
+        Thread-safe under concurrent caller threads.
         """
         with self._lock:
             self._ids.clear()
@@ -191,7 +195,7 @@ class DatabaseVectorStore:
         min_similarity: float = 0.20,
     ) -> List[Tuple[float, Memory]]:
         """
-        Fast Matrix-Vector Cosine Similarity Search:
+        Fast Matrix-Vector Cosine Similarity Search (Synchronous, Thread-Safe):
         Computes similarities in a single vector operation: S = M · q
         Applies optional personality and person entity metadata filtering.
         """
@@ -235,6 +239,30 @@ class DatabaseVectorStore:
             results.sort(key=lambda x: x[0], reverse=True)
             return results[:top_k]
 
+    async def search_async(
+        self,
+        query_vec: np.ndarray,
+        top_k: int = 10,
+        personality_id: Optional[int] = None,
+        person_name: Optional[str] = None,
+        min_similarity: float = 0.20,
+        executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
+    ) -> List[Tuple[float, Memory]]:
+        """
+        Non-blocking Asynchronous Search running on worker thread pool.
+        Prevents CPU-bound matrix multiplication from blocking the asyncio loop.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            executor,
+            self.search,
+            query_vec,
+            top_k,
+            personality_id,
+            person_name,
+            min_similarity,
+        )
+
     def get_all_memories(self, personality_id: Optional[int] = None) -> List[Memory]:
         with self._lock:
             if personality_id is None:
@@ -243,4 +271,3 @@ class DatabaseVectorStore:
                 m for m in self._memory_cache.values()
                 if m.personality_id is None or m.personality_id == personality_id
             ]
-
