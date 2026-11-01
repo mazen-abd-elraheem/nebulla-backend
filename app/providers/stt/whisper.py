@@ -92,16 +92,50 @@ class WhisperProvider(BaseSTTProvider):
                 model_to_load = self._model_size
                 if model_to_load in ("turbo", "large-v3-turbo") and download_root:
                     turbo_file = Path(download_root) / "large-v3-turbo.pt"
-                    if not turbo_file.exists() or turbo_file.stat().st_size < 1500 * 1024 * 1024:
+                    if turbo_file.exists() and turbo_file.stat().st_size >= 1500 * 1024 * 1024:
+                        if device == "cuda":
+                            try:
+                                logger.info(f"Loading Whisper STT model 'turbo' on {device} (FP16 memory optimized)...")
+                                with open(turbo_file, "rb") as fp:
+                                    checkpoint = torch.load(fp, map_location="cpu", weights_only=True)
+                                dims = whisper.ModelDimensions(**checkpoint["dims"])
+                                loaded_model = whisper.Whisper(dims)
+                                for k, v in checkpoint["model_state_dict"].items():
+                                    if v.is_floating_point() and "layer_norm" not in k and "ln" not in k:
+                                        checkpoint["model_state_dict"][k] = v.half()
+                                for name, module in loaded_model.named_modules():
+                                    if isinstance(module, (torch.nn.Linear, torch.nn.Conv1d)):
+                                        module.half()
+                                loaded_model.load_state_dict(checkpoint["model_state_dict"])
+                                del checkpoint
+                                loaded_model = loaded_model.to("cuda")
+                                WhisperProvider._shared_model = loaded_model
+                                WhisperProvider._shared_device = "cuda"
+                                logger.info("Whisper STT model 'turbo' ready on cuda ✓")
+                                return
+                            except Exception as turbo_err:
+                                logger.warning(f"Whisper turbo CUDA load notice: {turbo_err}. Falling back to standard load.")
+                    else:
                         curr_mb = turbo_file.stat().st_size / (1024 * 1024) if turbo_file.exists() else 0
                         logger.info(f"Turbo model is downloading ({curr_mb:.0f}/1510 MB). Using fast high-accuracy 'small' model temporarily...")
                         model_to_load = "small"
 
-                logger.info(f"Loading Whisper STT model '{model_to_load}' on {device}...")
-                loaded_model = whisper.load_model(model_to_load, device=device, download_root=download_root)
-                WhisperProvider._shared_model = loaded_model
-                WhisperProvider._shared_device = device
-                logger.info(f"Whisper STT model '{model_to_load}' ready on {device} ✓")
+                try:
+                    logger.info(f"Loading Whisper STT model '{model_to_load}' on {device}...")
+                    loaded_model = whisper.load_model(model_to_load, device=device, download_root=download_root)
+                    WhisperProvider._shared_model = loaded_model
+                    WhisperProvider._shared_device = device
+                    logger.info(f"Whisper STT model '{model_to_load}' ready on {device} ✓")
+                except Exception as load_err:
+                    if "out of memory" in str(load_err).lower() and device == "cuda":
+                        logger.warning(f"Whisper CUDA OOM. Freeing VRAM and falling back to CPU 'base' model...")
+                        torch.cuda.empty_cache()
+                        loaded_model = whisper.load_model("base", device="cpu", download_root=download_root)
+                        WhisperProvider._shared_model = loaded_model
+                        WhisperProvider._shared_device = "cpu"
+                        logger.info("Whisper STT model 'base' ready on CPU ✓")
+                    else:
+                        raise load_err
             except ImportError:
                 logger.error("openai-whisper not installed. Run: pip install openai-whisper")
                 WhisperProvider._shared_model = "disabled"
@@ -132,6 +166,16 @@ class WhisperProvider(BaseSTTProvider):
                 audio_array = scipy.signal.resample_poly(audio_array, 16000, sample_rate).astype(np.float32)
             except Exception as resample_err:
                 logger.debug(f"Resample warning: {resample_err}")
+
+        # Fast VAD silence trimming (< 5ms) to immediately cut off leading/trailing silence
+        try:
+            from app.providers.stt.qwencleo import trim_silence
+            audio_array, has_speech = trim_silence(audio_array, 16000, threshold_db=-40.0)
+            if not has_speech or len(audio_array) == 0:
+                logger.info("Whisper VAD: audio was silence / empty; returning empty immediately.")
+                return ""
+        except Exception as vad_err:
+            logger.debug(f"VAD notice: {vad_err}")
 
         lang = getattr(settings, "WHISPER_LANGUAGE", "ar")
         device = WhisperProvider._shared_device or "cpu"

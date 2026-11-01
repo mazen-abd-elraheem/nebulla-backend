@@ -43,6 +43,20 @@ async def _warmup_ollama():
         logger.debug(f"Ollama warm-up notice: {e}")
 
 
+async def _warmup_stt():
+    """Pre-warm configured STT model in VRAM to eliminate cold-start transcription latency."""
+    try:
+        from app.providers.stt.factory import get_stt_provider
+        provider = get_stt_provider(settings.STT_PROVIDER)
+        if hasattr(provider, '_ensure_loaded'):
+            await provider._ensure_loaded()
+        elif hasattr(provider, '_ensure_model_loaded'):
+            await provider._ensure_model_loaded()
+        logger.info(f"✅ STT model '{settings.STT_PROVIDER}' is warm and ready in VRAM.")
+    except Exception as e:
+        logger.debug(f"STT warm-up notice: {e}")
+
+
 async def _warmup_rag():
     """Pre-warm RAG SentenceTransformer in RAM to eliminate cold-start retrieval latency."""
     try:
@@ -62,6 +76,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     asyncio.create_task(_warmup_ollama())
     asyncio.create_task(_warmup_rag())
+    asyncio.create_task(_warmup_stt())
     yield
     logger.info("Nebula backend shutting down...")
 
