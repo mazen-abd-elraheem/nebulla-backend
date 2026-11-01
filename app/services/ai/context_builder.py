@@ -33,7 +33,7 @@ def is_greeting_or_persona_inquiry(message: str) -> bool:
     if not message:
         return False
     msg = message.strip().lower()
-    
+
     # Common greetings (Arabic and English)
     greetings = [
         "صباح الخير", "مساء الخير", "صباح النور", "مساء النور", "صباح الورد", "مساء الورد",
@@ -197,6 +197,19 @@ async def build_grounding_context(
         "backend_status": "ok",
     }
 
+    # 6. Allowlisted Contacts & Reminders (Privacy: names only, zero numbers per §14.9)
+    trusted_contacts: List[str] = []
+    active_reminders_list: List[str] = []
+    try:
+        from app.models.contact import Contact
+        from app.models.reminder import Reminder
+        c_res = await db.execute(select(Contact.name).where(Contact.is_allowlisted == True).limit(20))
+        trusted_contacts = list(c_res.scalars().all())
+        r_res = await db.execute(select(Reminder.title).where(Reminder.is_active == True, Reminder.status == "pending").limit(5))
+        active_reminders_list = list(r_res.scalars().all())
+    except Exception as e:
+        logger.debug(f"Contacts/reminders grounding notice: {e}")
+
     # Formulate system prompt
     phone_str = "متصل" if diag_info["phone_connected"] else "غير متصل"
     desk_str = "متصل" if diag_info["desktop_connected"] else "غير متصل"
@@ -269,6 +282,10 @@ async def build_grounding_context(
 """
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
+        if trusted_contacts:
+            grounded_system_prompt += f"- جهات الاتصال المسموحة (أسماء فقط): {', '.join(trusted_contacts)}.\n"
+        if active_reminders_list:
+            grounded_system_prompt += f"- التذكيرات الحالية: {', '.join(active_reminders_list)}.\n"
     else:
         # User is speaking English
         from scripts.generate_rag_dataset import to_english_memory

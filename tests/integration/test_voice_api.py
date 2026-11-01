@@ -47,10 +47,15 @@ async def test_get_speakers_endpoint():
 
 
 @pytest.mark.asyncio
-async def test_transcribe_audio_endpoint():
-    """Verify STT audio transcription endpoint."""
+async def test_transcribe_audio_endpoint(monkeypatch):
+    """Verify STT audio transcription endpoint using strictly QwenCleo-ASR."""
     wav_bytes = _create_dummy_wav(duration_s=2.0)
     files = {"file": ("test_input.wav", wav_bytes, "audio/wav")}
+
+    from app.providers.stt.qwencleo import QwenCleoProvider
+    async def mock_transcribe(self, audio_bytes):
+        return "أهلاً بيك في نيبولا"
+    monkeypatch.setattr(QwenCleoProvider, "transcribe", mock_transcribe)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         res = await client.post("/api/v1/audio/transcribe", files=files)
@@ -58,9 +63,29 @@ async def test_transcribe_audio_endpoint():
     assert res.status_code == 200
     data = res.json()
     assert data["success"] is True
-    assert "transcription" in data
+    assert data["transcription"] == "أهلاً بيك في نيبولا"
     assert data["duration_s"] > 0
-    assert "latency_ms" in data
+    assert data["latency_ms"] > 0
+    assert data["provider"] == "qwencleo"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_endpoint_strict_failure(monkeypatch):
+    """Verify STT endpoint strictly returns HTTP 500 on model failure (no fallback)."""
+    wav_bytes = _create_dummy_wav(duration_s=2.0)
+    files = {"file": ("test_input.wav", wav_bytes, "audio/wav")}
+
+    from app.providers.stt.qwencleo import QwenCleoProvider
+    async def mock_failing_transcribe(self, audio_bytes):
+        raise RuntimeError("QwenCleo ASR failed inference")
+    monkeypatch.setattr(QwenCleoProvider, "transcribe", mock_failing_transcribe)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post("/api/v1/audio/transcribe", files=files)
+
+    assert res.status_code == 500
+    assert "QwenCleo ASR failed inference" in res.json()["detail"]
+
 
 
 @pytest.mark.asyncio

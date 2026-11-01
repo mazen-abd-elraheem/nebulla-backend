@@ -51,7 +51,8 @@ async def init_db() -> None:
     """Create all tables on startup (dev/simple mode — use Alembic for production)."""
     from sqlalchemy import text
     from app.models import (  # noqa: F401  — import to register models
-        device, personality, memory, conversation, signal, calibration, tracking, log, face_profile, user
+        device, personality, memory, conversation, signal, calibration, tracking, log, face_profile, user,
+        contact, voiceprint, action_log, reminder,
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -141,6 +142,9 @@ async def init_db() -> None:
             "مشروع تخرج مازن هو روبوت نيبولا (Nebula) للذكاء الاصطناعي والتوأم الرقمي.",
             "الروبوت نيبولا يمتلك 12 محرك سيرفو فائق الدقة ومتصل بنظام أمان متقدم.",
             "الروبوت نيبولا تم تزويده بكاميرا تدعم تتبع الوجوه بسرعة 60 إطار في الثانية.",
+            "مكان الباسبور وجواز السفر: في الدرج الأول على اليمين في مكتب مازن.",
+            "مكان الشاحن ومحول الهاتف: محطوط على الكومودينو جنب السرير في أوضة النوم.",
+            "مكان مفاتيح البيت والعربية: متعلقة على الحامل الخشبي جنب باب الشقة.",
         ]
         new_count = 0
         for text_content in personalized_seeds:

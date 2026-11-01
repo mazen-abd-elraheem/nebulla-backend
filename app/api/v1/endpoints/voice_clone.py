@@ -223,17 +223,24 @@ async def synthesize(
         target_pid = 1
 
     actual_ref_text = body.ref_text if (body.ref_text and body.ref_text.strip() and body.ref_text.strip() != "string") else None
-    steps = body.num_steps if (body.num_steps and body.num_steps > 0) else 4
+    steps = body.num_steps if (body.num_steps and body.num_steps > 0) else getattr(settings, "VOICETUT_NUM_STEPS", 48)
+    cfg = body.guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
 
     wav_bytes = await svc.synthesize(
         text=cleaned_text,
         personality_id=target_pid,
         language=body.language,
-        ref_text=body.ref_text,
-        num_step=body.num_steps,
-        guidance_scale=body.guidance_scale,
+        ref_text=actual_ref_text,
+        num_step=steps,
+        guidance_scale=cfg,
         speed=body.speed,
     )
+
+    if not wav_bytes or len(wav_bytes) <= 1000:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Voice cloning failed to produce valid audio output.",
+        )
 
     # Cache latest audio to disk and memory for immediate browser streaming
     try:
@@ -266,7 +273,7 @@ async def synthesize_get(
     text: str | None = Query(None, description="النص المراد نطقه بالصوت المستنسخ"),
     voice_id: int | None = Query(None, description="معرف الصوت المستنسخ (ID مثل 1)"),
     personality_id: int | None = Query(None, description="معرف الشخصية (ID مثل 1)"),
-    num_steps: int | None = Query(4, description="عدد خطوات التوليد (الافتراضي: 4 للسرعة)"),
+    num_steps: int | None = Query(48, description="عدد خطوات التوليد (الافتراضي: 48)"),
     _user: str | None = Depends(get_optional_user),
     svc: VoiceCloneService = Depends(_svc),
 ):
@@ -281,7 +288,7 @@ async def synthesize_get(
             text=text,
             voice_id=voice_id,
             personality_id=personality_id,
-            num_steps=num_steps or 4,
+            num_steps=num_steps or 48,
         )
         return await synthesize(req, _user=_user, svc=svc)
 
@@ -310,7 +317,7 @@ async def synthesize_get(
     req = SynthesizeRequest(
         text="أهلاً بيك يا صديقي! الصوت المصري المستنسخ شغال وجاهز تماماً.",
         personality_id=pid,
-        num_steps=4,
+        num_steps=48,
     )
     return await synthesize(req, _user=_user, svc=svc)
 
@@ -333,8 +340,9 @@ async def test_voice(
     wav_bytes = await svc.synthesize(
         text="أهلاً يا صديقي! الروبوت بيكلم بصوتك المستنسخ.",
         personality_id=pid,
-        language="ar",
-        num_step=4,
+        language="arz",
+        num_step=48,
+        guidance_scale=2.2,
     )
     try:
         LATEST_WAV_FILE.write_bytes(wav_bytes)

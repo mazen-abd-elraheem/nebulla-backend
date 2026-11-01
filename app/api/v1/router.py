@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     settings as settings_ep,
     diagnostics,
     faces,
+    phone_actions,
 )
 
 api_router = APIRouter()
@@ -29,5 +30,6 @@ api_router.include_router(signals.router,        prefix="/signals",        tags=
 api_router.include_router(calibration.router,    prefix="/calibration",    tags=["calibration"])
 api_router.include_router(voice_clone.router,    prefix="/voice-clone",    tags=["voice-clone"])
 api_router.include_router(audio.router,          prefix="/audio",          tags=["audio"])
+api_router.include_router(phone_actions.router,  prefix="/actions",        tags=["phone-actions"])
 api_router.include_router(settings_ep.router,    prefix="/settings",       tags=["settings"])
 api_router.include_router(diagnostics.router,    prefix="/diagnostics",    tags=["diagnostics"])

@@ -41,6 +41,7 @@ router = APIRouter()
 async def register_face(
     name: str = Form(..., description="Full name or identifier of the person"),
     file: UploadFile = File(..., description="Image file (JPEG/PNG) containing the person's face"),
+    append: bool = Form(False, description="Add as additional angle/shot for existing person instead of overwriting"),
     db: AsyncSession = Depends(get_db),
     _user: Optional[str] = Depends(get_optional_user),
 ):
@@ -52,7 +53,7 @@ async def register_face(
     await face_service.ensure_db_loaded(db)
 
     try:
-        result = await face_service.register_face_from_image(name=name, image_bytes=image_bytes, db=db)
+        result = await face_service.register_face_from_image(name=name, image_bytes=image_bytes, db=db, append=append)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -308,6 +309,7 @@ async def live_camera_feed(
     db: AsyncSession = Depends(get_db),
 ):
     face_service = _get_face_service()
+    await face_service._ensure_model()
     await face_service.ensure_db_loaded(db)
     streamer = get_camera_streamer()
     streamer.camera_index = camera_index
@@ -363,6 +365,7 @@ async def stop_camera():
 )
 async def get_camera_snapshot(db: AsyncSession = Depends(get_db)):
     face_service = _get_face_service()
+    await face_service._ensure_model()
     await face_service.ensure_db_loaded(db)
     streamer = get_camera_streamer()
     jpeg_bytes = streamer.get_snapshot()
