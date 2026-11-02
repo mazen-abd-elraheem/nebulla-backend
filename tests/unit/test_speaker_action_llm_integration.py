@@ -79,7 +79,7 @@ async def test_grounding_context_metadata_injection_verified_speaker(async_sessi
     assert grounding.speaker["name"] == "مازن عبد الرحيم"
     assert grounding.speaker["is_verified"] is True
     assert grounding.speaker["status"] == "verified"
-    assert grounding.speaker["security_level"] == 2
+    assert grounding.speaker["is_main"] is True
     assert grounding.voice_verification["is_verified"] is True
 
     # 2. Verify System Prompt contains speaker directives for the LLM
@@ -309,7 +309,7 @@ async def test_api_speaker_llm_context(client: AsyncClient, async_session: Async
     data1 = resp1.json()
     assert data1["is_verified"] is True
     assert data1["status"] == "verified"
-    assert data1["security_level"] == 2
+    assert data1["is_main"] is True
     assert "مازن عبد الرحيم" in data1["llm_directive"]
 
     # 2. Unregistered speaker (Deterministic rejection)

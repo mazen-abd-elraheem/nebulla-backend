@@ -26,9 +26,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol, Set, Tuple, Union
 
 import numpy as np
-<<<<<<< HEAD
+import subprocess
 try:
     from scipy.fftpack import dct
+    import scipy.signal
 except ImportError:
     def dct(x, type=2, axis=1, norm="ortho"):
         N = x.shape[axis]
@@ -39,11 +40,6 @@ except ImportError:
         res[:, 0] *= 1.0 / np.sqrt(N)
         res[:, 1:] *= np.sqrt(2.0 / N)
         return res
-=======
-import scipy.signal
-import subprocess
-from scipy.fftpack import dct
->>>>>>> 453eaff422adcc5069e44b340f208b7f71cc48b8
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,12 +56,14 @@ class AudioDecodeError(ValueError):
     pass
 
 
-def decode_audio(data: bytes, sr_target: int = 16000) -> np.ndarray:
+def decode_audio(data: bytes, sr_target: int = 16000, target_sr: Optional[int] = None) -> np.ndarray:
     """
     Universal audio decoder supporting all recording types:
     WAV, MP3, M4A, AAC, OGG, Opus, WebM, FLAC, AMR, 3GP, MP4 audio,
     and raw PCM. Decodes and resamples to 1-D float32 numpy array [-1.0, 1.0] at sr_target (16kHz).
     """
+    if target_sr is not None:
+        sr_target = target_sr
     if not data or len(data) < 8:
         raise AudioDecodeError("Audio data is empty or too short")
 
@@ -416,6 +414,11 @@ class VerificationResult:
     score: Optional[float] = None    # best cosine similarity (None = not scored)
     user_id: Optional[int] = None
     speaker_name: Optional[str] = None
+    speaker_id: Optional[int] = None
+    verification_id: Optional[int] = None
+    voice_id: Optional[str] = None
+    personality_id: Optional[int] = None
+    is_main: bool = False
     max_level: int = 0
     audio_seconds: float = 0.0
     passed_l1: bool = False
@@ -433,6 +436,10 @@ class _Entry:
     face_id: Optional[int] = None
     personality_id: Optional[int] = None
     memory_id: Optional[int] = None
+    verification_id: Optional[int] = None
+    speaker_id: Optional[int] = None
+    voice_id: Optional[str] = None
+    is_main: bool = False
 
 
 class VoiceprintError(ValueError):
@@ -637,6 +644,11 @@ class SpeakerVerificationService:
                 entries: Dict[int, _Entry] = {}
                 async with session_factory() as db:
                     rows = (await db.execute(select(Voiceprint))).scalars().all()
+                    from app.models.speaker import Speaker
+                    spk_rows = (await db.execute(select(Speaker))).scalars().all()
+                    spk_by_verif = {s.verification_id: s for s in spk_rows if s.verification_id}
+                    spk_by_name = {s.name.lower(): s for s in spk_rows}
+
                 for r in rows:
                     if r.model_id and r.model_id != self._backend.model_id:
                         logger.warning(
@@ -651,14 +663,24 @@ class SpeakerVerificationService:
                     except ValueError:
                         logger.warning("Skipping corrupt voiceprint for user %s", r.user_id)
                         continue
+
+                    spk = spk_by_verif.get(r.id) or spk_by_name.get(r.speaker_name.lower())
+                    is_main = spk.is_main if spk else ("مازن" in r.speaker_name.lower() or "mazen" in r.speaker_name.lower())
+                    voice_id = spk.voice_id if spk else (str(r.personality_id) if r.personality_id else None)
+                    spk_id = spk.id if spk else None
+
                     entries[r.user_id] = _Entry(
                         vector=vec,
                         speaker_name=r.speaker_name,
-                        max_level=int(r.max_level),
+                        max_level=int(getattr(r, "max_level", 2) or 2),
                         user_id=r.user_id,
                         face_id=getattr(r, "face_id", None),
                         personality_id=getattr(r, "personality_id", None),
                         memory_id=getattr(r, "memory_id", None),
+                        verification_id=r.id,
+                        speaker_id=spk_id,
+                        voice_id=voice_id,
+                        is_main=is_main,
                     )
                 self._cache = entries
         return self._cache
@@ -776,6 +798,10 @@ class SpeakerVerificationService:
             "is_identified": is_identified,
             "speaker_name": best_name if is_identified else None,
             "user_id": best_uid if is_identified else None,
+            "speaker_id": getattr(best_entry, "speaker_id", None) if (is_identified and best_entry) else None,
+            "verification_id": getattr(best_entry, "verification_id", None) if (is_identified and best_entry) else None,
+            "voice_id": getattr(best_entry, "voice_id", None) if (is_identified and best_entry) else None,
+            "is_main": getattr(best_entry, "is_main", False) if (is_identified and best_entry) else False,
             "face_id": getattr(best_entry, "face_id", None) if (is_identified and best_entry) else None,
             "personality_id": getattr(best_entry, "personality_id", None) if (is_identified and best_entry) else None,
             "memory_id": getattr(best_entry, "memory_id", None) if (is_identified and best_entry) else None,
@@ -1275,12 +1301,22 @@ class SpeakerVerificationService:
                     res.is_identified = True
                     res.user_id = best_uid
                     res.speaker_name = entry.speaker_name
+                    res.speaker_id = getattr(entry, "speaker_id", None)
+                    res.verification_id = getattr(entry, "verification_id", None)
+                    res.voice_id = getattr(entry, "voice_id", None)
+                    res.personality_id = getattr(entry, "personality_id", None)
+                    res.is_main = getattr(entry, "is_main", False)
                     res.max_level = entry.max_level
                 else:
                     # Below threshold: treat as unknown speaker!
                     res.is_identified = False
                     res.user_id = None
                     res.speaker_name = None
+                    res.speaker_id = None
+                    res.verification_id = None
+                    res.voice_id = None
+                    res.personality_id = None
+                    res.is_main = False
                     res.max_level = 0
 
             return res
@@ -1313,14 +1349,14 @@ class SpeakerVerificationService:
         face_id: Optional[int] = None,
         personality_id: Optional[int] = None,
         memory_id: Optional[int] = None,
+        voice_id: Optional[str] = None,
+        is_main: Optional[bool] = None,
     ) -> Voiceprint:
         """
         Build and store a voiceprint from audio enrolment samples.
         Supports single audio clip or multi-sample averaging (1 to 20 samples).
+        Auto-binds to the unified Speaker entity.
         """
-        if not (0 <= max_level <= 3):
-            raise VoiceprintError("max_level must be between 0 and 3")
-
         clean_name = speaker_name.strip()
         if not clean_name:
             raise VoiceprintError("Speaker name cannot be empty")
@@ -1354,9 +1390,10 @@ class SpeakerVerificationService:
 
         mean = _unit(np.mean(np.stack(kept), axis=0))
 
-        # Auto-create user account if user_id is not provided
+        # Auto-create or resolve user account
+        user_row = None
+        from app.models.user import User
         if user_id is None:
-            from app.models.user import User
             user_row = (await db.execute(select(User).where(User.full_name == clean_name))).scalar_one_or_none()
             if not user_row:
                 safe_tag = "".join(c for c in clean_name if c.isalnum() or c in ("-", "_")).lower() or "speaker"
@@ -1369,6 +1406,8 @@ class SpeakerVerificationService:
                 db.add(user_row)
                 await db.flush()
             user_id = user_row.id
+        else:
+            user_row = await db.get(User, user_id)
 
         existing = (
             await db.execute(select(Voiceprint).where(Voiceprint.user_id == user_id))
@@ -1427,6 +1466,43 @@ class SpeakerVerificationService:
             db.add(row)
 
         await db.flush()
+
+        # Auto-create or update matching unified Speaker profile
+        try:
+            from app.models.speaker import Speaker
+            spk_res = await db.execute(
+                select(Speaker).where(
+                    (Speaker.verification_id == row.id) | (Speaker.name == clean_name)
+                )
+            )
+            spk = spk_res.scalar_one_or_none()
+            is_mazen = "مازن" in clean_name.lower() or "mazen" in clean_name.lower()
+            resolved_main = is_main if is_main is not None else is_mazen
+            resolved_voice = voice_id or (str(personality_id) if personality_id else "1")
+
+            if not spk:
+                spk = Speaker(
+                    name=clean_name,
+                    verification_id=row.id,
+                    voice_id=resolved_voice,
+                    personality_id=personality_id,
+                    is_main=resolved_main,
+                )
+                db.add(spk)
+            else:
+                spk.verification_id = row.id
+                if personality_id is not None:
+                    spk.personality_id = personality_id
+                if voice_id is not None:
+                    spk.voice_id = voice_id
+                elif not spk.voice_id and personality_id:
+                    spk.voice_id = str(personality_id)
+                if is_main is not None:
+                    spk.is_main = is_main
+            await db.flush()
+        except Exception as e:
+            logger.warning(f"Could not auto-sync Speaker profile during voiceprint enrollment: {e}")
+
         self.invalidate()
         return row
 

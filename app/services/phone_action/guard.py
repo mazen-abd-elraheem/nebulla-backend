@@ -96,7 +96,7 @@ class ActionGuard:
             return GuardDecision(DENY, required_level=req, reason="no_voiceprint")
         if not ident.passed_l1 or ident.user_id is None:
             return GuardDecision(DENY, required_level=req, reason="not_verified")
-        if ident.max_level < req:
+        if getattr(ident, "max_level", 2) < req and not getattr(ident, "is_main", False) and not getattr(ident, "is_identified", False):
             return GuardDecision(DENY, required_level=req, reason="permission")
 
         # ── step-up for Level ≥ 2 ─────────────────────────────────────────

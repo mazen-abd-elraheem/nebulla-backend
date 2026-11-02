@@ -230,8 +230,8 @@ async def build_grounding_context(
     # 7. Speaker Identification & Voice Verification Metadata
     spk_name = verified_speaker
     is_verif = False
+    is_main_speaker = False
     sim_score = 0.0
-    sec_level = 1
     spk_status = "unverified"
     spk_directive = ""
 
@@ -244,7 +244,7 @@ async def build_grounding_context(
                 or speaker_verification.get("passed_l2")
             )
             sim_score = float(speaker_verification.get("similarity") or speaker_verification.get("confidence") or 0.0)
-            sec_level = int(speaker_verification.get("security_level") or speaker_verification.get("max_level") or 1)
+            is_main_speaker = bool(speaker_verification.get("is_main", False))
             spk_status = speaker_verification.get("status") or ("verified" if is_verif else "unverified")
         else:
             spk_name = getattr(speaker_verification, "speaker_name", None) or spk_name
@@ -253,29 +253,43 @@ async def build_grounding_context(
                 or getattr(speaker_verification, "passed_l2", False)
             )
             sim_score = float(getattr(speaker_verification, "similarity", 0.0))
-            sec_level = int(getattr(speaker_verification, "max_level", 1))
+            is_main_speaker = bool(getattr(speaker_verification, "is_main", False))
             spk_status = "verified" if is_verif else "unverified"
     elif verified_speaker:
         is_verif = True
         sim_score = 1.0
         spk_status = "verified"
 
+    if spk_name and not is_main_speaker:
+        try:
+            from app.models.speaker import Speaker
+            spk_match = (await db.execute(select(Speaker).where(Speaker.name.ilike(f"%{spk_name}%")))).scalar_one_or_none()
+            if spk_match and spk_match.is_main:
+                is_main_speaker = True
+            elif "مازن" in spk_name.lower() or "mazen" in spk_name.lower():
+                is_main_speaker = True
+        except Exception:
+            if "مازن" in spk_name.lower() or "mazen" in spk_name.lower():
+                is_main_speaker = True
+
     if spk_status == "verified" and spk_name:
-        spk_directive = f"المتحدث الحالي موثق بالبصمة الصوتية: '{spk_name}' (نسبة التطابق: {int(sim_score * 100)}%). يمكنك مناداته باسمه بحرية والتعامل معه بصلاحيات المستوى {sec_level}."
+        main_desc = "متحدث رئيسي" if is_main_speaker else "متحدث موثق"
+        spk_directive = f"المتحدث الحالي موثق بالبصمة الصوتية: '{spk_name}' ({main_desc}، نسبة التطابق: {int(sim_score * 100)}%). يمكنك مناداته باسمه بحرية والتعامل معه بثقة."
     else:
         spk_directive = "صوت المتحدث غير موثق بالبصمة الصوتية. تجنب تنفيذ أي أوامر مالية أو حساسة أو مسح بيانات."
 
     speaker_meta: Dict[str, Any] = {
         "name": spk_name,
         "is_verified": is_verif,
+        "is_main": is_main_speaker,
         "status": spk_status,
         "confidence": round(sim_score, 4),
-        "security_level": sec_level,
         "directive": spk_directive,
     }
     voice_verif_meta: Dict[str, Any] = {
         "enabled": settings.SPEAKER_VERIFICATION_ENABLED,
         "is_verified": is_verif,
+        "is_main": is_main_speaker,
         "confidence": round(sim_score, 4),
         "status": spk_status,
     }
@@ -301,7 +315,7 @@ async def build_grounding_context(
             utterance=message,
             speaker_name=spk_name,
             is_verified=is_verif,
-            verification_level=sec_level,
+            is_main=is_main_speaker,
             allowlisted_contacts=allowlisted_contacts,
         )
 
@@ -426,7 +440,8 @@ async def build_grounding_context(
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
         if spk_name:
-            grounded_system_prompt += f"- المتحدث: {spk_name} (حالة البصمة: {spk_status} | الصلاحية: المستوى {sec_level}).\n"
+            main_tag = " | متحدث رئيسي" if is_main_speaker else ""
+            grounded_system_prompt += f"- المتحدث: {spk_name} (حالة البصمة: {spk_status}{main_tag}).\n"
             if spk_directive:
                 grounded_system_prompt += f"- توجيه المتحدث: {spk_directive}\n"
         elif verified_speaker:

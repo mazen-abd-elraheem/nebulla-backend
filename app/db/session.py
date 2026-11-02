@@ -140,6 +140,21 @@ async def init_db() -> None:
                 if "user_id" not in cols:
                     connection.execute(text("ALTER TABLE action_logs ADD COLUMN user_id INTEGER REFERENCES users(id)"))
 
+            if "speakers" in tables:
+                cols = [c["name"] for c in inspector.get_columns("speakers")]
+                if "verification_id" not in cols:
+                    connection.execute(text("ALTER TABLE speakers ADD COLUMN verification_id INTEGER REFERENCES voiceprints(id)"))
+                if "voice_id" not in cols:
+                    connection.execute(text("ALTER TABLE speakers ADD COLUMN voice_id VARCHAR(64)"))
+                if "personality_id" not in cols:
+                    connection.execute(text("ALTER TABLE speakers ADD COLUMN personality_id INTEGER REFERENCES personalities(id)"))
+                if "is_main" not in cols:
+                    connection.execute(text("ALTER TABLE speakers ADD COLUMN is_main BOOLEAN DEFAULT 0"))
+                if "created_at" not in cols:
+                    connection.execute(text("ALTER TABLE speakers ADD COLUMN created_at DATETIME"))
+                if "updated_at" not in cols:
+                    connection.execute(text("ALTER TABLE speakers ADD COLUMN updated_at DATETIME"))
+
         await conn.run_sync(_migrate)
     logger.info("Database initialised")
 
@@ -213,6 +228,53 @@ async def init_db() -> None:
         if new_count > 0:
             await session.commit()
             logger.info(f"Seeded {new_count} personalized RAG memories for Mazen")
+
+        # Seed and auto-migrate Speakers (Speaker profile linking verification_id, voice_id, personality_id, is_main)
+        from app.models.speaker import Speaker
+        from app.models.voiceprint import Voiceprint
+
+        # 1. Check existing voiceprints and ensure each has a corresponding Speaker record
+        vp_res = await session.execute(select(Voiceprint))
+        all_vps = vp_res.scalars().all()
+        for vp in all_vps:
+            spk_res = await session.execute(
+                select(Speaker).where(
+                    (Speaker.verification_id == vp.id) | (Speaker.name == vp.speaker_name)
+                )
+            )
+            spk = spk_res.scalar_one_or_none()
+            is_mazen = "مازن" in vp.speaker_name.lower() or "mazen" in vp.speaker_name.lower()
+            if not spk:
+                new_spk = Speaker(
+                    name=vp.speaker_name,
+                    verification_id=vp.id,
+                    voice_id=str(vp.personality_id or "1"),
+                    personality_id=vp.personality_id or 1,
+                    is_main=True if is_mazen else False,
+                )
+                session.add(new_spk)
+                await session.flush()
+                logger.info(f"Auto-migrated speaker profile for '{vp.speaker_name}' (is_main={new_spk.is_main})")
+            else:
+                if spk.verification_id != vp.id:
+                    spk.verification_id = vp.id
+                if is_mazen and not spk.is_main:
+                    spk.is_main = True
+
+        # 2. If no speaker exists at all (e.g. fresh installation before any enroll), seed default Mazen speaker
+        total_spk_res = await session.execute(select(Speaker).limit(1))
+        if not total_spk_res.scalar_one_or_none():
+            mazen_spk = Speaker(
+                name="مازن (Mazen)",
+                verification_id=all_vps[0].id if all_vps else None,
+                voice_id="1",
+                personality_id=1,
+                is_main=True,
+            )
+            session.add(mazen_spk)
+            logger.info("Seeded default main speaker: مازن (Mazen) [is_main=True]")
+
+        await session.commit()
 
 
 async def get_db() -> AsyncSession:  # type: ignore[return]

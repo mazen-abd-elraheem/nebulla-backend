@@ -305,8 +305,9 @@ def build_rag_system_prompt(
         if spk_data:
             spk_name = spk_data.get("name") or "غير محدد"
             spk_status = spk_data.get("status") or "unverified"
-            sec_lvl = spk_data.get("security_level") or 1
-            sa_lines.append(f"• هوية المتحدث الحالي: {spk_name} (حالة البصمة: {spk_status} | الصلاحية: المستوى {sec_lvl})")
+            is_main = spk_data.get("is_main", False)
+            main_tag = " | متحدث رئيسي" if is_main else ""
+            sa_lines.append(f"• هوية المتحدث الحالي: {spk_name} (حالة البصمة: {spk_status}{main_tag})")
             if spk_data.get("directive"):
                 sa_lines.append(f"• توجيه المتحدث: {spk_data['directive']}")
         elif vv_data:

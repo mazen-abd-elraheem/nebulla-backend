@@ -728,6 +728,7 @@ class UniversalActionPlanner:
         speaker_name: Optional[str] = None,
         is_verified: bool = False,
         verification_level: int = 1,
+        is_main: bool = False,
         allowlisted_contacts: Optional[Sequence[Any]] = None,
     ) -> UniversalActionParseResponse:
         """
@@ -1239,8 +1240,8 @@ class UniversalActionPlanner:
                 params=intent.params,
                 required_level=3,
                 is_verified=is_verified,
-                is_authorized=is_verified and verification_level >= 3,
-                decision="ready" if (is_verified and verification_level >= 3) else "needs_confirm",
+                is_authorized=is_verified and (is_main or verification_level >= 3),
+                decision="ready" if (is_verified and (is_main or verification_level >= 3)) else "needs_confirm",
                 suggested_speech="الطلب ده بالغ الحساسية ويتطلب تأكيداً من غرفة التحكم.",
                 llm_directive=(
                     f"طلب المستخدم عملية حساسة للغاية من المستوى 3 ({intent.target}). "
