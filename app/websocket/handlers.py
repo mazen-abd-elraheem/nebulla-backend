@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from app.core.logger import get_logger
 from app.services.ai.pipeline import AIPipeline
 from app.services.phone_action import get_phone_action_service
-from app.services.vision.face_service import FaceService
+from app.services.vision.face_service import FaceService, get_face_service
 from app.services.motion.motion_guard import MotionGuard
 from app.services.motion.signal_planner import SignalPlanner
 from app.websocket.manager import manager
