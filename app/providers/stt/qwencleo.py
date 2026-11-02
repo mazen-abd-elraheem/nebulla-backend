@@ -258,6 +258,13 @@ class QwenCleoProvider(BaseSTTProvider):
             logger.warning(f"{err_msg} (Will use fallback Whisper transcription if needed)")
             QwenCleoProvider._shared_error = err_msg
             QwenCleoProvider._shared_is_ready = True
+            try:
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
 
     async def transcribe(self, audio_bytes: bytes) -> str:
         """Transcribe raw audio bytes using silence trimming, chunking, and multithreading."""

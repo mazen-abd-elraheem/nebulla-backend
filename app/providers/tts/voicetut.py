@@ -300,6 +300,11 @@ class VoiceTutProvider(BaseTTSProvider):
 
 def _array_to_wav(samples, sample_rate: int = 24000) -> bytes:
     import numpy as np
+    samples = np.nan_to_num(samples, nan=0.0, posinf=0.99, neginf=-0.99)
+    max_peak = float(np.max(np.abs(samples)))
+    if max_peak > 1e-4:
+        samples = (samples / max_peak) * 0.95
+    samples = np.clip(samples, -1.0, 1.0)
     pcm = (samples * 32767).astype(np.int16)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:

@@ -158,9 +158,9 @@ class SynthesizeRequest(BaseModel):
     personality_id: int | None = Field(None, description="معرف الشخصية (اختياري)")
     language: str = Field("arz", description="اللهجة (arz للمصري)")
     ref_text: str | None = Field(None, description="نص العينة المرجعية (اختياري، يتم جلبه تلقائياً)")
-    num_steps: int | None = Field(16, description="عدد خطوات التوليد (16 لجودة ونقاء صوت ونبرة ممتازة)")
+    num_steps: int | None = Field(32, description="عدد خطوات التوليد (32 لجودة ونقاء استوديو عالي، و 48 لأقصى دقة)")
     guidance_scale: float | None = Field(2.6, description="مقياس مطابقة نبرة الصوت المرجعي بدقة (2.5 - 2.8)")
-    speed: float | None = Field(1.15, description="سرعة الكلام (1.15 للريتم الطبيعي السريع للعامية المصرية)")
+    speed: float | None = Field(1.05, description="سرعة الكلام (1.05 للريتم الطبيعي للعامية المصرية)")
 
 
 _AUDIO_RESPONSES = {
@@ -224,9 +224,9 @@ async def synthesize(
         target_pid = 1
 
     actual_ref_text = body.ref_text if (body.ref_text and body.ref_text.strip() and body.ref_text.strip() != "string") else None
-    steps = body.num_steps if (body.num_steps and body.num_steps > 0) else 16
-    cfg = body.guidance_scale if (body.guidance_scale and body.guidance_scale > 0) else 2.6
-    spd = body.speed if (body.speed and body.speed > 0) else 1.15
+    steps = body.num_steps if (body.num_steps and body.num_steps > 0) else getattr(settings, "VOICETUT_NUM_STEPS", 32)
+    cfg = body.guidance_scale if (body.guidance_scale and body.guidance_scale > 0) else getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.6)
+    spd = body.speed if (body.speed and body.speed > 0) else getattr(settings, "VOICETUT_SPEED", 1.05)
 
     wav_bytes = await svc.synthesize(
         text=cleaned_text,
@@ -275,8 +275,8 @@ async def synthesize_get(
     text: str | None = Query(None, description="النص المراد نطقه بالصوت المستنسخ"),
     voice_id: int | None = Query(None, description="معرف الصوت المستنسخ (ID مثل 1)"),
     personality_id: int | None = Query(None, description="معرف الشخصية (ID مثل 1)"),
-    num_steps: int | None = Query(16, description="عدد خطوات التوليد (الافتراضي: 16 لدقة النبرة والوضوح)"),
-    speed: float | None = Query(1.15, description="سرعة الكلام (الافتراضي: 1.15 للعامية المصرية)"),
+    num_steps: int | None = Query(32, description="عدد خطوات التوليد (الافتراضي: 32 لجودة ونقاء استوديو عالي)"),
+    speed: float | None = Query(1.05, description="سرعة الكلام (الافتراضي: 1.05 للعامية المصرية الطبيعية)"),
     guidance_scale: float | None = Query(2.6, description="مطابقة نبرة الصوت المستنسخ"),
     _user: str | None = Depends(get_optional_user),
     svc: VoiceCloneService = Depends(_svc),

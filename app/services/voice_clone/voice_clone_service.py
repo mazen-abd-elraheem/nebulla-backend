@@ -241,8 +241,8 @@ class VoiceCloneService:
                 except Exception:
                     pass
         steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", 48)
-        cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
-        spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
+        cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.6)
+        spd = speed or getattr(settings, "VOICETUT_SPEED", 1.05)
         target_provider = getattr(settings, "TTS_PROVIDER", "voicetut_service")
 
         # Synthesize using configured VoiceTut provider

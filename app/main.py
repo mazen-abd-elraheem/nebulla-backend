@@ -83,6 +83,18 @@ async def _warmup_rag():
         logger.debug(f"RAG warm-up notice: {e}")
 
 
+async def _warmup_tts():
+    """Pre-warm VoiceTut-TTS in VRAM so first speech request generates with zero cold-start delay."""
+    try:
+        from app.services.voice_clone.voice_clone_service import VoiceCloneService
+        svc = VoiceCloneService.get_instance()
+        if hasattr(svc, "_voicetut") and hasattr(svc._voicetut, "_ensure_loaded"):
+            await svc._voicetut._ensure_loaded()
+        logger.info("✅ VoiceTut-TTS voice cloning model is warm and ready in VRAM.")
+    except Exception as e:
+        logger.debug(f"TTS warm-up notice: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
@@ -92,6 +104,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_warmup_vision())
     asyncio.create_task(_warmup_ollama())
     asyncio.create_task(_warmup_rag())
+    asyncio.create_task(_warmup_tts())
     asyncio.create_task(_warmup_stt())
 
     # Chapter 14: reminders (medicine / tasks) with family escalation
@@ -328,6 +341,8 @@ async def chat_playground():
     return HTMLResponse(content="<h3>Chat UI template not found</h3>", status_code=404)
 
 
+@app.get("/ui", include_in_schema=False)
+@app.get("/demo", include_in_schema=False)
 @app.get("/", include_in_schema=False)
 async def root():
     return RedirectResponse(url="/chat")
