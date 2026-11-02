@@ -15,7 +15,116 @@ class NebulaRepository {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
 
-  Future<TokenResponse> login(String pairingCode) async {
+  Future<UserModel> login({
+    required String email,
+    required String password,
+    bool rememberMe = false,
+  }) async {
+    final data = await _api.post(AppConstants.authLogin, {
+      'email': email.trim().toLowerCase(),
+      'password': password,
+      'remember_me': rememberMe,
+    });
+    final resp = TokenResponse.fromJson(data as Map<String, dynamic>);
+    await _store.setToken(resp.accessToken);
+    await _store.setRememberMe(rememberMe);
+    if (rememberMe) {
+      await _store.setSavedEmail(email.trim().toLowerCase());
+    } else {
+      await _store.setSavedEmail('');
+    }
+
+    // Hydrate current active user profile via /auth/me
+    UserModel user;
+    if (resp.user != null) {
+      user = resp.user!;
+      await _store.setUser(user);
+    } else {
+      user = await getMe();
+    }
+    return user;
+  }
+
+  Future<UserModel> register({
+    required String fullName,
+    required String email,
+    required String password,
+    required String confirmPassword,
+  }) async {
+    final data = await _api.post(AppConstants.authRegister, {
+      'full_name': fullName.trim(),
+      'email': email.trim().toLowerCase(),
+      'password': password,
+      'confirm_password': confirmPassword,
+      'terms_accepted': true,
+    });
+    final resp = TokenResponse.fromJson(data as Map<String, dynamic>);
+    await _store.setToken(resp.accessToken);
+
+    UserModel user;
+    if (resp.user != null) {
+      user = resp.user!;
+      await _store.setUser(user);
+    } else {
+      user = await getMe();
+    }
+    return user;
+  }
+
+  Future<UserModel> loginBiometric({
+    required String email,
+    required File faceImage,
+  }) async {
+    final data = await _api.postMultipart(
+      AppConstants.authBiometric,
+      {'email': email.trim().toLowerCase()},
+      faceImage,
+      'file',
+    );
+    final resp = TokenResponse.fromJson(data as Map<String, dynamic>);
+    await _store.setToken(resp.accessToken);
+
+    UserModel user;
+    if (resp.user != null) {
+      user = resp.user!;
+      await _store.setUser(user);
+    } else {
+      user = await getMe();
+    }
+    return user;
+  }
+
+  Future<UserModel> getMe() async {
+    final data = await _api.get(AppConstants.authMe);
+    final user = UserModel.fromJson(data as Map<String, dynamic>);
+    await _store.setUser(user);
+    return user;
+  }
+
+  Future<String> forgotPassword(String email) async {
+    final data = await _api.post(AppConstants.authForgotPassword, {
+      'email': email.trim().toLowerCase(),
+    });
+    final map = data as Map<String, dynamic>;
+    return map['message'] as String? ?? 'تم إرسال تعليمات الاستعادة.';
+  }
+
+  Future<String> resetPassword({
+    required String token,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    final data = await _api.post(AppConstants.authResetPassword, {
+      'token': token.trim(),
+      'new_password': newPassword,
+      'confirm_password': confirmPassword,
+    });
+    final map = data as Map<String, dynamic>;
+    return map['message'] as String? ?? 'تمت إعادة تعيين كلمة المرور بنجاح.';
+  }
+
+  /// Legacy pairing code login for backwards compatibility with hardware devices
+  Future<TokenResponse> loginWithPairingCode(String pairingCode) async {
     final data = await _api.post(AppConstants.authToken, {
       'pairing_code': pairingCode,
       'device_name': _store.getDeviceName(),

@@ -1235,7 +1235,7 @@
             <div>
               <div style="font-size: 2.5rem; text-align: center; margin-bottom: 0.5rem;">📁</div>
               <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem; text-align: center;">رفع ملف صوتي للفحص</h4>
-              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; text-align: center;">يدعم ملفات WAV, MP3, M4A, OGG, WebM.</p>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; text-align: center;">يدعم جميع أنواع المسجلات والتسجيلات: WAV, MP3, M4A (iPhone), OGG, Opus (WhatsApp), WebM, AAC, FLAC, AMR (Android).</p>
             </div>
 
             <div class="dropzone" id="voice-file-dropzone" onclick="document.getElementById('voice-file-input').click()" style="padding: 1.25rem 1rem; margin-bottom: 1rem;">
@@ -1318,6 +1318,68 @@
         </div>
       </div>
 
+      <!-- Two Voices Comparison & Language Detection Card -->
+      <div class="card" style="margin-top: 2rem;">
+        <div class="card-title">
+          <span>⚖️</span>
+          <span>مقارنة مقطعين صوتيين وكشف الهوية واللغات (Two Voices Comparison & Language Identification)</span>
+        </div>
+        <div class="card-desc">
+          مقارنة مباشرة بين مقطعين صوتيين: <strong>1. فحص هل الصوتين لنفس الشخص أم لشخصين مختلفين</strong>، <strong>2. كشف هوية كل صوت ومن صاحبه في السيستم</strong> (مع عرض User ID, Face ID, Personality ID, Memory ID)، و<strong>3. تحديد لغة كل مقطع بدقة (العربية 🇪🇬 أم الإنجليزية 🇬🇧)</strong>.
+        </div>
+
+        <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.5rem;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 1.25rem;">
+            <!-- Voice 1 Upload -->
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px dashed rgba(56, 189, 248, 0.4); border-radius: var(--radius-md); padding: 1.25rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                <label style="font-weight: 700; color: #38bdf8; font-size: 0.95rem;">🎙️ التسجيل الصوتي الأول (Voice 1):</label>
+                <span style="font-size: 0.75rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 2px 8px; border-radius: 9999px;">الملف الأول</span>
+              </div>
+              <div class="dropzone" id="compare-dropzone-1" onclick="document.getElementById('compare-file-input-1').click()" style="padding: 1.2rem 1rem; border-color: rgba(56, 189, 248, 0.3);">
+                <div class="dropzone-icon" style="font-size: 1.5rem;">📁</div>
+                <div class="dropzone-title" style="font-size: 0.88rem;">اضغط لاختيار الصوت الأول (WAV, MP3, M4A, OGG...)</div>
+                <input type="file" id="compare-file-input-1" class="file-input" accept="audio/*" onchange="handleCompareFileSelected(1, this)">
+                <div id="compare-badge-1" class="file-selected-badge" style="display:none; margin-top: 6px; background: rgba(56, 189, 248, 0.2); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.4);"></div>
+              </div>
+              <audio id="compare-audio-preview-1" controls style="display:none; width: 100%; margin-top: 10px; height: 32px;"></audio>
+            </div>
+
+            <!-- Voice 2 Upload -->
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px dashed rgba(168, 85, 247, 0.4); border-radius: var(--radius-md); padding: 1.25rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                <label style="font-weight: 700; color: #c084fc; font-size: 0.95rem;">🎙️ التسجيل الصوتي الثاني (Voice 2):</label>
+                <span style="font-size: 0.75rem; background: rgba(168, 85, 247, 0.15); color: #c084fc; padding: 2px 8px; border-radius: 9999px;">الملف الثاني</span>
+              </div>
+              <div class="dropzone" id="compare-dropzone-2" onclick="document.getElementById('compare-file-input-2').click()" style="padding: 1.2rem 1rem; border-color: rgba(168, 85, 247, 0.3);">
+                <div class="dropzone-icon" style="font-size: 1.5rem;">📁</div>
+                <div class="dropzone-title" style="font-size: 0.88rem;">اضغط لاختيار الصوت الثاني (WAV, MP3, M4A, OGG...)</div>
+                <input type="file" id="compare-file-input-2" class="file-input" accept="audio/*" onchange="handleCompareFileSelected(2, this)">
+                <div id="compare-badge-2" class="file-selected-badge" style="display:none; margin-top: 6px; background: rgba(168, 85, 247, 0.2); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.4);"></div>
+              </div>
+              <audio id="compare-audio-preview-2" controls style="display:none; width: 100%; margin-top: 10px; height: 32px;"></audio>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">حد التطابق (Threshold):</span>
+              <input type="range" id="compare-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.82" oninput="document.getElementById('compare-thresh-display').innerText = Math.round(this.value * 100) + '%'" style="width: 120px;">
+              <span id="compare-thresh-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">82%</span>
+            </div>
+
+            <button type="button" id="btn-compare-submit" onclick="handleCompareSubmit()" class="btn-submit" style="width: auto; padding: 11px 32px; background: linear-gradient(135deg, #0ea5e9, #8b5cf6); box-shadow: 0 4px 20px rgba(14, 165, 233, 0.45);">
+              <span>⚖️ بدء المقارنة وتحديد اللغات والهويات</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Comparison Result Container -->
+        <div id="compare-result-box" style="display: none; animation: fadeIn 0.4s ease forwards;">
+          <!-- Dynamically populated via JS -->
+        </div>
+      </div>
+
       <!-- Voiceprint Enrollment Card -->
       <div class="card" style="margin-top: 2rem;">
         <div class="card-title">
@@ -1329,20 +1391,25 @@
         </div>
 
         <form id="voice-enroll-form" onsubmit="handleVoiceEnrollSubmit(event)">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem;">
             <div class="form-group" style="margin-bottom: 0;">
-              <label for="enroll-speaker-name" style="font-weight: 700; color: #e2e8f0;">اسم المتحدث بالكامل أو المعرف:</label>
+              <label for="enroll-speaker-name" style="font-weight: 700; color: #e2e8f0;">👤 اسم المتحدث:</label>
               <input type="text" id="enroll-speaker-name" class="form-control" placeholder="مثال: أحمد / ahmed" required>
             </div>
 
             <div class="form-group" style="margin-bottom: 0;">
-              <label for="enroll-speaker-level" style="font-weight: 700; color: #e2e8f0;">مستوى الأمان والصلاحية:</label>
-              <select id="enroll-speaker-level" class="form-control" style="background: #0f172a;">
-                <option value="2" selected>المستوى القياسي (Level 2 - Standard User)</option>
-                <option value="3">المستوى الإداري (Level 3 - System Owner/Admin)</option>
-                <option value="1">مستوى الضيف (Level 1 - Guest/Restricted)</option>
-                <option value="0">مستوى الأطفال (Level 0 - Child Safe)</option>
-              </select>
+              <label for="enroll-face-id" style="font-weight: 700; color: #e2e8f0;">🎭 Face ID (معرف الوجه):</label>
+              <input type="number" id="enroll-face-id" class="form-control" placeholder="اختياري (أو يُكتشف تلقائياً)" min="1">
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="enroll-personality-id" style="font-weight: 700; color: #e2e8f0;">🤖 Personality ID (الشخصية):</label>
+              <input type="number" id="enroll-personality-id" class="form-control" placeholder="اختياري (أو يُكتشف تلقائياً)" min="1">
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="enroll-memory-id" style="font-weight: 700; color: #e2e8f0;">🧠 Memory ID (الذاكرة):</label>
+              <input type="number" id="enroll-memory-id" class="form-control" placeholder="اختياري (أو يُكتشف تلقائياً)" min="1">
             </div>
           </div>
 
@@ -1362,7 +1429,7 @@
 
             <!-- File for enrollment -->
             <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
-              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 2: رفع ملف صوتي جاهز (WAV/MP3)</p>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 2: رفع تسجيل صوتي (يقبل جميع أنواع المسجلات: WAV / MP3 / M4A / OGG / Opus / WebM / AAC / AMR)</p>
               <input type="file" id="enroll-file-input" class="form-control" accept="audio/*" onchange="handleEnrollFileSelected(this)">
             </div>
           </div>
@@ -2267,6 +2334,9 @@
               <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
               <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>معرف المستخدم:</strong> #${data.user_id}</span>
               <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
+              ${data.face_id ? `<span style="font-size: 0.85rem; color: #a5f3fc;"><strong>Face ID:</strong> #${data.face_id}</span><span style="font-size: 0.85rem; color: #94a3b8;">|</span>` : ''}
+              ${data.personality_id ? `<span style="font-size: 0.85rem; color: #fed7aa;"><strong>Personality ID:</strong> #${data.personality_id}</span><span style="font-size: 0.85rem; color: #94a3b8;">|</span>` : ''}
+              ${data.memory_id ? `<span style="font-size: 0.85rem; color: #c084fc;"><strong>Memory ID:</strong> #${data.memory_id}</span><span style="font-size: 0.85rem; color: #94a3b8;">|</span>` : ''}
               <span style="font-size: 0.85rem; color: #6ee7b7;"><strong>الحالة:</strong> مصرح به (Authorized)</span>
             </div>
           </div>
@@ -2608,6 +2678,219 @@
       `;
     }
 
+
+    // ── Two Voices Comparison & Language Detection ───────────────────────────
+    let compareFile1 = null;
+    let compareFile2 = null;
+
+    function handleCompareFileSelected(index, input) {
+      if (!input.files || !input.files[0]) return;
+      const file = input.files[0];
+      const badge = document.getElementById(`compare-badge-${index}`);
+      const preview = document.getElementById(`compare-audio-preview-${index}`);
+      
+      if (index === 1) {
+        compareFile1 = file;
+      } else {
+        compareFile2 = file;
+      }
+
+      badge.innerText = `🎵 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      badge.style.display = 'inline-block';
+
+      try {
+        const audioUrl = URL.createObjectURL(file);
+        preview.src = audioUrl;
+        preview.style.display = 'block';
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function handleCompareSubmit() {
+      if (!compareFile1 || !compareFile2) {
+        showToast('يرجى اختيار كلا الملفين الصوتيين (الصوت الأول والثاني) أولاً!');
+        return;
+      }
+
+      const box = document.getElementById('compare-result-box');
+      box.style.display = 'block';
+      box.innerHTML = `
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2.2rem; text-align: center;">
+          <div class="spinner" style="margin: 0 auto 1.2rem;"></div>
+          <h4 style="font-size: 1.15rem; color: #fff; margin-bottom: 0.4rem;">جارٍ المقارنة بين التسجيلين الصوتين وفحص اللغات...</h4>
+          <p style="font-size: 0.88rem; color: var(--text-muted);">يقوم النظام بتحليل البصمة الصوتية لكل ملف، مطابقته مع قاعدة البيانات، واكتشاف اللغة (عربي / إنجليزي)</p>
+        </div>
+      `;
+      box.scrollIntoView({ behavior: 'smooth' });
+
+      const btn = document.getElementById('btn-compare-submit');
+      btn.disabled = true;
+
+      try {
+        const threshold = parseFloat(document.getElementById('compare-thresh-slider').value) || 0.82;
+        const formData = new FormData();
+        formData.append('file1', compareFile1);
+        formData.append('file2', compareFile2);
+
+        const res = await fetch(`/api/v1/speakers/compare?threshold=${threshold}`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'فشلت عملية المقارنة');
+        }
+
+        const data = await res.json();
+        renderCompareResult(data);
+      } catch (err) {
+        box.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: var(--radius-md); padding: 1.6rem; text-align: center;">
+            <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">⚠️</div>
+            <h4 style="color: #f87171; font-weight: 800; font-size: 1.1rem;">حدث خطأ أثناء مقارنة الصوتين</h4>
+            <p style="color: #cbd5e1; font-size: 0.9rem; margin-top: 0.5rem;">${err.message}</p>
+          </div>
+        `;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function renderCompareResult(data) {
+      const box = document.getElementById('compare-result-box');
+      const isSame = data.is_same_speaker;
+      const sim = (data.similarity * 100).toFixed(1);
+      const matchPct = (data.match_percentage).toFixed(1);
+      const v1 = data.voice1;
+      const v2 = data.voice2;
+
+      // Banner Color & Icon
+      const bannerBg = isSame 
+        ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(5, 150, 105, 0.08))' 
+        : 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.06))';
+      const bannerBorder = isSame ? 'rgba(16, 185, 129, 0.45)' : 'rgba(239, 68, 68, 0.4)';
+      const bannerIcon = isSame ? '✅' : '👥';
+      const bannerTitle = isSame ? 'نفس الشخص (Same Speaker)' : 'شخصان مختلفان (Different Speakers)';
+      const bannerBadgeColor = isSame ? '#10b981' : '#f87171';
+
+      // Language flags
+      const getLangBadge = (lang) => {
+        if (!lang) return `<span class="badge" style="background: #334155; color: #cbd5e1;">غير محدد</span>`;
+        if (lang.includes('العربية') || lang.includes('Arabic')) {
+          return `<span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 9999px; font-size: 0.82rem; font-weight: 800; color: #34d399; background: rgba(52, 211, 153, 0.15); border: 1px solid rgba(52, 211, 153, 0.4);">🇪🇬 العربية (Arabic)</span>`;
+        }
+        if (lang.includes('الإنجليزية') || lang.includes('English')) {
+          return `<span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 9999px; font-size: 0.82rem; font-weight: 800; color: #60a5fa; background: rgba(96, 165, 250, 0.15); border: 1px solid rgba(96, 165, 250, 0.4);">🇬🇧 الإنجليزية (English)</span>`;
+        }
+        return `<span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 9999px; font-size: 0.82rem; font-weight: 800; color: #c084fc; background: rgba(192, 132, 252, 0.15); border: 1px solid rgba(192, 132, 252, 0.4);">🌐 ${lang}</span>`;
+      };
+
+      const getSpeakerCardHtml = (title, v, colorAccent) => {
+        const isEnrolled = v.is_enrolled;
+        const nameDisplay = isEnrolled 
+          ? `<span style="color: #34d399; font-weight: 800; font-size: 1.15rem;">${v.speaker_name}</span> <span style="font-size: 0.75rem; background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 2px 8px; border-radius: 9999px; font-weight: 700;">✅ مسجل بالسيستم</span>`
+          : `<span style="color: #fca5a5; font-weight: 800; font-size: 1.1rem;">غير مسجل (صوت غير معروف)</span> <span style="font-size: 0.75rem; background: rgba(239, 68, 68, 0.2); color: #f87171; padding: 2px 8px; border-radius: 9999px; font-weight: 700;">❌ غير مسجل</span>`;
+
+        return `
+          <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid ${colorAccent}; border-radius: var(--radius-md); padding: 1.3rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem;">
+              <h4 style="margin: 0; font-size: 1rem; color: #e2e8f0; display: flex; align-items: center; gap: 6px;">
+                <span>🎙️</span> ${title} (${v.audio_seconds}s)
+              </h4>
+              ${getLangBadge(v.language)}
+            </div>
+
+            <div style="margin-bottom: 0.9rem;">
+              <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 3px;">صاحب الصوت:</div>
+              <div>${nameDisplay}</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.9rem; background: rgba(0,0,0,0.25); padding: 0.75rem; border-radius: 6px;">
+              <div>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">نسبة التطابق:</span>
+                <div style="font-size: 1rem; font-weight: 800; color: ${isEnrolled ? '#34d399' : '#94a3b8'}; font-family: monospace;">
+                  ${isEnrolled ? v.match_percentage + '%' : '0.0%'}
+                </div>
+              </div>
+              <div>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">التشابه الكوزيني:</span>
+                <div style="font-size: 1rem; font-weight: 800; color: #93c5fd; font-family: monospace;">
+                  ${v.similarity}
+                </div>
+              </div>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 0.7rem;">
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px;">المعرفات المرتبطة (Cross-Modal IDs):</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-size: 0.75rem;">User #${v.user_id || '--'}</span>
+                <span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; font-size: 0.75rem;">🎭 Face #${v.face_id || '--'}</span>
+                <span class="badge" style="background: rgba(234, 179, 8, 0.15); color: #facc15; font-size: 0.75rem;">🤖 Persona #${v.personality_id || '--'}</span>
+                <span class="badge" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; font-size: 0.75rem;">🧠 Memory #${v.memory_id || '--'}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      };
+
+      box.innerHTML = `
+        <!-- Main Verdict Banner -->
+        <div style="background: ${bannerBg}; border: 1px solid ${bannerBorder}; border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="font-size: 2.4rem;">${bannerIcon}</div>
+            <div>
+              <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: ${bannerBadgeColor}; font-weight: 800; margin-bottom: 2px;">
+                ${bannerTitle}
+              </div>
+              <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">
+                ${data.comparison_verdict}
+              </div>
+              <div style="font-size: 0.85rem; color: #cbd5e1; margin-top: 4px;">
+                🌐 ${data.language_verdict}
+              </div>
+            </div>
+          </div>
+          <div style="text-align: right; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); padding: 0.75rem 1.25rem; border-radius: var(--radius-sm);">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 2px;">نسبة التطابق بين الصوتين</div>
+            <div style="font-size: 1.8rem; font-weight: 900; color: ${bannerBadgeColor}; font-family: monospace;">
+              ${isSame ? matchPct + '%' : sim + '%'}
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">Similarity: ${data.similarity}</div>
+          </div>
+        </div>
+
+        <!-- Language Comparison Highlights -->
+        <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.4rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.2rem;">🌐</span>
+            <span style="font-weight: 700; color: #e2e8f0; font-size: 0.92rem;">مقارنة اللغات المنطوقة:</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div><span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 6px;">الصوت الأول:</span>${getLangBadge(v1.language)}</div>
+            <span style="color: var(--text-muted);">⟷</span>
+            <div><span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 6px;">الصوت الثاني:</span>${getLangBadge(v2.language)}</div>
+          </div>
+        </div>
+
+        <!-- Two Speakers Comparison Grid -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem;">
+          ${getSpeakerCardHtml('الصوت الأول (Voice 1)', v1, 'rgba(56, 189, 248, 0.4)')}
+          ${getSpeakerCardHtml('الصوت الثاني (Voice 2)', v2, 'rgba(168, 85, 247, 0.4)')}
+        </div>
+
+        <!-- Full Arabic Summary Box -->
+        <div style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-md); padding: 1.25rem;">
+          <div style="font-weight: 700; color: #38bdf8; margin-bottom: 0.6rem; display: flex; align-items: center; gap: 6px; font-size: 0.9rem;">
+            <span>📋</span> ملخص التقرير الشامل:
+          </div>
+          <pre style="white-space: pre-wrap; font-family: inherit; font-size: 0.85rem; color: #cbd5e1; line-height: 1.6; margin: 0; background: transparent; border: none; padding: 0;">${data.arabic_summary}</pre>
+        </div>
+      `;
+    }
+
+
     function handleEnrollFileSelected(input) {
       if (!input.files || !input.files[0]) return;
       showToast('تم اختيار الملف الصوتي للتسجيل.');
@@ -2618,7 +2901,9 @@
       if (e) e.preventDefault();
 
       const name = document.getElementById('enroll-speaker-name').value.trim();
-      const level = document.getElementById('enroll-speaker-level').value;
+      const faceId = document.getElementById('enroll-face-id')?.value?.trim();
+      const personalityId = document.getElementById('enroll-personality-id')?.value?.trim();
+      const memoryId = document.getElementById('enroll-memory-id')?.value?.trim();
       const fileInput = document.getElementById('enroll-file-input');
 
       let audioToEnroll = null;
@@ -2644,7 +2929,9 @@
 
       const formData = new FormData();
       formData.append('speaker_name', name);
-      formData.append('max_level', level);
+      if (faceId) formData.append('face_id', faceId);
+      if (personalityId) formData.append('personality_id', personalityId);
+      if (memoryId) formData.append('memory_id', memoryId);
       formData.append('file', audioToEnroll, 'enroll_sample.wav');
 
       try {
@@ -2708,11 +2995,16 @@
                 </div>
               </div>
               <span style="font-size: 0.75rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); padding: 4px 10px; border-radius: 9999px;">
-                Level ${s.max_level}
+                ✓ مسجل
               </span>
             </div>
 
             <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.6; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: var(--radius-sm);">
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+                ${s.face_id ? `<span style="font-size:0.75rem; color:#a5f3fc; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); padding:2px 8px; border-radius:9999px;">🎭 Face #${s.face_id}</span>` : ''}
+                ${s.personality_id ? `<span style="font-size:0.75rem; color:#fed7aa; background:rgba(249,115,22,0.15); border:1px solid rgba(249,115,22,0.3); padding:2px 8px; border-radius:9999px;">🤖 Persona #${s.personality_id}</span>` : ''}
+                ${s.memory_id ? `<span style="font-size:0.75rem; color:#c084fc; background:rgba(192,132,252,0.15); border:1px solid rgba(192,132,252,0.3); padding:2px 8px; border-radius:9999px;">🧠 Memory #${s.memory_id}</span>` : ''}
+              </div>
               <div><strong>أبعاد التشفير:</strong> ${s.embedding_dim}-D vector</div>
               <div><strong>النموذج:</strong> ${s.model_id || 'Acoustic-192D'}</div>
               <div><strong>تاريخ التسجيل:</strong> ${s.created_at ? new Date(s.created_at).toLocaleDateString('ar-EG') : '--'}</div>
