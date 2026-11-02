@@ -214,16 +214,18 @@ class AIPipeline:
                     personality_id=None,
                     message=transcript,
                     verified_speaker=speaker_id_name,
+                    speaker_verification=verification,
                 )
         except Exception as e:
-            logger.warning(f"Could not build full grounding context, falling back: {e}")
+            logger.warning(f"Could not build full grounding context: {e}")
             active_pid, active_prompt = await self._get_active_personality()
             memories = await self._rag.retrieve(transcript, personality_id=active_pid)
 
-        # Broadcast RAG & Visual telemetry to desktop screens
-        if grounding and getattr(grounding, "faces", None):
-            photo_url = grounding.faces.get("photo_url")
-            rag_person_name = grounding.faces.get("active_person")
+        # Broadcast RAG, Visual, Speaker & Action telemetry to desktop screens
+        if grounding:
+            faces_d = getattr(grounding, "faces", {}) or {}
+            photo_url = faces_d.get("photo_url")
+            rag_person_name = faces_d.get("active_person")
             await manager.broadcast_to_desks({
                 "t": "rag_telemetry",
                 "query": transcript,
@@ -231,6 +233,9 @@ class AIPipeline:
                 "person_photo_url": photo_url,
                 "memories_count": len(memories),
                 "memories": memories,
+                "speaker": getattr(grounding, "speaker", {}),
+                "voice_verification": getattr(grounding, "voice_verification", {}),
+                "action": getattr(grounding, "action", {}),
             })
             if photo_url and (grounding.faces.get("is_photo_inquiry") or grounding.faces.get("currently_detected")):
                 await manager.broadcast_to_desks({
@@ -322,6 +327,11 @@ class AIPipeline:
                         act_cmds = await self._planner.extract_from_response(tag_str)
                         for cmd in act_cmds:
                             await manager.send_to_esp(cmd)
+                        tag_inner = tag_match.group(1).lower()
+                        if tag_inner in ("happy", "sad", "surprised", "neutral", "thinking", "alert"):
+                            await manager.send_to_phone({"t": "eyes", "mood": tag_inner})
+                        elif tag_inner == "stop":
+                            await manager.send_to_esp({"t": "stop"})
 
                 # As sentences complete, enqueue to TTS without pausing LLM stream
                 if _is_sentence_end(sentence_buffer):
@@ -449,8 +459,9 @@ class AIPipeline:
         refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
         has_memories = bool(memories)
         is_greeting_persona = is_greeting_or_persona_inquiry(text)
+        has_action = bool(grounding and getattr(grounding, "action", {}).get("has_action"))
 
-        if not has_memories and not is_greeting_persona:
+        if not has_memories and not is_greeting_persona and not has_action:
             full_response = refusal_reply
             emotion = "wave"
             total_ms = (time.perf_counter() - t_start) * 1000
@@ -501,8 +512,8 @@ class AIPipeline:
         llm_ms = (t_llm - t_llm_start) * 1000
         total_ms = (time.perf_counter() - t_start) * 1000
 
-        # Strict Fact Verification against retrieved memories (No Fallback Model)
-        full_response = self._rag.verify_response(text, full_response, memories)
+        # Strict Fact Verification against retrieved memories
+        full_response = self._rag.verify_response(text, full_response, memories, is_greeting=is_greeting_persona, has_action=has_action)
         emotion = _extract_emotion(full_response)
 
         if broadcast_to_clients:

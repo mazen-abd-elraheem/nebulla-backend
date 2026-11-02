@@ -53,7 +53,13 @@ class LocalOllamaProvider(BaseLLMProvider):
 
         if context:
             memories_text = "\n".join(f"- {m}" for m in context if m)
-            already_in_prompt = any(kw in effective_system_prompt for kw in ("ذكريات", "الذاكرة", "RAG Context", "Verified Context"))
+            already_in_prompt = any(
+                kw in effective_system_prompt
+                for kw in (
+                    "ذكريات", "الذاكرة", "RAG Context", "Verified Context",
+                    "المصادر والذاكرة المعتمدة", "Verified Grounding Sources", "المصادر المعتمدة"
+                )
+            )
             if memories_text.strip() and not already_in_prompt:
                 messages.append({
                     "role": "system",

@@ -74,10 +74,7 @@ async def test_local_ollama_streaming():
     mock_client.stream.return_value.__aenter__ = AsyncMock(return_value=mock_resp)
     mock_client.stream.return_value.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("httpx.AsyncClient") as mock_http_client:
-        mock_http_client.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_http_client.return_value.__aexit__ = AsyncMock(return_value=None)
-
+    with patch("app.providers.llm.local_ollama._get_ollama_client", return_value=mock_client):
         tokens = []
         async for t in provider.generate_stream(
             prompt="ازيك",

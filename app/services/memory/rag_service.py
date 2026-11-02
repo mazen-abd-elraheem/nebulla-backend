@@ -7,7 +7,7 @@ Multithreading Architecture & Concurrency:
 - Parallel Dense + Sparse Hybrid Search (VectorStore Matrix Multiply + Okapi BM25).
 - Thread-safe RLock-guarded embedding cache (_shared_cache) and in-memory VectorStore.
 - Asynchronous Non-blocking Cross-Reranking and access-time database updates.
-- Strictly Deterministic: ZERO Fallback Model.
+- Strictly Deterministic Hybrid Retrieval.
 """
 
 import asyncio
@@ -83,6 +83,7 @@ class RAGService:
                 return
             try:
                 from sentence_transformers import SentenceTransformer  # type: ignore[import]
+                embedder = None
                 try:
                     embedder = SentenceTransformer(
                         settings.EMBEDDING_MODEL,
@@ -90,13 +91,26 @@ class RAGService:
                         local_files_only=True,
                     )
                     logger.info(f"Embedding model loaded from local cache: {settings.EMBEDDING_MODEL}")
-                    RAGService._shared_embedder = embedder
-                    self._embedder = embedder
-                    return
                 except Exception:
                     pass
 
-                logger.info("Embedding weights not in local cache; RAG utilizing accelerated Okapi BM25 engine.")
+                if embedder is None:
+                    try:
+                        embedder = SentenceTransformer(
+                            settings.EMBEDDING_MODEL,
+                            device=settings.EMBEDDING_DEVICE,
+                            local_files_only=False,
+                        )
+                        logger.info(f"Embedding model loaded/downloaded: {settings.EMBEDDING_MODEL}")
+                    except Exception:
+                        pass
+
+                if embedder is not None:
+                    RAGService._shared_embedder = embedder
+                    self._embedder = embedder
+                    return
+
+                logger.info("Embedding weights not in cache/network; RAG utilizing accelerated Okapi BM25 engine.")
                 RAGService._shared_embedder = "disabled"
                 self._embedder = "disabled"
             except Exception as e:
@@ -143,6 +157,26 @@ class RAGService:
 
     # ── Core Multithreaded Retrieval Engine ───────────────────────────────────
 
+    @staticmethod
+    def _should_augment_with_person(query: str, person_name: str) -> bool:
+        if not person_name:
+            return False
+        q_lower = query.lower()
+        if person_name.lower() in q_lower:
+            return True
+        robot_keywords = [
+            "نيبولا", "روبوت", "robot", "nebula", "محرك", "سيرفو", "كاميرا",
+            "مستشعر", "حساس", "بطارية", "esp", "عتاد", "hardware", "طقس", "weather"
+        ]
+        if any(rk in q_lower for rk in robot_keywords):
+            return False
+        person_signals = [
+            "هو", "هي", "مين", "بيحب", "شغال", "بيشتغل", "تخصص", "مواليد",
+            "سنة", "تخرج", "مشروع", "أكل", "اكل", "شرب", "مكان", "فين", "معاه", "عنده",
+            "who", "he", "she", "his", "her", "work", "project", "like"
+        ]
+        return any(ps in q_lower for ps in person_signals) or len(query.split()) <= 3
+
     def _score_single_subquery_sync(
         self,
         sub_query: str,
@@ -159,7 +193,8 @@ class RAGService:
         2. Computes Okapi BM25 lexical scores.
         3. Fuses scores using Reciprocal Rank Fusion (RRF).
         """
-        augmented_sq = f"{clean_person} {sub_query}" if clean_person and clean_person not in sub_query else sub_query
+        should_use_person = bool(clean_person and self._should_augment_with_person(sub_query, clean_person))
+        augmented_sq = f"{clean_person} {sub_query}" if (should_use_person and clean_person and clean_person not in sub_query) else sub_query
 
         sem_scores: dict[int, float] = {}
         lex_scores: dict[int, float] = {}
@@ -167,14 +202,14 @@ class RAGService:
         # 1. Vector Dense Search
         if self._embedder != "disabled":
             try:
-                embed_text = augmented_sq if clean_person else sub_query
+                embed_text = augmented_sq if should_use_person else sub_query
                 query_vec = self._embed(embed_text)
                 if query_vec is not None:
                     vec_hits = self._vstore.search(
                         query_vec=query_vec,
                         top_k=25,
                         personality_id=personality_id,
-                        person_name=clean_person,
+                        person_name=clean_person if should_use_person else None,
                         min_similarity=0.20,
                     )
                     for sim_val, mem_hit in vec_hits:
@@ -189,8 +224,8 @@ class RAGService:
             if b_score > 0.05:
                 lex_scores[mid] = b_score
 
-        # Boost person name if found in memory text
-        if clean_person:
+        # Boost person name if found in memory text and query is person-relevant
+        if should_use_person and clean_person:
             p_lower = clean_person.lower()
             for m in memories:
                 if p_lower in m.content.lower():
@@ -268,8 +303,10 @@ class RAGService:
         # Synchronize in-memory VectorStore
         incoming_ids = {m.id for m in memories}
         with self._vstore._lock:
-            current_ids = set(self._vstore._memory_cache.keys())
-        if not self._vstore._is_initialized or current_ids != incoming_ids:
+            is_init = self._vstore._is_initialized
+            cached_ids = set(self._vstore._memory_cache.keys())
+        missing_ids = incoming_ids - cached_ids
+        if not is_init or missing_ids:
             active_emb = self._embedder if self._embedder != "disabled" else None
             self._vstore.load_from_db(memories, embedder=active_emb)
 
@@ -310,10 +347,10 @@ class RAGService:
             for mid, score in sq_res.items():
                 accumulated_candidates[mid] = max(accumulated_candidates.get(mid, 0.0), score)
 
-        # Fallback BM25 pass if no candidates matched
+        # Direct BM25 pass if no candidates matched
         if not accumulated_candidates:
-            fallback_bm25 = bm25.get_scores(query)
-            for idx, sc in enumerate(fallback_bm25):
+            direct_bm25 = bm25.get_scores(query)
+            for idx, sc in enumerate(direct_bm25):
                 if sc > 0.0:
                     accumulated_candidates[id_by_index[idx]] = sc
 
@@ -569,12 +606,13 @@ class RAGService:
         response: str,
         retrieved_memories: List[str],
         is_greeting: bool = False,
+        has_action: bool = False,
     ) -> str:
         """
-        Direct Fact Verification (No Fallback Model):
+        Direct Fact Verification:
         Validates the output against retrieved memories.
         """
-        return FactVerifier.verify_and_sanitize(query, response, retrieved_memories, is_greeting=is_greeting)
+        return FactVerifier.verify_and_sanitize(query, response, retrieved_memories, is_greeting=is_greeting, has_action=has_action)
 
     # ── Memory Ingestion & Modification ───────────────────────────────────────
 
@@ -660,6 +698,27 @@ class RAGService:
                 source,
                 importance,
             )
+
+    async def delete_memory(self, memory_id: int, db: AsyncSession | None = None) -> bool:
+        """
+        Deletes a memory from the in-memory VectorStore and optionally from the database.
+        """
+        # Invalidate in-memory vector store cache and matrix
+        self._vstore.delete(memory_id)
+
+        # Clear embedding cache
+        with RAGService._cache_lock:
+            RAGService._shared_cache.clear()
+
+        if db is not None:
+            mem = await db.get(Memory, memory_id)
+            if mem:
+                await db.delete(mem)
+                await db.commit()
+                return True
+            return False
+
+        return True
 
     # ── Internals ─────────────────────────────────────────────────────────────
 

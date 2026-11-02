@@ -226,7 +226,7 @@ class JSONRepairMiddleware:
                 if not body_sent:
                     body_sent = True
                     return {"type": "http.request", "body": body_bytes, "more_body": False}
-                return {"type": "http.request", "body": b"", "more_body": False}
+                return await receive()
 
             await self.app(scope, custom_receive, send)
             return

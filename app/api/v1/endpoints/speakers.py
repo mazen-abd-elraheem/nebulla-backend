@@ -13,6 +13,7 @@ Endpoints:
 
 import io
 from typing import Any, Dict, List, Optional
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
@@ -278,3 +279,97 @@ async def speaker_engine_status(
         "verification_enabled": settings.SPEAKER_VERIFICATION_ENABLED,
     }
 
+
+
+class SpeakerContextRequest(BaseModel):
+    speaker_name: Optional[str] = None
+    user_id: Optional[int] = None
+
+
+@router.post(
+    "/context",
+    summary="Get speaker metadata & voice verification formatted for LLM",
+    description="Method 2 (API): Returns structured speaker identity, verification status, confidence, and LLM directive.",
+    status_code=status.HTTP_200_OK,
+)
+async def get_speaker_llm_context(
+    request: Request,
+    file: Optional[UploadFile] = File(None, description="Optional audio file to verify live"),
+    speaker_name: Optional[str] = Form(None, description="Optional claimed speaker name"),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    API endpoint providing LLM-ready speaker identity & voice verification context.
+    Strictly deterministic.
+    """
+    speaker_service = get_speaker_service()
+
+    # 1. If audio file provided, perform live 1:N speaker identification
+    if file is not None:
+        audio_bytes = await file.read()
+        if audio_bytes and len(audio_bytes) > 0:
+            res = await speaker_service.identify(audio_bytes)
+            is_verified = res.get("status") == "identified"
+            spk = res.get("speaker_name") if is_verified else None
+            conf = res.get("similarity", 0.0)
+
+            if is_verified and spk:
+                directive = f"المتحدث الحالي تم التحقق من هويته عبر بصمة الصوت: '{spk}' بنسبة تطابق {int(conf * 100)}%. تعامل معه بثقة وناده باسمه."
+            else:
+                directive = "الصوت غير مسجل أو غير مطابق للبصمات الصوتية المحفوظة. يُمنع تنفيذ أي أوامر حساسة أو مسح بيانات بدون تأكيد مسبق."
+
+            return {
+                "speaker_name": spk,
+                "is_verified": is_verified,
+                "confidence": round(conf, 4),
+                "security_level": 2 if is_verified else 1,
+                "enrolled": is_verified,
+                "status": "verified" if is_verified else "unknown",
+                "llm_directive": directive,
+            }
+
+    # 2. If claimed speaker name provided, lookup enrollment status in DB
+    name = speaker_name
+    if not name:
+        try:
+            body = await request.json()
+            name = body.get("speaker_name")
+        except Exception:
+            name = None
+
+    if name:
+        clean_name = name.strip()
+        row = (
+            await db.execute(select(Voiceprint).where(Voiceprint.speaker_name == clean_name))
+        ).scalar_one_or_none()
+
+        if row:
+            return {
+                "speaker_name": row.speaker_name,
+                "is_verified": True,
+                "confidence": 1.0,
+                "security_level": row.max_level,
+                "enrolled": True,
+                "status": "verified",
+                "llm_directive": f"المتحدث مسجل ببصمة صوت معتمدة باسم '{row.speaker_name}' بمستوى صلاحيات {row.max_level}.",
+            }
+        else:
+            return {
+                "speaker_name": clean_name,
+                "is_verified": False,
+                "confidence": 0.0,
+                "security_level": 1,
+                "enrolled": False,
+                "status": "unverified",
+                "llm_directive": f"الاسم '{clean_name}' غير مسجل في بصمات الصوت في النظام.",
+            }
+
+    return {
+        "speaker_name": None,
+        "is_verified": False,
+        "confidence": 0.0,
+        "security_level": 1,
+        "enrolled": False,
+        "status": "unknown",
+        "llm_directive": "صوت المتحدث غير معروف أو غير محدد.",
+    }

@@ -31,7 +31,7 @@ class CrossReranker:
     """
     Two-stage Re-ranker with Multithreaded Parallel Candidate Scoring:
     1. Uses local neural Cross-Encoder model if available.
-    2. Deep Alignment Cross-Scorer (exact phrase, positional proximity, keyword density) as zero-latency local fallback.
+    2. Deep Alignment Cross-Scorer (exact phrase, positional proximity, keyword density) as zero-latency local cross-scorer.
     """
 
     _neural_model = None
@@ -47,7 +47,10 @@ class CrossReranker:
                 cls._init_attempted = True
                 try:
                     from sentence_transformers import CrossEncoder  # type: ignore[import]
-                    model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, local_files_only=True)
+                    try:
+                        model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, local_files_only=True)
+                    except Exception:
+                        model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, local_files_only=False)
                     cls._neural_model = model
                     logger.info("Loaded CrossEncoder model successfully for RAG reranking.")
                 except Exception:

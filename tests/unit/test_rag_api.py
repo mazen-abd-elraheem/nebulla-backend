@@ -111,7 +111,7 @@ async def main():
             print("-" * 50)
             print(prompt_str)
             print("-" * 50)
-            assert "سياق الذاكرة المسترجع" in prompt_str
+            assert ("سياق الذاكرة المسترجع" in prompt_str or "المصادر المعتمدة" in prompt_str or "Verified Grounding Sources" in prompt_str)
             assert any("2000" in m for m in prompt_data.get("retrieved_memories", []))
             print("  ✓ تم التأكد: الصيغة المرسلة إلى الـ LLM هي Prompt نصي منظم وليس JSON خام.")
 

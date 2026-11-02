@@ -186,6 +186,9 @@ def build_rag_system_prompt(
     variables: dict[str, Any] | None = None,
     emotions: list[str] | None = None,
     include_rag_instructions: bool = True,
+    speaker_info: dict[str, Any] | None = None,
+    action_info: dict[str, Any] | None = None,
+    voice_verification: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> str:
     """
@@ -260,12 +263,20 @@ def build_rag_system_prompt(
 
     # 4. Dynamic RAG Context Block
     rag_block = ""
-    if context:
+    already_grounded = (
+        "RAG Context" in base_prompt
+        or "المصادر والذاكرة المعتمدة" in base_prompt
+        or "Verified Grounding Sources" in base_prompt
+        or "المصادر المعتمدة" in base_prompt
+        or "ذكريات مرتبطة" in base_prompt
+    )
+    if context and not already_grounded:
         valid_memories: list[str] = []
         for item in context:
             entry = format_memory_entry(item)
             if entry:
-                valid_memories.append(f"• {entry}")
+                prefix = "" if entry.startswith("•") else "• "
+                valid_memories.append(f"{prefix}{entry}")
 
         if valid_memories:
             memories_bullet_list = "\n".join(valid_memories)
@@ -283,7 +294,43 @@ def build_rag_system_prompt(
                 ])
             rag_block = "\n".join(rag_lines)
 
-    return base_prompt + device_block + rag_block
+    # 3.5 Speaker Identification & Action Directive Block
+    speaker_action_block = ""
+    spk_data = speaker_info or kwargs.get("speaker")
+    act_data = action_info or kwargs.get("action")
+    vv_data = voice_verification or kwargs.get("voice_verification")
+
+    if spk_data or act_data or vv_data:
+        sa_lines: list[str] = []
+        if spk_data:
+            spk_name = spk_data.get("name") or "غير محدد"
+            spk_status = spk_data.get("status") or "unverified"
+            sec_lvl = spk_data.get("security_level") or 1
+            sa_lines.append(f"• هوية المتحدث الحالي: {spk_name} (حالة البصمة: {spk_status} | الصلاحية: المستوى {sec_lvl})")
+            if spk_data.get("directive"):
+                sa_lines.append(f"• توجيه المتحدث: {spk_data['directive']}")
+        elif vv_data:
+            is_v = "موثق" if vv_data.get("is_verified") else "غير موثق"
+            sa_lines.append(f"• التحقق الصوتي: {is_v}")
+
+        if act_data and act_data.get("has_action"):
+            act_kind = act_data.get("kind") or act_data.get("action") or "إجراء"
+            act_target = act_data.get("target") or ""
+            act_status = act_data.get("status") or act_data.get("decision") or "ready"
+            sa_lines.append(f"• الإجراء المطلوب (Action): {act_kind} -> {act_target} (الحالة: {act_status})")
+            if act_data.get("directive"):
+                sa_lines.append(f"• توجيه الإجراء للرد: {act_data['directive']}")
+            if act_data.get("action_tag"):
+                sa_lines.append(f"• وسم الإجراء الواجب تضمينه: {act_data['action_tag']}")
+
+        if sa_lines:
+            speaker_action_block = (
+                "\n\n--- [بيانات المتحدث والإجراءات اللحظية (Speaker & Action Context)] ---\n"
+                + "\n".join(sa_lines)
+                + "\n------------------------------------------------------------------"
+            )
+
+    return base_prompt + device_block + speaker_action_block + rag_block
 
 
 def build_rag_messages(
@@ -295,11 +342,14 @@ def build_rag_messages(
     device_state: dict[str, Any] | None = None,
     variables: dict[str, Any] | None = None,
     emotions: list[str] | None = None,
+    speaker_info: dict[str, Any] | None = None,
+    action_info: dict[str, Any] | None = None,
+    voice_verification: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> list[dict[str, str]]:
     """
     Build standard chat completion messages list with system prompt (including RAG,
-    personality, hardware telemetry, and dynamic variables) and user prompt.
+    personality, hardware telemetry, speaker/action metadata, and dynamic variables) and user prompt.
     """
     sys_content = build_rag_system_prompt(
         context=context,
@@ -309,6 +359,9 @@ def build_rag_messages(
         device_state=device_state,
         variables=variables,
         emotions=emotions,
+        speaker_info=speaker_info,
+        action_info=action_info,
+        voice_verification=voice_verification,
         **kwargs,
     )
     return [

@@ -22,7 +22,10 @@ import io
 import os
 from pathlib import Path
 import wave
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 from app.providers.tts.base import BaseTTSProvider
 from app.core.config import settings
 from app.core.logger import get_logger

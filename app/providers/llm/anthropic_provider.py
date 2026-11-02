@@ -57,7 +57,14 @@ class AnthropicProvider(BaseLLMProvider):
         effective_system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         if context:
             memories_text = "\n".join(f"- {m}" for m in context if m)
-            if memories_text.strip() and "ذكريات" not in effective_system_prompt:
+            already_in_prompt = any(
+                kw in effective_system_prompt
+                for kw in (
+                    "ذكريات", "الذاكرة", "RAG Context", "Verified Context",
+                    "المصادر والذاكرة المعتمدة", "Verified Grounding Sources", "المصادر المعتمدة"
+                )
+            )
+            if memories_text.strip() and not already_in_prompt:
                 effective_system_prompt += f"\n\nذكريات مرتبطة:\n{memories_text}"
 
         messages: List[Dict[str, str]] = []

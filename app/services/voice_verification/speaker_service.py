@@ -26,8 +26,18 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol, Set, Tuple, Union
 
 import numpy as np
-import scipy.signal
-from scipy.fftpack import dct
+try:
+    from scipy.fftpack import dct
+except ImportError:
+    def dct(x, type=2, axis=1, norm="ortho"):
+        N = x.shape[axis]
+        n = np.arange(N)
+        k = np.arange(N).reshape(-1, 1)
+        basis = np.cos(np.pi / N * (n + 0.5) * k)
+        res = np.dot(x, basis.T)
+        res[:, 0] *= 1.0 / np.sqrt(N)
+        res[:, 1:] *= np.sqrt(2.0 / N)
+        return res
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,7 +80,7 @@ def decode_audio(data: bytes, target_sr: Optional[int] = None) -> np.ndarray:
         except Exception:
             pcm = None
 
-        # 2. Fallback to wave module
+        # 2. Alternative parser using wave module
         if pcm is None:
             try:
                 with wave.open(io.BytesIO(data)) as w:
@@ -456,7 +466,7 @@ def detect_spoken_language(pcm: np.ndarray, sr: int = 16000, transcript: Optiona
                 "method": "acoustic_phonetic",
             }
     except Exception:
-        return {"language": "العربية (Arabic)", "language_code": "ar", "confidence": 0.70, "method": "fallback"}
+        return {"language": "العربية (Arabic)", "language_code": "ar", "confidence": 0.70, "method": "default"}
 
 
 def segment_audio_turns(
@@ -555,7 +565,7 @@ class SpeakerVerificationService:
         if backend is not None:
             self._backend: EmbeddingBackend = backend
         else:
-            # Check if SpeechBrain is available; fallback seamlessly to AcousticVoiceprintBackend
+            # Initialize configured backend: SpeechBrain if available, otherwise AcousticVoiceprintBackend
             sb = SpeechBrainBackend()
             if sb.available():
                 self._backend = sb

@@ -5,7 +5,7 @@ Audit Logs, and Level-3 External Approval (benefits_section.docx Chapter 14).
 
 from datetime import datetime, timezone
 import re
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
@@ -22,6 +22,13 @@ from app.models.reminder import Reminder
 from app.models.user import User
 from app.models.voiceprint import Voiceprint
 from app.services.phone_action import get_phone_action_service
+from app.services.ai.universal_action import (
+    UniversalActionParseResponse,
+    UniversalActionExecuteRequest,
+    UniversalActionExecuteResponse,
+    get_universal_action_planner,
+    get_action_capabilities,
+)
 from app.services.phone_action.contacts import normalize_phone
 from app.services.voice_verification.speaker_service import (
     VoiceprintError,
@@ -495,3 +502,454 @@ async def respond_external_challenge(
             detail="الطلب غير موجود، أو انتهت صلاحيته، أو ليس في مرحلة التأكيد الخارجي.",
         )
     return {"ok": True, "message": "تم اعتماد قرارك بنجاح." if body.approve else "تم إلغاء الطلب."}
+
+
+# ── LLM Integration APIs (Speaker, Action & Voice Verification) ──────────────
+
+class ActionParseRequest(BaseModel):
+    utterance: str = Field(..., description="نص الطلب أو الأمر من المستخدم (مثال: 'كلم ماما')")
+    speaker_name: Optional[str] = Field(None, description="اسم المتحدث إن وجد")
+    is_verified: bool = Field(False, description="هل تم التحقق من بصمة صوته")
+    verification_level: int = Field(1, description="مستوى الأمان المصرح به (1 أو 2 أو 3)")
+
+
+class ActionParseResponse(BaseModel):
+    has_action: bool
+    intent: Optional[str] = None
+    target: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_slug: Optional[str] = None
+    is_allowlisted: bool = False
+    requires_confirmation: bool = True
+    decision: str  # ready | needs_confirm | unknown_contact | unverified_speaker | none
+    suggested_speech: str
+    llm_directive: str
+    metadata: Dict[str, Any]
+
+
+class LLMBundleRequest(BaseModel):
+    message: str = Field(..., description="رسالة المستخدم أو الاستعلام")
+    personality_id: Optional[int] = Field(None, description="معرف الشخصية (اختياري)")
+    verified_speaker: Optional[str] = Field(None, description="اسم المتحدث الموثق")
+    speaker_verification: Optional[Dict[str, Any]] = Field(None, description="بيانات التحقق الصوتي التفصيلية")
+
+
+@router.post(
+    "/parse",
+    response_model=ActionParseResponse,
+    summary="Parse action utterance into structured data and LLM directive",
+)
+async def parse_action_utterance(
+    body: ActionParseRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ActionParseResponse:
+    """
+    Method 2 (API): Parses an utterance (e.g. «كلّم ماما», «افتح الخرايط», «فكرني بالدوا»)
+    against allowlisted contacts and security levels, returning structured data + LLM directive.
+    Strictly deterministic.
+    """
+    from app.services.phone_action.planner import ActionPlanner, CALL, MSG, APP_OPEN, REMINDER, SENSITIVE
+    from app.services.phone_action.contacts import match_contact
+    from app.services.phone_action.service import _APP_DISPLAY
+
+    planner = ActionPlanner()
+    intent = planner.plan(body.utterance)
+
+    if intent and intent.kind in (CALL, MSG):
+        stmt = select(Contact).where(Contact.is_allowlisted == True)
+        contacts_res = await db.execute(stmt)
+        allowlisted = list(contacts_res.scalars().all())
+
+        match = match_contact(intent.raw_norm, intent.raw_light, allowlisted, require_full=(intent.kind == CALL))
+
+        if match.contact:
+            c = match.contact
+            req_conf = getattr(c, "requires_confirmation", True)
+            req_level = getattr(c, "required_level", 1)
+
+            # Check speaker verification security clearance
+            if req_level >= 2 and not body.is_verified:
+                return ActionParseResponse(
+                    has_action=True,
+                    intent=intent.kind,
+                    target=c.name,
+                    contact_name=c.name,
+                    contact_slug=c.slug,
+                    is_allowlisted=True,
+                    requires_confirmation=req_conf,
+                    decision="unverified_speaker",
+                    suggested_speech="مش قادر أتأكد إن ده صوتك، فمش هنفّذ الطلب ده.",
+                    llm_directive=f"المتحدث غير موثق بالبصمة الصوتية ومستوى الأمان للجهة {c.name} يتطلب توثيقاً. ارفض الطلب بأدب.",
+                    metadata={"security_level_required": req_level, "contact_id": c.id},
+                )
+
+            decision = "needs_confirm" if req_conf else "ready"
+            speech = f"أكلم لك {c.name} دلوقتي؟" if req_conf else f"بتصل بـ {c.name} حالاً."
+            directive = (
+                f"المستخدم يطلب الاتصال بـ '{c.name}'. وهي جهة اتصال مسموحة تتطلب تأكيداً لفظياً. اسأله لتأكيد الاتصال."
+                if req_conf else
+                f"المستخدم يطلب الاتصال بـ '{c.name}'. الاتصال جاهز ومسموح. أكد له أنك تتصل الآن."
+            )
+
+            return ActionParseResponse(
+                has_action=True,
+                intent=intent.kind,
+                target=c.name,
+                contact_name=c.name,
+                contact_slug=c.slug,
+                is_allowlisted=True,
+                requires_confirmation=req_conf,
+                decision=decision,
+                suggested_speech=speech,
+                llm_directive=directive,
+                metadata={"contact_id": c.id, "slug": c.slug, "relationship": getattr(c, "relationship", None)},
+            )
+        else:
+            raw_tgt = intent.raw_light.strip() or "الجهة المطلوبة"
+            return ActionParseResponse(
+                has_action=True,
+                intent=intent.kind,
+                target=raw_tgt,
+                contact_name=None,
+                contact_slug=None,
+                is_allowlisted=False,
+                requires_confirmation=True,
+                decision="unknown_contact",
+                suggested_speech="مش لاقي الاسم ده في جهات الاتصال المسموحة.",
+                llm_directive=f"طلب المستخدم التواصل مع '{raw_tgt}' وهو اسم غير موجود في جهات الاتصال المسموحة. ارفض الطلب واذكر أنه غير مسجل.",
+                metadata={"raw_query": intent.raw_light},
+            )
+
+    elif intent and intent.kind == APP_OPEN:
+        app_id = intent.params.get("app")
+        app_name = _APP_DISPLAY.get(app_id, intent.params.get("requested", app_id or "التطبيق"))
+        if app_id:
+            return ActionParseResponse(
+                has_action=True,
+                intent=APP_OPEN,
+                target=app_name,
+                contact_name=None,
+                contact_slug=None,
+                is_allowlisted=True,
+                requires_confirmation=False,
+                decision="ready",
+                suggested_speech=f"تمام، بفتحلك {app_name} حالاً.",
+                llm_directive=f"المستخدم يطلب فتح تطبيق {app_name}. أكد له أن التطبيق قيد الفتح.",
+                metadata={"app_id": app_id},
+            )
+        else:
+            req = intent.params.get("requested", "التطبيق")
+            return ActionParseResponse(
+                has_action=True,
+                intent=APP_OPEN,
+                target=req,
+                contact_name=None,
+                contact_slug=None,
+                is_allowlisted=False,
+                requires_confirmation=False,
+                decision="app_not_allowed",
+                suggested_speech="التطبيق ده مش مسموح أفتحه.",
+                llm_directive=f"التطبيق المطلوب ({req}) غير مصرح به. ارفض الطلب بأدب.",
+                metadata={},
+            )
+
+    elif intent and intent.kind == REMINDER:
+        title = intent.params.get("title", "تذكير")
+        return ActionParseResponse(
+            has_action=True,
+            intent=REMINDER,
+            target=title,
+            contact_name=None,
+            contact_slug=None,
+            is_allowlisted=True,
+            requires_confirmation=False,
+            decision="ready",
+            suggested_speech=f"تمام، فكرتك بـ {title} في ميعادها.",
+            llm_directive=f"المستخدم يطلب تذكيراً: '{title}'. أكد له حفظ التذكير في الموعد المحدد.",
+            metadata=intent.params,
+        )
+
+    elif intent and intent.kind == SENSITIVE:
+        if not body.is_verified:
+            return ActionParseResponse(
+                has_action=True,
+                intent=SENSITIVE,
+                target=intent.params.get("action_type", "sensitive"),
+                contact_name=None,
+                contact_slug=None,
+                is_allowlisted=False,
+                requires_confirmation=True,
+                decision="unverified_speaker",
+                suggested_speech="الطلب ده حساس ولازم أتأكد من بصمة صوتك الأول.",
+                llm_directive="الطلب من العمليات الحساسة (Level 3) وبصمة الصوت غير موثقة. ارفض الطلب فوراً.",
+                metadata=intent.params,
+            )
+
+    # Evaluate via Universal Action Planner across all domains (Motion, Screen, Vision, Device, Media, Reminders)
+    c_stmt = select(Contact).where(Contact.is_allowlisted == True)
+    c_res = await db.execute(c_stmt)
+    allowlisted = list(c_res.scalars().all())
+
+    uni_res = get_universal_action_planner().evaluate(
+        utterance=body.utterance,
+        speaker_name=body.speaker_name,
+        is_verified=body.is_verified,
+        verification_level=body.verification_level,
+        allowlisted_contacts=allowlisted,
+    )
+    if uni_res.has_action:
+        return ActionParseResponse(
+            has_action=True,
+            intent=uni_res.action,
+            target=uni_res.target,
+            contact_name=uni_res.params.get("contact_name"),
+            contact_slug=uni_res.params.get("slug"),
+            is_allowlisted=(uni_res.decision != "unknown_contact" and uni_res.decision != "app_not_allowed"),
+            requires_confirmation=(uni_res.decision == "needs_confirm"),
+            decision=uni_res.decision,
+            suggested_speech=uni_res.suggested_speech,
+            llm_directive=uni_res.llm_directive,
+            metadata={
+                "domain": uni_res.domain,
+                "action": uni_res.action,
+                "action_tag": uni_res.action_tag,
+                "execution_payload": uni_res.execution_payload,
+                "tool_call": uni_res.tool_call,
+                **uni_res.metadata,
+                **uni_res.params,
+            },
+        )
+
+    return ActionParseResponse(
+        has_action=False,
+        intent=None,
+        target=None,
+        contact_name=None,
+        contact_slug=None,
+        is_allowlisted=False,
+        requires_confirmation=False,
+        decision="none",
+        suggested_speech="",
+        llm_directive="",
+        metadata={},
+    )
+
+
+@router.get(
+    "/llm-context",
+    summary="Get actions, allowlisted contacts, and reminders formatted for LLM context",
+)
+async def get_actions_llm_context(
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Returns full allowlisted contacts, supported apps, and active reminders
+    formatted as structured data ready to be passed directly to the LLM.
+    """
+    from app.services.phone_action.planner import _APP_NAMES
+
+    c_stmt = select(Contact).where(Contact.is_allowlisted == True)
+    c_res = await db.execute(c_stmt)
+    contacts = [
+        {
+            "name": c.name,
+            "slug": c.slug,
+            "relationship": c.relationship,
+            "requires_confirmation": c.requires_confirmation,
+            "required_level": c.required_level,
+        }
+        for c in c_res.scalars().all()
+    ]
+
+    r_stmt = select(Reminder).where(Reminder.is_active == True, Reminder.status == "pending")
+    r_res = await db.execute(r_stmt)
+    reminders = [{"id": r.id, "title": r.title, "type": r.reminder_type} for r in r_res.scalars().all()]
+
+    return {
+        "contacts_count": len(contacts),
+        "allowlisted_contacts": contacts,
+        "supported_apps": list(_APP_NAMES.keys()),
+        "active_reminders": reminders,
+        "capabilities": ["call", "msg", "app_open", "reminder"],
+    }
+
+
+@router.post(
+    "/llm-bundle",
+    summary="Create full LLM Grounding Bundle (Metadata + Prompt + RAG + Actions + Speaker)",
+)
+async def create_llm_bundle(
+    body: LLMBundleRequest,
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Unified API for LLM consumption:
+    Takes user query, speaker info, and voice verification state.
+    Generates the complete grounded system prompt, messages list, RAG memories,
+    and structured metadata (Speaker, Action, Voice Verification).
+    """
+    from app.services.ai.context_builder import build_grounding_context
+    from app.providers.llm.prompt_builder import build_rag_messages
+
+    active_prompt, memories, grounding, active_pid = await build_grounding_context(
+        db=db,
+        personality_id=body.personality_id,
+        message=body.message,
+        verified_speaker=body.verified_speaker,
+        speaker_verification=body.speaker_verification,
+    )
+
+    messages = build_rag_messages(
+        prompt=body.message,
+        context=memories,
+        system_prompt=active_prompt,
+        speaker_info=grounding.speaker,
+        action_info=grounding.action,
+        voice_verification=grounding.voice_verification,
+    )
+
+    return {
+        "query": body.message,
+        "personality_id": active_pid,
+        "system_prompt": active_prompt,
+        "messages": messages,
+        "has_action": grounding.action.get("has_action", False),
+        "action": grounding.action,
+        "speaker": grounding.speaker,
+        "voice_verification": grounding.voice_verification,
+        "memories": memories,
+    }
+
+
+@router.post(
+    "/universal/parse",
+    response_model=UniversalActionParseResponse,
+    summary="Universal Action Parser across all domains (Motion, Screen, Vision, Device, Phone, Media, Sensitive)",
+)
+async def universal_parse_action(
+    body: ActionParseRequest,
+    db: AsyncSession = Depends(get_db),
+) -> UniversalActionParseResponse:
+    """
+    Method 2 (API): Universal Action Evaluator.
+    Parses any utterance (gestures, screen eyes mood, gaze, camera photo, IoT light, phone calls, reminders)
+    and verifies speaker authorization.
+    """
+    c_stmt = select(Contact).where(Contact.is_allowlisted == True)
+    c_res = await db.execute(c_stmt)
+    allowlisted = list(c_res.scalars().all())
+
+    return get_universal_action_planner().evaluate(
+        utterance=body.utterance,
+        speaker_name=body.speaker_name,
+        is_verified=body.is_verified,
+        verification_level=body.verification_level,
+        allowlisted_contacts=allowlisted,
+    )
+
+
+@router.get(
+    "/universal/capabilities",
+    summary="Get full action registry with schemas for LLM Tool / Function Calling",
+)
+async def get_universal_capabilities() -> Dict[str, Any]:
+    """
+    Method 2 (API): Returns the entire registry of executable tools and action schemas
+    formatted for LLM function calling and system instructions.
+    """
+    caps = get_action_capabilities()
+    return {
+        "capabilities_count": len(caps),
+        "domains": ["motion", "screen", "vision", "device", "phone", "reminder", "media", "sensitive"],
+        "tools": caps,
+    }
+
+
+@router.post(
+    "/universal/execute",
+    response_model=UniversalActionExecuteResponse,
+    summary="Execute any action command across ESP32, Phone, or Desktop",
+)
+async def execute_universal_action(
+    body: UniversalActionExecuteRequest,
+    db: AsyncSession = Depends(get_db),
+) -> UniversalActionExecuteResponse:
+    """
+    Method 2 (API): Dispatches an authorized action to the target device channel
+    (ESP32 / Phone / Desktop) with speaker verification safety gating.
+    """
+    from app.websocket.manager import manager
+
+    # Level gating
+    if body.domain == "sensitive" or body.action in ("memory_wipe", "payment"):
+        if not body.is_verified or body.verification_level < 3:
+            return UniversalActionExecuteResponse(
+                ok=False,
+                status="unverified_speaker",
+                dispatched_channel="none",
+                action=body.action,
+                error="عملية حساسة تتطلب التحقق الصوتي وموافقة غرفة التحكم (Level 3)",
+            )
+
+    dispatched = "internal"
+    payload = body.params
+
+    try:
+        if body.domain == "motion":
+            dispatched = "esp"
+            if body.action == "stop":
+                await manager.send_to_esp({"t": "stop"})
+                payload = {"t": "stop"}
+            else:
+                from app.websocket.handlers import _get_signal_planner, _get_motion_guard
+                planner = _get_signal_planner()
+                guard = _get_motion_guard()
+                cmds = await planner.resolve(body.action)
+                payload = {"commands": [c.model_dump() for c in cmds]}
+                for c in cmds:
+                    safe = guard.validate_joint(c)
+                    if safe:
+                        await manager.send_to_esp(safe.model_dump())
+
+        elif body.domain == "screen":
+            if body.action == "eyes_mood":
+                dispatched = "phone"
+                payload = {"t": "eyes", "mood": body.params.get("mood", "happy")}
+                await manager.send_to_phone(payload)
+            elif body.action == "gaze":
+                dispatched = "phone"
+                payload = {"t": "gaze", **body.params}
+                await manager.send_to_phone(payload)
+            elif body.action == "show_person_photo":
+                dispatched = "desk"
+                payload = {"t": "screen_action", "action": "show_person_photo", "name": body.target}
+                await manager.broadcast_to_desks(payload)
+
+        elif body.domain == "device":
+            dispatched = "esp"
+            if body.action == "light_toggle":
+                payload = {"t": "relay", "pin": 1, "state": body.params.get("state", True)}
+                await manager.send_to_esp(payload)
+
+        elif body.domain == "vision":
+            if body.action == "capture_photo":
+                dispatched = "phone"
+                payload = {"t": "camera_capture"}
+                await manager.send_to_phone(payload)
+
+        return UniversalActionExecuteResponse(
+            ok=True,
+            status="dispatched",
+            dispatched_channel=dispatched,
+            action=body.action,
+            payload=payload,
+        )
+    except Exception as e:
+        logger.error(f"Error executing universal action {body.action}: {e}")
+        return UniversalActionExecuteResponse(
+            ok=False,
+            status="error",
+            dispatched_channel=dispatched,
+            action=body.action,
+            error=str(e),
+        )

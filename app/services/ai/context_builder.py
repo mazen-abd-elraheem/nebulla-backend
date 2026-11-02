@@ -27,6 +27,9 @@ class GroundingInfo(BaseModel):
     voice_clone: Dict[str, Any]
     diagnostics: Dict[str, Any]
     memories: List[str]
+    speaker: Dict[str, Any] = {}
+    voice_verification: Dict[str, Any] = {}
+    action: Dict[str, Any] = {}
 
 
 def is_greeting_or_persona_inquiry(message: str) -> bool:
@@ -63,6 +66,7 @@ async def build_grounding_context(
     personality_id: Optional[int],
     message: str,
     verified_speaker: Optional[str] = None,
+    speaker_verification: Optional[Any] = None,
 ) -> Tuple[str, List[str], GroundingInfo, int]:
     """
     Build unified grounding context across:
@@ -223,6 +227,111 @@ async def build_grounding_context(
     except Exception as e:
         logger.debug(f"Contacts/reminders grounding notice: {e}")
 
+    # 7. Speaker Identification & Voice Verification Metadata
+    spk_name = verified_speaker
+    is_verif = False
+    sim_score = 0.0
+    sec_level = 1
+    spk_status = "unverified"
+    spk_directive = ""
+
+    if speaker_verification is not None:
+        if isinstance(speaker_verification, dict):
+            spk_name = speaker_verification.get("speaker_name") or spk_name
+            is_verif = bool(
+                speaker_verification.get("is_verified")
+                or speaker_verification.get("passed_l1")
+                or speaker_verification.get("passed_l2")
+            )
+            sim_score = float(speaker_verification.get("similarity") or speaker_verification.get("confidence") or 0.0)
+            sec_level = int(speaker_verification.get("security_level") or speaker_verification.get("max_level") or 1)
+            spk_status = speaker_verification.get("status") or ("verified" if is_verif else "unverified")
+        else:
+            spk_name = getattr(speaker_verification, "speaker_name", None) or spk_name
+            is_verif = bool(
+                getattr(speaker_verification, "passed_l1", False)
+                or getattr(speaker_verification, "passed_l2", False)
+            )
+            sim_score = float(getattr(speaker_verification, "similarity", 0.0))
+            sec_level = int(getattr(speaker_verification, "max_level", 1))
+            spk_status = "verified" if is_verif else "unverified"
+    elif verified_speaker:
+        is_verif = True
+        sim_score = 1.0
+        spk_status = "verified"
+
+    if spk_status == "verified" and spk_name:
+        spk_directive = f"المتحدث الحالي موثق بالبصمة الصوتية: '{spk_name}' (نسبة التطابق: {int(sim_score * 100)}%). يمكنك مناداته باسمه بحرية والتعامل معه بصلاحيات المستوى {sec_level}."
+    else:
+        spk_directive = "صوت المتحدث غير موثق بالبصمة الصوتية. تجنب تنفيذ أي أوامر مالية أو حساسة أو مسح بيانات."
+
+    speaker_meta: Dict[str, Any] = {
+        "name": spk_name,
+        "is_verified": is_verif,
+        "status": spk_status,
+        "confidence": round(sim_score, 4),
+        "security_level": sec_level,
+        "directive": spk_directive,
+    }
+    voice_verif_meta: Dict[str, Any] = {
+        "enabled": settings.SPEAKER_VERIFICATION_ENABLED,
+        "is_verified": is_verif,
+        "confidence": round(sim_score, 4),
+        "status": spk_status,
+    }
+
+    # 8. Action Planning & Contact Resolution Metadata («كلّم ماما», «افتح واتساب»...)
+    action_meta: Dict[str, Any] = {
+        "has_action": False,
+        "kind": None,
+        "target": None,
+        "status": "none",
+        "directive": "",
+    }
+
+    try:
+        from app.services.ai.universal_action import get_universal_action_planner
+        from app.models.contact import Contact
+
+        c_all = await db.execute(select(Contact).where(Contact.is_allowlisted == True))
+        allowlisted_contacts = list(c_all.scalars().all())
+
+        universal_planner = get_universal_action_planner()
+        action_eval = universal_planner.evaluate(
+            utterance=message,
+            speaker_name=spk_name,
+            is_verified=is_verif,
+            verification_level=sec_level,
+            allowlisted_contacts=allowlisted_contacts,
+        )
+
+        if action_eval.has_action:
+            action_meta = {
+                "has_action": True,
+                "domain": action_eval.domain,
+                "kind": action_eval.action,
+                "action": action_eval.action,
+                "target": action_eval.target,
+                "params": action_eval.params,
+                "required_level": action_eval.required_level,
+                "is_verified": action_eval.is_verified,
+                "is_authorized": action_eval.is_authorized,
+                "status": "needs_confirmation" if action_eval.decision == "needs_confirm" else action_eval.decision,
+                "decision": action_eval.decision,
+                "directive": action_eval.llm_directive,
+                "suggested_speech": action_eval.suggested_speech,
+                "action_tag": action_eval.action_tag,
+                "execution_payload": action_eval.execution_payload,
+                "tool_call": action_eval.tool_call,
+                "metadata": action_eval.metadata,
+            }
+            if action_eval.domain == "phone":
+                action_meta["contact_slug"] = action_eval.params.get("slug")
+                action_meta["is_allowlisted"] = (action_eval.decision != "unknown_contact")
+                action_meta["requires_confirmation"] = (action_eval.decision == "needs_confirm")
+    except Exception as e:
+        logger.debug(f"Universal action planning in context_builder notice: {e}")
+
     phone_str = "متصل" if diag_info["phone_connected"] else "غير متصل"
     desk_str = "متصل" if diag_info["desktop_connected"] else "غير متصل"
     esp_str = "متصل" if diag_info["esp_connected"] else "غير متصل"
@@ -282,8 +391,18 @@ async def build_grounding_context(
 """
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
-        if verified_speaker:
+        if spk_name:
+            grounded_system_prompt += f"- المتحدث: {spk_name} (حالة البصمة: {spk_status} | الصلاحية: المستوى {sec_level}).\n"
+            if spk_directive:
+                grounded_system_prompt += f"- توجيه المتحدث: {spk_directive}\n"
+        elif verified_speaker:
             grounded_system_prompt += f"- الصوت: تم التعرف على المتحدث بالبصمة الصوتية: {verified_speaker}.\n"
+
+        if action_meta.get("has_action"):
+            grounded_system_prompt += (
+                f"- الإجراء المطلوب (Action): {action_meta.get('kind')} لـ '{action_meta.get('target')}' (الحالة: {action_meta.get('status')}).\n"
+                f"- توجيه الإجراء للرد: {action_meta.get('directive')}\n"
+            )
         if person_profile and person_profile.get("photo_url"):
             grounded_system_prompt += f"- شاشة العرض والصور: صورة {person_profile['name']} مسجلة في النظام ومتاحة للعرض على الشاشة.\n"
         if trusted_contacts:
@@ -305,6 +424,8 @@ async def build_grounding_context(
                 grounded_system_prompt += (
                     f"\nالمستخدم يحييك: رحب به بلطف بلهجة مصرية وعرفه بنفسك كـ {robot_name} وصانعك {creator_name}، واسأله كيف تساعده اليوم. اختم بوسم مشاعر مثل [happy] أو [wave].\n"
                 )
+            elif action_meta.get("has_action"):
+                pass
             else:
                 grounded_system_prompt += (
                     "\nالذاكرة: لا توجد معلومات مسجلة لهذا السؤال.\n"
@@ -325,8 +446,16 @@ Operational Directives:
 """
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- Vision: Person in front of camera is {current_face['face_id']}.\n"
-        if verified_speaker:
+        if spk_name:
+            grounded_system_prompt += f"- Speaker: {spk_name} (Status: {spk_status} | Security Level: {sec_level}).\n"
+        elif verified_speaker:
             grounded_system_prompt += f"- Voice: Speaker verified as {verified_speaker}.\n"
+
+        if action_meta.get("has_action"):
+            grounded_system_prompt += (
+                f"- Action: {action_meta.get('kind')} -> '{action_meta.get('target')}' (Status: {action_meta.get('status')}).\n"
+                f"- Action Directive: {action_meta.get('directive')}\n"
+            )
         if person_profile and person_profile.get("photo_url"):
             grounded_system_prompt += f"- Screen Display: Photo of {person_profile['name']} is available for screen display.\n"
 
@@ -342,6 +471,8 @@ Operational Directives:
         else:
             if is_greeting_or_persona_inquiry(message):
                 grounded_system_prompt += f"\nGreeting: Greet warmly in English as {robot_name} and ask how you can help. Conclude with [wave] or [happy].\n"
+            elif action_meta.get("has_action"):
+                pass
             else:
                 grounded_system_prompt += (
                     "\nVerified Memory: None found.\n"
@@ -354,6 +485,9 @@ Operational Directives:
         voice_clone=voice_info,
         diagnostics=diag_info,
         memories=memories,
+        speaker=speaker_meta,
+        voice_verification=voice_verif_meta,
+        action=action_meta,
     )
 
     return grounded_system_prompt, memories, grounding_data, target_p.id

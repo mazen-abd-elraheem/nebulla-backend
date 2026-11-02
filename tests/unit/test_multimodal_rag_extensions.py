@@ -4,7 +4,7 @@ Unit Tests for Multimodal RAG Extensions:
 2. Person Image & Face Photo Data Retrieval (FaceProfile integration, photo URL lookup)
 3. Voice Integration (Speaker Verification, TTS-friendly formatting)
 4. Desktop Screen Control & Real-time Telemetry (Screen actions, eyes mood, HUD events)
-5. Zero Fallback Model Verification
+5. Strict Fact Verification
 """
 
 import pytest
@@ -114,9 +114,9 @@ def test_speech_cleanup_removes_citations_and_emotions_for_tts():
     assert "بايثون" in tts_ready
 
 
-# ── 4. Zero Fallback Model Enforcement ───────────────────────────────────────
+# ── 4. Strict Fact Verification ───────────────────────────────────────
 
-def test_zero_fallback_model_strict_refusal():
+def test_strict_fact_verification_refusal():
     query = "ما هو الرقم السري للحساب البنكي؟"
     untrustworthy_llm_output = "الرقم السري هو 4491"
     context = ["الروبوت نيبولا صممه فريق المهندسين."]

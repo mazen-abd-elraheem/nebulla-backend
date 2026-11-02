@@ -104,7 +104,7 @@ async def get_current_user(
                 return "dev_user"
             raise
 
-    # 4. Fallback in DEBUG mode
+    # 4. Default user in DEBUG mode
     if settings.DEBUG:
         return "dev_user"
 

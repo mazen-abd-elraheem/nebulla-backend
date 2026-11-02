@@ -1,5 +1,6 @@
 """Conversations + messages endpoints with interactive LLM chat and full system grounding."""
 
+import asyncio
 import json
 import time
 import re
@@ -24,6 +25,7 @@ from app.models.face_profile import FaceProfile
 from app.providers.llm.factory import get_llm_provider
 from app.services.ai.pipeline import clean_text_for_tts, _extract_emotion
 from app.services.memory.rag_service import RAGService
+from app.services.memory.fact_verifier import FactVerifier
 from app.websocket.manager import manager
 from app.websocket.handlers import get_face_service, get_ai_pipeline as _get_ai_pipeline
 from app.services.ai.context_builder import build_grounding_context, GroundingInfo, is_greeting_or_persona_inquiry
@@ -198,9 +200,10 @@ async def chat_with_llm(
     refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
     has_memories = bool(memories)
     is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+    is_sensitive = FactVerifier.is_sensitive_or_private_inquiry(body.message)
 
-    # If no memories were retrieved and query is a factual question (not greeting/persona)
-    if not has_memories and not is_greeting_persona:
+    # Fast refusal only when context is empty for sensitive/private/credential inquiries
+    if not has_memories and not is_greeting_persona and is_sensitive:
         reply = refusal_reply
         cleaned_reply = clean_text_for_tts(reply)
         emotion = "wave"
@@ -258,6 +261,31 @@ async def chat_with_llm(
         # Streaming response
         async def event_generator():
             full_content = []
+
+            async def _persist_streamed(content_list):
+                try:
+                    async with AsyncSessionLocal() as session:
+                        full_str = "".join(content_list)
+                        llm_ms = (time.perf_counter() - t_start) * 1000
+                        emotion = _extract_emotion(full_str)
+                        user_msg = Message(
+                            conversation_id=conv_id,
+                            role="user",
+                            content=body.message,
+                        )
+                        robot_msg = Message(
+                            conversation_id=conv_id,
+                            role="robot",
+                            content=full_str,
+                            llm_latency_ms=round(llm_ms, 2),
+                            total_latency_ms=round(llm_ms, 2),
+                            emotion=emotion,
+                        )
+                        session.add_all([user_msg, robot_msg])
+                        await session.commit()
+                except Exception as e:
+                    logger.error(f"Failed to persist streamed chat messages: {e}")
+
             try:
                 async for token in llm.generate_stream(
                     body.message,
@@ -278,30 +306,9 @@ async def chat_with_llm(
                 if "ResponseNotRead" in type(e).__name__ or "streaming response content" in err_msg:
                     err_msg = "خطأ في قراءة استجابة الموديل المباشرة"
                 yield f"\n[خطأ أثناء التوليد: {err_msg}]"
-
-            # Save to DB safely using a fresh session
-            try:
-                async with AsyncSessionLocal() as session:
-                    full_str = "".join(full_content)
-                    llm_ms = (time.perf_counter() - t_start) * 1000
-                    emotion = _extract_emotion(full_str)
-                    user_msg = Message(
-                        conversation_id=conv_id,
-                        role="user",
-                        content=body.message,
-                    )
-                    robot_msg = Message(
-                        conversation_id=conv_id,
-                        role="robot",
-                        content=full_str,
-                        llm_latency_ms=round(llm_ms, 2),
-                        total_latency_ms=round(llm_ms, 2),
-                        emotion=emotion,
-                    )
-                    session.add_all([user_msg, robot_msg])
-                    await session.commit()
-            except Exception as e:
-                logger.error(f"Failed to persist streamed chat messages: {e}")
+            finally:
+                if full_content:
+                    asyncio.create_task(_persist_streamed(list(full_content)))
 
         encoded_mems = urllib.parse.quote(json.dumps(memories, ensure_ascii=False))
         return StreamingResponse(
@@ -416,8 +423,9 @@ async def chat_stream(
     refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
     has_memories = bool(memories)
     is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+    is_sensitive = FactVerifier.is_sensitive_or_private_inquiry(body.message)
 
-    if not has_memories and not is_greeting_persona:
+    if not has_memories and not is_greeting_persona and is_sensitive:
         async def fast_refusal_sse():
             import json
             yield f"data: {json.dumps({'type': 'context', 'memories': []}, ensure_ascii=False)}\n\n"
@@ -459,6 +467,32 @@ async def chat_stream(
         import json
         yield f"data: {json.dumps({'type': 'context', 'memories': memories}, ensure_ascii=False)}\n\n"
         full_content = []
+
+        # Save to DB asynchronously in background to prevent SQLite stream deadlocks
+        async def _persist_sse(content_list):
+            try:
+                async with AsyncSessionLocal() as session:
+                    full_str = "".join(content_list)
+                    llm_ms = (time.perf_counter() - t_start) * 1000
+                    emotion = _extract_emotion(full_str)
+                    user_msg = Message(
+                        conversation_id=conv_id,
+                        role="user",
+                        content=body.message,
+                    )
+                    robot_msg = Message(
+                        conversation_id=conv_id,
+                        role="robot",
+                        content=full_str,
+                        llm_latency_ms=round(llm_ms, 2),
+                        total_latency_ms=round(llm_ms, 2),
+                        emotion=emotion,
+                    )
+                    session.add_all([user_msg, robot_msg])
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to persist SSE streamed chat messages: {e}")
+
         try:
             async for token in llm.generate_stream(
                 body.message,
@@ -486,31 +520,8 @@ async def chat_stream(
             yield f"data: {json.dumps({'type': 'error', 'content': err_msg}, ensure_ascii=False)}\n\n"
         finally:
             yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
-
-        # Save to DB safely using a fresh session
-        if full_content:
-            try:
-                async with AsyncSessionLocal() as session:
-                    full_str = "".join(full_content)
-                    llm_ms = (time.perf_counter() - t_start) * 1000
-                    emotion = _extract_emotion(full_str)
-                    user_msg = Message(
-                        conversation_id=conv_id,
-                        role="user",
-                        content=body.message,
-                    )
-                    robot_msg = Message(
-                        conversation_id=conv_id,
-                        role="robot",
-                        content=full_str,
-                        llm_latency_ms=round(llm_ms, 2),
-                        total_latency_ms=round(llm_ms, 2),
-                        emotion=emotion,
-                    )
-                    session.add_all([user_msg, robot_msg])
-                    await session.commit()
-            except Exception as e:
-                logger.error(f"Failed to persist SSE streamed chat messages: {e}")
+            if full_content:
+                asyncio.create_task(_persist_sse(list(full_content)))
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

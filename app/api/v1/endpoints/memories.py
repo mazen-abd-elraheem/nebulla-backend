@@ -158,6 +158,7 @@ async def add_memory(
                     personality_id=pid,
                     source=src,
                     importance=imp,
+                    db=db,
                 )
                 created_ids.append(mid)
         return {
@@ -172,6 +173,7 @@ async def add_memory(
         personality_id=pid,
         source=src,
         importance=imp,
+        db=db,
     )
     return {
         "id": mid,
@@ -192,6 +194,7 @@ async def delete_memory(
         raise HTTPException(status_code=404, detail="Not found")
     await db.delete(m)
     await db.commit()
+    await _rag.delete_memory(mid)
 
 
 @router.get("/search", summary="Semantic search memories")
