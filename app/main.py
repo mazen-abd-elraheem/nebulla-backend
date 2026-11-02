@@ -58,6 +58,18 @@ async def _warmup_ollama():
         logger.debug(f"Ollama warm-up notice: {e}")
 
 
+async def _warmup_stt():
+    """Pre-warm QwenCleo ASR in RAM/GPU to eliminate cold-start speech-to-text latency."""
+    try:
+        from app.providers.stt.factory import get_stt_provider
+        stt = get_stt_provider('qwencleo')
+        if hasattr(stt, '_ensure_loaded'):
+            await stt._ensure_loaded()
+            logger.info('✅ QwenCleo ASR model is warm and ready in RAM/GPU.')
+    except Exception as e:
+        logger.debug(f'STT warm-up notice: {e}')
+
+
 async def _warmup_rag():
     """Pre-warm RAG SentenceTransformer in RAM to eliminate cold-start retrieval latency."""
     try:
@@ -78,6 +90,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_warmup_vision())
     asyncio.create_task(_warmup_ollama())
     asyncio.create_task(_warmup_rag())
+    asyncio.create_task(_warmup_stt())
 
     # Chapter 14: reminders (medicine / tasks) with family escalation
     scheduler = None
