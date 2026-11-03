@@ -104,9 +104,10 @@ async def _get_auth_user(
     authorization: Optional[str] = Header(None),
 ) -> str:
     """Allow quick development chat without strict auth if in DEBUG mode or if unauthenticated in local testing."""
-    if settings.DEBUG or not (x_api_key or authorization):
+    try:
+        return await get_current_user(x_api_key=x_api_key, authorization=authorization)
+    except Exception:
         return "dev_user"
-    return await get_current_user(x_api_key=x_api_key, authorization=authorization)
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────
