@@ -26,7 +26,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool showErrors = false}) async {
     setState(() => _loading = true);
     try {
       final results = await Future.wait([
@@ -35,6 +35,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ]);
       final status = results[0] as DeviceStatus;
       final personalities = results[1] as List<Personality>;
+      if (!mounted) return;
       setState(() {
         _status = status;
         _personalities = personalities;
@@ -43,8 +44,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _loading = false);
-      if (mounted) showErrorSnackbar(context, 'خطأ في تحميل البيانات: $e');
+      if (showErrors) {
+        showErrorSnackbar(context, 'خطأ في تحميل البيانات: $e');
+      }
     }
   }
 
@@ -70,7 +74,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: RefreshIndicator(
             color: AppColors.teal,
             backgroundColor: AppColors.surface,
-            onRefresh: _load,
+            onRefresh: () => _load(showErrors: true),
             child: CustomScrollView(
               slivers: [
                 SliverAppBar(
@@ -90,7 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             AppColors.purple.withValues(alpha: 0.2),
                           ]),
                         ),
-                        child: Icon(Icons.smart_toy_outlined,
+                        child: const Icon(Icons.smart_toy_outlined,
                             color: AppColors.teal, size: 18),
                       ),
                       const SizedBox(width: 10),
@@ -104,7 +108,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   actions: [
                     IconButton(
                       icon: const Icon(Icons.refresh, color: AppColors.teal),
-                      onPressed: _load,
+                      onPressed: () => _load(showErrors: true),
                     ),
                   ],
                 ),
@@ -155,30 +159,34 @@ class _ConnectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasActiveConnection = status?.esp32Connected == true ||
+        status?.phoneConnected == true ||
+        status?.deskConnected == true;
+
     return NebulaCard(
-      glowing: status?.esp32Connected == true,
-      borderColor: status?.esp32Connected == true
-          ? AppColors.success
+      glowing: hasActiveConnection,
+      borderColor: hasActiveConnection
+          ? AppColors.teal.withValues(alpha: 0.5)
           : AppColors.cardBorder,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SectionHeader(title: 'حالة الاتصال'),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _ChannelStatus(
                   label: 'الهاتف',
-                  icon: Icons.phone_android,
+                  icon: Icons.phone_android_rounded,
                   connected: status?.phoneConnected ?? false),
               _ChannelStatus(
                   label: 'سطح المكتب',
-                  icon: Icons.desktop_windows_outlined,
+                  icon: Icons.desktop_windows_rounded,
                   connected: status?.deskConnected ?? false),
               _ChannelStatus(
                   label: 'ESP32',
-                  icon: Icons.memory_outlined,
+                  icon: Icons.memory_rounded,
                   connected: status?.esp32Connected ?? false),
             ],
           ),
@@ -200,36 +208,75 @@ class _ChannelStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = connected ? AppColors.success : AppColors.textMuted;
+    const activeColor = AppColors.success;
+    const inactiveBorder = Color(0xFF223A5E);
+    const inactiveBg = Color(0xFF132238);
+    const inactiveIcon = Color(0xFFCBD5E1);
+
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 56,
-          height: 56,
+          width: 58,
+          height: 58,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: color.withValues(alpha: 0.1),
-            border: Border.all(color: color.withValues(alpha: 0.5)),
+            color: connected
+                ? activeColor.withValues(alpha: 0.15)
+                : inactiveBg,
+            border: Border.all(
+              color: connected ? activeColor : inactiveBorder,
+              width: connected ? 1.8 : 1.2,
+            ),
             boxShadow: connected
                 ? [
                     BoxShadow(
-                        color: color.withValues(alpha: 0.3),
-                        blurRadius: 12)
+                      color: activeColor.withValues(alpha: 0.4),
+                      blurRadius: 14,
+                      spreadRadius: 1,
+                    )
                   ]
-                : null,
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 6,
+                    )
+                  ],
           ),
-          child: Icon(icon, color: color, size: 24),
+          child: Icon(
+            icon,
+            color: connected ? activeColor : inactiveIcon,
+            size: 26,
+          ),
         ),
-        const SizedBox(height: 8),
-        Text(label,
-            style: TextStyle(
-                color: color, fontSize: 12, fontFamily: 'Cairo')),
+        const SizedBox(height: 10),
         Text(
-          connected ? 'متصل' : 'غير متصل',
-          style: TextStyle(
-              color: color.withValues(alpha: 0.7),
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            fontFamily: 'Cairo',
+          ),
+        ),
+        const SizedBox(height: 2),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: connected
+                ? activeColor.withValues(alpha: 0.12)
+                : const Color(0xFF1A2B42),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            connected ? 'متصل' : 'غير متصل',
+            style: TextStyle(
+              color: connected ? activeColor : const Color(0xFF94A3B8),
               fontSize: 11,
-              fontFamily: 'Cairo'),
+              fontWeight: connected ? FontWeight.w700 : FontWeight.w500,
+              fontFamily: 'Cairo',
+            ),
+          ),
         ),
       ],
     );
@@ -242,77 +289,93 @@ class _ActivePersonalityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isActive = personality != null;
+
     return NebulaCard(
-      glowing: personality != null,
-      borderColor: AppColors.purple.withValues(alpha: 0.5),
+      glowing: isActive,
+      borderColor: isActive
+          ? AppColors.purple.withValues(alpha: 0.6)
+          : AppColors.cardBorder,
       child: Row(
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: 58,
+            height: 58,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: AppColors.purpleGradient,
               boxShadow: [
                 BoxShadow(
-                    color: AppColors.purple.withValues(alpha: 0.4),
-                    blurRadius: 12)
+                  color: AppColors.purple.withValues(alpha: 0.45),
+                  blurRadius: 14,
+                  spreadRadius: 1,
+                )
               ],
             ),
-            child: const Icon(Icons.person_outline,
-                color: Colors.white, size: 28),
+            child: const Icon(Icons.person_rounded,
+                color: Colors.white, size: 30),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('الشخصية النشطة',
-                    style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                        fontFamily: 'Cairo')),
+                const Text(
+                  'الشخصية النشطة',
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Cairo',
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   personality?.name ?? 'لا توجد شخصية نشطة',
                   style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'Cairo'),
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Cairo',
+                  ),
                 ),
-                if (personality != null)
+                if (personality != null) ...[
+                  const SizedBox(height: 2),
                   Text(
                     '${personality!.dialect} · ${personality!.languageMix}',
                     style: const TextStyle(
-                        color: AppColors.teal,
-                        fontSize: 12,
-                        fontFamily: 'Cairo'),
+                      color: AppColors.teal,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Cairo',
+                    ),
                   ),
+                ],
               ],
             ),
           ),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
             decoration: BoxDecoration(
-              color: personality != null
+              color: isActive
                   ? AppColors.success.withValues(alpha: 0.15)
-                  : AppColors.textMuted.withValues(alpha: 0.1),
+                  : const Color(0xFF1E293B),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                  color: personality != null
-                      ? AppColors.success.withValues(alpha: 0.5)
-                      : AppColors.textMuted.withValues(alpha: 0.3)),
+                color: isActive
+                    ? AppColors.success.withValues(alpha: 0.6)
+                    : const Color(0xFF334155),
+                width: 1.2,
+              ),
             ),
             child: Text(
-              personality != null ? 'نشط' : 'خامل',
+              isActive ? 'نشط' : 'خامل',
               style: TextStyle(
-                  color: personality != null
-                      ? AppColors.success
-                      : AppColors.textMuted,
-                  fontSize: 11,
-                  fontFamily: 'Cairo'),
+                color: isActive ? AppColors.success : const Color(0xFF94A3B8),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Cairo',
+              ),
             ),
           ),
         ],
@@ -327,6 +390,8 @@ class _SystemOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final activeCount = personalities.where((p) => p.isActive).length;
+
     return NebulaCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -336,21 +401,26 @@ class _SystemOverviewCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                  child: _StatItem(
-                      label: 'الشخصيات',
-                      value: personalities.length.toString(),
-                      icon: Icons.people_outline,
-                      color: AppColors.purple)),
+                child: _StatItem(
+                  label: 'الشخصيات',
+                  value: personalities.length.toString(),
+                  icon: Icons.people_alt_rounded,
+                  color: AppColors.purple,
+                  bgColor: const Color(0xFF141F36),
+                  borderColor: const Color(0xFF283B60),
+                ),
+              ),
               const SizedBox(width: 12),
               Expanded(
-                  child: _StatItem(
-                      label: 'نشطة',
-                      value: personalities
-                          .where((p) => p.isActive)
-                          .length
-                          .toString(),
-                      icon: Icons.check_circle_outline,
-                      color: AppColors.success)),
+                child: _StatItem(
+                  label: 'نشطة',
+                  value: activeCount.toString(),
+                  icon: Icons.check_circle_rounded,
+                  color: AppColors.success,
+                  bgColor: const Color(0xFF0C2430),
+                  borderColor: const Color(0xFF1B4958),
+                ),
+              ),
             ],
           ),
         ],
@@ -364,45 +434,57 @@ class _StatItem extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color color;
+  final Color bgColor;
+  final Color borderColor;
 
-  const _StatItem(
-      {required this.label,
-      required this.value,
-      required this.icon,
-      required this.color});
+  const _StatItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.bgColor,
+    required this.borderColor,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
+        color: bgColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor, width: 1.2),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(value,
-                  style: TextStyle(
-                      color: color,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      fontFamily: 'Cairo')),
-              Text(label,
-                  style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                      fontFamily: 'Cairo')),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: 'Cairo',
+                ),
+              ),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFFCBD5E1),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Cairo',
+                ),
+              ),
             ],
           ),
+          Icon(icon, color: color, size: 26),
         ],
       ),
     );
   }
 }
-

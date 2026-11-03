@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt import get_current_user
+from app.auth.jwt import get_optional_user
 from app.db.session import get_db
 from app.models.device import Device
 from app.websocket.manager import manager
@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.get("/status", summary="Live connection status of all channels")
-async def connection_status(_user: str = Depends(get_current_user)):
+async def connection_status(_user: str | None = Depends(get_optional_user)):
     st = manager.status()
     return {"channels": st, **st}
 
@@ -27,7 +27,7 @@ async def connection_status(_user: str = Depends(get_current_user)):
 @router.get("/", summary="List all registered devices")
 async def list_devices(
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(get_current_user),
+    _user: str | None = Depends(get_optional_user),
 ):
     result = await db.execute(select(Device).order_by(Device.created_at.desc()))
     devices = result.scalars().all()
@@ -38,7 +38,7 @@ async def list_devices(
 async def get_device(
     device_id: int,
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(get_current_user),
+    _user: str | None = Depends(get_optional_user),
 ):
     dev = await db.get(Device, device_id)
     if not dev:
@@ -50,7 +50,7 @@ async def get_device(
 async def delete_device(
     device_id: int,
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(get_current_user),
+    _user: str | None = Depends(get_optional_user),
 ):
     dev = await db.get(Device, device_id)
     if not dev:

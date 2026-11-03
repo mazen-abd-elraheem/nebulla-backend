@@ -713,40 +713,47 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 // Right (RTL): Remember Me Checkbox
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: Checkbox(
-                        value: _rememberMe,
-                        onChanged: (val) {
-                          setState(() => _rememberMe = val ?? false);
-                        },
-                        activeColor: const Color(0xFF0C1322),
-                        checkColor: const Color(0xFF00E5FF),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        side: const BorderSide(
-                          color: Color(0xFFCBD5E1),
-                          width: 1.4,
+                Flexible(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: Checkbox(
+                          value: _rememberMe,
+                          onChanged: (val) {
+                            setState(() => _rememberMe = val ?? false);
+                          },
+                          activeColor: const Color(0xFF0C1322),
+                          checkColor: const Color(0xFF00E5FF),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          side: const BorderSide(
+                            color: Color(0xFFCBD5E1),
+                            width: 1.4,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 7),
-                    const Text(
-                      'تذكّرني على هذا الجهاز',
-                      style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF475569),
+                      const SizedBox(width: 7),
+                      const Flexible(
+                        child: Text(
+                          'تذكّرني على هذا الجهاز',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+
+                const SizedBox(width: 8),
 
                 // Left (RTL): Forgot Password Link
                 GestureDetector(
@@ -859,13 +866,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(
-                                'تسجيل الدخول عبر التعرّف البيومتري (Neural Face ID)',
-                                style: TextStyle(
-                                  fontFamily: 'Cairo',
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF334155),
+                              Flexible(
+                                child: Text(
+                                  'تسجيل الدخول عبر التعرّف البيومتري (Neural Face ID)',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontFamily: 'Cairo',
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF334155),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 8),

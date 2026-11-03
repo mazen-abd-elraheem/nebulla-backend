@@ -133,13 +133,14 @@ class NebulaDangerButton extends StatelessWidget {
       child: Container(
         height: 54,
         decoration: BoxDecoration(
-          color: AppColors.error.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.error, width: 1.5),
+          color: const Color(0xFF2A0D18),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFFF3D60), width: 1.5),
           boxShadow: [
             BoxShadow(
-              color: AppColors.error.withValues(alpha: 0.25),
-              blurRadius: 12,
+              color: const Color(0xFFFF3D60).withValues(alpha: 0.22),
+              blurRadius: 16,
+              spreadRadius: 1,
             ),
           ],
         ),
@@ -148,14 +149,14 @@ class NebulaDangerButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[
-                Icon(icon, color: AppColors.error, size: 20),
+                Icon(icon, color: const Color(0xFFFF4D6D), size: 22),
                 const SizedBox(width: 8),
               ],
               Text(
                 label,
                 style: const TextStyle(
                   fontFamily: 'Cairo',
-                  color: AppColors.error,
+                  color: Color(0xFFFF6584),
                   fontWeight: FontWeight.w700,
                   fontSize: 16,
                 ),
@@ -177,7 +178,7 @@ class StatusDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = connected ? AppColors.success : AppColors.textMuted;
+    final color = connected ? AppColors.success : const Color(0xFF94A3B8);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -216,10 +217,12 @@ class SectionHeader extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 3,
-          height: 20,
+          width: 3.5,
+          height: 18,
           decoration: BoxDecoration(
-            gradient: AppColors.tealGradient,
+            gradient: const LinearGradient(
+              colors: [Color(0xFF00D4E8), Color(0xFF0891B2)],
+            ),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -231,7 +234,7 @@ class SectionHeader extends StatelessWidget {
               fontFamily: 'Cairo',
               fontSize: 16,
               fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
+              color: Colors.white,
             ),
           ),
         ),

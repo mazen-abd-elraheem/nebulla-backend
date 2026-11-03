@@ -66,19 +66,20 @@ async def list_personalities(
 async def create_personality(
     body: PersonalityCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_model),
+    current_user: Optional[User] = Depends(get_optional_user_model),
 ):
     """
-    Create a new robot personality profile tied to the authenticated user.
+    Create a new robot personality profile tied to the authenticated user (or default user/system).
     """
     data = body.model_dump()
-    data["user_id"] = current_user.id
+    data["user_id"] = current_user.id if current_user else None
 
     p = Personality(**data)
     db.add(p)
     try:
         await db.flush()
         await db.refresh(p)
+        await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
@@ -109,24 +110,18 @@ async def get_personality(
     return _p(p)
 
 
-@router.patch("/{pid}", summary="Update a user-owned personality")
+@router.patch("/{pid}", summary="Update a personality")
 async def update_personality(
     pid: int,
     body: PersonalityUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_model),
+    current_user: Optional[User] = Depends(get_optional_user_model),
 ):
     p = await db.get(Personality, pid)
     if not p:
         raise HTTPException(status_code=404, detail="Personality not found")
 
-    if p.user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot modify a global system default personality.",
-        )
-
-    if p.user_id != current_user.id:
+    if p.user_id is not None and current_user and p.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only modify your own personalities.",
@@ -136,6 +131,8 @@ async def update_personality(
         setattr(p, k, v)
     try:
         await db.flush()
+        await db.refresh(p)
+        await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
@@ -200,6 +197,7 @@ async def activate_personality(
 
     target.is_active = True
     await db.flush()
+    await db.commit()
     return {"active_personality_id": pid}
 
 

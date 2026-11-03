@@ -151,7 +151,10 @@ class NebulaRepository {
 
   Future<List<Personality>> getPersonalities() async {
     final data = await _api.get(AppConstants.personalities);
-    return (data as List)
+    final list = data is Map<String, dynamic>
+        ? (data['personalities'] as List? ?? const [])
+        : (data as List);
+    return list
         .map((e) => Personality.fromJson(e as Map<String, dynamic>))
         .toList();
   }
@@ -181,7 +184,10 @@ class NebulaRepository {
         ? {'personality_id': personalityId.toString()}
         : null;
     final data = await _api.get(AppConstants.memories, params);
-    return (data as List)
+    final list = data is Map<String, dynamic>
+        ? (data['memories'] as List? ?? const [])
+        : (data as List);
+    return list
         .map((e) => Memory.fromJson(e as Map<String, dynamic>))
         .toList();
   }
@@ -194,7 +200,25 @@ class NebulaRepository {
       'importance': importance,
       'source': 'manual',
     });
-    return Memory.fromJson(data as Map<String, dynamic>);
+    final map = data as Map<String, dynamic>;
+    return Memory(
+      id: (map['id'] as num?)?.toInt() ?? 0,
+      content: map['content']?.toString() ?? content,
+      personalityId: (map['personality_id'] as num?)?.toInt() ?? personalityId,
+      source: 'manual',
+      importance: importance,
+    );
+  }
+
+  Future<void> addMemoriesBatch(
+      List<String> contents, int personalityId, int importance) async {
+    if (contents.isEmpty) return;
+    await _api.post(AppConstants.memories, {
+      'content': contents,
+      'personality_id': personalityId,
+      'importance': importance,
+      'source': 'manual',
+    });
   }
 
   Future<void> deleteMemory(int id) async {
@@ -259,7 +283,10 @@ class NebulaRepository {
 
   Future<List<CalibrationEntry>> getCalibrations() async {
     final data = await _api.get(AppConstants.calibration);
-    return (data as List)
+    final list = data is Map<String, dynamic>
+        ? (data['calibrations'] as List? ?? const [])
+        : (data as List);
+    return list
         .map((e) => CalibrationEntry.fromJson(e as Map<String, dynamic>))
         .toList();
   }
@@ -283,8 +310,20 @@ class NebulaRepository {
     );
   }
 
+  Future<void> uploadVoiceSampleDefault(File file) async {
+    await _api.postMultipart(
+      '/api/v1/voice-clone/upload',
+      {},
+      file,
+      'file',
+    );
+  }
+
   Future<List<dynamic>> getVoiceSamples() async {
     final data = await _api.get(AppConstants.voiceCloneSamples);
+    if (data is Map<String, dynamic>) {
+      return data['samples'] as List? ?? const [];
+    }
     return data as List;
   }
 
