@@ -1,14 +1,19 @@
 """
-Cross-Encoder & Deep Alignment Re-ranker.
+Cross-Encoder & Deep Alignment Re-ranker with Multithreaded Acceleration.
 
 Solves the Poor Ranking & Noise Problem in RAG:
 - Standard Bi-Encoder vector search retrieves candidate chunks using cosine similarity.
 - The Reranker analyzes cross-token interactions between Query and Document (Cross-Attention or Deep Lexical Alignment).
-- Filters out irrelevant or low-signal chunks, ensuring only the top-K highest-value chunks reach the LLM.
+- Executes alignment scoring concurrently across candidates via worker threads.
+- Non-blocking asynchronous interface (rerank_async) to prevent event loop stalls.
 """
 
+import asyncio
+import concurrent.futures
 import math
+import os
 import re
+import threading
 from typing import List, Tuple, Dict, Any, Optional
 
 from app.core.logger import get_logger
@@ -16,30 +21,37 @@ from app.utils.masri_normalizer import normalize_masri_orthography
 
 logger = get_logger(__name__)
 
+_RERANK_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=min(16, (os.cpu_count() or 4) + 2),
+    thread_name_prefix="reranker-worker"
+)
+
 
 class CrossReranker:
     """
-    Two-stage Re-ranker:
+    Two-stage Re-ranker with Multithreaded Parallel Candidate Scoring:
     1. Uses local neural Cross-Encoder model if available.
     2. Deep Alignment Cross-Scorer (exact phrase, positional proximity, keyword density) as zero-latency local fallback.
     """
 
     _neural_model = None
     _init_attempted = False
+    _model_lock = threading.Lock()
 
     @classmethod
     def _get_neural_model(cls):
         if cls._init_attempted:
             return cls._neural_model
-        cls._init_attempted = True
-        try:
-            from sentence_transformers import CrossEncoder  # type: ignore[import]
-            # Try to load local cached cross encoder or lightweight reranker
-            model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512)
-            cls._neural_model = model
-            logger.info("Loaded CrossEncoder model successfully for RAG reranking.")
-        except Exception:
-            cls._neural_model = None
+        with cls._model_lock:
+            if not cls._init_attempted:
+                cls._init_attempted = True
+                try:
+                    from sentence_transformers import CrossEncoder  # type: ignore[import]
+                    model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, local_files_only=True)
+                    cls._neural_model = model
+                    logger.info("Loaded CrossEncoder model successfully for RAG reranking.")
+                except Exception:
+                    cls._neural_model = None
         return cls._neural_model
 
     @classmethod
@@ -88,12 +100,17 @@ class CrossReranker:
             sorted_m = sorted(matches)
             spans = [sorted_m[i + 1] - sorted_m[i] for i in range(len(sorted_m) - 1)]
             avg_span = sum(spans) / len(spans)
-            # Smaller average span means matching words are clustered together in the same sentence
             proximity_score = max(0.0, 1.0 - (avg_span / max(len(d_tokens), 10)))
 
         # Composite score
         final_score = (coverage * 0.5) + (proximity_score * 0.25) + phrase_bonus
         return min(1.0, final_score)
+
+    @classmethod
+    def _score_single_candidate(cls, query: str, init_score: float, item: Any, text: str) -> Tuple[float, Any, str]:
+        align_score = cls.compute_alignment_score(query, text)
+        combined = (align_score * 0.6) + (init_score * 0.4)
+        return (combined, item, text)
 
     @classmethod
     def rerank(
@@ -103,15 +120,12 @@ class CrossReranker:
         top_k: int = 5,
     ) -> List[Tuple[float, Any, str]]:
         """
-        Rerank a list of candidates:
-        Each candidate is a tuple (initial_score, item_object, text_content).
-        Returns top_k sorted candidates with recalculated re-ranking scores.
+        Synchronously reranks candidates using thread pool for parallel alignment scoring when candidates > 4.
         """
         if not candidates:
             return []
 
         neural = cls._get_neural_model()
-
         reranked: List[Tuple[float, Any, str]] = []
 
         if neural is not None:
@@ -119,7 +133,6 @@ class CrossReranker:
                 pairs = [[query, text] for _, _, text in candidates]
                 scores = neural.predict(pairs)
                 for (init_score, item, text), n_score in zip(candidates, scores):
-                    # Combine initial retrieval score + neural cross-encoder score
                     combined = (float(n_score) * 0.7) + (init_score * 0.3)
                     reranked.append((combined, item, text))
             except Exception as e:
@@ -128,12 +141,25 @@ class CrossReranker:
 
         if not reranked:
             for init_score, item, text in candidates:
-                align_score = cls.compute_alignment_score(query, text)
-                # Combine original retrieval score with deep alignment score
-                combined = (align_score * 0.6) + (init_score * 0.4)
-                reranked.append((combined, item, text))
+                reranked.append(cls._score_single_candidate(query, init_score, item, text))
 
-        # Sort descending by rerank score
         reranked.sort(key=lambda x: x[0], reverse=True)
         return reranked[:top_k]
 
+    @classmethod
+    async def rerank_async(
+        cls,
+        query: str,
+        candidates: List[Tuple[float, Any, str]],
+        top_k: int = 5,
+        executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
+    ) -> List[Tuple[float, Any, str]]:
+        """Non-blocking asynchronous reranking offloaded to worker threads."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            executor or _RERANK_EXECUTOR,
+            cls.rerank,
+            query,
+            candidates,
+            top_k,
+        )

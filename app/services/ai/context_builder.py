@@ -491,15 +491,31 @@ async def build_grounding_context(
     else:
         # User is speaking English
         from scripts.generate_rag_dataset import to_english_memory
-        grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
+        if memories:
+            mem_bullets = "\n".join(f"- {to_english_memory(m)}" for m in memories)
+            grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
 {persona_extra}
 
-Operational Directives:
-1. Speech Clarity & Language: Answer strictly in clear, natural English (1-2 sentences max). No markdown tables or URLs.
-2. RAG & Zero-Hallucination: Answer exclusively using the verified memory sources below. If not present or sensitive, reply:
-   "I do not have this information recorded in my memory. [wave]"
-3. Emotion: Conclude with exactly one emotion tag (e.g. [happy], [wave], [like], [neutral]).
+Directives:
+1. Extract the direct factual answer exclusively from the verified memory below without adding extra details.
+2. Reply in concise natural English (single sentence). No markdown tables or URLs.
+3. Conclude with exactly one emotion tag (e.g. [happy], [wave], [like], [neutral]).
+
 - Devices: Phone ({phone_str}) | Desktop ({desk_str}) | Robot ({esp_str})
+Verified Memory Sources:
+{mem_bullets}
+"""
+        else:
+            if is_greeting_or_persona_inquiry(message):
+                grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
+{persona_extra}
+Greet warmly in English as {robot_name} and ask how you can help. Conclude with [wave] or [happy].
+"""
+            else:
+                grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
+Verified Memory: None found.
+Strict Directive: Reply with:
+"I do not have this information recorded in my memory. [wave]"
 """
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- Vision: Person in front of camera is {current_face['face_id']}.\n"
@@ -507,24 +523,6 @@ Operational Directives:
             grounded_system_prompt += f"- Voice: Speaker verified as {verified_speaker}.\n"
         if person_profile and person_profile.get("photo_url"):
             grounded_system_prompt += f"- Screen Display: Photo of {person_profile['name']} is available for screen display.\n"
-
-        if memories:
-            mem_bullets = "\n".join(f"[Source {idx}]: {to_english_memory(m)}" for idx, m in enumerate(memories, 1))
-            grounded_system_prompt += (
-                f"\nVerified Memory Sources:\n{mem_bullets}\n"
-                "STRICT ZERO-HALLUCINATION DIRECTIVES:\n"
-                "1. Answer strictly and exclusively about the specific topic asked. Do not volunteer unrelated facts.\n"
-                "2. If the inquiry asks for unrecorded details, phone numbers, or passwords, you MUST reply with:\n"
-                "\"I do not have this information recorded in my memory. [wave]\"\n"
-            )
-        else:
-            if is_greeting_or_persona_inquiry(message):
-                grounded_system_prompt += f"\nGreeting: Greet warmly in English as {robot_name} and ask how you can help. Conclude with [wave] or [happy].\n"
-            else:
-                grounded_system_prompt += (
-                    "\nVerified Memory: None found.\n"
-                    "Strict Directive: Reply with:\n\"I do not have this information recorded in my memory. [wave]\"\n"
-                )
 
     grounding_data = GroundingInfo(
         personality=p_info,

@@ -81,6 +81,65 @@ async def init_db() -> None:
                 except Exception as e:
                     logger.warning(f"Could not drop legacy ix_personalities_name index: {e}")
 
+            if "voiceprints" in tables:
+                cols = [c["name"] for c in inspector.get_columns("voiceprints")]
+                if "user_id" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+                if "face_id" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN face_id INTEGER"))
+                if "personality_id" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN personality_id INTEGER"))
+                if "memory_id" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN memory_id INTEGER"))
+                if "samples_count" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN samples_count INTEGER DEFAULT 0"))
+                if "model_id" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN model_id VARCHAR(128) DEFAULT ''"))
+                if "max_level" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN max_level INTEGER DEFAULT 2"))
+                if "consent_at" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN consent_at DATETIME"))
+                if "created_at" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN created_at DATETIME"))
+                if "updated_at" not in cols:
+                    connection.execute(text("ALTER TABLE voiceprints ADD COLUMN updated_at DATETIME"))
+
+            if "users" in tables:
+                cols = [c["name"] for c in inspector.get_columns("users")]
+                if "face_profile_id" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN face_profile_id INTEGER REFERENCES face_profiles(id)"))
+                if "terms_accepted" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN terms_accepted BOOLEAN DEFAULT 1"))
+                if "terms_accepted_at" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN terms_accepted_at DATETIME"))
+                if "is_active" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1"))
+                if "is_superuser" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN is_superuser BOOLEAN DEFAULT 0"))
+                if "reset_token" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN reset_token VARCHAR(128)"))
+                if "reset_token_expires_at" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires_at DATETIME"))
+                if "created_at" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
+                if "updated_at" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME"))
+
+            if "contacts" in tables:
+                cols = [c["name"] for c in inspector.get_columns("contacts")]
+                if "user_id" not in cols:
+                    connection.execute(text("ALTER TABLE contacts ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+
+            if "reminders" in tables:
+                cols = [c["name"] for c in inspector.get_columns("reminders")]
+                if "user_id" not in cols:
+                    connection.execute(text("ALTER TABLE reminders ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+
+            if "action_logs" in tables:
+                cols = [c["name"] for c in inspector.get_columns("action_logs")]
+                if "user_id" not in cols:
+                    connection.execute(text("ALTER TABLE action_logs ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+
         await conn.run_sync(_migrate)
     logger.info("Database initialised")
 
