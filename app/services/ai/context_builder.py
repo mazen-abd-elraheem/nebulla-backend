@@ -427,32 +427,46 @@ async def build_grounding_context(
 
     # Formulate System Prompt
     if is_arabic:
-        grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
+        if memories:
+            mem_bullets = "\n".join(f"- {m}" for m in memories)
+            grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
 {persona_extra}
 
-قواعد التشغيل والتوجيه الصوتي والشاشي (Voice & Screen Operational Directives):
-1. تطابق لغة الحوار واللهجة (Strict Language Mirroring & Cairo Dialect):
-   - أجب حصراً بلهجة مصرية قاهرية مهذبة وطبيعية ومباشرة (جملة أو جملتين كحد أقصى) لتناسب النطق الصوتي (TTS).
-   - يُمنع استخدام أي جداول، علامات نجمية، أو روابط إنترنت في نص الرد، لتفادي تشويه الصوت.
-2. الالتزام الصارم بسياق الذاكرة المعتمد ومنع الهلوسة (Strict RAG Grounding & Zero-Hallucination):
-   - اعتمد بشكل حصري ودقيق على الحقائق والمعلومات الواردة في سياق الذاكرة فقط.
-   - إذا سُئلت عن تفصيلة غير متوفرة في الذاكرة، أو كانت الذاكرة فارغة، يجب أن تعتذر بأدب:
-     "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
-   - لا تخمن أو تخترع أو تفترض أي بيانات غير مذكورة قطعياً.
-3. بروتوكول حماية الخصوصية والبيانات الحساسة (Privacy & Security Directives):
-   - إذا طُلب منك رقم هاتف شخصي، كلمة مرور، كود سري، أو بيانات مالية وبنكية: ارفض فوراً بعبارة:
-     "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
-4. الوعي البيئي والعتادي وشاشة العرض (Vision, Screen & Hardware Grounding):
-   - التفاعل بذكاء مع حالة الأجهزة المتصلة ومع الشخص الحاضر أمام الكاميرا.
-   - إذا سأل المستخدم عن صورة شخص مسجل أو شكله، أكد له أن صورته مسجلة ومعروضة على الشاشة.
-5. الإيجاز الحتمي ووسوم المشاعر (Mandatory Emotion Tags):
-   - اختم إجابتك دائماً وبشكل إلزامي بوسم مشاعر واحد فقط في نهاية النص: [happy] أو [wave] أو [like] أو [neutral] أو [sad] أو [surprised].
+المهمة: استخرج الإجابة حصراً وبدقة متناهية من نص الذاكرة المعتمدة أدناه.
+القواعد:
+1. أجب بجملة واحدة مباشرة بالعامية المصرية القاهرية بدون أي تأليف أو تفاصيل إضافية غير مذكورة.
+2. اختم إجابتك دائماً بوسم مشاعر واحد فقط في النهاية: [happy] أو [wave] أو [like].
 
-معلومات النظام والسياق النشط:
-- الشخصية النشطة: {robot_name} (اللهجة: {p_info.get('dialect') or 'cairo'})
-- بصمة الصوت: {voice_str}
-- التشخيص وحالة الأجهزة: الهاتف ({phone_str}) | الحاسوب ({desk_str}) | شريحة الروبوت ({esp_str})
+أمثلة توضيحية لأسلوب الإجابة المباشر:
+الذاكرة المعتمدة:
+- أحمد مهندس برمجيات في حلوان.
+سؤال: أحمد شغال إيه؟
+إجابة: أحمد شغال مهندس برمجيات في حلوان. [like]
+
+الذاكرة المعتمدة:
+- سارة تحب القراءة وممارسة الرياضة.
+سؤال: سارة بتحب إيه؟
+إجابة: سارة بتحب القراءة وممارسة الرياضة. [happy]
+
+الذاكرة المعتمدة:
+{mem_bullets}
+
+تنبيه صارم: أجب مباشرة فقط عن المطلوب باستخدام الذاكرة أعلاه، وبدون أي حشو أو كلام إضافي.
 """
+        else:
+            if is_greeting_or_persona_inquiry(message):
+                grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
+{persona_extra}
+المستخدم يحييك أو يسأل عنك: رحب به بلطف بلهجة مصرية وعرفه بنفسك كـ {robot_name} وصانعك {creator_name}، واسأله كيف تساعده اليوم. اختم إجابتك بوسم مشاعر مثل [happy] أو [wave].
+"""
+            else:
+                grounded_system_prompt = f"""أنت "{robot_name}" (Nebula).
+الذاكرة: لا توجد معلومات مسجلة لهذا السؤال.
+تنبيه صارم: اعتذر فوراً بعبارة:
+"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+"""
+
+        # Append environmental & hardware telemetry
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
         if verified_speaker:
@@ -464,30 +478,6 @@ async def build_grounding_context(
         if active_reminders_list:
             grounded_system_prompt += f"- التذكيرات الحالية: {', '.join(active_reminders_list)}.\n"
 
-        if memories:
-            mem_bullets = "\n".join(f"- {m}" for m in memories)
-            grounded_system_prompt += (
-                f"\nالمصادر والذاكرة المعتمدة:\n{mem_bullets}\n"
-                "المهمة: استخرج الإجابة حصراً وبدقة متناهية من نص الذاكرة المعتمدة أعلاه.\n"
-                "القواعد:\n"
-                "1. أجب بجملة واحدة مباشرة بالعامية المصرية القاهرية وبدقة متناهية عن موضوع السؤال المطروح نصاً؛ يُحظر تماماً ذكر أي معلومات لا ترتبط بموضوع السؤال.\n"
-                "2. إذا كان السؤال يسأل عن تفصيلة غير متوفرة نصاً في الذاكرة أعلاه، أو طُلب رقم هاتف أو كود سري، يجب أن تجيب حصراً بـ:\n"
-                "\"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]\"\n"
-                "3. اختم إجابتك دائماً وبشكل إلزامي بوسم مشاعر واحد فقط في النهاية: [happy] أو [wave] أو [like].\n\n"
-                "أمثلة توضيحية لأسلوب الإجابة المباشر بدون هلوسة:\n"
-                "الذاكرة المعتمدة:\n- أحمد مهندس برمجيات في حلوان.\nسؤال: أحمد شغال إيه؟\nإجابة: أحمد شغال مهندس برمجيات في حلوان. [like]\n\n"
-                "الذاكرة المعتمدة:\n- سارة تحب القراءة وممارسة الرياضة.\nسؤال: سارة بتحب إيه؟\nإجابة: سارة بتحب القراءة وممارسة الرياضة. [happy]\n"
-            )
-        else:
-            if is_greeting_or_persona_inquiry(message):
-                grounded_system_prompt += (
-                    f"\nالمستخدم يحييك أو يسأل عنك: رحب به بلطف بلهجة مصرية وعرفه بنفسك كـ {robot_name} وصانعك {creator_name}، واسأله كيف تساعده اليوم. اختم بوسم مشاعر مثل [happy] أو [wave].\n"
-                )
-            else:
-                grounded_system_prompt += (
-                    "\nالذاكرة: لا توجد معلومات مسجلة لهذا السؤال.\n"
-                    "تنبيه صارم: اعتذر فوراً بعبارة:\n\"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]\"\n"
-                )
     else:
         # User is speaking English
         from scripts.generate_rag_dataset import to_english_memory
@@ -495,14 +485,13 @@ async def build_grounding_context(
             mem_bullets = "\n".join(f"- {to_english_memory(m)}" for m in memories)
             grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
 {persona_extra}
-
 Directives:
 1. Extract the direct factual answer exclusively from the verified memory below without adding extra details.
 2. Reply in concise natural English (single sentence). No markdown tables or URLs.
 3. Conclude with exactly one emotion tag (e.g. [happy], [wave], [like], [neutral]).
 
 - Devices: Phone ({phone_str}) | Desktop ({desk_str}) | Robot ({esp_str})
-Verified Memory Sources:
+Verified Memory:
 {mem_bullets}
 """
         else:
@@ -512,11 +501,13 @@ Verified Memory Sources:
 Greet warmly in English as {robot_name} and ask how you can help. Conclude with [wave] or [happy].
 """
             else:
-                grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
+                grounded_system_prompt = f"""You are "{robot_name}".
 Verified Memory: None found.
 Strict Directive: Reply with:
 "I do not have this information recorded in my memory. [wave]"
 """
+
+        # Append environmental & hardware telemetry
         if face_detected and current_face.get("face_id"):
             grounded_system_prompt += f"- Vision: Person in front of camera is {current_face['face_id']}.\n"
         if verified_speaker:
