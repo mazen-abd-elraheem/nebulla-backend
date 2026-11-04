@@ -429,80 +429,18 @@ class VoiceprintError(ValueError):
     pass
 
 
-def detect_spoken_language(pcm: np.ndarray, sr: int = 16000, transcript: Optional[str] = None) -> Dict[str, Any]:
+def detect_spoken_language(pcm: Optional[np.ndarray] = None, sr: int = 16000, transcript: Optional[str] = None) -> Dict[str, Any]:
     """
-    Identifies the spoken language of an audio segment.
-    Uses transcript Unicode analysis if available, otherwise employs acoustic phonetic classification.
+    Standard Language Definition for Nebulla Voice Engine:
+    Strict single-language policy: Arabic with ISO 639-3 code 'arz' (Egyptian Arabic / اللهجة المصرية).
     """
-    if transcript and transcript.strip():
-        txt = transcript.strip()
-        arabic_chars = sum(1 for c in txt if '\u0600' <= c <= '\u06FF')
-        latin_chars = sum(1 for c in txt if ('a' <= c <= 'z' or 'A' <= c <= 'Z'))
-        total_letters = arabic_chars + latin_chars
-
-        if total_letters > 0:
-            if arabic_chars / total_letters >= 0.30:
-                return {
-                    "language": "العربية (Arabic)",
-                    "language_code": "ar",
-                    "confidence": round(arabic_chars / total_letters, 2),
-                    "method": "text_script",
-                }
-            lower = txt.lower()
-            french_markers = ["le", "la", "les", "des", "est", "et", "dans", "pour", "une", "qui", "vous", "bonjour", "merci"]
-            german_markers = ["der", "die", "das", "und", "ist", "nicht", "ein", "mit", "hallo", "danke"]
-            spanish_markers = ["el", "la", "los", "de", "que", "en", "por", "con", "hola", "gracias"]
-
-            words = lower.split()
-            if any(w in french_markers for w in words) or any(c in "éèêàâôûîç" for c in lower):
-                return {"language": "الفرنسية (French)", "language_code": "fr", "confidence": 0.92, "method": "text_lexicon"}
-            if any(w in german_markers for w in words) or any(c in "äöüß" for c in lower):
-                return {"language": "الألمانية (German)", "language_code": "de", "confidence": 0.92, "method": "text_lexicon"}
-            if any(w in spanish_markers for w in words) or any(c in "ñáéíóú¿¡" for c in lower):
-                return {"language": "الإسبانية (Spanish)", "language_code": "es", "confidence": 0.92, "method": "text_lexicon"}
-            return {"language": "الإنجليزية (English)", "language_code": "en", "confidence": 0.95, "method": "text_script"}
-
-    # Acoustic Phonetic Classification (Offline, Zero-dependency)
-    if len(pcm) < int(sr * 0.4):
-        return {"language": "العربية (Arabic)", "language_code": "ar", "confidence": 0.70, "method": "acoustic_default"}
-
-    try:
-        n_fft = 512
-        frame_len, hop = 400, 160
-        n_f = (len(pcm) - frame_len) // hop
-        if n_f < 5:
-            return {"language": "العربية (Arabic)", "language_code": "ar", "confidence": 0.70, "method": "acoustic_default"}
-
-        frames = pcm[np.arange(frame_len)[None, :] + np.arange(n_f)[:, None] * hop] * np.hamming(frame_len)
-        mag = np.abs(np.fft.rfft(frames, n_fft))
-        freqs = np.fft.rfftfreq(n_fft, d=1.0 / sr)
-
-        # 1. Pharyngeal & Uvular Mid-to-High Ratio (Arabic phonetic hallmark)
-        mid_energy = float(np.mean(mag[:, (freqs >= 800) & (freqs <= 2200)]))
-        high_energy = float(np.mean(mag[:, (freqs >= 4500) & (freqs <= 8000)]))
-        ratio = mid_energy / (high_energy + 1e-6)
-
-        # 2. Spectral Centroid
-        tot_pow = np.sum(mag ** 2, axis=1, keepdims=True) + 1e-9
-        sc = np.sum((mag ** 2) * freqs, axis=1, keepdims=True) / tot_pow
-        mean_sc = float(np.mean(sc))
-
-        if ratio >= 3.4 or mean_sc < 2100:
-            return {
-                "language": "العربية (Arabic)",
-                "language_code": "ar",
-                "confidence": min(0.95, round(0.72 + (ratio / 15.0), 2)),
-                "method": "acoustic_phonetic",
-            }
-        else:
-            return {
-                "language": "الإنجليزية (English)",
-                "language_code": "en",
-                "confidence": min(0.95, round(0.75 + (2.5 / max(1.0, ratio)) * 0.1, 2)),
-                "method": "acoustic_phonetic",
-            }
-    except Exception:
-        return {"language": "العربية (Arabic)", "language_code": "ar", "confidence": 0.70, "method": "fallback"}
+    return {
+        "language": "العربية (Arabic)",
+        "language_code": "arz",
+        "dialect": "Egyptian Arabic (اللهجة المصرية)",
+        "confidence": 1.0,
+        "method": "strict_arz",
+    }
 
 
 def segment_audio_turns(
@@ -1191,6 +1129,8 @@ class SpeakerVerificationService:
                 "similarity": round(best_sim1, 4),
                 "match_percentage": pct1,
                 "audio_seconds": sec1,
+                "language": "العربية (Arabic)",
+                "language_code": "arz",
             },
             "voice2": {
                 "speaker_name": best_name2 if is_identified2 else "شخص غير مسجل (لا)",
@@ -1202,6 +1142,8 @@ class SpeakerVerificationService:
                 "similarity": round(best_sim2, 4),
                 "match_percentage": pct2,
                 "audio_seconds": sec2,
+                "language": "العربية (Arabic)",
+                "language_code": "arz",
             },
             "arabic_summary": "\n".join(summary_lines),
         }

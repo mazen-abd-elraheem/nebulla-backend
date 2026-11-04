@@ -195,3 +195,27 @@ async def test_subsecond_voice_identification_and_compare():
         # Clean up
         await client.delete(f"/api/v1/speakers/{speaker_name}")
         speaker_service.invalidate()
+
+
+@pytest.mark.asyncio
+async def test_strict_arabic_arz_language_policy():
+    """Verify that language policy strictly enforces Egyptian Arabic with code 'arz'."""
+    from app.services.voice_verification.speaker_service import detect_spoken_language
+    lang_info = detect_spoken_language()
+    assert lang_info["language_code"] == "arz"
+    assert "العربية" in lang_info["language"]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        v1 = generate_tone(150.0, 0.5)
+        v2 = generate_tone(150.0, 0.5)
+        res = await client.post(
+            "/api/v1/speakers/compare",
+            files={"file1": ("v1.wav", v1, "audio/wav"), "file2": ("v2.wav", v2, "audio/wav")}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["voice1"]["language_code"] == "arz"
+        assert data["voice2"]["language_code"] == "arz"
+        assert "العربية" in data["voice1"]["language"]
+        assert "العربية" in data["voice2"]["language"]
