@@ -1206,6 +1206,33 @@
           تحدث مباشرة عبر المايك أو ارفع تسجيلاً صوتياً (WAV/MP3/M4A). سيقوم محرك البصمة الصوتية بتحليل الترددات الحيوية وطبقات الحنجرة وتحديد هوية صاحب الصوت ونسبة تطابقه فورياً، أو إشعارك بأن الصوت غير مسجل في السيستم.
         </div>
 
+        <!-- Universal Recorders Compatibility Badge -->
+        <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8)); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: var(--radius-md); padding: 0.85rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.3rem;">🎙️</span>
+            <span style="font-size: 0.85rem; font-weight: 800; color: #38bdf8;">توافق شامل مع جميع مسجلات وتطبيقات الصوت:</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.75rem;">
+            <span style="background: rgba(56, 189, 248, 0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3);">Voice Recorder</span>
+            <span style="background: rgba(56, 189, 248, 0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3);">Easy Voice Recorder</span>
+            <span style="background: rgba(56, 189, 248, 0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3);">Smart Voice Recorder</span>
+            <span style="background: rgba(168, 85, 247, 0.15); color: #d8b4fe; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.3);">Dolby On</span>
+            <span style="background: rgba(236, 72, 153, 0.15); color: #f472b6; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(236, 72, 153, 0.3);">Voice Memos (Apple)</span>
+            <span style="background: rgba(34, 197, 94, 0.15); color: #86efac; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(34, 197, 94, 0.3);">Sound Recorder / Windows</span>
+            <span style="background: rgba(245, 158, 11, 0.15); color: #fcd34d; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(245, 158, 11, 0.3);">Audacity</span>
+            <span style="background: rgba(59, 130, 246, 0.15); color: #93c5fd; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(59, 130, 246, 0.3);">Adobe Audition</span>
+            <span style="background: rgba(236, 72, 153, 0.15); color: #f472b6; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(236, 72, 153, 0.3);">GarageBand</span>
+            <span style="background: rgba(16, 185, 129, 0.15); color: #6ee7b7; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">Ocenaudio</span>
+            <span style="background: rgba(249, 115, 22, 0.15); color: #fdba74; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(249, 115, 22, 0.3);">Zoom (H1n/H4n/H6)</span>
+            <span style="background: rgba(249, 115, 22, 0.15); color: #fdba74; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(249, 115, 22, 0.3);">Tascam (DR-05X)</span>
+            <span style="background: rgba(14, 165, 233, 0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(14, 165, 233, 0.3);">Sony (PCM/ICD)</span>
+            <span style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(99, 102, 241, 0.3);">Olympus / OM System</span>
+          </div>
+          <div style="font-size: 0.72rem; color: #94a3b8; width: 100%; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 6px;">
+            الصيغ المدعومة: <strong>WAV (16/24/32-bit BWF), MP3, M4A/AAC, OGG, Opus, FLAC, WMA, AMR-NB/WB, 3GP, MP4, AIFF, CAF</strong> مع معايرة تلقائية لمستويات الحساسية وديناميكيات الصوت.
+          </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
           <!-- Option 1: Live Microphone Recording -->
           <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: space-between;">
@@ -1241,7 +1268,7 @@
             <div class="dropzone" id="voice-file-dropzone" onclick="document.getElementById('voice-file-input').click()" style="padding: 1.25rem 1rem; margin-bottom: 1rem;">
               <div class="dropzone-icon" style="font-size: 1.6rem;">🎵</div>
               <div class="dropzone-title" style="font-size: 0.95rem;">اضغط لاختيار ملف صوتي</div>
-              <input type="file" id="voice-file-input" class="file-input" accept="audio/*" onchange="handleVoiceFileSelected(this)">
+              <input type="file" id="voice-file-input" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleVoiceFileSelected(this)">
               <div id="voice-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
             </div>
 
@@ -1287,7 +1314,7 @@
               <div class="dropzone" id="diarize-dropzone" onclick="document.getElementById('diarize-file-input').click()" style="padding: 1.25rem 1rem;">
                 <div class="dropzone-icon" style="font-size: 1.6rem;">👥</div>
                 <div class="dropzone-title" style="font-size: 0.95rem;">اضغط لاختيار ملف محادثة صوتية (WAV / MP3 / M4A)</div>
-                <input type="file" id="diarize-file-input" class="file-input" accept="audio/*" onchange="handleDiarizeFileSelected(this)">
+                <input type="file" id="diarize-file-input" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleDiarizeFileSelected(this)">
                 <div id="diarize-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
               </div>
             </div>
@@ -1339,7 +1366,7 @@
               <div class="dropzone" id="compare-dropzone-1" onclick="document.getElementById('compare-file-input-1').click()" style="padding: 1.2rem 1rem; border-color: rgba(56, 189, 248, 0.3);">
                 <div class="dropzone-icon" style="font-size: 1.5rem;">📁</div>
                 <div class="dropzone-title" style="font-size: 0.88rem;">اضغط لاختيار الصوت الأول (WAV, MP3, M4A, OGG...)</div>
-                <input type="file" id="compare-file-input-1" class="file-input" accept="audio/*" onchange="handleCompareFileSelected(1, this)">
+                <input type="file" id="compare-file-input-1" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleCompareFileSelected(1, this)">
                 <div id="compare-badge-1" class="file-selected-badge" style="display:none; margin-top: 6px; background: rgba(56, 189, 248, 0.2); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.4);"></div>
               </div>
               <audio id="compare-audio-preview-1" controls style="display:none; width: 100%; margin-top: 10px; height: 32px;"></audio>
@@ -1354,7 +1381,7 @@
               <div class="dropzone" id="compare-dropzone-2" onclick="document.getElementById('compare-file-input-2').click()" style="padding: 1.2rem 1rem; border-color: rgba(168, 85, 247, 0.3);">
                 <div class="dropzone-icon" style="font-size: 1.5rem;">📁</div>
                 <div class="dropzone-title" style="font-size: 0.88rem;">اضغط لاختيار الصوت الثاني (WAV, MP3, M4A, OGG...)</div>
-                <input type="file" id="compare-file-input-2" class="file-input" accept="audio/*" onchange="handleCompareFileSelected(2, this)">
+                <input type="file" id="compare-file-input-2" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleCompareFileSelected(2, this)">
                 <div id="compare-badge-2" class="file-selected-badge" style="display:none; margin-top: 6px; background: rgba(168, 85, 247, 0.2); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.4);"></div>
               </div>
               <audio id="compare-audio-preview-2" controls style="display:none; width: 100%; margin-top: 10px; height: 32px;"></audio>
@@ -1430,7 +1457,7 @@
             <!-- File for enrollment -->
             <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
               <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 2: رفع تسجيل صوتي (يقبل جميع أنواع المسجلات: WAV / MP3 / M4A / OGG / Opus / WebM / AAC / AMR)</p>
-              <input type="file" id="enroll-file-input" class="form-control" accept="audio/*" onchange="handleEnrollFileSelected(this)">
+              <input type="file" id="enroll-file-input" class="form-control" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleEnrollFileSelected(this)">
             </div>
           </div>
 

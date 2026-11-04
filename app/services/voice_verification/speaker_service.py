@@ -19,6 +19,8 @@ Features:
 
 import asyncio
 import io
+import os
+import tempfile
 import threading
 import time
 import wave
@@ -93,7 +95,7 @@ def decode_audio(data: bytes, sr_target: int = 16000) -> np.ndarray:
             except Exception:
                 pcm = None
 
-    # 2. Universal FFmpeg pipe (MP3, M4A, AAC, OGG, Opus, WebM, AMR, FLAC, 3GP, MP4, etc.)
+    # 2. Universal FFmpeg pipe (MP3, M4A, AAC, OGG, Opus, WebM, AMR, FLAC, 3GP, MP4, AIFF, WMA, CAF, etc.)
     if pcm is None:
         try:
             import imageio_ffmpeg
@@ -117,10 +119,49 @@ def decode_audio(data: bytes, sr_target: int = 16000) -> np.ndarray:
                 pcm = np.frombuffer(raw_pcm, dtype="<i2").astype(np.float32) / 32768.0
                 src_sr = sr_target
         except Exception as e:
-            logger.debug("FFmpeg universal decode error: %s", e)
+            logger.debug("FFmpeg universal pipe decode error: %s", e)
             pcm = None
 
-    # 3. Fallback to raw int16 PCM
+    # 2b. Seekable temp file fallback for containers requiring random seek
+    # (Apple Voice Memos .m4a / .caf with moov atom at end, Dolby On MP4, Olympus WMA, etc.)
+    if pcm is None:
+        temp_path = None
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            ext = ".m4a" if (b"ftyp" in data[:32] or b"moov" in data[:64]) else ".bin"
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
+                f.write(data)
+                temp_path = f.name
+
+            proc = subprocess.Popen(
+                [
+                    ffmpeg_exe, "-y",
+                    "-i", temp_path,
+                    "-f", "s16le",
+                    "-acodec", "pcm_s16le",
+                    "-ar", str(sr_target),
+                    "-ac", "1",
+                    "pipe:1",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            raw_pcm, _ = proc.communicate(timeout=12)
+            if raw_pcm and len(raw_pcm) > 0:
+                pcm = np.frombuffer(raw_pcm, dtype="<i2").astype(np.float32) / 32768.0
+                src_sr = sr_target
+        except Exception as e:
+            logger.debug("FFmpeg seekable file decode error: %s", e)
+            pcm = None
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+    # 3. Fallback to raw int16 PCM (headerless streams)
     if pcm is None:
         usable = len(data) - (len(data) % 2)
         if usable >= 320:
@@ -136,6 +177,18 @@ def decode_audio(data: bytes, sr_target: int = 16000) -> np.ndarray:
         pcm = np.interp(
             np.linspace(0, len(pcm) - 1, n_out), np.arange(len(pcm)), pcm
         ).astype(np.float32)
+
+    # 4. Dynamic peak gain calibration:
+    # Field recorders (Zoom, Tascam, Sony, Olympus) often record with -18 to -24 dB headroom,
+    # and phone voice recorder mics held away from speech can be quiet (< 0.35).
+    # Calibrate audio gain to standard reference level (~0.85) without clipping or amplifying pure noise.
+    peak = float(np.max(np.abs(pcm))) if len(pcm) > 0 else 0.0
+    if 1e-4 < peak < 0.35:
+        gain = min(0.85 / peak, 15.0)
+        pcm = np.clip(pcm * gain, -1.0, 1.0)
+    elif peak > 1.0:
+        pcm = pcm / peak
+
     return pcm
 
 
