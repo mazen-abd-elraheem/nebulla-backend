@@ -1318,14 +1318,14 @@
         </div>
       </div>
 
-      <!-- Two Voices Comparison & Language Detection Card -->
+      <!-- Two Voices Comparison Card -->
       <div class="card" style="margin-top: 2rem;">
         <div class="card-title">
           <span>⚖️</span>
-          <span>مقارنة مقطعين صوتيين وكشف الهوية واللغات (Two Voices Comparison & Language Identification)</span>
+          <span>مقارنة مقطعين صوتيين وكشف هوية كل صوت (Two Voices Comparison & Speaker Identification)</span>
         </div>
         <div class="card-desc">
-          مقارنة مباشرة بين مقطعين صوتيين: <strong>1. فحص هل الصوتين لنفس الشخص أم لشخصين مختلفين</strong>، <strong>2. كشف هوية كل صوت ومن صاحبه في السيستم</strong> (مع عرض User ID, Face ID, Personality ID, Memory ID)، و<strong>3. تحديد لغة كل مقطع بدقة (العربية 🇪🇬 أم الإنجليزية 🇬🇧)</strong>.
+          مقارنة مباشرة وسريعة بين مقطعين صوتيين (حتى أقل من ثانية): <strong>1. فحص هل الصوتين لنفس الشخص أم لشخصين مختلفين</strong>، و<strong>2. كشف هوية كل صوت ومن صاحبه في السيستم</strong> (مع عرض User ID, Face ID, Personality ID, Memory ID).
         </div>
 
         <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.5rem;">
@@ -1369,7 +1369,7 @@
             </div>
 
             <button type="button" id="btn-compare-submit" onclick="handleCompareSubmit()" class="btn-submit" style="width: auto; padding: 11px 32px; background: linear-gradient(135deg, #0ea5e9, #8b5cf6); box-shadow: 0 4px 20px rgba(14, 165, 233, 0.45);">
-              <span>⚖️ بدء المقارنة وتحديد اللغات والهويات</span>
+              <span>⚖️ بدء المقارنة وكشف هوية كل صوت</span>
             </button>
           </div>
         </div>
@@ -2718,8 +2718,8 @@
       box.innerHTML = `
         <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2.2rem; text-align: center;">
           <div class="spinner" style="margin: 0 auto 1.2rem;"></div>
-          <h4 style="font-size: 1.15rem; color: #fff; margin-bottom: 0.4rem;">جارٍ المقارنة بين التسجيلين الصوتين وفحص اللغات...</h4>
-          <p style="font-size: 0.88rem; color: var(--text-muted);">يقوم النظام بتحليل البصمة الصوتية لكل ملف، مطابقته مع قاعدة البيانات، واكتشاف اللغة (عربي / إنجليزي)</p>
+          <h4 style="font-size: 1.15rem; color: #fff; margin-bottom: 0.4rem;">جارٍ المقارنة بين التسجيلين الصوتين وفحص الهويات...</h4>
+          <p style="font-size: 0.88rem; color: var(--text-muted);">يقوم النظام بتحليل البصمة الصوتية ومطابقتها فورياً حتى للمقاطع القصيرة جداً (أقل من ثانية)</p>
         </div>
       `;
       box.scrollIntoView({ behavior: 'smooth' });
@@ -2799,7 +2799,6 @@
               <h4 style="margin: 0; font-size: 1rem; color: #e2e8f0; display: flex; align-items: center; gap: 6px;">
                 <span>🎙️</span> ${title} (${v.audio_seconds}s)
               </h4>
-              ${getLangBadge(v.language)}
             </div>
 
             <div style="margin-bottom: 0.9rem;">
@@ -2847,9 +2846,6 @@
               <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">
                 ${data.comparison_verdict}
               </div>
-              <div style="font-size: 0.85rem; color: #cbd5e1; margin-top: 4px;">
-                🌐 ${data.language_verdict}
-              </div>
             </div>
           </div>
           <div style="text-align: right; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); padding: 0.75rem 1.25rem; border-radius: var(--radius-sm);">
@@ -2861,18 +2857,7 @@
           </div>
         </div>
 
-        <!-- Language Comparison Highlights -->
-        <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.4rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.2rem;">🌐</span>
-            <span style="font-weight: 700; color: #e2e8f0; font-size: 0.92rem;">مقارنة اللغات المنطوقة:</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 14px;">
-            <div><span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 6px;">الصوت الأول:</span>${getLangBadge(v1.language)}</div>
-            <span style="color: var(--text-muted);">⟷</span>
-            <div><span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 6px;">الصوت الثاني:</span>${getLangBadge(v2.language)}</div>
-          </div>
-        </div>
+
 
         <!-- Two Speakers Comparison Grid -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem;">

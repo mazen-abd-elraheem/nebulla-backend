@@ -172,8 +172,14 @@ class AcousticVoiceprintBackend:
 
     def embed(self, samples: np.ndarray, sr: int = 16000) -> np.ndarray:
         pcm = np.asarray(samples, dtype=np.float32).reshape(-1)
-        if len(pcm) < int(sr * 0.4):
-            raise ValueError("Audio too short (minimum 0.4 seconds required for voiceprint extraction)")
+        if len(pcm) < int(sr * 0.15):
+            raise ValueError("Audio too short (minimum 0.15 seconds required for voiceprint extraction)")
+
+        # Support sub-second utterances (< 0.5s down to 0.15s):
+        # Seamlessly tile signal to ensure full window coverage for spectral and Quefrency analysis
+        if len(pcm) < int(sr * 0.5):
+            reps = int(np.ceil((sr * 0.5) / max(1, len(pcm))))
+            pcm = np.tile(pcm, reps)[:int(sr * 0.5)]
 
         # 1. Voice Activity Detection (VAD) & Energy Gating
         frame_len, frame_step = int(sr * 0.025), int(sr * 0.010)  # 400, 160
@@ -721,7 +727,7 @@ class SpeakerVerificationService:
             }
 
         seconds = len(samples) / float(settings.SPEAKER_SAMPLE_RATE)
-        if seconds < 0.6:
+        if seconds < 0.15:
             return {
                 "is_identified": False,
                 "speaker_name": None,
@@ -731,7 +737,7 @@ class SpeakerVerificationService:
                 "audio_seconds": round(seconds, 2),
                 "threshold": thresh,
                 "status": "audio_too_short",
-                "message": f"التسجيل الصوتي قصير جداً ({seconds:.1f} ثانية). يرجى التحدث لمدة ثانية على الأقل.",
+                "message": f"التسجيل الصوتي قصير جداً ({seconds:.2f} ثانية). يجب أن يكون 0.15 ثانية على الأقل.",
             }
 
         emb = _unit(await asyncio.to_thread(self._backend.embed, samples))
@@ -798,7 +804,7 @@ class SpeakerVerificationService:
             }
 
         total_duration = round(len(samples) / float(settings.SPEAKER_SAMPLE_RATE), 2)
-        if total_duration < 0.6:
+        if total_duration < 0.2:
             return {
                 "success": False,
                 "error": f"التسجيل الصوتي قصير جداً ({total_duration} ثانية). يرجى تقديم تسجيل أطول.",
@@ -813,7 +819,7 @@ class SpeakerVerificationService:
 
         for idx, (st, en, chunk) in enumerate(turns):
             seg_dur = round(en - st, 2)
-            if len(chunk) < int(settings.SPEAKER_SAMPLE_RATE * 0.4):
+            if len(chunk) < int(settings.SPEAKER_SAMPLE_RATE * 0.15):
                 continue
 
             try:
@@ -1095,10 +1101,10 @@ class SpeakerVerificationService:
         sec1 = round(len(pcm1) / float(settings.SPEAKER_SAMPLE_RATE), 2)
         sec2 = round(len(pcm2) / float(settings.SPEAKER_SAMPLE_RATE), 2)
 
-        if sec1 < 0.4:
-            return {"success": False, "error": f"الصوت الأول قصير جداً ({sec1} ثانية). يجب أن يكون 0.5 ثانية على الأقل."}
-        if sec2 < 0.4:
-            return {"success": False, "error": f"الصوت الثاني قصير جداً ({sec2} ثانية). يجب أن يكون 0.5 ثانية على الأقل."}
+        if sec1 < 0.15:
+            return {"success": False, "error": f"الصوت الأول قصير جداً ({sec1} ثانية). يجب أن يكون 0.15 ثانية على الأقل."}
+        if sec2 < 0.15:
+            return {"success": False, "error": f"الصوت الثاني قصير جداً ({sec2} ثانية). يجب أن يكون 0.15 ثانية على الأقل."}
 
         # 2. Extract embeddings
         try:
@@ -1139,15 +1145,7 @@ class SpeakerVerificationService:
         is_identified2 = (best_sim2 >= thresh) and (best_name2 is not None)
         pct2 = self._calculate_match_percentage(best_sim2, thresh) if is_identified2 else 0.0
 
-        # 6. Detect Spoken Language for each voice
-        lang_info1 = detect_spoken_language(pcm1, sr=settings.SPEAKER_SAMPLE_RATE)
-        lang_info2 = detect_spoken_language(pcm2, sr=settings.SPEAKER_SAMPLE_RATE)
-
-        lang1 = lang_info1["language"]
-        lang2 = lang_info2["language"]
-
-        # 7. Formulate Arabic Verdicts
-        # A. Comparison Verdict
+        # 6. Formulate Arabic Comparison Verdict
         if is_same_speaker:
             if is_identified1 and is_identified2 and best_name1 == best_name2:
                 comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name1}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
@@ -1162,26 +1160,17 @@ class SpeakerVerificationService:
             name2_str = f"[{best_name2}]" if is_identified2 else "[شخص غير مسجل]"
             comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ {name1_str} والصوت الثاني لـ {name2_str} (معامل التشابه بينهما: {sim_12:.3f})."
 
-        # B. Language Verdict
-        if lang1 == lang2:
-            lang_verdict = f"كلا الشخصين تحدثا بنفس اللغة: [{lang1}]."
-        else:
-            lang_verdict = f"الصوت الأول تحدث بـ [{lang1}] بينما الصوت الثاني تحدث بـ [{lang2}]."
-
-        # C. Full Summary
+        # 7. Build Human-Readable Arabic Summary
         summary_lines = [
             f"🔍 نتيجة المقارنة بين التسجيلين الصوتين:",
-            f" • نتيجة التطابق: {comp_verdict}",
-            f" • نتيجة فحص اللغات: {lang_verdict}",
+            f" • قرار الفحص: {comp_verdict}",
             "",
             f"📋 تفاصيل الصوت الأول ({sec1} ثانية):",
             f"   - الهوية: {best_name1 if is_identified1 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct1) + '%' if is_identified1 else 'صوت غير معروف'})",
-            f"   - اللغة المرصودة: {lang1}",
             f"   - المعرفات: User #{best_uid1 or '--'} | Face #{getattr(best_entry1, 'face_id', None) or '--'} | Persona #{getattr(best_entry1, 'personality_id', None) or '--'} | Memory #{getattr(best_entry1, 'memory_id', None) or '--'}",
             "",
             f"📋 تفاصيل الصوت الثاني ({sec2} ثانية):",
             f"   - الهوية: {best_name2 if is_identified2 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct2) + '%' if is_identified2 else 'صوت غير معروف'})",
-            f"   - اللغة المرصودة: {lang2}",
             f"   - المعرفات: User #{best_uid2 or '--'} | Face #{getattr(best_entry2, 'face_id', None) or '--'} | Persona #{getattr(best_entry2, 'personality_id', None) or '--'} | Memory #{getattr(best_entry2, 'memory_id', None) or '--'}",
         ]
 
@@ -1192,7 +1181,6 @@ class SpeakerVerificationService:
             "match_percentage": same_match_pct if is_same_speaker else 0.0,
             "threshold": thresh,
             "comparison_verdict": comp_verdict,
-            "language_verdict": lang_verdict,
             "voice1": {
                 "speaker_name": best_name1 if is_identified1 else "شخص غير مسجل (لا)",
                 "is_enrolled": is_identified1,
@@ -1203,8 +1191,6 @@ class SpeakerVerificationService:
                 "similarity": round(best_sim1, 4),
                 "match_percentage": pct1,
                 "audio_seconds": sec1,
-                "language": lang1,
-                "language_code": lang_info1["language_code"],
             },
             "voice2": {
                 "speaker_name": best_name2 if is_identified2 else "شخص غير مسجل (لا)",
@@ -1216,8 +1202,6 @@ class SpeakerVerificationService:
                 "similarity": round(best_sim2, 4),
                 "match_percentage": pct2,
                 "audio_seconds": sec2,
-                "language": lang2,
-                "language_code": lang_info2["language_code"],
             },
             "arabic_summary": "\n".join(summary_lines),
         }
@@ -1279,7 +1263,7 @@ class SpeakerVerificationService:
         if entry is None or not await asyncio.to_thread(self._backend.available):
             return None
         samples = decode_audio(audio)
-        if len(samples) / float(settings.SPEAKER_SAMPLE_RATE) < 0.5:
+        if len(samples) / float(settings.SPEAKER_SAMPLE_RATE) < 0.15:
             return None
         emb = _unit(await asyncio.to_thread(self._backend.embed, samples))
         return float(np.dot(emb, entry.vector))
@@ -1327,8 +1311,8 @@ class SpeakerVerificationService:
             except AudioDecodeError as e:
                 raise VoiceprintError(f"Sample {i + 1}: {e}") from e
             secs = len(pcm) / float(settings.SPEAKER_SAMPLE_RATE)
-            if secs < 0.8:
-                raise VoiceprintError(f"Sample {i + 1}: length must be at least 0.8s (got {secs:.1f}s)")
+            if secs < 0.35:
+                raise VoiceprintError(f"Sample {i + 1}: length must be at least 0.35s (got {secs:.2f}s)")
             vectors.append(_unit(await asyncio.to_thread(self._backend.embed, pcm)))
 
         # Quality gate: drop outliers if 3 or more samples are provided
