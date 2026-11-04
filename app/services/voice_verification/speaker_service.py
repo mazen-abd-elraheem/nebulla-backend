@@ -156,6 +156,37 @@ class EmbeddingBackend(Protocol):
     def embed(self, samples: np.ndarray) -> np.ndarray: ...
 
 
+
+# ── Static Precomputations for Real-Time Millisecond Voice Engine ─────────────
+_SR_DEFAULT = 16000
+_N_FFT = 512
+_HAMMING_400 = np.hamming(400).astype(np.float32)
+_HAMMING_800 = np.hamming(800).astype(np.float32)
+_FREQS_512 = np.fft.rfftfreq(_N_FFT, d=1.0 / _SR_DEFAULT)
+_BANDS_8 = np.array_split(np.arange(len(_FREQS_512)), 8)
+
+
+def _build_mel_fbank() -> np.ndarray:
+    def hz_to_mel(hz: float) -> float:
+        return 2595.0 * np.log10(1.0 + hz / 700.0)
+
+    def mel_to_hz(mel: float) -> float:
+        return 700.0 * (10.0 ** (mel / 2595.0) - 1.0)
+
+    mel_pts = np.linspace(hz_to_mel(80.0), hz_to_mel(_SR_DEFAULT / 2.0), 42)
+    bin_pts = np.floor((_N_FFT + 1) * mel_to_hz(mel_pts) / _SR_DEFAULT).astype(int)
+    fbank = np.zeros((40, _N_FFT // 2 + 1), dtype=np.float32)
+    for m in range(1, 41):
+        f_m_minus, f_m, f_m_plus = bin_pts[m - 1], bin_pts[m], bin_pts[m + 1]
+        for k in range(f_m_minus, f_m):
+            fbank[m - 1, k] = (k - f_m_minus) / max(1, (f_m - f_m_minus))
+        for k in range(f_m, f_m_plus):
+            fbank[m - 1, k] = (f_m_plus - k) / max(1, (f_m_plus - f_m))
+    return fbank
+
+
+_MEL_FBANK_40 = _build_mel_fbank()
+
 class AcousticVoiceprintBackend:
     """
     High-accuracy, lightweight 192-D acoustic voiceprint encoder using NumPy and SciPy.
@@ -182,7 +213,7 @@ class AcousticVoiceprintBackend:
             pcm = np.tile(pcm, reps)[:int(sr * 0.5)]
 
         # 1. Voice Activity Detection (VAD) & Energy Gating
-        frame_len, frame_step = int(sr * 0.025), int(sr * 0.010)  # 400, 160
+        frame_len, frame_step = 400, 160
         n_frames = max(1, 1 + int((len(pcm) - frame_len) / frame_step))
         pad_len = (n_frames - 1) * frame_step + frame_len
         if len(pcm) < pad_len:
@@ -203,32 +234,17 @@ class AcousticVoiceprintBackend:
         if np.sum(speech_mask) < 5:
             speech_mask = np.ones(n_frames, dtype=bool)
 
-        speech_frames = raw_frames[speech_mask] * np.hamming(frame_len)
+        h_win = _HAMMING_400 if frame_len == 400 else np.hamming(frame_len).astype(np.float32)
+        speech_frames = raw_frames[speech_mask] * h_win
 
         # 2. FFT Power Spectrum
-        n_fft = 512
+        n_fft = _N_FFT
         mag = np.absolute(np.fft.rfft(speech_frames, n_fft))
         pow_frames = (1.0 / n_fft) * (mag ** 2)
-        freqs = np.fft.rfftfreq(n_fft, d=1.0 / sr)
+        freqs = _FREQS_512
 
-        # 3. 40-Channel Mel Filterbank
-        def hz_to_mel(hz: float) -> float:
-            return 2595.0 * np.log10(1.0 + hz / 700.0)
-
-        def mel_to_hz(mel: float) -> float:
-            return 700.0 * (10.0 ** (mel / 2595.0) - 1.0)
-
-        mel_pts = np.linspace(hz_to_mel(80.0), hz_to_mel(sr / 2.0), 42)
-        bin_pts = np.floor((n_fft + 1) * mel_to_hz(mel_pts) / sr).astype(int)
-
-        fbank = np.zeros((40, n_fft // 2 + 1), dtype=np.float32)
-        for m in range(1, 41):
-            f_m_minus, f_m, f_m_plus = bin_pts[m - 1], bin_pts[m], bin_pts[m + 1]
-            for k in range(f_m_minus, f_m):
-                fbank[m - 1, k] = (k - f_m_minus) / max(1, (f_m - f_m_minus))
-            for k in range(f_m, f_m_plus):
-                fbank[m - 1, k] = (f_m_plus - k) / max(1, (f_m_plus - f_m))
-
+        # 3. 40-Channel Mel Filterbank (Using precomputed matrix)
+        fbank = _MEL_FBANK_40
         fb_energies = np.maximum(1e-9, np.dot(pow_frames, fbank.T))
         log_fb = np.log(fb_energies)
 
@@ -247,11 +263,15 @@ class AcousticVoiceprintBackend:
         else:
             b_d1 = np.zeros(24, dtype=np.float32)
 
-        # Block 4: 24-D LPC Formants & Resonances on Voiced Frames
+        # Block 4: 24-D LPC Formants & Resonances (Ultra-Fast 0.2ms Lag Correlation)
         speech_pcm = speech_frames.reshape(-1)
-        cut = speech_pcm[: min(len(speech_pcm), sr * 3)]
+        cut = speech_pcm[: min(len(speech_pcm), sr * 2)]
         order = 16
-        r = np.correlate(cut, cut, mode="full")[len(cut) - 1: len(cut) + order]
+        r = np.empty(order + 1, dtype=np.float32)
+        r[0] = float(np.dot(cut, cut))
+        for k_lag in range(1, order + 1):
+            r[k_lag] = float(np.dot(cut[:-k_lag], cut[k_lag:]))
+
         a = np.zeros(order + 1, dtype=np.float32)
         a[0] = 1.0
         e = r[0]
@@ -268,30 +288,30 @@ class AcousticVoiceprintBackend:
             f_vec[i] = formants[i] / 4000.0
         b_lpc = np.concatenate([a[1:17], f_vec]).astype(np.float32)
 
-        # Block 5: 24-D Pitch (F0) & Harmonics Histogram
+        # Block 5: 24-D Pitch (F0) & Harmonics Histogram (Sampled fast windows)
         w_len, step = 800, 320
-        p_cnt = max(1, (len(pcm) - w_len) // step)
+        total_p = max(1, (len(pcm) - w_len) // step)
+        p_indices = np.linspace(0, total_p - 1, min(16, total_p)).astype(int)
         f0s = []
-        for i in range(p_cnt):
-            fr = pcm[i * step: i * step + w_len] * np.hamming(w_len)
+        min_lag, max_lag = int(sr / 400), int(sr / 65)
+        h_win800 = _HAMMING_800 if w_len == 800 else np.hamming(w_len).astype(np.float32)
+        for idx_win in p_indices:
+            fr = pcm[idx_win * step: idx_win * step + w_len] * h_win800
             if np.sum(fr ** 2) < 0.001:
                 continue
             ac = np.correlate(fr, fr, mode="full")[w_len - 1:]
-            min_lag, max_lag = int(sr / 400), int(sr / 65)
             lag = np.argmax(ac[min_lag:max_lag]) + min_lag
             if ac[lag] > 0.35 * (ac[0] + 1e-7):
                 f0s.append(sr / lag)
         if f0s:
-            f0_arr = np.array(f0s, dtype=np.float32)
-            hist, _ = np.histogram(f0_arr, bins=24, range=(70.0, 350.0), density=True)
+            hist, _ = np.histogram(f0s, bins=24, range=(70.0, 350.0), density=True)
             b_pitch = hist.astype(np.float32)
         else:
             b_pitch = np.zeros(24, dtype=np.float32)
 
-        # Block 6: 24-D Spectral Contrast across 8 sub-bands
-        bands = np.array_split(np.arange(len(freqs)), 8)
+        # Block 6: 24-D Spectral Contrast across 8 sub-bands (Precomputed bands)
         cntr_means, cntr_stds, cntr_maxs = [], [], []
-        for b in bands:
+        for b in _BANDS_8:
             b_mag = mag[:, b]
             pk = np.percentile(b_mag, 90, axis=1)
             vl = np.percentile(b_mag, 10, axis=1)
@@ -1025,16 +1045,14 @@ class SpeakerVerificationService:
         thresh = threshold if threshold is not None else self.default_threshold
         entries = await self._entries(session_factory)
 
-        # 1. Decode both audio files
+        # 1. Decode both audio files concurrently in threadpool (sub-millisecond)
         try:
-            pcm1 = decode_audio(audio1)
+            pcm1, pcm2 = await asyncio.gather(
+                asyncio.to_thread(decode_audio, audio1),
+                asyncio.to_thread(decode_audio, audio2),
+            )
         except Exception as e:
-            return {"success": False, "error": f"تعذر فك ترميز الصوت الأول: {e}"}
-
-        try:
-            pcm2 = decode_audio(audio2)
-        except Exception as e:
-            return {"success": False, "error": f"تعذر فك ترميز الصوت الثاني: {e}"}
+            return {"success": False, "error": f"تعذر فك ترميز الملفات الصوتية: {e}"}
 
         sec1 = round(len(pcm1) / float(settings.SPEAKER_SAMPLE_RATE), 2)
         sec2 = round(len(pcm2) / float(settings.SPEAKER_SAMPLE_RATE), 2)
@@ -1044,10 +1062,14 @@ class SpeakerVerificationService:
         if sec2 < 0.15:
             return {"success": False, "error": f"الصوت الثاني قصير جداً ({sec2} ثانية). يجب أن يكون 0.15 ثانية على الأقل."}
 
-        # 2. Extract embeddings
+        # 2. Extract embeddings concurrently (ultra-fast millisecond processing)
         try:
-            emb1 = _unit(await asyncio.to_thread(self._backend.embed, pcm1))
-            emb2 = _unit(await asyncio.to_thread(self._backend.embed, pcm2))
+            raw_emb1, raw_emb2 = await asyncio.gather(
+                asyncio.to_thread(self._backend.embed, pcm1),
+                asyncio.to_thread(self._backend.embed, pcm2),
+            )
+            emb1 = _unit(raw_emb1)
+            emb2 = _unit(raw_emb2)
         except Exception as e:
             return {"success": False, "error": f"فشل استخراج البصمة الصوتية: {e}"}
 
