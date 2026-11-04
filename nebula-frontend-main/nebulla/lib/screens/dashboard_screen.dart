@@ -15,11 +15,27 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final _audioService = AvatarAudioService.instance;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: Colors.white,
+      drawer: Drawer(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: NebulaSideMenu(
+          activeIndex: 0,
+          onNavigate: (idx) {
+            _scaffoldKey.currentState?.closeDrawer();
+            if (widget.onNavigate != null && idx >= 0) {
+              widget.onNavigate!(idx);
+            }
+          },
+          onClose: () => _scaffoldKey.currentState?.closeDrawer(),
+        ),
+      ),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -58,47 +74,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Hamburger Menu Button (Left) -> Opens Side Menu
-                    Builder(
-                      builder: (btnCtx) => InkWell(
-                        onTap: () {
-                          try {
-                            Scaffold.of(btnCtx).openDrawer();
-                          } catch (_) {
-                            NebulaSideMenu.show(
-                              btnCtx,
-                              activeIndex: 0,
-                              onNavigate: (idx) {
-                                if (widget.onNavigate != null && idx >= 0) {
-                                  widget.onNavigate!(idx);
-                                }
-                              },
-                            );
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(16),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.85),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFFE2E8F0),
-                              width: 1.2,
+                    InkWell(
+                      onTap: () {
+                        _scaffoldKey.currentState?.openDrawer();
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFFE2E8F0),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.menu_rounded,
-                            color: Color(0xFF1E293B),
-                            size: 24,
-                          ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.menu_rounded,
+                          color: Color(0xFF1E293B),
+                          size: 24,
                         ),
                       ),
                     ),

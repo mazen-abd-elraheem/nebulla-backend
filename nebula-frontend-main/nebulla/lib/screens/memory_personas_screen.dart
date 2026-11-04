@@ -88,6 +88,7 @@ class MemoryPersonasScreen extends StatefulWidget {
 }
 
 class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
+  final GlobalKey<ScaffoldState> _memScaffoldKey = GlobalKey<ScaffoldState>();
   static const String _storageKey = 'nebula_saved_personas_v1';
 
   final _repo = NebulaRepository.instance;
@@ -720,6 +721,18 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
         textTheme: ThemeData.light().textTheme.apply(fontFamily: 'Cairo'),
       ),
       child: Scaffold(
+        key: _memScaffoldKey,
+        drawer: Drawer(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: NebulaSideMenu(
+            activeIndex: 2,
+            onNavigate: (idx) {
+              _memScaffoldKey.currentState?.closeDrawer();
+            },
+            onClose: () => _memScaffoldKey.currentState?.closeDrawer(),
+          ),
+        ),
         backgroundColor: const Color(0xFFF8FAFC),
         body: Directionality(
           textDirection: TextDirection.rtl,
@@ -792,29 +805,23 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Builder(
-                                        builder: (btnCtx) => InkWell(
-                                          onTap: () {
-                                            try {
-                                              Scaffold.of(btnCtx).openDrawer();
-                                            } catch (_) {
-                                              NebulaSideMenu.show(btnCtx, activeIndex: 2);
-                                            }
-                                          },
-                                          borderRadius: BorderRadius.circular(14),
-                                          child: Container(
-                                            width: 38,
-                                            height: 38,
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius: BorderRadius.circular(12),
-                                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                                            ),
-                                            child: const Icon(
-                                              Icons.menu_rounded,
-                                              size: 20,
-                                              color: Color(0xFF1E293B),
-                                            ),
+                                      InkWell(
+                                        onTap: () {
+                                          _memScaffoldKey.currentState?.openDrawer();
+                                        },
+                                        borderRadius: BorderRadius.circular(14),
+                                        child: Container(
+                                          width: 38,
+                                          height: 38,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                                          ),
+                                          child: const Icon(
+                                            Icons.menu_rounded,
+                                            size: 20,
+                                            color: Color(0xFF1E293B),
                                           ),
                                         ),
                                       ),

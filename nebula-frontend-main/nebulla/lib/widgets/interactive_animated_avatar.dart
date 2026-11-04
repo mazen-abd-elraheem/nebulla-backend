@@ -36,12 +36,11 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     with TickerProviderStateMixin {
   final _audioService = AvatarAudioService.instance;
 
-  // Animation controllers
-  late AnimationController _breathingController;
-  late Animation<double> _breathingAnimation;
-
-  late AnimationController _hudRotateController;
-  late AnimationController _pulseController;
+  // Safe nullable animation controllers (immune to LateInitializationError on Hot Reload)
+  AnimationController? _breathingController;
+  Animation<double>? _breathingAnimation;
+  AnimationController? _hudRotateController;
+  AnimationController? _pulseController;
 
   // Interactive parallax gaze
   double _panX = 0.0;
@@ -50,28 +49,28 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   @override
   void initState() {
     super.initState();
+    _initControllers();
+  }
 
-    // 1. Organic breathing cycle (3.6s gentle sinusoidal wave)
-    _breathingController = AnimationController(
+  void _initControllers() {
+    _breathingController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3600),
     )..repeat(reverse: true);
 
-    _breathingAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _breathingAnimation ??= Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
-        parent: _breathingController,
+        parent: _breathingController!,
         curve: Curves.easeInOutSine,
       ),
     );
 
-    // 2. Slow rotating holographic HUD
-    _hudRotateController = AnimationController(
+    _hudRotateController ??= AnimationController(
       vsync: this,
       duration: const Duration(seconds: 20),
     )..repeat();
 
-    // 3. Fast continuous pulse for speech aura
-    _pulseController = AnimationController(
+    _pulseController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
@@ -79,9 +78,9 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
 
   @override
   void dispose() {
-    _breathingController.dispose();
-    _hudRotateController.dispose();
-    _pulseController.dispose();
+    _breathingController?.dispose();
+    _hudRotateController?.dispose();
+    _pulseController?.dispose();
     super.dispose();
   }
 
@@ -101,6 +100,8 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
 
   @override
   Widget build(BuildContext context) {
+    _initControllers();
+
     return ValueListenableBuilder<String>(
       valueListenable: _audioService.activeAvatarType,
       builder: (context, activeType, _) {
@@ -164,18 +165,19 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
           },
           child: AnimatedBuilder(
             animation: Listenable.merge([
-              _breathingAnimation,
-              _hudRotateController,
-              _pulseController,
+              _breathingAnimation!,
+              _hudRotateController!,
+              _pulseController!,
             ]),
             builder: (context, child) {
               // Natural organic motion calculation
-              final breathOffset = _breathingAnimation.value * 3.5;
-              final breathScale = 1.0 + (_breathingAnimation.value * 0.012);
+              final breathVal = _breathingAnimation!.value;
+              final breathOffset = breathVal * 3.5;
+              final breathScale = 1.0 + (breathVal * 0.012);
 
               // Speech resonance bobbing (organic subtle vertical speech micro-movements)
               final speechBob = isSpeaking
-                  ? sin(_pulseController.value * pi * 4) * amplitude * 2.8
+                  ? sin(_pulseController!.value * pi * 4) * amplitude * 2.8
                   : 0.0;
 
               // Interactive smooth parallax (gently shifts portrait without geometric distortion)
@@ -236,7 +238,8 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
 
   Widget _buildAmbientAura(
       Color color, bool isSpeaking, double amplitude, double w, double h) {
-    final pulse = isSpeaking ? 0.35 + (amplitude * 0.25) : 0.16 + (_breathingAnimation.value * 0.08);
+    final breathVal = _breathingAnimation?.value ?? 0.5;
+    final pulse = isSpeaking ? 0.35 + (amplitude * 0.25) : 0.16 + (breathVal * 0.08);
     final spread = isSpeaking ? 34.0 + (amplitude * 24.0) : 22.0;
 
     return Container(
@@ -263,22 +266,25 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   Widget _buildRotatingHud(
       Color color, bool isSpeaking, double amplitude, double w, double h) {
     final hudSize = min(min(w, h) * 0.88, 400.0);
+    final rotateVal = _hudRotateController?.value ?? 0.0;
+    final breathVal = _breathingAnimation?.value ?? 0.5;
 
     return Transform.rotate(
-      angle: _hudRotateController.value * 2 * pi,
+      angle: rotateVal * 2 * pi,
       child: CustomPaint(
         size: Size(hudSize, hudSize),
         painter: _CyberHudPainter(
           color: color,
-          pulse: isSpeaking ? amplitude : _breathingAnimation.value,
+          pulse: isSpeaking ? amplitude : breathVal,
         ),
       ),
     );
   }
 
   Widget _buildSonicWaveRings(Color color, double amplitude, double w, double h) {
-    final ringScale = 1.0 + (_pulseController.value * 0.18 * amplitude);
-    final opacity = (1.0 - _pulseController.value).clamp(0.0, 1.0) * amplitude;
+    final pulseVal = _pulseController?.value ?? 0.5;
+    final ringScale = 1.0 + (pulseVal * 0.18 * amplitude);
+    final opacity = (1.0 - pulseVal).clamp(0.0, 1.0) * amplitude;
 
     return Transform.scale(
       scale: ringScale,
@@ -366,6 +372,8 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   Widget _buildAudioWaveformBar(Color color, double amplitude) {
+    final pulseVal = _pulseController?.value ?? 0.5;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
       decoration: BoxDecoration(
@@ -386,7 +394,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: List.generate(9, (i) {
-          final wave = sin((i * 0.5) + (_pulseController.value * pi * 3)).abs();
+          final wave = sin((i * 0.5) + (pulseVal * pi * 3)).abs();
           final barHeight = 6.0 + (wave * amplitude * 22.0);
 
           return Container(

@@ -40,6 +40,7 @@ class _ChatMessageItem {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final GlobalKey<ScaffoldState> _chatScaffoldKey = GlobalKey<ScaffoldState>();
   final _repo = NebulaRepository.instance;
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
@@ -270,6 +271,18 @@ class _ChatScreenState extends State<ChatScreen> {
     final isDesktop = size.width > 540;
 
     return Scaffold(
+      key: _chatScaffoldKey,
+      drawer: Drawer(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: NebulaSideMenu(
+          activeIndex: 1,
+          onNavigate: (idx) {
+            _chatScaffoldKey.currentState?.closeDrawer();
+          },
+          onClose: () => _chatScaffoldKey.currentState?.closeDrawer(),
+        ),
+      ),
       backgroundColor: const Color(0xFFF8FAFC),
       body: Center(
         child: Container(
@@ -445,21 +458,15 @@ class _ChatScreenState extends State<ChatScreen> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Builder(
-                builder: (btnCtx) => IconButton(
-                  icon: const Icon(
-                    Icons.menu_rounded,
-                    color: Color(0xFF334155),
-                    size: 24,
-                  ),
-                  onPressed: () {
-                    try {
-                      Scaffold.of(btnCtx).openDrawer();
-                    } catch (_) {
-                      NebulaSideMenu.show(btnCtx, activeIndex: 1);
-                    }
-                  },
+              IconButton(
+                icon: const Icon(
+                  Icons.menu_rounded,
+                  color: Color(0xFF334155),
+                  size: 24,
                 ),
+                onPressed: () {
+                  _chatScaffoldKey.currentState?.openDrawer();
+                },
               ),
               PopupMenuButton<String>(
                 icon: const Icon(
