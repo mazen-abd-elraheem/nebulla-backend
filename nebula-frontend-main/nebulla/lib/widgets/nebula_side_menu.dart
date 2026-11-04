@@ -133,7 +133,7 @@ class NebulaSideMenu extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
 
-                        // 2. Active AI Profile Header Card
+                        // 2. Active AI Profile Header Card with Quick Persona Switch
                         ValueListenableBuilder<String>(
                           valueListenable: audioService.activeAvatarType,
                           builder: (context, avatarType, _) {
@@ -156,87 +156,133 @@ class NebulaSideMenu extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              child: Column(
                                 children: [
-                                  // Dynamic User-Chosen Persona Name
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        ValueListenableBuilder<String>(
-                                          valueListenable: audioService.activePersonaName,
-                                          builder: (context, name, _) => Text(
-                                            name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontFamily: 'Cairo',
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15,
-                                              color: Color(0xFF1E293B),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        const Text(
-                                          'متصل • استجابة فورية',
-                                          style: TextStyle(
-                                            fontFamily: 'Cairo',
-                                            fontSize: 12,
-                                            color: Color(0xFF00E5FF),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  // Avatar Image with AI-01 / AI-02 badge
-                                  Stack(
-                                    clipBehavior: Clip.none,
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Container(
-                                        width: 56,
-                                        height: 56,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(16),
-                                          border: Border.all(
-                                            color: const Color(0xFF00E5FF),
-                                            width: 1.5,
-                                          ),
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(14),
-                                          child: Image.asset(
-                                            avatarImg,
-                                            fit: BoxFit.cover,
-                                            alignment: Alignment.topCenter,
-                                          ),
+                                      // Dynamic User-Chosen Persona Name
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            ValueListenableBuilder<String>(
+                                              valueListenable: audioService.activePersonaName,
+                                              builder: (context, name, _) => Text(
+                                                name,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontFamily: 'Cairo',
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 15,
+                                                  color: Color(0xFF1E293B),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            const Text(
+                                              'متصل • استجابة فورية',
+                                              style: TextStyle(
+                                                fontFamily: 'Cairo',
+                                                fontSize: 12,
+                                                color: Color(0xFF0284C7),
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      Positioned(
-                                        bottom: -4,
-                                        left: -4,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF00E5FF),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            isFemale ? 'AI - 02' : 'AI - 01',
-                                            style: const TextStyle(
-                                              fontFamily: 'Cairo',
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.white,
+
+                                      // Avatar Image with AI-01 / AI-02 badge
+                                      Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          Container(
+                                            width: 56,
+                                            height: 56,
+                                            decoration: BoxDecoration(
+                                              borderRadius: BorderRadius.circular(16),
+                                              border: Border.all(
+                                                color: const Color(0xFF0284C7),
+                                                width: 1.5,
+                                              ),
+                                            ),
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(14),
+                                              child: Image.asset(
+                                                avatarImg,
+                                                fit: BoxFit.cover,
+                                                alignment: Alignment.topCenter,
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                          Positioned(
+                                            bottom: -4,
+                                            left: -4,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF0284C7),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                isFemale ? 'AI - 02' : 'AI - 01',
+                                                style: const TextStyle(
+                                                  fontFamily: 'Cairo',
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  // Quick Switch Persona Button
+                                  InkWell(
+                                    onTap: () {
+                                      final nextType = isFemale ? 'male' : 'female';
+                                      audioService.switchAvatar(nextType);
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0284C7).withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(
+                                            Icons.swap_horiz_rounded,
+                                            size: 16,
+                                            color: Color(0xFF0284C7),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            isFemale
+                                                ? 'تبديل إلى الشخصية الأولى (AI - 01)'
+                                                : 'تبديل إلى الشخصية الثانية (AI - 02)',
+                                            style: const TextStyle(
+                                              fontFamily: 'Cairo',
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF0284C7),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -245,69 +291,63 @@ class NebulaSideMenu extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
 
-                        // 3. Navigation Menu Items List
+                        // 3. Navigation Menu Items List - All with uniform color, dynamic touch transition
                         Expanded(
                           child: ListView(
                             padding: EdgeInsets.zero,
                             children: [
                               // تسجيل الدخول
-                              _buildMenuItem(
+                              _InteractiveMenuButton(
                                 icon: Icons.login_rounded,
                                 title: 'تسجيل الدخول',
-                                iconBg: const Color(0xFFEEF2FF),
-                                iconColor: const Color(0xFF4F46E5),
                                 hasArrow: true,
                                 onTap: () => onNavigate?.call(-1),
                               ),
                               const SizedBox(height: 9),
 
                               // إنشاء حساب (جديد)
-                              _buildMenuItem(
+                              _InteractiveMenuButton(
                                 icon: Icons.person_add_alt_1_rounded,
                                 title: 'إنشاء حساب',
-                                iconBg: const Color(0xFFECFDF5),
-                                iconColor: const Color(0xFF10B981),
                                 badgeText: 'جديد',
-                                badgeBg: const Color(0xFF10B981),
                                 onTap: () => onNavigate?.call(-2),
                               ),
                               const SizedBox(height: 9),
 
                               // إضافة شخصية
-                              _buildMenuItem(
+                              _InteractiveMenuButton(
                                 icon: Icons.add_rounded,
                                 title: 'إضافة شخصية',
-                                iconBg: const Color(0xFFF3E8FF),
-                                iconColor: const Color(0xFF9333EA),
                                 hasArrow: true,
                                 onTap: () => onNavigate?.call(2), // Personas screen
                               ),
                               const SizedBox(height: 9),
 
-                              // الدردشة (Highlighted Active Blue item)
-                              _buildChatHighlightedItem(
+                              // الدردشة
+                              _InteractiveMenuButton(
+                                icon: Icons.chat_bubble_outline_rounded,
+                                title: 'الدردشة',
                                 isActive: activeIndex == 1,
+                                badgeText: activeIndex == 1 ? 'نشط' : null,
                                 onTap: () => onNavigate?.call(1), // Chat screen
                               ),
                               const SizedBox(height: 9),
 
                               // الأجهزة
-                              _buildMenuItem(
+                              _InteractiveMenuButton(
                                 icon: Icons.desktop_windows_outlined,
                                 title: 'الأجهزة',
-                                iconBg: const Color(0xFFFEF3C7),
-                                iconColor: const Color(0xFFD97706),
+                                isActive: activeIndex == 3,
                                 onTap: () => onNavigate?.call(3), // Diagnostics
                               ),
                               const SizedBox(height: 9),
 
                               // الشخصيات
-                              _buildMenuItem(
+                              _InteractiveMenuButton(
                                 icon: Icons.groups_outlined,
                                 title: 'الشخصيات',
-                                iconBg: const Color(0xFFFCE7F3),
-                                iconColor: const Color(0xFFDB2777),
                                 hasArrow: true,
+                                isActive: activeIndex == 2,
                                 onTap: () => onNavigate?.call(2), // Personas
                               ),
                             ],
@@ -328,7 +368,7 @@ class NebulaSideMenu extends StatelessWidget {
                               width: 8,
                               height: 8,
                               decoration: const BoxDecoration(
-                                color: Color(0xFF00E5FF),
+                                color: Color(0xFF0284C7),
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -391,158 +431,146 @@ class NebulaSideMenu extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildMenuItem({
-    required IconData icon,
-    required String title,
-    required Color iconBg,
-    required Color iconColor,
-    bool hasArrow = false,
-    String? badgeText,
-    Color? badgeBg,
-    VoidCallback? onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFF1F5F9)),
-        ),
-        child: Row(
-          children: [
-            // Left indicator or arrow
-            if (hasArrow)
-              const Icon(
-                Icons.arrow_back_ios_rounded,
-                size: 14,
-                color: Color(0xFF94A3B8),
-              )
-            else if (badgeText != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: badgeBg ?? const Color(0xFF10B981),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  badgeText,
-                  style: const TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              )
-            else
-              const SizedBox(width: 14),
+/// Interactive button in the side menu:
+/// - Has a single uniform clean base color for all buttons
+/// - Dynamically transitions color to vibrant blue on touch / hover / active
+class _InteractiveMenuButton extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final bool hasArrow;
+  final String? badgeText;
+  final bool isActive;
+  final VoidCallback? onTap;
 
-            const Spacer(),
+  const _InteractiveMenuButton({
+    required this.icon,
+    required this.title,
+    this.hasArrow = false,
+    this.badgeText,
+    this.isActive = false,
+    this.onTap,
+  });
 
-            // Title
-            Text(
-              title,
-              style: const TextStyle(
-                fontFamily: 'Cairo',
-                fontWeight: FontWeight.w600,
-                fontSize: 14.5,
-                color: Color(0xFF1E293B),
-              ),
+  @override
+  State<_InteractiveMenuButton> createState() => _InteractiveMenuButtonState();
+}
+
+class _InteractiveMenuButtonState extends State<_InteractiveMenuButton> {
+  bool _isHovered = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isHighlighted = widget.isActive || _isHovered || _isPressed;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _isPressed = true),
+        onTapUp: (_) => setState(() => _isPressed = false),
+        onTapCancel: () => setState(() => _isPressed = false),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: BoxDecoration(
+            color: isHighlighted
+                ? const Color(0xFF0284C7) // Vibrant Blue on touch / hover / active
+                : const Color(0xFFF8FAFC), // Uniform base color for ALL buttons
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isHighlighted
+                  ? const Color(0xFF0284C7)
+                  : const Color(0xFFE2E8F0), // Uniform subtle border
+              width: 1.2,
             ),
-            const SizedBox(width: 12),
-
-            // Icon in rounded box
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: iconColor, size: 19),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChatHighlightedItem({
-    required bool isActive,
-    VoidCallback? onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF0072FF), Color(0xFF00C6FF)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
+            boxShadow: isHighlighted
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF0284C7).withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0072FF).withValues(alpha: 0.35),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // White "نشط" badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Text(
-                'نشط',
+          child: Row(
+            children: [
+              // Left indicator or arrow or badge
+              if (widget.hasArrow)
+                Icon(
+                  Icons.arrow_back_ios_rounded,
+                  size: 14,
+                  color: isHighlighted
+                      ? Colors.white.withValues(alpha: 0.9)
+                      : const Color(0xFF94A3B8),
+                )
+              else if (widget.badgeText != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isHighlighted
+                        ? Colors.white.withValues(alpha: 0.25)
+                        : const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    widget.badgeText!,
+                    style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isHighlighted ? Colors.white : const Color(0xFF475569),
+                    ),
+                  ),
+                )
+              else
+                const SizedBox(width: 14),
+
+              const Spacer(),
+
+              // Title
+              Text(
+                widget.title,
                 style: TextStyle(
                   fontFamily: 'Cairo',
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0072FF),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14.5,
+                  color: isHighlighted ? Colors.white : const Color(0xFF1E293B),
                 ),
               ),
-            ),
-            const Spacer(),
+              const SizedBox(width: 12),
 
-            // Title
-            const Text(
-              'الدردشة',
-              style: TextStyle(
-                fontFamily: 'Cairo',
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: Colors.white,
+              // Icon container with smooth color transition
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isHighlighted
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : const Color(0xFFF1F5F9), // Uniform icon container
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  widget.icon,
+                  color: isHighlighted ? Colors.white : const Color(0xFF334155),
+                  size: 19,
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-
-            // Chat bubble icon
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.chat_bubble_outline_rounded,
-                color: Colors.white,
-                size: 19,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
