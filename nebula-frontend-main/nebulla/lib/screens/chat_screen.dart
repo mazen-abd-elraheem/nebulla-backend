@@ -445,15 +445,21 @@ class _ChatScreenState extends State<ChatScreen> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                icon: const Icon(
-                  Icons.menu_rounded,
-                  color: Color(0xFF334155),
-                  size: 24,
+              Builder(
+                builder: (btnCtx) => IconButton(
+                  icon: const Icon(
+                    Icons.menu_rounded,
+                    color: Color(0xFF334155),
+                    size: 24,
+                  ),
+                  onPressed: () {
+                    try {
+                      Scaffold.of(btnCtx).openDrawer();
+                    } catch (_) {
+                      NebulaSideMenu.show(btnCtx, activeIndex: 1);
+                    }
+                  },
                 ),
-                onPressed: () {
-                  NebulaSideMenu.show(context, activeIndex: 1);
-                },
               ),
               PopupMenuButton<String>(
                 icon: const Icon(

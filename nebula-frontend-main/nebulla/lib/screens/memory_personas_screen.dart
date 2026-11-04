@@ -792,23 +792,29 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      InkWell(
-                                        onTap: () {
-                                          NebulaSideMenu.show(context, activeIndex: 2);
-                                        },
-                                        borderRadius: BorderRadius.circular(14),
-                                        child: Container(
-                                          width: 38,
-                                          height: 38,
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                                          ),
-                                          child: const Icon(
-                                            Icons.menu_rounded,
-                                            size: 20,
-                                            color: Color(0xFF1E293B),
+                                      Builder(
+                                        builder: (btnCtx) => InkWell(
+                                          onTap: () {
+                                            try {
+                                              Scaffold.of(btnCtx).openDrawer();
+                                            } catch (_) {
+                                              NebulaSideMenu.show(btnCtx, activeIndex: 2);
+                                            }
+                                          },
+                                          borderRadius: BorderRadius.circular(14),
+                                          child: Container(
+                                            width: 38,
+                                            height: 38,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                                            ),
+                                            child: const Icon(
+                                              Icons.menu_rounded,
+                                              size: 20,
+                                              color: Color(0xFF1E293B),
+                                            ),
                                           ),
                                         ),
                                       ),

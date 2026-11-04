@@ -58,41 +58,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Hamburger Menu Button (Left) -> Opens Side Menu
-                    InkWell(
-                      onTap: () {
-                        NebulaSideMenu.show(
-                          context,
-                          activeIndex: 0,
-                          onNavigate: (idx) {
-                            if (widget.onNavigate != null && idx >= 0) {
-                              widget.onNavigate!(idx);
-                            }
-                          },
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: const Color(0xFFE2E8F0),
-                            width: 1.2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 2),
+                    Builder(
+                      builder: (btnCtx) => InkWell(
+                        onTap: () {
+                          try {
+                            Scaffold.of(btnCtx).openDrawer();
+                          } catch (_) {
+                            NebulaSideMenu.show(
+                              btnCtx,
+                              activeIndex: 0,
+                              onNavigate: (idx) {
+                                if (widget.onNavigate != null && idx >= 0) {
+                                  widget.onNavigate!(idx);
+                                }
+                              },
+                            );
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFFE2E8F0),
+                              width: 1.2,
                             ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.menu_rounded,
-                          color: Color(0xFF1E293B),
-                          size: 24,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.menu_rounded,
+                            color: Color(0xFF1E293B),
+                            size: 24,
+                          ),
                         ),
                       ),
                     ),

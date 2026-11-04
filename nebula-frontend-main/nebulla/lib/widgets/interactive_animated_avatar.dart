@@ -1,15 +1,14 @@
-import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../services/avatar_audio_service.dart';
 
 /// Full interactive animated cybernetic avatar.
 /// Supports both male and female robotic characters with:
-/// - Audio-driven lip-sync and jaw movements
-/// - Emotion-based facial aura and cybernetic HUD
-/// - Micro-animations: breathing, natural randomized blinking
-/// - Interactive touch tracking (3D perspective tilt following user touch/cursor)
-/// - Single-tap greeting reaction & double-tap character switch
+/// - Audio-driven speech resonance & vocal aura
+/// - Holographic voice visualizer and rotating cyber HUD
+/// - Natural organic breathing micro-motion
+/// - Smooth interactive touch/cursor parallax gaze
+/// - Single-tap greeting reaction & double-tap appearance switch
 class InteractiveAnimatedAvatar extends StatefulWidget {
   final String? avatarType; // 'male' or 'female' (defaults to service's active)
   final bool fullScreen;
@@ -41,25 +40,21 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   late AnimationController _breathingController;
   late Animation<double> _breathingAnimation;
 
-  late AnimationController _blinkController;
-  late Animation<double> _blinkAnimation;
-
   late AnimationController _hudRotateController;
+  late AnimationController _pulseController;
 
-  // Touch tracking 3D tilt
-  double _tiltX = 0.0;
-  double _tiltY = 0.0;
-  Timer? _blinkTimer;
-  final Random _random = Random();
+  // Interactive parallax gaze
+  double _panX = 0.0;
+  double _panY = 0.0;
 
   @override
   void initState() {
     super.initState();
 
-    // 1. Breathing motion controller (3.8 second relaxed cycle)
+    // 1. Organic breathing cycle (3.6s gentle sinusoidal wave)
     _breathingController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3800),
+      duration: const Duration(milliseconds: 3600),
     )..repeat(reverse: true);
 
     _breathingAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -69,67 +64,38 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
       ),
     );
 
-    // 2. Blinking controller (140 ms rapid natural blink)
-    _blinkController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 140),
-    );
-
-    _blinkAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _blinkController,
-        curve: Curves.easeInOutQuad,
-      ),
-    );
-
-    _scheduleNextBlink();
-
-    // 3. Holographic HUD slow rotation
+    // 2. Slow rotating holographic HUD
     _hudRotateController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 16),
+      duration: const Duration(seconds: 20),
     )..repeat();
-  }
 
-  void _scheduleNextBlink() {
-    _blinkTimer?.cancel();
-    final delayMs = 2600 + _random.nextInt(3200);
-    _blinkTimer = Timer(Duration(milliseconds: delayMs), () {
-      if (!mounted) return;
-      _blinkController.forward().then((_) {
-        if (mounted) {
-          _blinkController.reverse().then((_) {
-            if (mounted) _scheduleNextBlink();
-          });
-        }
-      });
-    });
+    // 3. Fast continuous pulse for speech aura
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _blinkTimer?.cancel();
     _breathingController.dispose();
-    _blinkController.dispose();
     _hudRotateController.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
   void _handlePanUpdate(DragUpdateDetails details, Size size) {
     setState(() {
-      _tiltY = ((details.localPosition.dx / size.width) - 0.5)
-          .clamp(-0.4, 0.4) *
-          0.35;
-      _tiltX = -((details.localPosition.dy / size.height) - 0.5)
-          .clamp(-0.4, 0.4) *
-          0.35;
+      _panX = ((details.localPosition.dx / size.width) - 0.5).clamp(-0.5, 0.5);
+      _panY = ((details.localPosition.dy / size.height) - 0.5).clamp(-0.5, 0.5);
     });
   }
 
   void _handlePanEnd(DragEndDetails details) {
     setState(() {
-      _tiltX = 0.0;
-      _tiltY = 0.0;
+      _panX = 0.0;
+      _panY = 0.0;
     });
   }
 
@@ -153,7 +119,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                 return ValueListenableBuilder<String>(
                   valueListenable: _audioService.currentEmotion,
                   builder: (context, emotion, _) {
-                    return _buildAvatarScaffold(
+                    return _buildAvatarContent(
                       assetPath: assetPath,
                       isFemale: isFemale,
                       isSpeaking: isSpeaking,
@@ -170,7 +136,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     );
   }
 
-  Widget _buildAvatarScaffold({
+  Widget _buildAvatarContent({
     required String assetPath,
     required bool isFemale,
     required bool isSpeaking,
@@ -199,62 +165,66 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
           child: AnimatedBuilder(
             animation: Listenable.merge([
               _breathingAnimation,
-              _blinkAnimation,
               _hudRotateController,
+              _pulseController,
             ]),
             builder: (context, child) {
-              final breathOffset = _breathingAnimation.value * 4.0;
+              // Natural organic motion calculation
+              final breathOffset = _breathingAnimation.value * 3.5;
               final breathScale = 1.0 + (_breathingAnimation.value * 0.012);
 
-              // 3D perspective matrix
-              final transform = Matrix4.identity()
-                ..setEntry(3, 2, 0.0012)
-                ..rotateX(_tiltX)
-                ..rotateY(_tiltY);
+              // Speech resonance bobbing (organic subtle vertical speech micro-movements)
+              final speechBob = isSpeaking
+                  ? sin(_pulseController.value * pi * 4) * amplitude * 2.8
+                  : 0.0;
+
+              // Interactive smooth parallax (gently shifts portrait without geometric distortion)
+              final parallaxX = _panX * 14.0;
+              final parallaxY = _panY * 10.0;
+              final parallaxTilt = _panX * 0.025;
 
               return Center(
-                child: Transform(
+                child: Stack(
                   alignment: Alignment.center,
-                  transform: transform,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // 1. Ambient Holographic Aura
-                      _buildAuraGlow(auraColor, isSpeaking, amplitude, w, h),
+                  clipBehavior: Clip.none,
+                  children: [
+                    // 1. Ambient Holographic Glowing Aura
+                    _buildAmbientAura(auraColor, isSpeaking, amplitude, w, h),
 
-                      // 2. Cybernetic HUD Rotating Rings
-                      _buildHudRings(auraColor, isSpeaking, amplitude, w, h),
+                    // 2. Rotating Cybernetic HUD Rings behind avatar
+                    _buildRotatingHud(auraColor, isSpeaking, amplitude, w, h),
 
-                      // 3. Avatar Body & Moving Head
-                      Transform.translate(
-                        offset: Offset(0, breathOffset),
+                    // 3. Audio Sonic Wave Rings when speaking
+                    if (isSpeaking)
+                      _buildSonicWaveRings(auraColor, amplitude, w, h),
+
+                    // 4. Character Portrait with Natural Organic Motion & Parallax
+                    Transform.translate(
+                      offset: Offset(parallaxX, breathOffset + speechBob + parallaxY),
+                      child: Transform.rotate(
+                        angle: parallaxTilt,
                         child: Transform.scale(
                           scale: breathScale,
-                          child: _buildAvatarBody(
+                          child: _buildCharacterCard(
                             assetPath: assetPath,
                             isFemale: isFemale,
                             isSpeaking: isSpeaking,
                             amplitude: amplitude,
+                            auraColor: auraColor,
                             width: w,
                             height: h,
                           ),
                         ),
                       ),
+                    ),
 
-                      // 4. Interactive Eyelid Blink Overlay
-                      if (_blinkAnimation.value > 0.01)
-                        _buildEyelidOverlay(
-                          isFemale: isFemale,
-                          blinkProgress: _blinkAnimation.value,
-                          width: w,
-                          height: h,
-                        ),
-
-                      // 5. Holographic Speech Waveform Overlay
-                      if (isSpeaking)
-                        _buildSpeechWaveVisualizer(auraColor, amplitude, w, h),
-                    ],
-                  ),
+                    // 5. Sci-Fi Speech Waveform Equalizer (Bottom)
+                    if (isSpeaking)
+                      Positioned(
+                        bottom: widget.fullScreen ? 140 : 20,
+                        child: _buildAudioWaveformBar(auraColor, amplitude),
+                      ),
+                  ],
                 ),
               );
             },
@@ -264,40 +234,40 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     );
   }
 
-  Widget _buildAuraGlow(
+  Widget _buildAmbientAura(
       Color color, bool isSpeaking, double amplitude, double w, double h) {
-    final spread = isSpeaking ? 28.0 + (amplitude * 24.0) : 18.0;
-    final alpha = isSpeaking ? 0.35 + (amplitude * 0.25) : 0.18;
+    final pulse = isSpeaking ? 0.35 + (amplitude * 0.25) : 0.16 + (_breathingAnimation.value * 0.08);
+    final spread = isSpeaking ? 34.0 + (amplitude * 24.0) : 22.0;
 
     return Container(
-      width: min(w * 0.85, 360),
-      height: min(h * 0.85, 480),
+      width: min(w * 0.78, 340),
+      height: min(h * 0.78, 440),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: color.withValues(alpha: alpha),
-            blurRadius: spread * 2,
+            color: color.withValues(alpha: pulse),
+            blurRadius: spread * 2.2,
             spreadRadius: spread,
           ),
           BoxShadow(
-            color: const Color(0xFF00E5FF).withValues(alpha: alpha * 0.5),
-            blurRadius: spread * 3,
-            spreadRadius: spread * 0.5,
+            color: const Color(0xFF00E5FF).withValues(alpha: pulse * 0.6),
+            blurRadius: spread * 3.5,
+            spreadRadius: spread * 0.4,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHudRings(
+  Widget _buildRotatingHud(
       Color color, bool isSpeaking, double amplitude, double w, double h) {
-    final ringSize = min(w * 0.9, 420.0);
+    final hudSize = min(min(w, h) * 0.88, 400.0);
 
     return Transform.rotate(
       angle: _hudRotateController.value * 2 * pi,
       child: CustomPaint(
-        size: Size(ringSize, ringSize),
+        size: Size(hudSize, hudSize),
         painter: _CyberHudPainter(
           color: color,
           pulse: isSpeaking ? amplitude : _breathingAnimation.value,
@@ -306,216 +276,136 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     );
   }
 
-  Widget _buildAvatarBody({
+  Widget _buildSonicWaveRings(Color color, double amplitude, double w, double h) {
+    final ringScale = 1.0 + (_pulseController.value * 0.18 * amplitude);
+    final opacity = (1.0 - _pulseController.value).clamp(0.0, 1.0) * amplitude;
+
+    return Transform.scale(
+      scale: ringScale,
+      child: Container(
+        width: min(w * 0.82, 380),
+        height: min(h * 0.82, 480),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(40),
+          border: Border.all(
+            color: color.withValues(alpha: opacity * 0.4),
+            width: 2.0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCharacterCard({
     required String assetPath,
     required bool isFemale,
     required bool isSpeaking,
     required double amplitude,
+    required Color auraColor,
     required double width,
     required double height,
   }) {
-    // Lip-sync & jaw displacement: lower jaw moves down by up to 5 pixels with speech amplitude
-    final jawDisplacement = isSpeaking ? amplitude * 4.5 : 0.0;
+    final cardWidth = widget.fullScreen ? width : min(width, 420.0);
+    final cardHeight = widget.fullScreen ? height : min(height, 580.0);
 
     return ClipRRect(
       borderRadius: widget.fullScreen
           ? BorderRadius.zero
           : BorderRadius.circular(28),
-      child: SizedBox(
-        width: width,
-        height: height,
+      child: Container(
+        width: cardWidth,
+        height: cardHeight,
+        color: Colors.transparent,
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Base Character Portrait
+            // High-Resolution Character Portrait
             Image.asset(
               assetPath,
-              width: width,
-              height: height,
+              width: cardWidth,
+              height: cardHeight,
               fit: BoxFit.cover,
               alignment: Alignment.topCenter,
-              errorBuilder: (_, _, _) => _buildFallbackGraphic(isFemale),
+              errorBuilder: (_, _, _) => _buildFallback(isFemale),
             ),
 
-            // Dynamic Animated Mouth & Lip-Sync Layer
-            if (isSpeaking)
-              Positioned(
-                top: isFemale ? height * 0.54 : height * 0.51,
-                child: Transform.translate(
-                  offset: Offset(0, jawDisplacement * 0.8),
-                  child: _buildLipSyncMouth(amplitude, isFemale),
+            // Cinematic Gradient Lighting Overlay
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: widget.fullScreen ? 0.35 : 0.15),
+                    ],
+                    stops: const [0.0, 0.65, 1.0],
+                  ),
                 ),
               ),
-
-            // Cybernetic Chest Core Reactor Pulse
-            Positioned(
-              bottom: height * 0.14,
-              child: _buildCoreReactor(isSpeaking, amplitude),
             ),
+
+            // Speaking Glow Border Pulse
+            if (isSpeaking)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: auraColor.withValues(alpha: 0.4 * amplitude),
+                      width: 2.5,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLipSyncMouth(double amplitude, bool isFemale) {
-    // Subtle realistic lip aperture modulation
-    final mouthWidth = isFemale ? 28.0 + (amplitude * 10.0) : 34.0 + (amplitude * 12.0);
-    final mouthHeight = 3.0 + (amplitude * 9.0);
-
+  Widget _buildAudioWaveformBar(Color color, double amplitude) {
     return Container(
-      width: mouthWidth,
-      height: mouthHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E2C).withValues(alpha: 0.85),
-        borderRadius: BorderRadius.all(
-          Radius.elliptical(mouthWidth / 2, mouthHeight / 2),
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: color.withValues(alpha: 0.6),
+          width: 1.4,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF00E5FF).withValues(alpha: 0.25 * amplitude),
-            blurRadius: 6,
-            spreadRadius: 1,
+            color: color.withValues(alpha: 0.3),
+            blurRadius: 18,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Center(
-        child: Container(
-          width: mouthWidth * 0.6,
-          height: max(1.0, mouthHeight * 0.35),
-          decoration: BoxDecoration(
-            color: const Color(0xFF381A22).withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(4),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCoreReactor(bool isSpeaking, double amplitude) {
-    final pulseScale = 1.0 + (isSpeaking ? amplitude * 0.35 : _breathingAnimation.value * 0.15);
-    final glowColor = isSpeaking ? const Color(0xFF00E5FF) : const Color(0xFF38BDF8);
-
-    return Transform.scale(
-      scale: pulseScale,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              Colors.white,
-              glowColor,
-              glowColor.withValues(alpha: 0.0),
-            ],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: glowColor.withValues(alpha: 0.6),
-              blurRadius: 16,
-              spreadRadius: 4,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEyelidOverlay({
-    required bool isFemale,
-    required double blinkProgress,
-    required double width,
-    required double height,
-  }) {
-    // Eyelid position aligned to eyes
-    final eyeTop = isFemale ? height * 0.385 : height * 0.345;
-    final eyeHeight = 16.0 * blinkProgress;
-
-    return Positioned(
-      top: eyeTop,
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          // Left eye lid
-          Container(
-            width: 36,
-            height: eyeHeight,
+        children: List.generate(9, (i) {
+          final wave = sin((i * 0.5) + (_pulseController.value * pi * 3)).abs();
+          final barHeight = 6.0 + (wave * amplitude * 22.0);
+
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 2.2),
+            width: 3.2,
+            height: barHeight,
             decoration: BoxDecoration(
-              color: const Color(0xFFE2E8F0),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 2,
-                ),
-              ],
+              color: color,
+              borderRadius: BorderRadius.circular(4),
             ),
-          ),
-          const SizedBox(width: 32),
-          // Right eye lid
-          Container(
-            width: 36,
-            height: eyeHeight,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE2E8F0),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 2,
-                ),
-              ],
-            ),
-          ),
-        ],
+          );
+        }),
       ),
     );
   }
 
-  Widget _buildSpeechWaveVisualizer(Color color, double amplitude, double w, double h) {
-    return Positioned(
-      bottom: h * 0.04,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.88),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: color.withValues(alpha: 0.5),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.25),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(7, (i) {
-            final barAmp = sin((i * 0.6) + (amplitude * pi)).abs();
-            final barHeight = 8.0 + (barAmp * 20.0);
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 2.5),
-              width: 3.5,
-              height: barHeight,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            );
-          }),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFallbackGraphic(bool isFemale) {
+  Widget _buildFallback(bool isFemale) {
     return Container(
-      color: const Color(0xFFF1F5F9),
+      color: const Color(0xFFF8FAFC),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -544,8 +434,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   void _triggerTapFeedback() {
-    _blinkController.forward().then((_) => _blinkController.reverse());
-    // Friendly speech greeting on tap
     final name = _audioService.activePersonaName.value;
     final greeting = 'مرحباً بك! أنا $name. كيف يمكنني مساعدتك؟';
     _audioService.speak(greeting, emotion: 'happy');
@@ -578,10 +466,10 @@ class _CyberHudPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = (min(size.width, size.height) / 2) * 0.92;
+    final radius = (min(size.width, size.height) / 2) * 0.94;
 
     final paintRing = Paint()
-      ..color = color.withValues(alpha: 0.15 + (pulse * 0.2))
+      ..color = color.withValues(alpha: 0.16 + (pulse * 0.18))
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
 
@@ -590,11 +478,11 @@ class _CyberHudPainter extends CustomPainter {
 
     // Inner dashed orbit
     final paintDashed = Paint()
-      ..color = color.withValues(alpha: 0.25 + (pulse * 0.25))
+      ..color = color.withValues(alpha: 0.22 + (pulse * 0.22))
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
-    const segments = 12;
+    const segments = 16;
     for (int i = 0; i < segments; i++) {
       if (i % 2 == 0) {
         final startAngle = (i * 2 * pi / segments);
@@ -611,11 +499,11 @@ class _CyberHudPainter extends CustomPainter {
 
     // Four cardinal HUD brackets
     final bracketPaint = Paint()
-      ..color = color.withValues(alpha: 0.5 + (pulse * 0.3))
+      ..color = color.withValues(alpha: 0.45 + (pulse * 0.3))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
+      ..strokeWidth = 2.4;
 
-    final r = radius * 0.95;
+    final r = radius * 0.96;
     for (int i = 0; i < 4; i++) {
       final angle = i * (pi / 2);
       final p1 = Offset(center.dx + r * cos(angle - 0.08), center.dy + r * sin(angle - 0.08));

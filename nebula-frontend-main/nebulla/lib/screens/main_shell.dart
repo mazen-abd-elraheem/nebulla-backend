@@ -5,6 +5,7 @@ import 'chat_screen.dart';
 import 'memory_personas_screen.dart';
 import 'diagnostics_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/nebula_side_menu.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key, this.initialIndex = 0});
@@ -41,6 +42,18 @@ class _MainShellState extends State<MainShell> {
 
     return Scaffold(
       backgroundColor: Colors.white,
+      drawer: Drawer(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: NebulaSideMenu(
+          activeIndex: _currentIndex,
+          onNavigate: (idx) {
+            Navigator.of(context).maybePop();
+            _onNavigate(idx);
+          },
+          onClose: () => Navigator.of(context).maybePop(),
+        ),
+      ),
       body: Stack(
         children: [
           // Current active screen
