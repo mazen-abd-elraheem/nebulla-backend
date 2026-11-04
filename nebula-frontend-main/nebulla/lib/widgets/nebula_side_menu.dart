@@ -2,6 +2,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/storage_service.dart';
+import '../screens/login_screen.dart';
+import '../screens/register_screen.dart';
 
 /// The shared side menu overlay / drawer matching the provided design.
 /// Can be opened from any screen via hamburger menu.
@@ -57,6 +59,32 @@ class NebulaSideMenu extends StatelessWidget {
         );
       },
     );
+  }
+
+  void _handleItemTap(BuildContext context, int targetIdx) {
+    if (targetIdx == -1) {
+      if (onClose != null) {
+        onClose!();
+      } else {
+        Navigator.of(context).maybePop();
+      }
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      return;
+    }
+    if (targetIdx == -2) {
+      if (onClose != null) {
+        onClose!();
+      } else {
+        Navigator.of(context).maybePop();
+      }
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const RegisterScreen()),
+      );
+      return;
+    }
+    onNavigate?.call(targetIdx);
   }
 
   @override
@@ -301,7 +329,7 @@ class NebulaSideMenu extends StatelessWidget {
                                 icon: Icons.login_rounded,
                                 title: 'تسجيل الدخول',
                                 hasArrow: true,
-                                onTap: () => onNavigate?.call(-1),
+                                onTap: () => _handleItemTap(context, -1),
                               ),
                               const SizedBox(height: 9),
 
@@ -310,7 +338,7 @@ class NebulaSideMenu extends StatelessWidget {
                                 icon: Icons.person_add_alt_1_rounded,
                                 title: 'إنشاء حساب',
                                 badgeText: 'جديد',
-                                onTap: () => onNavigate?.call(-2),
+                                onTap: () => _handleItemTap(context, -2),
                               ),
                               const SizedBox(height: 9),
 
@@ -319,7 +347,7 @@ class NebulaSideMenu extends StatelessWidget {
                                 icon: Icons.add_rounded,
                                 title: 'إضافة شخصية',
                                 hasArrow: true,
-                                onTap: () => onNavigate?.call(2), // Personas screen
+                                onTap: () => _handleItemTap(context, 2), // Personas screen
                               ),
                               const SizedBox(height: 9),
 
@@ -329,7 +357,7 @@ class NebulaSideMenu extends StatelessWidget {
                                 title: 'الدردشة',
                                 isActive: activeIndex == 1,
                                 badgeText: activeIndex == 1 ? 'نشط' : null,
-                                onTap: () => onNavigate?.call(1), // Chat screen
+                                onTap: () => _handleItemTap(context, 1), // Chat screen
                               ),
                               const SizedBox(height: 9),
 
@@ -338,7 +366,7 @@ class NebulaSideMenu extends StatelessWidget {
                                 icon: Icons.desktop_windows_outlined,
                                 title: 'الأجهزة',
                                 isActive: activeIndex == 3,
-                                onTap: () => onNavigate?.call(3), // Diagnostics
+                                onTap: () => _handleItemTap(context, 3), // Diagnostics
                               ),
                               const SizedBox(height: 9),
 
@@ -348,7 +376,7 @@ class NebulaSideMenu extends StatelessWidget {
                                 title: 'الشخصيات',
                                 hasArrow: true,
                                 isActive: activeIndex == 2,
-                                onTap: () => onNavigate?.call(2), // Personas
+                                onTap: () => _handleItemTap(context, 2), // Personas
                               ),
                             ],
                           ),
@@ -381,7 +409,10 @@ class NebulaSideMenu extends StatelessWidget {
                           onTap: () async {
                             await StorageService.instance.clearToken();
                             if (context.mounted) {
-                              Navigator.of(context).maybePop();
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                                (route) => false,
+                              );
                             }
                           },
                           borderRadius: BorderRadius.circular(16),
