@@ -42,7 +42,7 @@ async def get_device(
 ):
     dev = await db.get(Device, device_id)
     if not dev:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="الجهاز ده مش متسجل في السيستم.")
     return _device_dict(dev)
 
 
@@ -54,7 +54,7 @@ async def delete_device(
 ):
     dev = await db.get(Device, device_id)
     if not dev:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="الجهاز ده مش متسجل في السيستم.")
     await db.delete(dev)
 
 

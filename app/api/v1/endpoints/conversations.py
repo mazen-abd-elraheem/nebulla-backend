@@ -135,7 +135,7 @@ async def chat_with_llm(
     5. Diagnostics & hardware connection states (Phone, Desktop, ESP32).
     """
     if not body.message.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message cannot be empty")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="الرسالة مينفعش تكون فاضية، اكتب حاجة عشان نرد عليك.")
 
     # Clean Swagger UI default placeholder values
     if body.personality_id == 0:
@@ -194,8 +194,7 @@ async def chat_with_llm(
     t_start = time.perf_counter()
 
     # ── Strict Zero-Hallucination & Sub-10ms Speed Optimization ───────────────
-    is_ar = bool(re.search(r"[؀-ۿ]", body.message))
-    refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
+    refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
     has_memories = bool(memories)
     is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
 
@@ -412,8 +411,7 @@ async def chat_stream(
     await db.commit()
 
     # ── Strict Zero-Hallucination & Speed Optimization (SSE Stream) ───────────
-    is_ar = bool(re.search(r"[؀-ۿ]", body.message))
-    refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
+    refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
     has_memories = bool(memories)
     is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
 

@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../services/nebula_repository.dart';
 import '../services/storage_service.dart';
 import '../widgets/common_widgets.dart';
+import 'contacts_screen.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -83,9 +84,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (body.isNotEmpty) {
         _settings = await _repo.updateProviders(body);
       }
-      if (mounted) showSuccessSnackbar(context, 'تم حفظ الإعدادات');
+      if (mounted) showSuccessSnackbar(context, 'حفظنا الإعدادات تمام');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل الحفظ: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نحفظ الإعدادات: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -115,7 +116,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Row(
                   children: [
                     const Expanded(
-                      child: Text('الإعدادات',
+                      child: Text('الظبط وإعدادات السيستم',
                           style: TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 22,
@@ -146,7 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     CrossAxisAlignment.start,
                                 children: [
                                   const SectionHeader(
-                                      title: 'الاتصال بالخادم'),
+                                      title: 'الاتصال بالسيرفر المركزي'),
                                   const SizedBox(height: 16),
                                   TextFormField(
                                     controller: _baseUrlCtrl,
@@ -155,7 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         color: AppColors.textPrimary,
                                         fontFamily: 'Cairo'),
                                     decoration: const InputDecoration(
-                                      labelText: 'عنوان الخادم',
+                                      labelText: 'عنوان ورابط السيرفر (Base URL)',
                                       prefixIcon:
                                           Icon(Icons.dns_outlined),
                                       hintText:
@@ -173,10 +174,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     CrossAxisAlignment.start,
                                 children: [
                                   const SectionHeader(
-                                      title: 'مزودو الذكاء الاصطناعي'),
+                                      title: 'محركات ومزودي الذكاء الاصطناعي'),
                                   const SizedBox(height: 16),
                                   _ProviderRow(
-                                    label: 'STT (التعرف على الكلام)',
+                                    label: 'التعرف على الصوت (STT)',
                                     value: _sttProvider,
                                     options: _sttProviders,
                                     onChanged: (v) =>
@@ -184,7 +185,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ),
                                   const SizedBox(height: 14),
                                   _ProviderRow(
-                                    label: 'TTS (تحويل النص لكلام)',
+                                    label: 'توليد ونطق الصوت (TTS)',
                                     value: _ttsProvider,
                                     options: _ttsProviders,
                                     onChanged: (v) =>
@@ -192,7 +193,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ),
                                   const SizedBox(height: 14),
                                   _ProviderRow(
-                                    label: 'LLM (نموذج اللغة)',
+                                    label: 'محرك ونموذج الذكاء (LLM)',
                                     value: _llmProvider,
                                     options: _llmProviders,
                                     onChanged: (v) =>
@@ -206,7 +207,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         color: AppColors.textPrimary,
                                         fontFamily: 'Cairo'),
                                     decoration: const InputDecoration(
-                                      labelText: 'اسم نموذج LLM',
+                                      labelText: 'اسم موديل الذكاء (LLM Model)',
                                       prefixIcon: Icon(
                                           Icons.model_training_outlined),
                                       hintText:
@@ -222,7 +223,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         color: AppColors.textPrimary,
                                         fontFamily: 'Cairo'),
                                     decoration: const InputDecoration(
-                                      labelText: 'عنوان Ollama/LLM',
+                                      labelText: 'رابط خادم Ollama أو الـ API',
                                       prefixIcon:
                                           Icon(Icons.hub_outlined),
                                       hintText:
@@ -232,9 +233,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ],
                               ),
                             ),
+                            const SizedBox(height: 16),
+                            // Phone & Contacts
+                            NebulaCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SectionHeader(
+                                      title: 'جهات الاتصال وأوامر التليفون'),
+                                  const SizedBox(height: 10),
+                                  const Text(
+                                    'تحكم في الأرقام المصرح للروبوت بالاتصال بها وإرسال الرسائل، مع إمكانية المزامنة المباشرة من دليل هاتف الموبايل.',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontFamily: 'Cairo',
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppColors.teal,
+                                      side: const BorderSide(
+                                          color: AppColors.teal, width: 1.2),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 12, horizontal: 16),
+                                    ),
+                                    icon: const Icon(Icons.contact_phone_outlined),
+                                    label: const Text(
+                                      'إدارة جهات الاتصال ومزامنة الهاتف 📱',
+                                      style: TextStyle(
+                                        fontFamily: 'Cairo',
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const ContactsScreen(),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
                             const SizedBox(height: 20),
                             NebulaPrimaryButton(
-                              label: 'حفظ الإعدادات',
+                              label: 'احفظ الإعدادات دي',
                               icon: Icons.save_outlined,
                               onTap: _save,
                               loading: _saving,
@@ -253,7 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        const Text('نيبولا',
+                                        const Text('روبوت نيبولا الذكي',
                                             style: TextStyle(
                                                 color:
                                                     AppColors.textPrimary,
@@ -261,7 +313,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                 fontWeight:
                                                     FontWeight.w600)),
                                         Text(
-                                            'الخادم: ${_store.getBaseUrl()}',
+                                            'السيرفر الحالي: ${_store.getBaseUrl()}',
                                             style: const TextStyle(
                                                 color:
                                                     AppColors.textMuted,
@@ -276,7 +328,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             const SizedBox(height: 16),
                             // Logout
                             NebulaDangerButton(
-                              label: 'تسجيل الخروج',
+                              label: 'اخرج من الحساب',
                               icon: Icons.logout,
                               onTap: _logout,
                             ),

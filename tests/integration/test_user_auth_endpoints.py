@@ -314,3 +314,98 @@ async def test_personality_user_isolation():
 
         ok_delete = await client.delete(f"/api/v1/personalities/{alpha_p_id}", headers=alpha_headers)
         assert ok_delete.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_jwt_unknown_sub_rejection():
+    """Verify that an unknown or spoofed JWT subject returns 401 instead of admin fallback."""
+    from app.auth.jwt import create_access_token
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # Token with a non-existent subject
+        forged_token = create_access_token(subject="999999999")
+        res = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {forged_token}"})
+        assert res.status_code == 401
+        assert "صاحب الحساب" in res.json()["detail"]
+
+        # Token with an arbitrary unrecognized string subject
+        str_token = create_access_token(subject="attacker_random_sub")
+        res_str = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {str_token}"})
+        assert res_str.status_code == 401
+        assert "صاحب الحساب" in res_str.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_username_empty_and_short_validation():
+    """Verify empty username normalizes to None and short username raises arz error."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. Empty username string should normalize to None and succeed
+        empty_username_email = _rand_email("empty_user")
+        res_empty = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "full_name": "مستخدم بدون يوزرنيم",
+                "username": "",
+                "email": empty_username_email,
+                "password": "ValidPassword123",
+                "confirm_password": "ValidPassword123",
+                "terms_accepted": True,
+            },
+        )
+        assert res_empty.status_code == 201, res_empty.text
+        assert res_empty.json()["user"]["username"] is None
+
+        # 2. Whitespace-only username should also normalize to None and succeed
+        space_username_email = _rand_email("space_user")
+        res_space = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "full_name": "مستخدم مسافات",
+                "username": "   ",
+                "email": space_username_email,
+                "password": "ValidPassword123",
+                "confirm_password": "ValidPassword123",
+                "terms_accepted": True,
+            },
+        )
+        assert res_space.status_code == 201, res_space.text
+        assert res_space.json()["user"]["username"] is None
+
+        # 3. Short username (<3 chars) triggers Egyptian Arabic validation error
+        res_short = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "full_name": "مستخدم يوزر قصير",
+                "username": "ab",
+                "email": _rand_email("short_user"),
+                "password": "ValidPassword123",
+                "confirm_password": "ValidPassword123",
+                "terms_accepted": True,
+            },
+        )
+        assert res_short.status_code == 422
+        detail_str = str(res_short.json())
+        assert "اسم المستخدم لازم يكون 3 حروف على الأقل" in detail_str
+
+
+@pytest.mark.asyncio
+async def test_integrity_error_race_duplicate_handling():
+    """Verify that IntegrityError during commit/flush returns 400 with arz message."""
+    from sqlalchemy.exc import IntegrityError
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        payload = {
+            "full_name": "مستخدم سباق التزامن",
+            "username": f"race_{uuid.uuid4().hex[:6]}",
+            "email": _rand_email("race_user"),
+            "password": "ValidPassword123",
+            "confirm_password": "ValidPassword123",
+            "terms_accepted": True,
+        }
+        with patch("sqlalchemy.ext.asyncio.AsyncSession.commit", side_effect=IntegrityError("duplicate key", None, Exception("UNIQUE constraint failed"))):
+            res = await client.post("/api/v1/auth/register", json=payload)
+            assert res.status_code == 400
+            assert "مسجل بالفعل" in res.json()["detail"]

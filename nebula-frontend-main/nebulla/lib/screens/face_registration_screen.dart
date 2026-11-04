@@ -36,21 +36,21 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
 
   Future<void> _register() async {
     if (_nameCtrl.text.trim().isEmpty || _imageFile == null) {
-      showErrorSnackbar(context, 'الرجاء إدخال الاسم واختيار صورة');
+      showErrorSnackbar(context, 'من فضلك اكتب الاسم واختار صورة واضحة للوش');
       return;
     }
     setState(() => _uploading = true);
     try {
       await _repo.registerFace(_nameCtrl.text.trim(), _imageFile!);
       if (mounted) {
-        showSuccessSnackbar(context, 'تم تسجيل الوجه بنجاح');
+        showSuccessSnackbar(context, 'سجلنا بصمة الوش بنجاح تمام');
         setState(() {
           _imageFile = null;
           _nameCtrl.clear();
         });
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل التسجيل: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نسجل الوش: $e');
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -77,7 +77,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                           color: AppColors.teal, size: 20),
                     ),
                     const SizedBox(width: 12),
-                    const Text('تسجيل الوجه',
+                    const Text('تسجيل بصمة الوش',
                         style: TextStyle(
                             fontFamily: 'Cairo',
                             fontSize: 20,
@@ -96,7 +96,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                       SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'سيتم تسجيل الوجه في قاعدة بيانات نظام UniFace لتمكين التعرف البصري.',
+                          'هنسجل بصمة الوش في قاعدة بيانات UniFace عشان الروبوت يتعرف عليه بالكاميرا أول ما يشوفه.',
                           style: TextStyle(
                               color: AppColors.textSecondary,
                               fontFamily: 'Cairo',
@@ -153,13 +153,13 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                                     size: 30),
                               ),
                               const SizedBox(height: 16),
-                              const Text('اضغط لاختيار صورة',
+                              const Text('دوس هنا عشان تختار أو تصور صورة',
                                   style: TextStyle(
                                       color: AppColors.textSecondary,
                                       fontFamily: 'Cairo',
                                       fontSize: 15)),
                               const SizedBox(height: 6),
-                              const Text('JPG / PNG · جودة واضحة للوجه',
+                              const Text('JPG / PNG · ملامح الوش لازم تكون واضحة ومباشرة للكاميرا',
                                   style: TextStyle(
                                       color: AppColors.textMuted,
                                       fontFamily: 'Cairo',
@@ -175,7 +175,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                       onPressed: _showPickOptions,
                       icon: const Icon(Icons.swap_horiz,
                           color: AppColors.teal, size: 16),
-                      label: const Text('تغيير الصورة',
+                      label: const Text('غيّر الصورة',
                           style: TextStyle(
                               color: AppColors.teal, fontFamily: 'Cairo')),
                     ),
@@ -189,7 +189,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                     style: const TextStyle(
                         color: AppColors.textPrimary, fontFamily: 'Cairo'),
                     decoration: const InputDecoration(
-                      labelText: 'اسم الشخص',
+                      labelText: 'اسم صاحب البصمة بالكامل',
                       prefixIcon: Icon(Icons.person_outline),
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
@@ -199,7 +199,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
                 ),
                 const SizedBox(height: 24),
                 NebulaPrimaryButton(
-                  label: 'تسجيل الوجه',
+                  label: 'سجّل بصمة الوش دلوقتي',
                   icon: Icons.face_retouching_natural,
                   onTap: _register,
                   loading: _uploading,
@@ -236,7 +236,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
               ListTile(
                 leading: const Icon(Icons.camera_alt_outlined,
                     color: AppColors.teal),
-                title: const Text('الكاميرا',
+                title: const Text('افتح الكاميرا وصوّر',
                     style: TextStyle(
                         fontFamily: 'Cairo', color: AppColors.textPrimary)),
                 onTap: () {
@@ -247,7 +247,7 @@ class _FaceRegistrationScreenState extends State<FaceRegistrationScreen> {
               ListTile(
                 leading: const Icon(Icons.photo_library_outlined,
                     color: AppColors.teal),
-                title: const Text('معرض الصور',
+                title: const Text('اختار صورة من المعرض',
                     style: TextStyle(
                         fontFamily: 'Cairo', color: AppColors.textPrimary)),
                 onTap: () {

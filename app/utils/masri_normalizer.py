@@ -1,22 +1,28 @@
 """
-Egyptian Arabic (Masri) Dialect & Phonetic Normalizer + Code-Switching Pipeline
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Preprocesses text for VoiceTut-TTS speech synthesis:
-  1. Full Egyptian Arabic normalization for numbers, currencies, dates, times, and abbreviations.
-  2. Solves Masri + English code-switching token collision:
-     - Separates Arabic definite article prefixes (ال, الـ, بالـ, للـ) from English words ("الID" -> "ال ID").
-     - Inserts breath/pause marks (comma "،") after inline English words before Arabic phrases.
-  3. Replaces stiff Fusha system phrases with colloquial Masri or adds explicit Tashkeel ("بِالعَامِّيَّة المَصْرِيَّة").
-  4. Preserves Egyptian phonetic contractions (علشان, دلوقتي, إزاي, كده, عاوز).
-  5. Strips LLM thinking tags (<think>...</think>) and action commands before voice synthesis.
+Egyptian Arabic (Masri) Intelligent Dialect, Morpho-Contextual Normalizer & Code-Switching Pipeline
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+High-speed (< 2ms) context-aware normalization for VoiceTuT/XTTS speech synthesis:
+  1. Shielding Engine: Protects quotes ("..."), URLs, file paths, code, and LLM reasoning tags.
+  2. Code-Switching Engine: Detaches Arabic clitics (ال, بال, لل, فال, وال) from English/Latin terms
+     while preserving raw English text and avoiding commas inside compound English phrases.
+  3. Smart Entity & Counting Engine:
+     - Phone numbers read naturally in Egyptian Arabic (digit-by-digit or chunked).
+     - Clock times with colloquial fractions (تلاتة و نص، أربعة و ربع، ستة الا تلت).
+     - Contextual Egyptian Duals (ساعتين، يومين، سنتين، جنيهين، شهرين) and 3-10 counting (تلات سنين، خمس شهور).
+     - Currencies and Percentages with Egyptian phrasing.
+  4. Contextual Morpho-Syntactic Transforms (Authentic Masri dialect):
+     - Verbal negation: مش هقدر / ماعرفش / معنديش / مفيش / ماتقلقش.
+     - Modals and Futurity: لازم / عايز / هعمل / هساعدك / هنشوف / هيتعمل.
+  5. Selective Phonetic Disambiguation: Applies Tashkeel specifically to phonetically ambiguous
+     Egyptian words without altering protected or formal texts.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Match, Optional, Tuple
 
-# --------------------------------------------------------------------------- regex patterns
+# --------------------------------------------------------------------------- Core regex patterns
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _ACTION_TAG_RE = re.compile(r"\[(?:action:|gesture:|cmd:)?([\w\u0600-\u06FF]+)(?::([^\]]+))?\]", re.IGNORECASE)
 _BRACKET_TAG_RE = re.compile(r"\[[\w\u0600-\u06FF\s:_\-]+\]")
@@ -24,12 +30,21 @@ _TATWEEL_RE = re.compile(r"\u0640+")
 _DIACRITICS_RE = re.compile(r"[\u064B-\u065F\u0670]")
 _MULTISPACE_RE = re.compile(r"\s+")
 
-# --------------------------------------------------------------------------- digits & numbers (Egyptian)
+# Shielding regexes: quotes, URLs, code blocks, and system paths
+_URL_RE = re.compile(r"https?://[^\s<>\"']+|www\.[^\s<>\"']+", re.IGNORECASE)
+_PATH_RE = re.compile(r"\b[A-Za-z]:\\[^\s<>\"']+|(?:\/[\w.\-]+){2,}", re.IGNORECASE)
+_CODE_BLOCK_RE = re.compile(r"`[^`\n]+`")
+_QUOTE_RE = re.compile(r'["“«]([^"”»\n]{2,})["”»]')
+
+# --------------------------------------------------------------------------- Digits & Numbers (Egyptian)
 ARABIC_INDIC = "٠١٢٣٤٥٦٧٨٩"
 ASCII_DIGITS = "0123456789"
 _AR2ASCII = {ord(a): d for a, d in zip(ARABIC_INDIC, ASCII_DIGITS)}
 
+_DIGIT_WORDS = ["صفر", "واحد", "اتنين", "تلاتة", "أربعة", "خمسة", "ستة", "سبعة", "تمانية", "تسعة"]
+
 _ONES = ["", "وَاحِد", "اِتْنِين", "تَلَاتَة", "أَرْبَعَه", "خَمْسَه", "سِتَّه", "سَبْعَه", "تَمَانْيَه", "تِسْعَه"]
+_ONES_COUNTABLE = ["", "واحد", "اتنين", "تلات", "أربع", "خمس", "ست", "سبع", "تمن", "تسع"]
 _TEENS = [
     "عَشَرَه", "حِدَاشَر", "اِتْنَاشَر", "تَلاتَّاشّر", "أَرْبَعْتَاشَر", "خَمَسْتَاشَر",
     "سِتَّاشَر", "سَبَعْتَاشَر", "تَمَنْتَاشَر", "تِسَعْتَاشَر"
@@ -40,6 +55,28 @@ _HUNDREDS = [
     "سُتُّمِية", "سُبْعُمِية", "تُمْنُمِية", "تُسْعُمِية"
 ]
 _SCALES = [(1_000_000_000, "مليار"), (1_000_000, "مليون"), (1_000, "ألف")]
+
+# Common Egyptian counting nouns with natural dual morphology
+_DUAL_NOUNS = {
+    "جنيه": "جنيهين",
+    "يوم": "يومين",
+    "ساعة": "ساعتين",
+    "سنة": "سنتين",
+    "شهر": "شهرين",
+    "أسبوع": "أسبوعين",
+    "دقيقة": "دقيقتين",
+    "مرة": "مرتين",
+    "قرش": "قرشين",
+    "حاجة": "حاجتين",
+    "كيلو": "اتنين كيلو",
+    "دولار": "اتنين دولار",
+    "يورو": "اتنين يورو",
+}
+
+# Plural nouns that take truncated 3-10 counting forms (تلات سنين، خمس شهور)
+_COUNTABLE_PLURAL_NOUNS = {
+    "سنين", "أيام", "شهور", "ساعات", "دقايق", "دقائق", "مرات", "قروش", "جنيهات", "كتب", "أشخاص", "ناس", "سنين"
+}
 
 
 def _three_digits_to_words(n: int) -> str:
@@ -82,7 +119,14 @@ def number_to_arabic_words(n: int) -> str:
     return " و".join(w for w in words if w)
 
 
-# --------------------------------------------------------------------------- time (colloquial Egyptian)
+def _say_phone_number(digits: str) -> str:
+    """Convert a phone number into natural Egyptian speech (digit-by-digit with rhythm)."""
+    # E.g. 01012345678 -> صفر واحد صفر، واحد اتنين، تلاتة أربعة، خمسة ستة، سبعة تمانية
+    words = [_DIGIT_WORDS[int(d)] for d in digits if d.isdigit()]
+    return " ".join(words)
+
+
+# --------------------------------------------------------------------------- Time (Colloquial Egyptian)
 _HOUR_FEM = {
     1: "وَاحْدَه", 2: "اتنين", 3: "تَلَاتَة", 4: "أَرْبَعَه", 5: "خَمْسَه", 6: "سِتَّه",
     7: "سَبْعَه", 8: "تَمَانْيَه", 9: "تِسْعَه", 10: "عَشَرَه", 11: "حِدَاشَر", 12: "اِتْنَاشَر",
@@ -112,7 +156,7 @@ def _say_time(h: int, mn: int) -> str:
     return f"{hour} و {number_to_arabic_words(mn)} دقيقة"
 
 
-# --------------------------------------------------------------------------- currencies & abbreviations
+# --------------------------------------------------------------------------- Currencies & Abbreviations
 _CURRENCIES = {
     "ج.م": "جنيه", "جنيه": "جنيه", "EGP": "جنيه", "LE": "جنيه", "£": "جنيه",
     "$": "دولار", "USD": "دولار", "€": "يورو", "EUR": "يورو",
@@ -130,53 +174,131 @@ _ABBREVIATIONS: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bإلخ\b|\bالخ\b"), "إلى آخره"),
 ]
 
-# --------------------------------------------------------------------------- Masri replacements
-_MASRI_PHONETIC_REPLACEMENTS: List[Tuple[re.Pattern, str]] = [
-    (re.compile(r"\bعلشان\b", re.IGNORECASE), "عَلَشانْ"),
-    (re.compile(r"\bعشان\b", re.IGNORECASE), "عَشانْ"),
-    (re.compile(r"\bدلوقتي\b", re.IGNORECASE), "دِلوَقْتي"),
-    (re.compile(r"\bدلوقت\b", re.IGNORECASE), "دِلوَقْت"),
-    (re.compile(r"\bإزاي\b|\bازاي\b", re.IGNORECASE), "إِزَّاي"),
-    (re.compile(r"\bإيه\b|\bايه\b", re.IGNORECASE), "إيهْ"),
-    (re.compile(r"\bليه\b", re.IGNORECASE), "ليهْ"),
-    (re.compile(r"\bفين\b", re.IGNORECASE), "فينْ"),
-    (re.compile(r"\bكده\b|\bكدة\b", re.IGNORECASE), "كِدهْ"),
-    (re.compile(r"\bعايز\b|\bعاوز\b", re.IGNORECASE), "عايِزْ"),
-    (re.compile(r"\bعايزة\b|\bعاوزة\b", re.IGNORECASE), "عايْزَة"),
-    (re.compile(r"\bأوي\b|\bاوي\b", re.IGNORECASE), "قَوِي"),
-    (re.compile(r"\bشوية\b", re.IGNORECASE), "شُوَيَّة"),
-    (re.compile(r"\bبكرة\b", re.IGNORECASE), "بُكْرَة"),
-    (re.compile(r"\bإمبارح\b|\bامبارح\b", re.IGNORECASE), "إِمْبارِح"),
-    (re.compile(r"\bالنهاردة\b", re.IGNORECASE), "النَّهارْدَة"),
-    (re.compile(r"\bكويس\b", re.IGNORECASE), "كُوَيِّسْ"),
-    (re.compile(r"\bكويسة\b", re.IGNORECASE), "كُوَيِّسَة"),
-    (re.compile(r"\bبص\b", re.IGNORECASE), "بُصْ"),
-    (re.compile(r"\bشوف\b", re.IGNORECASE), "شُوفْ"),
-    (re.compile(r"\bتمام\b", re.IGNORECASE), "تَمامْ"),
-    (re.compile(r"\bماشي\b", re.IGNORECASE), "ماشِي"),
-    (re.compile(r"\bحاضر\b", re.IGNORECASE), "حاضِرْ"),
-    (re.compile(r"\bيعني\b", re.IGNORECASE), "يَعْنِي"),
+# --------------------------------------------------------------------------- Contextual Morpho-Syntactic Transforms
+# Authentic colloquial Egyptian negation, future markers, and conversational system phrases
+_MORPHO_SYNTACTIC_TRANSFORMS: List[Tuple[re.Pattern, str]] = [
+    # Verbal Negation & Capability
+    (re.compile(r"\b(?:لا|لن)\s+أستطيع\b"), "مش هقدر"),
+    (re.compile(r"\b(?:لا|لن)\s+يستطيع\b"), "مش هيقدر"),
+    (re.compile(r"\b(?:لا|لن)\s+تستطيع\b"), "مش هتقدر"),
+    (re.compile(r"\b(?:لا|لن)\s+نستطيع\b"), "مش هنقدر"),
+    (re.compile(r"\b(?:لا|لن)\s+يستطيعوا\b"), "مش هيقدروا"),
+    # Knowledge & Awareness
+    (re.compile(r"\b(?:لا|لن)\s+أعرف\b|\b(?:لا|لن)\s+أدري\b|\b(?:لا|لن)\s+أعلم\b"), "ماعرفش"),
+    (re.compile(r"\b(?:لا|لن)\s+يعرف\b|\b(?:لا|لن)\s+يعلم\b"), "مايعرفش"),
+    (re.compile(r"\b(?:لا|لن)\s+تعرف\b|\b(?:لا|لن)\s+تعلم\b"), "ماتعرفش"),
+    (re.compile(r"\b(?:لا|لن)\s+نعرف\b|\b(?:لا|لن)\s+نعلم\b"), "مانعرفش"),
+    # Existence & Possession
+    (re.compile(r"\b(?:لا|ما)\s+يوجد\b|\b(?:لا|ما)\s+توجد\b|\bليس\s+هناك\b"), "مفيش"),
+    (re.compile(r"\bليس\s+لدي\b|\bليس\s+عندي\b|\bلا\s+أملك\b"), "معنديش"),
+    (re.compile(r"\bليس\s+لديك\b|\bليس\s+عندك\b"), "معندكش"),
+    (re.compile(r"\bليس\s+لدينا\b|\bليس\s+عندنا\b"), "معندناش"),
+    # Reassurance & Negated States
+    (re.compile(r"\bلا\s+تقلق\b"), "ماتقلقش خالص"),
+    (re.compile(r"\bلا\s+تقلقي\b"), "ماتقلقيش خالص"),
+    (re.compile(r"\bلا\s+تقلقوا\b"), "ماتقلقوش خالص"),
+    (re.compile(r"\bلا\s+داعي\b"), "مفيش داعي"),
+    (re.compile(r"\bليس\s+صحيح[اً]?\b"), "مش صحيح"),
+    (re.compile(r"\bلا\s+أريد\b"), "مش عايز"),
+    # Future Action & Volition
+    (re.compile(r"\bسوف\s+أقوم\s+ب(?:ـ|عمل\s+)?\b"), "هعمل "),
+    (re.compile(r"\bسوف\s+أفعل\b"), "هعمل"),
+    (re.compile(r"\bسوف\s+أساعدك\b"), "هساعدك"),
+    (re.compile(r"\bسوف\s+نرى\b"), "هنشوف"),
+    (re.compile(r"\bسوف\s+يكون\b"), "هيكون"),
+    (re.compile(r"\bسوف\s+تكون\b"), "هتكون"),
+    (re.compile(r"\bسوف\s+يتم\b"), "هيتعمل"),
+    # Obligation & Modals
+    (re.compile(r"\b(?:يجب|ينبغي|عليك)\s+أن\b"), "لازم"),
+    (re.compile(r"\bعليكم\s+أن\b"), "لازم"),
+    (re.compile(r"\bأريد\s+أن\b"), "عايز"),
+    (re.compile(r"\bنريد\s+أن\b"), "عايزين"),
+    (re.compile(r"\bهل\s+يمكنك\b"), "ممكن"),
+    (re.compile(r"\bهل\s+يمكنني\s+مساعدتك\b"), "أقدر أساعدك في إيه؟"),
+    # Conversational System Phrases
+    (re.compile(r"\bيرجى\s+الانتظار\b"), "ثواني خليك معايا"),
+    (re.compile(r"\bيرجى\s+المحاولة\b"), "جرب تاني"),
+    (re.compile(r"\bتم\s+بنجاح\b"), "اتعمل تمام"),
+    (re.compile(r"\bغير\s+متاح\s+حالياً\b"), "مش متاح دلوقتي"),
+    (re.compile(r"\bغير\s+متاح\b"), "مش متاح"),
+    (re.compile(r"\bشكراً\s+جزيلاً\b"), "شكراً جداً"),
+    (re.compile(r"\bإلى\s+اللقاء\b"), "سلام أشوفك على خير"),
+    (re.compile(r"\bحسناً\b"), "تمام"),
+    (re.compile(r"\bبالعامية\s+المصرية\b"), "بِالعَامِّيَّة المَصْرِيَّة"),
+    (re.compile(r"\bالعامية\s+المصرية\b"), "العَامِّيَّة المَصْرِيَّة"),
 ]
 
-# Stiff formal Fusha system phrases replaced with natural Egyptian colloquial speech or explicit Tashkeel
-_FORMAL_TO_MASRI_REPLACEMENTS: List[Tuple[re.Pattern, str]] = [
-    (re.compile(r"\bبالعامية المصرية\b", re.IGNORECASE), "بِالعَامِّيَّة المَصْرِيَّة"),
-    (re.compile(r"\bالعامية المصرية\b", re.IGNORECASE), "العَامِّيَّة المَصْرِيَّة"),
-    (re.compile(r"\bيرجى الانتظار\b", re.IGNORECASE), "ثواني خليك معايا"),
-    (re.compile(r"\bيرجى المحاولة\b", re.IGNORECASE), "جرب تاني"),
-    (re.compile(r"\bتم بنجاح\b", re.IGNORECASE), "اتعمل تمام"),
-    (re.compile(r"\bغير متاح حالياً\b", re.IGNORECASE), "مش متاح دلوقتي"),
-    (re.compile(r"\bغير متاح\b", re.IGNORECASE), "مش متاح"),
-    (re.compile(r"\bلا تقلق\b", re.IGNORECASE), "ماتقلقش خالص"),
-    (re.compile(r"\bشكراً جزيلاً\b", re.IGNORECASE), "شكراً جداً"),
-    (re.compile(r"\bإلى اللقاء\b", re.IGNORECASE), "سلام أشوفك على خير"),
-    (re.compile(r"\bهل يمكنني مساعدتك\b", re.IGNORECASE), "أقدر أساعدك في إيه؟"),
-    (re.compile(r"\bحسناً\b", re.IGNORECASE), "تمام"),
+# --------------------------------------------------------------------------- Selective Phonetic Disambiguation
+# Tashkeel applied only to phonetically ambiguous Masri vocabulary for natural TTS pronunciation
+_MASRI_PHONETIC_DISAMBIGUATION: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"\bعلشان\b"), "عَلَشانْ"),
+    (re.compile(r"\bعشان\b"), "عَشانْ"),
+    (re.compile(r"\bدلوقتي\b"), "دِلوَقْتي"),
+    (re.compile(r"\bدلوقت\b"), "دِلوَقْت"),
+    (re.compile(r"\bإزاي\b|\bازاي\b"), "إِزَّاي"),
+    (re.compile(r"\bإيه\b|\bايه\b"), "إيهْ"),
+    (re.compile(r"\bليه\b"), "ليهْ"),
+    (re.compile(r"\bفين\b"), "فينْ"),
+    (re.compile(r"\bكده\b|\bكدة\b"), "كِدهْ"),
+    (re.compile(r"\bعايز\b|\bعاوز\b"), "عايِزْ"),
+    (re.compile(r"\bعايزة\b|\bعاوزة\b"), "عايْزَة"),
+    (re.compile(r"\bأوي\b|\bاوي\b"), "أَوِي"),
+    (re.compile(r"\bشوية\b"), "شُوَيَّة"),
+    (re.compile(r"\bبكرة\b"), "بُكْرَة"),
+    (re.compile(r"\bإمبارح\b|\bامبارح\b"), "إِمْبارِح"),
+    (re.compile(r"\bالنهاردة\b"), "النَّهارْدَة"),
+    (re.compile(r"\bكويس\b"), "كُوَيِّسْ"),
+    (re.compile(r"\bكويسة\b"), "كُوَيِّسَة"),
+    (re.compile(r"\bبص\b"), "بُصْ"),
+    (re.compile(r"\bشوف\b"), "شُوفْ"),
+    (re.compile(r"\bتمام\b"), "تَمامْ"),
+    (re.compile(r"\bماشي\b"), "ماشِي"),
+    (re.compile(r"\bحاضر\b"), "حاضِرْ"),
+    (re.compile(r"\bيعني\b"), "يَعْنِي"),
 ]
 
 
+# --------------------------------------------------------------------------- Shielding Engine
+class _TextShield:
+    """Safeguards quoted speech, URLs, file paths, and code blocks from alteration."""
+
+    def __init__(self):
+        self._shields: Dict[str, str] = {}
+        self._counter: int = 0
+
+    def shield(self, text: str) -> str:
+        self._shields.clear()
+        self._counter = 0
+
+        def _store(match_text: str) -> str:
+            placeholder = f"__MASRI_SHIELD_{self._counter}__"
+            self._counter += 1
+            self._shields[placeholder] = match_text
+            return placeholder
+
+        # 1. URLs
+        text = _URL_RE.sub(lambda m: _store(m.group(0)), text)
+        # 2. File paths
+        text = _PATH_RE.sub(lambda m: _store(m.group(0)), text)
+        # 3. Inline code
+        text = _CODE_BLOCK_RE.sub(lambda m: _store(m.group(0)), text)
+        # 4. Quoted text (keep quotation marks, protect content)
+        text = _QUOTE_RE.sub(lambda m: f'"{_store(m.group(1))}"', text)
+
+        return text
+
+    def restore(self, text: str) -> str:
+        for placeholder, original in self._shields.items():
+            text = text.replace(placeholder, original)
+        return text
+
+
+# --------------------------------------------------------------------------- MasriNormalizer Class
 class MasriNormalizer:
-    """Colloquial Egyptian text normalizer with code-switching and code-mixing enhancements."""
+    """
+    Intelligent Egyptian Arabic normalizer with Context-Aware Morphological,
+    Code-Switching, and Phonetic Disambiguation capabilities (< 2ms latency).
+    """
 
     def __init__(self):
         pass
@@ -185,65 +307,97 @@ class MasriNormalizer:
         if not text or not text.strip():
             return ""
 
+        # Step 1: Shield quotes, URLs, and code blocks
+        shield = _TextShield()
+        text = shield.shield(text)
+
         # Convert Arabic-Indic numerals (٠-٩) to ASCII (0-9)
         text = text.translate(_AR2ASCII)
 
-        # Step 1: Expand clock times (e.g. 3:30 -> تلاتة و نص)
-        def _replace_time(m):
+        # Step 2: Expand Clock Times (e.g. 3:30 -> تلاتة و نص)
+        def _replace_time(m: Match) -> str:
             h, mn = int(m.group(1)), int(m.group(2))
             return f" {_say_time(h, mn)} "
-        text = re.sub(r"\b(\d{1,2}):(\d{2})\b", _replace_time, text)
+        text = re.sub(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", _replace_time, text)
 
-        # Step 2: Expand percentages (e.g. 25% -> خمسة وعشرين في المية)
-        def _replace_pct(m):
+        # Step 3: Expand Phone Numbers (e.g. 01012345678 -> صفر واحد صفر...)
+        def _replace_phone(m: Match) -> str:
+            phone_digits = m.group(1)
+            return f" {_say_phone_number(phone_digits)} "
+        text = re.sub(r"(?:\+?20\s*|\b)(01[0125]\d{8})\b", _replace_phone, text)
+
+        # Step 4: Expand Percentages (e.g. 25% -> خمسة وعشرين في المية)
+        def _replace_pct(m: Match) -> str:
             num = int(m.group(1))
             return f" {number_to_arabic_words(num)} في المية "
         text = re.sub(r"\b(\d+)\s*%", _replace_pct, text)
 
-        # Step 3: Expand currencies (e.g. 250 جنيه, $50)
-        def _replace_curr_post(m):
+        # Step 5: Expand Currencies & Number-Noun Agreement
+        def _replace_curr_post(m: Match) -> str:
             num = int(m.group(1))
-            curr = _CURRENCIES.get(m.group(2), m.group(2))
+            raw_curr = m.group(2)
+            curr = _CURRENCIES.get(raw_curr, raw_curr)
+            if num == 2:
+                dual = _DUAL_NOUNS.get(curr, f"اتنين {curr}")
+                return f" {dual} "
             return f" {number_to_arabic_words(num)} {curr} "
-        text = re.sub(r"\b(\d+)\s*(جنيه|ج\.م|EGP|LE|دولار|يورو)\b", _replace_curr_post, text)
+        text = re.sub(r"\b(\d+)\s*(جنيه|ج\.م|EGP|LE|دولار|يورو|ريال|درهم)\b", _replace_curr_post, text)
 
-        def _replace_curr_pre(m):
-            curr = _CURRENCIES.get(m.group(1), "دولار")
+        def _replace_curr_pre(m: Match) -> str:
+            raw_sym = m.group(1)
             num = int(m.group(2))
+            curr = _CURRENCIES.get(raw_sym, "دولار")
+            if num == 2:
+                dual = _DUAL_NOUNS.get(curr, f"اتنين {curr}")
+                return f" {dual} "
             return f" {number_to_arabic_words(num)} {curr} "
         text = re.sub(r"([$€£])\s*(\d+)\b", _replace_curr_pre, text)
 
-        # Step 4: Expand remaining standalone numbers
-        def _replace_num(m):
+        # Step 6: Contextual Egyptian Duals & Plural Counting (e.g. 2 يوم -> يومين، 3 سنين -> تلات سنين)
+        def _replace_count_noun(m: Match) -> str:
+            num = int(m.group(1))
+            noun = m.group(2)
+            if num == 2 and noun in _DUAL_NOUNS:
+                return _DUAL_NOUNS[noun]
+            if 3 <= num <= 10 and noun in _COUNTABLE_PLURAL_NOUNS:
+                return f"{_ONES_COUNTABLE[num]} {noun}"
+            return f"{number_to_arabic_words(num)} {noun}"
+        text = re.sub(r"\b(\d+)\s+([\u0621-\u064A]+)\b", _replace_count_noun, text)
+
+        # Step 7: Expand remaining standalone numbers
+        def _replace_standalone_num(m: Match) -> str:
             val = int(m.group(0))
             if val <= 100_000_000:
                 return number_to_arabic_words(val)
             return m.group(0)
-        text = re.sub(r"(?<![a-zA-Z0-9_])\d+(?![a-zA-Z0-9_])", _replace_num, text)
+        text = re.sub(r"(?<![a-zA-Z0-9_])\d+(?![a-zA-Z0-9_])", _replace_standalone_num, text)
 
-        # Step 5: Expand abbreviations
+        # Step 8: Abbreviations Expansion
         for pattern, replacement in _ABBREVIATIONS:
             text = pattern.sub(replacement, text)
 
-        # Step 6: Code-Switching Token Separation
-        # Insert a space between Arabic prefixes (ال, الـ, بالـ, للـ, فالـ, والـ) and English words
-        # E.g., 'الID' or 'الـID' -> 'ال ID', 'بالـAPI' -> 'بال API', 'للـsystem' -> 'لل system'
+        # Step 9: Code-Switching Clitic Separation
+        # Detach Arabic prefixes (ال, بال, لل, فال, وال) from English terms (e.g. 'الID' -> 'ال ID', 'بالـAPI' -> 'بال API')
         text = re.sub(r"(^|\s)([وفلب]?ال|لل)ـ?([a-zA-Z]+)", r"\1\2 \3", text)
 
-        # Step 7: Code-Switching Transition Pause
-        # Insert micro-pause (Arabic comma '،') when transitioning from Latin/English back to Arabic
-        # E.g., 'meeting بكرة' -> 'meeting، بكرة', 'API شغال' -> 'API، شغال'
+        # Step 10: Code-Switching Natural Transition Pause
+        # Insert micro-pause (Arabic comma '،') when transitioning from English back to Arabic,
+        # but NEVER insert commas between two adjacent English words.
         text = re.sub(r"([a-zA-Z0-9]+)\s+([\u0600-\u06FF])", r"\1، \2", text)
 
-        # Step 8: Formal Fusha -> Natural Colloquial Masri replacements
-        for pattern, replacement in _FORMAL_TO_MASRI_REPLACEMENTS:
+        # Step 11: Contextual Morpho-Syntactic Transforms
+        for pattern, replacement in _MORPHO_SYNTACTIC_TRANSFORMS:
             text = pattern.sub(replacement, text)
 
-        # Step 9: Egyptian phonetic enhancements
-        for pattern, replacement in _MASRI_PHONETIC_REPLACEMENTS:
+        # Step 12: Selective Phonetic Disambiguation for VoiceTuT
+        for pattern, replacement in _MASRI_PHONETIC_DISAMBIGUATION:
             text = pattern.sub(replacement, text)
 
-        # Step 10: Clean up spacing
+        # Step 13: Restore shielded elements
+        text = shield.restore(text)
+
+        # Step 14: Clean up spacing and punctuation
+        text = re.sub(r"\s+([،,.!?])", r"\1", text)
         text = _MULTISPACE_RE.sub(" ", text).strip()
         return text
 

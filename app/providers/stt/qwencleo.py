@@ -20,6 +20,12 @@ from typing import List, Tuple
 
 import numpy as np
 
+# Resolve Python 3.12 torchvision circular import bug before any transformers sub-imports
+try:
+    import torchvision  # noqa: F401
+except Exception:
+    pass
+
 from app.providers.tts.base import BaseSTTProvider
 from app.core.config import settings
 from app.core.logger import get_logger
@@ -149,8 +155,12 @@ class QwenCleoProvider(BaseSTTProvider):
 
     def _load(self):
         try:
+            try:
+                import torchvision  # noqa: F401
+            except Exception:
+                pass
+
             import torch
-            from transformers import pipeline as hf_pipeline  # type: ignore[import]
 
             model_path = settings.QWENCLEO_MODEL_PATH
             # If local relative path doesn't exist, use Hugging Face repo
@@ -166,16 +176,52 @@ class QwenCleoProvider(BaseSTTProvider):
                     logger.warning("CUDA requested for QwenCleo but not available. Using CPU.")
 
             logger.info(f"Loading QwenCleo-ASR from {model_path} (device={device_idx})…")
-            QwenCleoProvider._shared_pipeline = hf_pipeline(
-                task="automatic-speech-recognition",
-                model=model_path,
-                device=device_idx,
-                chunk_length_s=15,
-                stride_length_s=2,
-                batch_size=4,
-                return_timestamps=False,
-                trust_remote_code=True,
-            )
+
+            try:
+                from transformers import pipeline as hf_pipeline  # type: ignore[import]
+                QwenCleoProvider._shared_pipeline = hf_pipeline(
+                    task="automatic-speech-recognition",
+                    model=model_path,
+                    device=device_idx,
+                    chunk_length_s=15,
+                    stride_length_s=2,
+                    batch_size=4,
+                    return_timestamps=False,
+                    trust_remote_code=True,
+                )
+            except Exception as pipe_err:
+                logger.warning(
+                    f"Direct pipeline creation encountered error ({pipe_err}). "
+                    "Loading via AutoModelForSpeechSeq2Seq and AutoProcessor..."
+                )
+                from transformers import (
+                    AutoModelForSpeechSeq2Seq,
+                    AutoProcessor,
+                    pipeline as hf_pipeline,
+                )
+                device_str = f"cuda:{device_idx}" if device_idx >= 0 else "cpu"
+                torch_dtype = torch.float16 if device_idx >= 0 else torch.float32
+                model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                    model_path,
+                    torch_dtype=torch_dtype,
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True,
+                )
+                if device_idx >= 0:
+                    model = model.to(device_str)
+                processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+                QwenCleoProvider._shared_pipeline = hf_pipeline(
+                    task="automatic-speech-recognition",
+                    model=model,
+                    tokenizer=processor.tokenizer,
+                    feature_extractor=processor.feature_extractor,
+                    device=device_idx,
+                    chunk_length_s=15,
+                    stride_length_s=2,
+                    batch_size=4,
+                    return_timestamps=False,
+                )
+
             QwenCleoProvider._shared_error = None
             logger.info("QwenCleo-ASR ready (multithreaded chunks enabled) ✓")
         except Exception as e:

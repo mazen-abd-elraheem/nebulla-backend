@@ -12,8 +12,14 @@ from app.services.ai.pipeline import clean_text_for_tts, _extract_emotion
 
 
 def test_factory_returns_correct_providers():
+    p_none = get_llm_provider()
+    assert isinstance(p_none, LocalOllamaProvider)
+
     p_local = get_llm_provider("local")
     assert isinstance(p_local, LocalOllamaProvider)
+
+    p_ollama = get_llm_provider("ollama")
+    assert isinstance(p_ollama, LocalOllamaProvider)
 
     p_openai = get_llm_provider("openai")
     assert isinstance(p_openai, OpenAIProvider)
@@ -21,8 +27,9 @@ def test_factory_returns_correct_providers():
     p_anthropic = get_llm_provider("anthropic")
     assert isinstance(p_anthropic, AnthropicProvider)
 
-    with pytest.raises(ValueError, match="Unknown LLM provider"):
-        get_llm_provider("unknown_provider")
+    # Resilient fallback: unknown provider safely falls back to LocalOllamaProvider
+    p_unknown = get_llm_provider("unknown_provider")
+    assert isinstance(p_unknown, LocalOllamaProvider)
 
 
 def test_clean_text_for_tts():
@@ -190,3 +197,24 @@ async def test_signal_planner_arabic_and_deduplication():
     # Arabic tags: [فرحان] maps to wave
     arabic_cmds = await planner.extract_from_response("أهلاً يا باشا [فرحان]")
     assert len(arabic_cmds) == 4
+
+
+@pytest.mark.asyncio
+async def test_local_ollama_healthcheck():
+    """Verify LocalOllamaProvider returns friendly status dictionary."""
+    health = await LocalOllamaProvider.check_health()
+    assert "status" in health
+    assert "base_url" in health
+    assert "default_model" in health
+    assert "message_arz" in health
+    assert "Ollama" in health["message_arz"]
+
+
+@pytest.mark.asyncio
+async def test_local_ollama_model_resolution():
+    """Verify model fallback logic when querying tags."""
+    provider = LocalOllamaProvider(model="nebula-masri")
+    # By default, without active server, fallback returns requested/configured model
+    resolved = await provider.resolve_model()
+    assert resolved == "nebula-masri"
+

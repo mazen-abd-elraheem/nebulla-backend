@@ -49,5 +49,7 @@ class AppConstants {
   static const String diagnosticsEmergencyStop =
       '/api/v1/diagnostics/emergency-stop';
   static const String facesRegister = '/api/v1/faces/register';
+  static const String actionContacts = '/api/v1/actions/contacts';
+  static const String actionContactsSync = '/api/v1/actions/contacts/sync';
   static const String health = '/health';
 }

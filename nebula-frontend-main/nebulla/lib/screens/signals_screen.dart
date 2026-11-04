@@ -28,7 +28,7 @@ class _SignalsScreenState extends State<SignalsScreen> {
     try {
       _signals = await _repo.getSignals();
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ في التحميل: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نجيب الإشارات: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -38,9 +38,9 @@ class _SignalsScreenState extends State<SignalsScreen> {
     setState(() => _firingName = s.name);
     try {
       await _repo.fireSignal(s.name);
-      if (mounted) showSuccessSnackbar(context, '⚡ تم إطلاق ${s.name}');
+      if (mounted) showSuccessSnackbar(context, '⚡ نفذنا حركة ${s.name} على الروبوت');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل الإطلاق: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش ننفذ الحركة: $e');
     } finally {
       if (mounted) setState(() => _firingName = null);
     }
@@ -51,10 +51,10 @@ class _SignalsScreenState extends State<SignalsScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.card,
-        title: const Text('حذف الإشارة',
+        title: const Text('مسح الحركة',
             style: TextStyle(
                 fontFamily: 'Cairo', color: AppColors.textPrimary)),
-        content: Text('هل تريد حذف "${s.name}"؟',
+        content: Text('متأكد إنك عايز تمسح حركة "${s.name}"؟',
             style: const TextStyle(
                 fontFamily: 'Cairo', color: AppColors.textSecondary)),
         actions: [
@@ -63,7 +63,7 @@ class _SignalsScreenState extends State<SignalsScreen> {
               child: const Text('إلغاء')),
           TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('حذف',
+              child: const Text('امسح',
                   style: TextStyle(color: AppColors.error))),
         ],
       ),
@@ -71,10 +71,10 @@ class _SignalsScreenState extends State<SignalsScreen> {
     if (ok != true) return;
     try {
       await _repo.deleteSignal(s.id);
-      if (mounted) showSuccessSnackbar(context, 'تم الحذف');
+      if (mounted) showSuccessSnackbar(context, 'مسحنا الحركة خلاص');
       await _load();
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نمسحها: $e');
     }
   }
 
@@ -88,19 +88,19 @@ class _SignalsScreenState extends State<SignalsScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.card,
-        title: const Text('إشارة جديدة',
+        title: const Text('إضافة حركة أو إيماءة جديدة',
             style: TextStyle(
                 fontFamily: 'Cairo', color: AppColors.textPrimary)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _dialogField(nameCtrl, 'الاسم (اسم فريد)', Icons.label_outline),
+              _dialogField(nameCtrl, 'اسم الحركة (مثلاً: التحية، الضحك)', Icons.label_outline),
               const SizedBox(height: 10),
-              _dialogField(descCtrl, 'الوصف (اختياري)',
+              _dialogField(descCtrl, 'شرح الحركة ودورها (اختياري)',
                   Icons.description_outlined),
               const SizedBox(height: 10),
-              _dialogField(emotionCtrl, 'العاطفة (اختياري)',
+              _dialogField(emotionCtrl, 'العاطفة المرتبطة بالحركة (اختياري)',
                   Icons.sentiment_satisfied_outlined),
               const SizedBox(height: 10),
               TextField(
@@ -109,7 +109,7 @@ class _SignalsScreenState extends State<SignalsScreen> {
                 style: const TextStyle(
                     color: AppColors.textPrimary, fontFamily: 'Cairo'),
                 decoration: InputDecoration(
-                  labelText: 'أوامر المفاصل (JSON)',
+                  labelText: 'أوامر زوايا المفاصل (كود JSON)',
                   labelStyle: const TextStyle(color: AppColors.textSecondary),
                   filled: true,
                   fillColor: AppColors.surface,
@@ -142,13 +142,13 @@ class _SignalsScreenState extends State<SignalsScreen> {
                       ? null
                       : emotionCtrl.text.trim(),
                 ));
-                if (mounted) showSuccessSnackbar(context, 'تم الإنشاء');
+                if (mounted) showSuccessSnackbar(context, 'عملنا الحركة الجديدة تمام');
                 await _load();
               } catch (e) {
-                if (mounted) showErrorSnackbar(context, 'خطأ: $e');
+                if (mounted) showErrorSnackbar(context, 'حصلت مشكلة: $e');
               }
             },
-            child: const Text('إنشاء',
+            child: const Text('سجّل الحركة',
                 style: TextStyle(color: AppColors.teal)),
           ),
         ],
@@ -196,7 +196,7 @@ class _SignalsScreenState extends State<SignalsScreen> {
                     ),
                     const SizedBox(width: 12),
                     const Expanded(
-                      child: Text('الإشارات والإيماءات',
+                      child: Text('حركات وإيماءات الروبوت (Signals)',
                           style: TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 20,
@@ -221,7 +221,7 @@ class _SignalsScreenState extends State<SignalsScreen> {
                           children: [
                             Icon(Icons.add, color: Colors.white, size: 18),
                             SizedBox(width: 4),
-                            Text('جديد',
+                            Text('حركة جديدة',
                                 style: TextStyle(
                                     fontFamily: 'Cairo',
                                     color: Colors.white,
@@ -241,7 +241,7 @@ class _SignalsScreenState extends State<SignalsScreen> {
                             color: AppColors.teal))
                     : _signals.isEmpty
                         ? const Center(
-                            child: Text('لا توجد إشارات بعد',
+                            child: Text('مفيش أي إشارات أو حركات متسجلة لسه',
                                 style: TextStyle(
                                     color: AppColors.textMuted,
                                     fontFamily: 'Cairo')))
