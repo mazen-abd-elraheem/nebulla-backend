@@ -526,12 +526,15 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
               color: const Color(0xFF00E5FF),
             ),
             const SizedBox(height: 8),
-            Text(
-              isFemale ? 'سارة (AI-02)' : 'مازن (AI-01)',
-              style: const TextStyle(
-                fontFamily: 'Cairo',
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E293B),
+            ValueListenableBuilder<String>(
+              valueListenable: _audioService.activePersonaName,
+              builder: (context, name, _) => Text(
+                name,
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E293B),
+                ),
               ),
             ),
           ],
@@ -543,10 +546,8 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   void _triggerTapFeedback() {
     _blinkController.forward().then((_) => _blinkController.reverse());
     // Friendly speech greeting on tap
-    final isFemale = _audioService.activeAvatarType.value == 'female';
-    final greeting = isFemale
-        ? 'أهلاً بك! أنا سارة، رفيقك الودي الذكي. كيف يمكنني مساعدتك؟'
-        : 'مرحباً، أنا المساعد الأكاديمي مازن. جاهز لأي استفسار أو مهمة.';
+    final name = _audioService.activePersonaName.value;
+    final greeting = 'مرحباً بك! أنا $name. كيف يمكنني مساعدتك؟';
     _audioService.speak(greeting, emotion: 'happy');
   }
 

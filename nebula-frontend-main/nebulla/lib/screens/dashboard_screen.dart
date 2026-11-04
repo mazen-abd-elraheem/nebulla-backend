@@ -31,12 +31,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 // Friendly voice greeting triggers on tap
               },
               onAvatarDoubleTapped: () {
+                final isFemale = _audioService.activeAvatarType.value == 'female';
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      _audioService.activeAvatarType.value == 'female'
-                          ? 'تم تفعيل شخصية: سارة (الرفيق الودي)'
-                          : 'تم تفعيل شخصية: مازن (المساعد الأكاديمي)',
+                      isFemale
+                          ? 'تم تبديل المظهر: النمط الثاني'
+                          : 'تم تبديل المظهر: النمط الأول',
                       style: const TextStyle(fontFamily: 'Cairo'),
                     ),
                     duration: const Duration(seconds: 2),
@@ -220,15 +221,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   : const Color(0xFF0072FF),
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              isFemale
-                                  ? 'سارة (الرفيق التفاعلي) • AI-02'
-                                  : 'مازن (المساعد الأكاديمي) • AI-01',
-                              style: const TextStyle(
-                                fontFamily: 'Cairo',
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: Color(0xFF1E293B),
+                            ValueListenableBuilder<String>(
+                              valueListenable: _audioService.activePersonaName,
+                              builder: (context, personaName, _) => Text(
+                                '$personaName • ${isFemale ? "نمط 2" : "نمط 1"}',
+                                style: const TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Color(0xFF1E293B),
+                                ),
                               ),
                             ),
                           ],
@@ -254,10 +256,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     if (isSpeaking) {
                       _audioService.stop();
                     } else {
-                      final isFemale = _audioService.activeAvatarType.value == 'female';
-                      final text = isFemale
-                          ? 'مرحباً بك! أنا رفيقك الذكي التفاعلي سارة. كيف يمكنني مساعدتك في يومك؟'
-                          : 'أهلاً يا مازن! النظام يعمل بكامل طاقته ومستعد لأي استفسار أو مهمة.';
+                      final personaName = _audioService.activePersonaName.value;
+                      final text = 'مرحباً بك! أنا $personaName. كيف يمكنني مساعدتك اليوم؟';
                       _audioService.speak(text, emotion: 'happy');
                     }
                   },

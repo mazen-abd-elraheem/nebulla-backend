@@ -17,16 +17,27 @@ class AvatarAudioService {
   final ValueNotifier<String> currentEmotion = ValueNotifier<String>('neutral');
   final ValueNotifier<String> activeAvatarType = ValueNotifier<String>('female'); // 'male' | 'female'
   final ValueNotifier<int> activePersonalityId = ValueNotifier<int>(1);
+  final ValueNotifier<String> activePersonaName = ValueNotifier<String>('المساعد الذكي');
 
   Timer? _amplitudeTimer;
   Process? _activeAudioProcess;
   File? _lastAudioFile;
 
-  /// Switch the active avatar character ('male' or 'female')
-  void switchAvatar(String type) {
+  void setPersonaName(String name) {
+    final clean = name.trim();
+    if (clean.isNotEmpty) {
+      activePersonaName.value = clean;
+    }
+  }
+
+  /// Switch the active avatar character appearance ('male' or 'female')
+  void switchAvatar(String type, {String? name}) {
     if (type == 'male' || type == 'female') {
       activeAvatarType.value = type;
       activePersonalityId.value = (type == 'male') ? 1 : 2;
+      if (name != null && name.trim().isNotEmpty) {
+        activePersonaName.value = name.trim();
+      }
     }
   }
 

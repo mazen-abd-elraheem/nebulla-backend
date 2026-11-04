@@ -134,13 +134,16 @@ class NebulaSideMenu extends StatelessWidget {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  isFemale ? 'الرفيق الذكي (سارة)' : 'المساعد الذكي (مازن)',
-                                  style: const TextStyle(
-                                    fontFamily: 'Cairo',
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                    color: Color(0xFF1E293B),
+                                ValueListenableBuilder<String>(
+                                  valueListenable: audioService.activePersonaName,
+                                  builder: (context, name, _) => Text(
+                                    name,
+                                    style: const TextStyle(
+                                      fontFamily: 'Cairo',
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                      color: Color(0xFF1E293B),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 2),
@@ -509,3 +512,4 @@ class NebulaSideMenu extends StatelessWidget {
     );
   }
 }
+

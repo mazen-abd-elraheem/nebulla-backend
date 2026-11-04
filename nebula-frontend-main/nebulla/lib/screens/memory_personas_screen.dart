@@ -585,8 +585,8 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
     }
 
     // Switch avatar and trigger synced speech greeting
-    final isMale = target.isAcademicAvatar || target.name.contains('أكاديمي') || target.name.contains('مازن');
-    AvatarAudioService.instance.switchAvatar(isMale ? 'male' : 'female');
+    final isMale = target.isAcademicAvatar;
+    AvatarAudioService.instance.switchAvatar(isMale ? 'male' : 'female', name: target.name);
     if (target.backendId != null) {
       AvatarAudioService.instance.activePersonalityId.value = target.backendId!;
     }
