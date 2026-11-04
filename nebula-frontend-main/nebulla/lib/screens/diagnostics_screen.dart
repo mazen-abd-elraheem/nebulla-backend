@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/nebula_side_menu.dart';
 import 'face_registration_screen.dart';
 import 'signals_screen.dart';
 
@@ -884,6 +885,29 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // Side Menu Hamburger Button
+        InkWell(
+          onTap: () {
+            NebulaSideMenu.show(context, activeIndex: 4);
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Icon(
+              Icons.menu_rounded,
+              size: 20,
+              color: Color(0xFF1E293B),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+
         // Right (RTL): Title "تحليل حالة hardware"
         const Flexible(
           child: Text(

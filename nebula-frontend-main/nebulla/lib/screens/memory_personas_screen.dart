@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
+import '../services/avatar_audio_service.dart';
+import '../widgets/nebula_side_menu.dart';
 
 class PersonaProfileData {
   int? backendId;
@@ -582,6 +584,17 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
       } catch (_) {}
     }
 
+    // Switch avatar and trigger synced speech greeting
+    final isMale = target.isAcademicAvatar || target.name.contains('أكاديمي') || target.name.contains('مازن');
+    AvatarAudioService.instance.switchAvatar(isMale ? 'male' : 'female');
+    if (target.backendId != null) {
+      AvatarAudioService.instance.activePersonalityId.value = target.backendId!;
+    }
+    final greeting = isMale
+        ? 'تم تفعيل شخصية ${target.name}. جاهز لتنفيذ المهام الأكاديمية والتحليلية.'
+        : 'تم تفعيل شخصية ${target.name}. سعيدة بمساعدتك اليوم!';
+    AvatarAudioService.instance.speak(greeting, emotion: isMale ? 'confident' : 'happy');
+
     if (!mounted) return;
     showSuccessSnackbar(context, 'تم تفعيل "${target.name}"');
   }
@@ -775,18 +788,42 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                 children: [
                                   const SizedBox(height: 4),
 
-                                  // Main Title
-                                  const Center(
-                                    child: Text(
-                                      'إعداد الذاكرة والشخصيات',
-                                      style: TextStyle(
-                                        fontFamily: 'Cairo',
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.w900,
-                                        color: Color(0xFF0F172A),
-                                        letterSpacing: -0.2,
+                                  // Top Row with Hamburger Menu & Title
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      InkWell(
+                                        onTap: () {
+                                          NebulaSideMenu.show(context, activeIndex: 2);
+                                        },
+                                        borderRadius: BorderRadius.circular(14),
+                                        child: Container(
+                                          width: 38,
+                                          height: 38,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                                          ),
+                                          child: const Icon(
+                                            Icons.menu_rounded,
+                                            size: 20,
+                                            color: Color(0xFF1E293B),
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                      const Text(
+                                        'إعداد الذاكرة والشخصيات',
+                                        style: TextStyle(
+                                          fontFamily: 'Cairo',
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w900,
+                                          color: Color(0xFF0F172A),
+                                          letterSpacing: -0.2,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 38), // balance hamburger
+                                    ],
                                   ),
                                   const SizedBox(height: 10),
 
@@ -2059,9 +2096,13 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(11),
           child: Image.asset(
-            'assets/images/cyborg_bg.jpg',
+            'assets/images/avatar_male.jpg',
             fit: BoxFit.cover,
             alignment: Alignment.topCenter,
+            errorBuilder: (_, _, _) => const Icon(
+              Icons.smart_toy_rounded,
+              color: Color(0xFF0284C7),
+            ),
           ),
         ),
       );
@@ -2075,10 +2116,18 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
         color: const Color(0xFFF1F5F9),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: const Icon(
-        Icons.sentiment_satisfied_alt_rounded,
-        size: 23,
-        color: Color(0xFF94A3B8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(13),
+        child: Image.asset(
+          'assets/images/avatar_female.png',
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+          errorBuilder: (_, _, _) => const Icon(
+            Icons.face_3_rounded,
+            size: 23,
+            color: Color(0xFF94A3B8),
+          ),
+        ),
       ),
     );
   }

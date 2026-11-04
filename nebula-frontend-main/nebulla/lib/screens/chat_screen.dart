@@ -3,7 +3,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/nebula_repository.dart';
+import '../services/avatar_audio_service.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/interactive_animated_avatar.dart';
+import '../widgets/nebula_side_menu.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -191,6 +194,13 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         );
       });
+
+      // Synchronize backend speech audio with animated character lip-sync and expressions
+      AvatarAudioService.instance.speak(
+        reply,
+        emotion: emotion,
+        personalityId: _activePersonalityId,
+      );
     } catch (e) {
       if (!mounted) return;
       showErrorSnackbar(context, 'فشل استلام الرد من الذكاء الاصطناعي: $e');
@@ -431,13 +441,26 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
 
-          // Left (RTL end): 3 vertical dots menu
-          PopupMenuButton<String>(
-            icon: const Icon(
-              Icons.more_vert_rounded,
-              color: Color(0xFF334155),
-              size: 24,
-            ),
+          // Left (RTL end): Side menu and settings
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(
+                  Icons.menu_rounded,
+                  color: Color(0xFF334155),
+                  size: 24,
+                ),
+                onPressed: () {
+                  NebulaSideMenu.show(context, activeIndex: 1);
+                },
+              ),
+              PopupMenuButton<String>(
+                icon: const Icon(
+                  Icons.more_vert_rounded,
+                  color: Color(0xFF334155),
+                  size: 22,
+                ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
@@ -467,6 +490,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   ],
                 ),
               ),
+            ],
+          ),
             ],
           ),
         ],
@@ -589,30 +614,126 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Builds the circular cyborg face avatar matching the design exactly
+  /// Builds the circular cyborg face avatar with live speaking pulse & interactive full-screen popup
   Widget _buildCyborgAvatarCircle({double radius = 18}) {
-    return Container(
-      width: radius * 2,
-      height: radius * 2,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: const Color(0xFFF1F5F9),
-        border: Border.all(
-          color: const Color(0xFFE2E8F0),
-          width: 1.4,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Image.asset(
-        'assets/images/cyborg_bg.jpg',
-        fit: BoxFit.cover,
-        alignment: const Alignment(0.4, -0.3),
-        errorBuilder: (_, _, _) => Icon(
-          Icons.smart_toy_rounded,
-          color: const Color(0xFF00B4D8),
-          size: radius * 1.1,
-        ),
-      ),
+    final audio = AvatarAudioService.instance;
+    return ValueListenableBuilder<String>(
+      valueListenable: audio.activeAvatarType,
+      builder: (context, avatarType, _) {
+        final isFemale = avatarType == 'female';
+        final img = isFemale
+            ? 'assets/images/avatar_female.png'
+            : 'assets/images/avatar_male.jpg';
+
+        return ValueListenableBuilder<bool>(
+          valueListenable: audio.isSpeaking,
+          builder: (context, isSpeaking, _) {
+            return InkWell(
+              onTap: _showLiveAvatarDialog,
+              borderRadius: BorderRadius.circular(radius),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                width: radius * 2,
+                height: radius * 2,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFF1F5F9),
+                  border: Border.all(
+                    color: isSpeaking
+                        ? const Color(0xFF00E5FF)
+                        : const Color(0xFFE2E8F0),
+                    width: isSpeaking ? 2.4 : 1.4,
+                  ),
+                  boxShadow: isSpeaking
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFF00E5FF).withValues(alpha: 0.55),
+                            blurRadius: 12,
+                            spreadRadius: 2,
+                          ),
+                        ]
+                      : null,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(
+                  img,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  errorBuilder: (_, _, _) => Icon(
+                    Icons.smart_toy_rounded,
+                    color: const Color(0xFF00B4D8),
+                    size: radius * 1.1,
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showLiveAvatarDialog() {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'LiveAvatar',
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      transitionDuration: const Duration(milliseconds: 260),
+      transitionBuilder: (context, anim1, anim2, child) {
+        return ScaleTransition(
+          scale: CurvedAnimation(parent: anim1, curve: Curves.easeOutBack),
+          child: child,
+        );
+      },
+      pageBuilder: (context, anim1, anim2) {
+        return Center(
+          child: Container(
+            width: 360,
+            height: 520,
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 32,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: InteractiveAnimatedAvatar(
+                    onAvatarTapped: () {},
+                  ),
+                ),
+                Positioned(
+                  top: 14,
+                  left: 14,
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Icon(Icons.close_rounded,
+                          size: 20, color: Color(0xFF475569)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -833,6 +954,27 @@ class _ChatScreenState extends State<ChatScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Audio voice playback with live lip-sync
+                      InkWell(
+                        onTap: () {
+                          AvatarAudioService.instance.speak(
+                            msg.content,
+                            emotion: msg.emotion,
+                            personalityId: _activePersonalityId,
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.volume_up_rounded,
+                            size: 16,
+                            color: Color(0xFF00B4D8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
                       // Retry / Resend prompt icon
                       InkWell(
                         onTap: () => _sendMessage(msg.content),

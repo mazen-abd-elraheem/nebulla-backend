@@ -1,5 +1,5 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
 import 'dashboard_screen.dart';
 import 'chat_screen.dart';
 import 'memory_personas_screen.dart';
@@ -17,128 +17,142 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   late int _currentIndex;
 
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    ChatScreen(),
-    MemoryPersonasScreen(),
-    DiagnosticsScreen(),
-    SettingsScreen(),
-  ];
-
-  final List<_NavItem> _navItems = const [
-    _NavItem(icon: Icons.grid_view_rounded, label: 'الرئيسية'),
-    _NavItem(icon: Icons.chat_bubble_outline_rounded, label: 'المحادثة'),
-    _NavItem(icon: Icons.person_pin_outlined, label: 'الشخصيات'),
-    _NavItem(icon: Icons.developer_board_outlined, label: 'التشخيص'),
-    _NavItem(icon: Icons.settings_outlined, label: 'الإعدادات'),
-  ];
-
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: IndexedStack(index: _currentIndex, children: _screens),
-      bottomNavigationBar: ClipRect(
-        child: _NebulaNavBar(
-          currentIndex: _currentIndex,
-          items: _navItems,
-          onTap: (i) => setState(() => _currentIndex = i),
-        ),
-      ),
-    );
+  void _onNavigate(int index) {
+    if (index >= 0 && index < 4) {
+      setState(() => _currentIndex = index);
+    }
   }
-}
-
-class _NavItem {
-  final IconData icon;
-  final String label;
-  const _NavItem({required this.icon, required this.label});
-}
-
-class _NebulaNavBar extends StatelessWidget {
-  final int currentIndex;
-  final List<_NavItem> items;
-  final ValueChanged<int> onTap;
-
-  const _NebulaNavBar({
-    required this.currentIndex,
-    required this.items,
-    required this.onTap,
-  });
 
   @override
   Widget build(BuildContext context) {
-    const inactiveColor = Color(0xFF94A3B8);
+    final screens = [
+      DashboardScreen(onNavigate: _onNavigate),
+      const ChatScreen(),
+      const MemoryPersonasScreen(),
+      const DiagnosticsScreen(),
+      const SettingsScreen(),
+    ];
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: const Border(
-          top: BorderSide(color: Color(0xFF1E3A5F), width: 1.2),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.teal.withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Stack(
+        children: [
+          // Current active screen
+          IndexedStack(
+            index: _currentIndex,
+            children: screens,
+          ),
+
+          // Floating Translucent Frosted Glass Bottom Navigation Bar matching Image 2
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: _buildFloatingGlassNavBar(),
           ),
         ],
       ),
-      child: SafeArea(
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(items.length, (i) {
-              final selected = i == currentIndex;
-              final item = items[i];
-              return GestureDetector(
-                onTap: () => onTap(i),
-                behavior: HitTestBehavior.opaque,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 8),
-                  decoration: selected
-                      ? BoxDecoration(
-                          color: AppColors.teal.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: AppColors.teal.withValues(alpha: 0.45),
-                            width: 1.2,
-                          ),
-                        )
-                      : null,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        item.icon,
-                        color: selected ? AppColors.teal : inactiveColor,
-                        size: 22,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.label,
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 11,
-                          fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.w500,
-                          color: selected ? AppColors.teal : inactiveColor,
+    );
+  }
+
+  Widget _buildFloatingGlassNavBar() {
+    final items = [
+      const _BottomNavItem(
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_rounded,
+        label: 'الصفحة الرئيسية',
+      ),
+      const _BottomNavItem(
+        icon: Icons.chat_bubble_outline_rounded,
+        activeIcon: Icons.chat_bubble_rounded,
+        label: 'الدردشة',
+      ),
+      const _BottomNavItem(
+        icon: Icons.groups_outlined,
+        activeIcon: Icons.groups_rounded,
+        label: 'الشخصيات',
+      ),
+      const _BottomNavItem(
+        icon: Icons.person_outline_rounded,
+        activeIcon: Icons.person_rounded,
+        label: 'الملف الشخصي',
+      ),
+    ];
+
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        height: 66,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(32),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.9),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 24,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: List.generate(items.length, (i) {
+                final selected = _currentIndex == i;
+                final item = items[i];
+
+                return InkWell(
+                  onTap: () => setState(() => _currentIndex = i),
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 6),
+                    decoration: selected
+                        ? BoxDecoration(
+                            color: const Color(0xFF0072FF).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          )
+                        : null,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          selected ? item.activeIcon : item.icon,
+                          color: selected
+                              ? const Color(0xFF0072FF)
+                              : const Color(0xFF64748B),
+                          size: 22,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 3),
+                        Text(
+                          item.label,
+                          style: TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: 10,
+                            fontWeight:
+                                selected ? FontWeight.bold : FontWeight.w500,
+                            color: selected
+                                ? const Color(0xFF0072FF)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              }),
+            ),
           ),
         ),
       ),
@@ -146,3 +160,14 @@ class _NebulaNavBar extends StatelessWidget {
   }
 }
 
+class _BottomNavItem {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+
+  const _BottomNavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+  });
+}

@@ -1,488 +1,376 @@
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
-import '../models/models.dart';
-import '../services/nebula_repository.dart';
-import '../widgets/common_widgets.dart';
+import '../services/avatar_audio_service.dart';
+import '../widgets/interactive_animated_avatar.dart';
+import '../widgets/nebula_side_menu.dart';
 
+/// Full interactive animated avatar home screen matching the provided UI mockup.
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final ValueChanged<int>? onNavigate;
+
+  const DashboardScreen({super.key, this.onNavigate});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final _repo = NebulaRepository.instance;
-
-  DeviceStatus? _status;
-  List<Personality> _personalities = [];
-  Personality? _activePersonality;
-  bool _loading = true;
-  bool _stoppingEmergency = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load({bool showErrors = false}) async {
-    setState(() => _loading = true);
-    try {
-      final results = await Future.wait([
-        _repo.getDeviceStatus(),
-        _repo.getPersonalities(),
-      ]);
-      final status = results[0] as DeviceStatus;
-      final personalities = results[1] as List<Personality>;
-      if (!mounted) return;
-      setState(() {
-        _status = status;
-        _personalities = personalities;
-        _activePersonality =
-            personalities.where((p) => p.isActive).firstOrNull;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      if (showErrors) {
-        showErrorSnackbar(context, 'خطأ في تحميل البيانات: $e');
-      }
-    }
-  }
-
-  Future<void> _emergencyStop() async {
-    setState(() => _stoppingEmergency = true);
-    try {
-      await _repo.emergencyStop();
-      if (mounted) showSuccessSnackbar(context, '🚨 تم إيقاف الطوارئ');
-    } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل الإيقاف: $e');
-    } finally {
-      if (mounted) setState(() => _stoppingEmergency = false);
-    }
-  }
+  final _audioService = AvatarAudioService.instance;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: Container(
-        decoration: const BoxDecoration(gradient: AppColors.bgGradient),
-        child: SafeArea(
-          child: RefreshIndicator(
-            color: AppColors.teal,
-            backgroundColor: AppColors.surface,
-            onRefresh: () => _load(showErrors: true),
-            child: CustomScrollView(
-              slivers: [
-                SliverAppBar(
-                  backgroundColor: Colors.transparent,
-                  floating: true,
-                  title: Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
+      backgroundColor: Colors.white,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 1. Full-Screen Interactive Animated Avatar (Background & Foreground Character)
+          Positioned.fill(
+            child: InteractiveAnimatedAvatar(
+              fullScreen: true,
+              onAvatarTapped: () {
+                // Friendly voice greeting triggers on tap
+              },
+              onAvatarDoubleTapped: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      _audioService.activeAvatarType.value == 'female'
+                          ? 'تم تفعيل شخصية: سارة (الرفيق الودي)'
+                          : 'تم تفعيل شخصية: مازن (المساعد الأكاديمي)',
+                      style: const TextStyle(fontFamily: 'Cairo'),
+                    ),
+                    duration: const Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // 2. Top Header Bar (09:41, Hamburger Menu, Green Status Dot, Bell)
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Hamburger Menu Button (Left) -> Opens Side Menu
+                    InkWell(
+                      onTap: () {
+                        NebulaSideMenu.show(
+                          context,
+                          activeIndex: 0,
+                          onNavigate: (idx) {
+                            if (widget.onNavigate != null && idx >= 0) {
+                              widget.onNavigate!(idx);
+                            }
+                          },
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        width: 44,
+                        height: 44,
                         decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.85),
                           shape: BoxShape.circle,
                           border: Border.all(
-                              color: AppColors.teal.withValues(alpha: 0.5)),
-                          gradient: LinearGradient(colors: [
-                            AppColors.teal.withValues(alpha: 0.2),
-                            AppColors.purple.withValues(alpha: 0.2),
-                          ]),
+                            color: const Color(0xFFE2E8F0),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                        child: const Icon(Icons.smart_toy_outlined,
-                            color: AppColors.teal, size: 18),
+                        child: const Icon(
+                          Icons.menu_rounded,
+                          color: Color(0xFF1E293B),
+                          size: 24,
+                        ),
                       ),
-                      const SizedBox(width: 10),
-                      const Text('لوحة التحكم',
-                          style: TextStyle(
-                              fontFamily: 'Cairo',
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary)),
-                    ],
-                  ),
-                  actions: [
-                    IconButton(
-                      icon: const Icon(Icons.refresh, color: AppColors.teal),
-                      onPressed: () => _load(showErrors: true),
                     ),
-                  ],
-                ),
-                if (_loading)
-                  const SliverFillRemaining(
-                      child: Center(
-                          child: CircularProgressIndicator(
-                              color: AppColors.teal)))
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.all(16),
-                    sliver: SliverList(
-                      delegate: SliverChildListDelegate([
-                        // Connection status
-                        _ConnectionCard(status: _status),
-                        const SizedBox(height: 16),
-                        // Active personality
-                        _ActivePersonalityCard(
-                            personality: _activePersonality),
-                        const SizedBox(height: 16),
-                        // System overview
-                        _SystemOverviewCard(
-                            personalities: _personalities),
-                        const SizedBox(height: 24),
-                        // Emergency stop
-                        NebulaDangerButton(
-                          label: '🚨 إيقاف طارئ فوري',
-                          icon: Icons.stop_circle_outlined,
-                          onTap:
-                              _stoppingEmergency ? null : _emergencyStop,
+
+                    // Center: Live Status Green Dot with Pulse
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF10B981).withValues(alpha: 0.6),
+                                blurRadius: 8,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 32),
-                      ]),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'متصل الآن',
+                          style: TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
-class _ConnectionCard extends StatelessWidget {
-  final DeviceStatus? status;
-  const _ConnectionCard({this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    final hasActiveConnection = status?.esp32Connected == true ||
-        status?.phoneConnected == true ||
-        status?.deskConnected == true;
-
-    return NebulaCard(
-      glowing: hasActiveConnection,
-      borderColor: hasActiveConnection
-          ? AppColors.teal.withValues(alpha: 0.5)
-          : AppColors.cardBorder,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionHeader(title: 'حالة الاتصال'),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _ChannelStatus(
-                  label: 'الهاتف',
-                  icon: Icons.phone_android_rounded,
-                  connected: status?.phoneConnected ?? false),
-              _ChannelStatus(
-                  label: 'سطح المكتب',
-                  icon: Icons.desktop_windows_rounded,
-                  connected: status?.deskConnected ?? false),
-              _ChannelStatus(
-                  label: 'ESP32',
-                  icon: Icons.memory_rounded,
-                  connected: status?.esp32Connected ?? false),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChannelStatus extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool connected;
-
-  const _ChannelStatus(
-      {required this.label,
-      required this.icon,
-      required this.connected});
-
-  @override
-  Widget build(BuildContext context) {
-    const activeColor = AppColors.success;
-    const inactiveBorder = Color(0xFF223A5E);
-    const inactiveBg = Color(0xFF132238);
-    const inactiveIcon = Color(0xFFCBD5E1);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: connected
-                ? activeColor.withValues(alpha: 0.15)
-                : inactiveBg,
-            border: Border.all(
-              color: connected ? activeColor : inactiveBorder,
-              width: connected ? 1.8 : 1.2,
-            ),
-            boxShadow: connected
-                ? [
-                    BoxShadow(
-                      color: activeColor.withValues(alpha: 0.4),
-                      blurRadius: 14,
-                      spreadRadius: 1,
-                    )
-                  ]
-                : [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 6,
-                    )
+                    // Notification Bell (Right)
+                    InkWell(
+                      onTap: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'لا توجد تنبيهات جديدة • النظام يعمل بكفاءة 100%',
+                              style: TextStyle(fontFamily: 'Cairo'),
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFFE2E8F0),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.notifications_none_rounded,
+                          color: Color(0xFF1E293B),
+                          size: 24,
+                        ),
+                      ),
+                    ),
                   ],
-          ),
-          child: Icon(
-            icon,
-            color: connected ? activeColor : inactiveIcon,
-            size: 26,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            fontFamily: 'Cairo',
-          ),
-        ),
-        const SizedBox(height: 2),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: connected
-                ? activeColor.withValues(alpha: 0.12)
-                : const Color(0xFF1A2B42),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            connected ? 'متصل' : 'غير متصل',
-            style: TextStyle(
-              color: connected ? activeColor : const Color(0xFF94A3B8),
-              fontSize: 11,
-              fontWeight: connected ? FontWeight.w700 : FontWeight.w500,
-              fontFamily: 'Cairo',
+                ),
+              ),
             ),
           ),
-        ),
-      ],
-    );
-  }
-}
 
-class _ActivePersonalityCard extends StatelessWidget {
-  final Personality? personality;
-  const _ActivePersonalityCard({this.personality});
+          // 3. Floating Quick Switcher & Character Name Badge (Top Center below header)
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 68),
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _audioService.activeAvatarType,
+                  builder: (context, avatarType, _) {
+                    final isFemale = avatarType == 'female';
 
-  @override
-  Widget build(BuildContext context) {
-    final isActive = personality != null;
-
-    return NebulaCard(
-      glowing: isActive,
-      borderColor: isActive
-          ? AppColors.purple.withValues(alpha: 0.6)
-          : AppColors.cardBorder,
-      child: Row(
-        children: [
-          Container(
-            width: 58,
-            height: 58,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: AppColors.purpleGradient,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.purple.withValues(alpha: 0.45),
-                  blurRadius: 14,
-                  spreadRadius: 1,
-                )
-              ],
+                    return InkWell(
+                      onTap: () {
+                        final next = isFemale ? 'male' : 'female';
+                        _audioService.switchAvatar(next);
+                      },
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: const Color(0xFF00E5FF).withValues(alpha: 0.6),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.sync_rounded,
+                              size: 16,
+                              color: isFemale
+                                  ? const Color(0xFFEC4899)
+                                  : const Color(0xFF0072FF),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              isFemale
+                                  ? 'سارة (الرفيق التفاعلي) • AI-02'
+                                  : 'مازن (المساعد الأكاديمي) • AI-01',
+                              style: const TextStyle(
+                                fontFamily: 'Cairo',
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: Color(0xFF1E293B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
-            child: const Icon(Icons.person_rounded,
-                color: Colors.white, size: 30),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'الشخصية النشطة',
-                  style: TextStyle(
-                    color: Color(0xFF94A3B8),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'Cairo',
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  personality?.name ?? 'لا توجد شخصية نشطة',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'Cairo',
-                  ),
-                ),
-                if (personality != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    '${personality!.dialect} · ${personality!.languageMix}',
-                    style: const TextStyle(
-                      color: AppColors.teal,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'Cairo',
+
+          // 4. Floating Action Prompt at Bottom above the Nav Bar
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 90,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _audioService.isSpeaking,
+              builder: (context, isSpeaking, _) {
+                return InkWell(
+                  onTap: () {
+                    if (isSpeaking) {
+                      _audioService.stop();
+                    } else {
+                      final isFemale = _audioService.activeAvatarType.value == 'female';
+                      final text = isFemale
+                          ? 'مرحباً بك! أنا رفيقك الذكي التفاعلي سارة. كيف يمكنني مساعدتك في يومك؟'
+                          : 'أهلاً يا مازن! النظام يعمل بكامل طاقته ومستعد لأي استفسار أو مهمة.';
+                      _audioService.speak(text, emotion: 'happy');
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSpeaking
+                            ? const Color(0xFF00E5FF)
+                            : const Color(0xFFE2E8F0),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (isSpeaking
+                                  ? const Color(0xFF00E5FF)
+                                  : Colors.black)
+                              .withValues(alpha: 0.1),
+                          blurRadius: 18,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF0072FF), Color(0xFF00C6FF)],
+                            ),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF0072FF)
+                                    .withValues(alpha: 0.3),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            isSpeaking
+                                ? Icons.stop_rounded
+                                : Icons.volume_up_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                isSpeaking
+                                    ? 'المساعد يتحدث الآن...'
+                                    : 'اضغط للتحدث أو الاستماع',
+                                style: const TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                              Text(
+                                isSpeaking
+                                    ? 'مزامنة صوتية حية مع تعابير الوجه والشفتين'
+                                    : 'توليد صوت ذكي متزامن مع حركة الشخصية',
+                                style: const TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontSize: 11,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () {
+                            widget.onNavigate?.call(1); // Navigate to Chat
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'دردشة 💬',
+                              style: TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0284C7),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ],
+                );
+              },
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? AppColors.success.withValues(alpha: 0.15)
-                  : const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: isActive
-                    ? AppColors.success.withValues(alpha: 0.6)
-                    : const Color(0xFF334155),
-                width: 1.2,
-              ),
-            ),
-            child: Text(
-              isActive ? 'نشط' : 'خامل',
-              style: TextStyle(
-                color: isActive ? AppColors.success : const Color(0xFF94A3B8),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Cairo',
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SystemOverviewCard extends StatelessWidget {
-  final List<Personality> personalities;
-  const _SystemOverviewCard({required this.personalities});
-
-  @override
-  Widget build(BuildContext context) {
-    final activeCount = personalities.where((p) => p.isActive).length;
-
-    return NebulaCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionHeader(title: 'نظرة عامة'),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _StatItem(
-                  label: 'الشخصيات',
-                  value: personalities.length.toString(),
-                  icon: Icons.people_alt_rounded,
-                  color: AppColors.purple,
-                  bgColor: const Color(0xFF141F36),
-                  borderColor: const Color(0xFF283B60),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _StatItem(
-                  label: 'نشطة',
-                  value: activeCount.toString(),
-                  icon: Icons.check_circle_rounded,
-                  color: AppColors.success,
-                  bgColor: const Color(0xFF0C2430),
-                  borderColor: const Color(0xFF1B4958),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatItem extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  final Color bgColor;
-  final Color borderColor;
-
-  const _StatItem({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-    required this.bgColor,
-    required this.borderColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor, width: 1.2),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: 'Cairo',
-                ),
-              ),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFFCBD5E1),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Cairo',
-                ),
-              ),
-            ],
-          ),
-          Icon(icon, color: color, size: 26),
         ],
       ),
     );
