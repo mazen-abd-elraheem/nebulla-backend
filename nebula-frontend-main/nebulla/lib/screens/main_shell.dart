@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'dashboard_screen.dart';
 import 'chat_screen.dart';
 import 'memory_personas_screen.dart';
+import 'profile_screen.dart';
 import 'diagnostics_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/nebula_side_menu.dart';
@@ -36,6 +37,7 @@ class _MainShellState extends State<MainShell> {
       DashboardScreen(onNavigate: _onNavigate),
       const ChatScreen(),
       const MemoryPersonasScreen(),
+      const ProfileScreen(),
       const DiagnosticsScreen(),
       const SettingsScreen(),
     ];

@@ -81,23 +81,28 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _loginWithBiometrics() async {
     final email = _emailCtrl.text.trim();
-    if (email.isEmpty) {
-      showErrorSnackbar(
-        context,
-        'يرجى إدخال البريد الإلكتروني أو المعرّف أولاً للتحقق من بصمة الوجه.',
-      );
-      return;
-    }
 
     try {
-      final XFile? photo = await _picker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.front,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 90,
-      );
+      XFile? photo;
+      try {
+        photo = await _picker.pickImage(
+          source: ImageSource.camera,
+          preferredCameraDevice: CameraDevice.front,
+          maxWidth: 1024,
+          maxHeight: 1024,
+          imageQuality: 90,
+        );
+      } catch (camErr) {
+        // Fallback to gallery / photo file on Windows Desktop if webcam is busy or unhandled
+        photo = await _picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1024,
+          maxHeight: 1024,
+          imageQuality: 90,
+        );
+      }
 
+      // If user still has null (e.g. cancelled picker)
       if (photo == null) return;
 
       setState(() => _biometricLoading = true);
@@ -106,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _showScanningFeedbackDialog();
 
       final user = await NebulaRepository.instance.loginBiometric(
-        email: email,
+        email: email, // Optional; backend performs 1:N neural recognition if empty
         faceImage: File(photo.path),
       );
 
@@ -115,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       showSuccessSnackbar(
         context,
-        'تم التحقق البيومتري بنجاح! مرحباً ${user.fullName}',
+        'تم التحقق عبر بصمة الوجه بنجاح! مرحباً بك يا ${user.fullName}',
       );
 
       Navigator.of(context).pushReplacement(
@@ -124,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      showErrorSnackbar(context, 'فشل التحقق البيومتري: $e');
+      showErrorSnackbar(context, 'فشل التحقق بالوجه: $e');
     } finally {
       if (mounted) setState(() => _biometricLoading = false);
     }

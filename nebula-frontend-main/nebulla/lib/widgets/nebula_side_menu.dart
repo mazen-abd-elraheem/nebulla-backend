@@ -361,12 +361,21 @@ class NebulaSideMenu extends StatelessWidget {
                               ),
                               const SizedBox(height: 9),
 
+                              // الملف الشخصي
+                              _InteractiveMenuButton(
+                                icon: Icons.person_outline_rounded,
+                                title: 'الملف الشخصي',
+                                isActive: activeIndex == 3,
+                                onTap: () => _handleItemTap(context, 3), // Profile
+                              ),
+                              const SizedBox(height: 9),
+
                               // الأجهزة
                               _InteractiveMenuButton(
                                 icon: Icons.desktop_windows_outlined,
                                 title: 'الأجهزة',
-                                isActive: activeIndex == 3,
-                                onTap: () => _handleItemTap(context, 3), // Diagnostics
+                                isActive: activeIndex == 4,
+                                onTap: () => _handleItemTap(context, 4), // Diagnostics
                               ),
                               const SizedBox(height: 9),
 
