@@ -30,7 +30,7 @@ class _PersonalitiesScreenState extends State<PersonalitiesScreen> {
     try {
       _personalities = await _repo.getPersonalities();
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ في التحميل: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نجيب الشخصيات: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -39,10 +39,10 @@ class _PersonalitiesScreenState extends State<PersonalitiesScreen> {
   Future<void> _activate(Personality p) async {
     try {
       await _repo.activatePersonality(p.id);
-      if (mounted) showSuccessSnackbar(context, 'تم تفعيل ${p.name}');
+      if (mounted) showSuccessSnackbar(context, 'شغّلنا شخصية ${p.name} دلوقتي');
       await _load();
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل التفعيل: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نشغّل الشخصية: $e');
     }
   }
 
@@ -51,10 +51,10 @@ class _PersonalitiesScreenState extends State<PersonalitiesScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.card,
-        title: const Text('حذف الشخصية',
+        title: const Text('مسح الشخصية',
             style: TextStyle(
                 fontFamily: 'Cairo', color: AppColors.textPrimary)),
-        content: Text('هل تريد حذف "${p.name}"؟',
+        content: Text('متأكد إنك عايز تمسح شخصية "${p.name}"؟',
             style: const TextStyle(
                 fontFamily: 'Cairo', color: AppColors.textSecondary)),
         actions: [
@@ -63,7 +63,7 @@ class _PersonalitiesScreenState extends State<PersonalitiesScreen> {
               child: const Text('إلغاء')),
           TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('حذف',
+              child: const Text('امسح',
                   style: TextStyle(color: AppColors.error))),
         ],
       ),
@@ -71,10 +71,10 @@ class _PersonalitiesScreenState extends State<PersonalitiesScreen> {
     if (ok != true) return;
     try {
       await _repo.deletePersonality(p.id);
-      if (mounted) showSuccessSnackbar(context, 'تم الحذف');
+      if (mounted) showSuccessSnackbar(context, 'مسحنا الشخصية خلاص');
       await _load();
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل الحذف: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نمسح الشخصية: $e');
     }
   }
 
@@ -118,7 +118,7 @@ class _PersonalitiesScreenState extends State<PersonalitiesScreen> {
                 child: Row(
                   children: [
                     const Expanded(
-                      child: Text('الشخصيات',
+                      child: Text('شخصيات وبروفايلات نيبولا',
                           style: TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 22,
@@ -148,7 +148,7 @@ class _PersonalitiesScreenState extends State<PersonalitiesScreen> {
                           children: [
                             Icon(Icons.add, color: AppColors.bg, size: 18),
                             SizedBox(width: 4),
-                            Text('جديد',
+                            Text('ضيف شخصية',
                                 style: TextStyle(
                                     fontFamily: 'Cairo',
                                     color: AppColors.bg,
@@ -211,14 +211,14 @@ class _EmptyState extends StatelessWidget {
           const Icon(Icons.people_outline,
               color: AppColors.textMuted, size: 64),
           const SizedBox(height: 16),
-          const Text('لا توجد شخصيات بعد',
+          const Text('مفيش أي شخصيات متسجلة لسه',
               style: TextStyle(
                   fontFamily: 'Cairo',
                   color: AppColors.textSecondary,
                   fontSize: 15)),
           const SizedBox(height: 16),
           NebulaPrimaryButton(
-              label: 'أضف أول شخصية', icon: Icons.add, onTap: onAdd),
+              label: 'اعمل أول شخصية دلوقتي', icon: Icons.add, onTap: onAdd),
         ],
       ),
     );
@@ -305,7 +305,7 @@ class _PersonalityCard extends StatelessWidget {
                       border: Border.all(
                           color: AppColors.teal.withValues(alpha: 0.5)),
                     ),
-                    child: const Text('نشط',
+                    child: const Text('شغالة دلوقتي',
                         style: TextStyle(
                             color: AppColors.teal,
                             fontSize: 11,
@@ -322,7 +322,7 @@ class _PersonalityCard extends StatelessWidget {
                 if (personality.voiceSamplePath != null) ...[
                   const SizedBox(width: 6),
                   _Tag(
-                      label: 'صوت مرفق',
+                      label: 'بصمة صوت مسجلة',
                       color: AppColors.success),
                 ],
               ],
@@ -336,26 +336,26 @@ class _PersonalityCard extends StatelessWidget {
                 if (!isActive)
                   _ActionBtn(
                       icon: Icons.check_circle_outline,
-                      label: 'تفعيل',
+                      label: 'شغّلها دلوقتي',
                       color: AppColors.teal,
                       onTap: onActivate),
                 if (!isActive) const SizedBox(width: 8),
                 _ActionBtn(
                     icon: Icons.edit_outlined,
-                    label: 'تعديل',
+                    label: 'عدّل',
                     color: AppColors.textSecondary,
                     onTap: onEdit),
                 const SizedBox(width: 8),
                 _ActionBtn(
                     icon: Icons.psychology_outlined,
-                    label: 'الذاكرة',
+                    label: 'الذكريات',
                     color: AppColors.purple,
                     onTap: onMemories),
                 _VoiceUploadBtn(personality: personality),
                 const Spacer(),
                 _ActionBtn(
                     icon: Icons.delete_outline,
-                    label: 'حذف',
+                    label: 'امسح',
                     color: AppColors.error,
                     onTap: onDelete),
               ],
@@ -449,10 +449,10 @@ class _VoiceUploadBtnState extends State<_VoiceUploadBtn> {
       await NebulaRepository.instance
           .uploadVoiceSample(widget.personality.id, File(picked.path));
       if (mounted) {
-        showSuccessSnackbar(context, 'تم رفع عينة الصوت');
+        showSuccessSnackbar(context, 'رفعنا عينة الصوت بنجاح');
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل الرفع: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نرفع ملف الصوت: $e');
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -471,7 +471,7 @@ class _VoiceUploadBtnState extends State<_VoiceUploadBtn> {
       padding: const EdgeInsets.only(right: 8),
       child: _ActionBtn(
           icon: Icons.mic_outlined,
-          label: 'صوت',
+          label: 'بصمة صوت',
           color: AppColors.warning,
           onTap: _pick),
     );
@@ -555,11 +555,11 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
             .updatePersonality(widget.existing!.id, body);
       }
       if (!mounted) return;
-      showSuccessSnackbar(context, 'تم الحفظ');
+      showSuccessSnackbar(context, 'حفظنا الشخصية تمام');
       widget.onSaved();
       Navigator.pop(context);
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل الحفظ: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نحفظ الشخصية: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -587,8 +587,8 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
                     const SizedBox(width: 12),
                     Text(
                       widget.existing == null
-                          ? 'شخصية جديدة'
-                          : 'تعديل الشخصية',
+                          ? 'عمل شخصية جديدة'
+                          : 'تعديل بيانات الشخصية',
                       style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 20,
@@ -616,12 +616,12 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
                                     color: AppColors.textPrimary,
                                     fontFamily: 'Cairo'),
                                 decoration: const InputDecoration(
-                                    labelText: 'اسم الشخصية',
+                                    labelText: 'اسم الشخصية (مثلاً: نيبولا المصري)',
                                     prefixIcon: Icon(
                                         Icons.badge_outlined)),
                                 validator: (v) =>
                                     (v == null || v.trim().isEmpty)
-                                        ? 'الاسم مطلوب'
+                                        ? 'لازم تكتب اسم للشخصية'
                                         : null,
                               ),
                               const SizedBox(height: 14),
@@ -633,7 +633,7 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
                                     color: AppColors.textPrimary,
                                     fontFamily: 'Cairo'),
                                 decoration: const InputDecoration(
-                                    labelText: 'الوصف (اختياري)',
+                                    labelText: 'نبذة عن الشخصية ودورها (اختياري)',
                                     prefixIcon: Icon(
                                         Icons.description_outlined)),
                               ),
@@ -646,7 +646,7 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
                                     color: AppColors.textPrimary,
                                     fontFamily: 'Cairo'),
                                 decoration: const InputDecoration(
-                                  labelText: 'نص النظام (System Prompt)',
+                                  labelText: 'تعليمات وطريقة تفكير الشخصية (System Prompt)',
                                   alignLabelWithHint: true,
                                   prefixIcon: Icon(
                                       Icons.psychology_outlined),
@@ -660,7 +660,7 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        const Text('اللهجة',
+                                        const Text('اللهجة وطريقة الكلام',
                                             style: TextStyle(
                                                 color:
                                                     AppColors.textSecondary,
@@ -701,7 +701,7 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        const Text('اللغة',
+                                        const Text('خلطة اللغات (عربي / إنجليزي)',
                                             style: TextStyle(
                                                 color:
                                                     AppColors.textSecondary,
@@ -743,7 +743,7 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
                         ),
                         const SizedBox(height: 24),
                         NebulaPrimaryButton(
-                          label: 'حفظ الشخصية',
+                          label: 'احفظ بيانات الشخصية',
                           icon: Icons.save_outlined,
                           onTap: _save,
                           loading: _saving,

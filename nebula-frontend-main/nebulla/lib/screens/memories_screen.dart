@@ -37,7 +37,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
     try {
       _memories = await _repo.getMemories(widget.personality.id);
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ في التحميل: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نجيب الذكريات: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -53,7 +53,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       _memories =
           await _repo.searchMemories(q.trim(), widget.personality.id);
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ في البحث: $e');
+      if (mounted) showErrorSnackbar(context, 'حصلت مشكلة أثناء البحث: $e');
     } finally {
       if (mounted) setState(() => _searching = false);
     }
@@ -62,10 +62,10 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
   Future<void> _deleteMemory(Memory m) async {
     try {
       await _repo.deleteMemory(m.id);
-      if (mounted) showSuccessSnackbar(context, 'تم الحذف');
+      if (mounted) showSuccessSnackbar(context, 'مسحنا الذاكرة دي خلاص');
       await _load();
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل الحذف: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نمسح الذاكرة: $e');
     }
   }
 
@@ -78,7 +78,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
       builder: (_) => StatefulBuilder(
         builder: (ctx, ss) => AlertDialog(
           backgroundColor: AppColors.card,
-          title: const Text('إضافة ذاكرة',
+          title: const Text('ضيف معلومة أو ذكرى جديدة',
               style: TextStyle(
                   fontFamily: 'Cairo', color: AppColors.textPrimary)),
           content: Column(
@@ -91,7 +91,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
                 style: const TextStyle(
                     color: AppColors.textPrimary, fontFamily: 'Cairo'),
                 decoration: InputDecoration(
-                  hintText: 'اكتب المحتوى هنا...',
+                  hintText: 'اكتب المعلومة اللي عايز نيبولا يفتكرها هنا...',
                   hintStyle: const TextStyle(
                       color: AppColors.textMuted, fontFamily: 'Cairo'),
                   filled: true,
@@ -105,7 +105,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  const Text('الأهمية:',
+                  const Text('درجة الأهمية:',
                       style: TextStyle(
                           color: AppColors.textSecondary,
                           fontFamily: 'Cairo')),
@@ -141,16 +141,16 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
                   await _repo.addMemory(
                       text, widget.personality.id, importance);
                   if (mounted) {
-                    showSuccessSnackbar(context, 'تمت الإضافة');
+                    showSuccessSnackbar(context, 'ضيفنا الذكرى دي بنجاح');
                   }
                   await _load();
                 } catch (e) {
                   if (mounted) {
-                    showErrorSnackbar(context, 'فشل الحفظ: $e');
+                    showErrorSnackbar(context, 'معرفناش نحفظ الذكرى: $e');
                   }
                 }
               },
-              child: const Text('حفظ',
+              child: const Text('احفظ المعلومة',
                   style: TextStyle(color: AppColors.teal)),
             ),
           ],
@@ -183,7 +183,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('الذاكرة',
+                          const Text('ذكريات ومعلومات الروبوت (RAG)',
                               style: TextStyle(
                                   fontFamily: 'Cairo',
                                   fontSize: 20,
@@ -221,7 +221,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
                   style: const TextStyle(
                       color: AppColors.textPrimary, fontFamily: 'Cairo'),
                   decoration: InputDecoration(
-                    hintText: 'بحث دلالي في الذاكرة...',
+                    hintText: 'دور في ذكريات ومعلومات الروبوت...',
                     prefixIcon: _searching
                         ? const Padding(
                             padding: EdgeInsets.all(12),
@@ -256,7 +256,7 @@ class _MemoriesScreenState extends State<MemoriesScreen> {
                             color: AppColors.teal))
                     : _memories.isEmpty
                         ? const Center(
-                            child: Text('لا توجد ذكريات',
+                            child: Text('مفيش أي ذكريات متسجلة للشخصية دي لسه',
                                 style: TextStyle(
                                     color: AppColors.textMuted,
                                     fontFamily: 'Cairo')))
@@ -340,7 +340,7 @@ class _MemoryTile extends StatelessWidget {
                               color:
                                   importanceColor.withValues(alpha: 0.4)),
                         ),
-                        child: Text('أهمية: ${memory.importance}',
+                        child: Text('أهمية: ${memory.importance} / 10',
                             style: TextStyle(
                                 color: importanceColor,
                                 fontSize: 10,

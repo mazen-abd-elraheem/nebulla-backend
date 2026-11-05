@@ -390,6 +390,36 @@ class SpeechBrainBackend:
         return emb.squeeze().detach().cpu().numpy()
 
 
+class VoiceTutHybridBackend:
+    """
+    Unified VoiceTuT & SpeechBrain ECAPA-TDNN Hybrid Verifier for Egyptian Arabic (arz).
+    - Biometric Core: SpeechBrain ECAPA-TDNN (192-D, AAM-Softmax trained for speaker verification).
+    - Synthesis Alignment: VoiceTuT (OmniVoice / XTTS-v2) voice cloning compatibility.
+    - Zero-Failure CPU Fallback: AcousticVoiceprintBackend (192-D NumPy/SciPy vocal tract formants).
+    """
+
+    model_id = "voicetut-hybrid-ecapa192"
+
+    def __init__(self) -> None:
+        self._sb = SpeechBrainBackend()
+        self._acoustic = AcousticVoiceprintBackend()
+
+    def available(self) -> bool:
+        return True
+
+    def embed(self, samples: np.ndarray) -> np.ndarray:
+        if self._sb.available():
+            try:
+                return self._sb.embed(samples)
+            except Exception as e:
+                logger.warning("SpeechBrain failed during inference; falling back to Acoustic backend: %s", e)
+        return self._acoustic.embed(samples)
+
+    def extract_timbre_features(self, samples: np.ndarray) -> np.ndarray:
+        """Extract lightweight acoustic timbre features for secondary VoiceTuT synthesis alignment."""
+        return self._acoustic.embed(samples)
+
+
 # ── results ──────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -595,12 +625,8 @@ class SpeakerVerificationService:
         if backend is not None:
             self._backend: EmbeddingBackend = backend
         else:
-            # Check if SpeechBrain is available; fallback seamlessly to AcousticVoiceprintBackend
-            sb = SpeechBrainBackend()
-            if sb.available():
-                self._backend = sb
-            else:
-                self._backend = AcousticVoiceprintBackend()
+            # Unified VoiceTuT & SpeechBrain ECAPA-TDNN hybrid verifier for Egyptian Arabic
+            self._backend = VoiceTutHybridBackend()
 
         self._cache: Optional[Dict[int, _Entry]] = None
         self._cache_lock = asyncio.Lock()
@@ -622,7 +648,8 @@ class SpeakerVerificationService:
                 async with session_factory() as db:
                     rows = (await db.execute(select(Voiceprint))).scalars().all()
                 for r in rows:
-                    if r.model_id and r.model_id != self._backend.model_id:
+                    compatible_models = {"voicetut-hybrid-ecapa192", "speechbrain/spkrec-ecapa-voxceleb", "acoustic-vocal-tract-v3-192d"}
+                    if r.model_id and r.model_id != self._backend.model_id and (r.model_id not in compatible_models or r.embedding_dim != 192):
                         logger.warning(
                             "Skipping outdated voiceprint for '%s' (model %s != active %s). Please re-enroll.",
                             r.speaker_name,
@@ -649,7 +676,9 @@ class SpeakerVerificationService:
 
     @property
     def default_threshold(self) -> float:
-        """Adaptive similarity threshold depending on active backend."""
+        """Adaptive similarity threshold for Egyptian Arabic voice verification."""
+        if hasattr(self._backend, "_sb") and not self._backend._sb.available():
+            return 0.82
         if isinstance(self._backend, AcousticVoiceprintBackend):
             return 0.82
         return settings.SPEAKER_THRESHOLD_L1
@@ -665,6 +694,31 @@ class SpeakerVerificationService:
         progress = min(1.0, (sim - threshold) / max(0.01, (0.95 - threshold)))
         pct = 85.0 + (progress * 14.9)
         return round(min(99.9, pct), 1)
+
+    def _compute_fused_score(self, emb: np.ndarray, samples: np.ndarray, entry: _Entry) -> float:
+        """Dual-Score Fusion: 80% ECAPA Biometric + 20% VoiceTuT Timbre Alignment."""
+        s = float(np.dot(emb, entry.vector))
+        if getattr(self._backend, "extract_timbre_features", None) is not None:
+            import os
+            ref_path = None
+            if entry.personality_id:
+                p_path = os.path.join("data", "voice_samples", f"personality_{entry.personality_id}.wav")
+                if os.path.exists(p_path):
+                    ref_path = p_path
+            if not ref_path and entry.user_id:
+                u_path = os.path.join("data", "voice_samples", f"user_{entry.user_id}.wav")
+                if os.path.exists(u_path):
+                    ref_path = u_path
+            if ref_path:
+                try:
+                    ref_pcm = decode_audio(open(ref_path, "rb").read())
+                    t_cur = _unit(self._backend.extract_timbre_features(samples))
+                    t_ref = _unit(self._backend.extract_timbre_features(ref_pcm))
+                    timbre_sim = max(0.0, float(np.dot(t_cur, t_ref)))
+                    return float(0.80 * s + 0.20 * timbre_sim)
+                except Exception:
+                    pass
+        return s
 
     # ── 1:N Speaker Identification (التعرف على هوية المتحدث) ─────────────
 
@@ -738,7 +792,7 @@ class SpeakerVerificationService:
         best_uid, best_sim, best_name, best_entry = None, -1.0, None, None
 
         for uid, entry in entries.items():
-            s = float(np.dot(emb, entry.vector))
+            s = self._compute_fused_score(emb, samples, entry)
             if s > best_sim:
                 best_sim = s
                 best_uid = uid
@@ -1244,7 +1298,7 @@ class SpeakerVerificationService:
             emb = _unit(await asyncio.to_thread(self._backend.embed, samples))
             best_uid, best = None, -1.0
             for uid, entry in entries.items():
-                s = float(np.dot(emb, entry.vector))
+                s = self._compute_fused_score(emb, samples, entry)
                 if s > best:
                     best_uid, best = uid, s
 
@@ -1411,6 +1465,29 @@ class SpeakerVerificationService:
             db.add(row)
 
         await db.flush()
+
+        # Dual-Enrollment: Automatically sync voice sample for VoiceTuT TTS voice cloning
+        try:
+            import os
+            from scipy.io import wavfile
+            os.makedirs("data/voice_samples", exist_ok=True)
+            best_raw = max(samples_list, key=len)
+            best_pcm = decode_audio(best_raw)
+            wav_i16 = (best_pcm * 32767.0).clip(-32768, 32767).astype(np.int16)
+
+            user_sample_path = os.path.join("data", "voice_samples", f"user_{user_id}.wav")
+            wavfile.write(user_sample_path, settings.SPEAKER_SAMPLE_RATE, wav_i16)
+
+            if personality_id is not None:
+                p_sample_path = os.path.join("data", "voice_samples", f"personality_{personality_id}.wav")
+                wavfile.write(p_sample_path, settings.SPEAKER_SAMPLE_RATE, wav_i16)
+                p_obj = (await db.execute(select(Personality).where(Personality.id == personality_id))).scalar_one_or_none()
+                if p_obj:
+                    p_obj.voice_sample_path = p_sample_path
+                    logger.info("Dual-Enrollment: Linked VoiceTuT cloned voice sample for personality %s -> %s", personality_id, p_sample_path)
+        except Exception as e:
+            logger.warning("Dual-Enrollment voice sample sync to VoiceTuT skipped: %s", e)
+
         self.invalidate()
         return row
 

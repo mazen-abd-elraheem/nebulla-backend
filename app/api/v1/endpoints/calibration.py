@@ -52,7 +52,7 @@ async def reset_to_home(_u=Depends(get_current_user)):
     for sid in range(12):
         cmd = {"t": "joint", "id": sid, "deg": 90, "ms": 800}
         await manager.send_to_esp(cmd)
-    return {"message": "Home command sent to all servos"}
+    return {"message": "بعتنا أمر الرجوع لوضع السكون (الهوم) لكل مواتير السيرفو"}
 
 
 def _c(c: ServoCalibration) -> dict:

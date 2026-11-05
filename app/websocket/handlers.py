@@ -76,6 +76,47 @@ def _get_signal_planner() -> SignalPlanner:
     return _signal_planner
 
 
+async def _send_connection_greeting(pipeline: AIPipeline) -> None:
+    """
+    Synthesize and stream greeting audio using the cloned voice of the active personality (or Mazen)
+    upon phone connection. Uses 0ms pre-cached cloned voice audio if available.
+    """
+    try:
+        await asyncio.sleep(0.3)
+        pid, _ = await pipeline._get_active_personality()
+        if not pid:
+            pid = 1
+
+        greeting_text = None
+        if pid:
+            p = await pipeline._get_personality_by_id(pid)
+            if p and getattr(p, "greeting", None) and p.greeting.strip():
+                greeting_text = p.greeting.strip()
+
+        if not greeting_text:
+            greeting_text = "أهلاً بيك، أنا نيبولا توأمك الرقمي، جاهز أساعدك في أي وقت"
+
+        logger.info(f"Triggering cloned voice connection greeting: '{greeting_text}' (personality={pid})")
+        await manager.send_to_phone({"t": "eyes", "mood": "happy"})
+        await manager.broadcast_to_desks({"t": "greeting", "text": greeting_text})
+
+        # 1. Instant 0ms pre-cached greeting playback
+        from app.services.voice_clone.voice_clone_service import VoiceCloneService
+        cached_audio = VoiceCloneService.get_instance().get_cached_greeting(pid)
+        if cached_audio:
+            logger.info(f"Streaming instant 0ms pre-cached cloned greeting ({len(cached_audio)} bytes)")
+            await manager.send_to_phone(cached_audio)
+            return
+
+        # 2. Dynamic synthesis with VoiceTut XTTS + auto-caching for subsequent connections
+        await pipeline.speak(greeting_text, mood="happy")
+        asyncio.create_task(
+            VoiceCloneService.get_instance().generate_and_cache_greeting(pid, greeting_text)
+        )
+    except Exception as e:
+        logger.warning(f"Connection greeting notice: {e}")
+
+
 async def phone_handler(ws: WebSocket) -> None:
     """
     Handle messages from the phone app.
@@ -85,6 +126,9 @@ async def phone_handler(ws: WebSocket) -> None:
     pipeline = _get_ai_pipeline()
     face_service = _get_face_service()
     actions = get_phone_action_service()
+
+    # Trigger automatic voice greeting with cloned voice on connection
+    asyncio.create_task(_send_connection_greeting(pipeline))
 
     while True:
         message = await ws.receive()

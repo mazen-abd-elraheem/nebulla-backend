@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nebula Vision Studio — كشف الأشخاص ونسبة التطابق في الفيديو</title>
+  <title>استوديو نيبولا للرؤية — فحص الأشخاص ونسب التطابق في الفيديو</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -784,14 +784,14 @@
       <div class="brand">
         <div class="logo-badge">👁️</div>
         <div class="brand-title">
-          <h1>Nebula Vision Studio</h1>
-          <p>كشف الأشخاص في الفيديو ونسبة التطابق بالذكاء الاصطناعي (UniFace 512-D)</p>
+          <h1>استوديو نيبولا للرؤية (Vision Studio)</h1>
+          <p>فحص الوشوش في الفيديو ونسب التطابق بالذكاء الاصطناعي (UniFace 512-D)</p>
         </div>
       </div>
       <div class="nav-actions">
         <div class="badge-status">
           <span class="status-dot"></span>
-          <span>محرك الرؤية نشط</span>
+          <span>محرك الرؤية شغال تمام</span>
         </div>
         <a href="/docs#/faces" target="_blank" class="btn-docs">
           <span>📚 توثيق الـ API (Swagger)</span>
@@ -806,23 +806,23 @@
     <div class="tabs-nav">
       <button class="tab-btn active" onclick="switchTab('camera-tab')">
         <span>📹</span>
-        <span>بث كاميرا اللاب المباشر (Live Webcam HUD)</span>
+        <span>بث كاميرا اللاب الحي والمباشر (Live HUD)</span>
       </button>
       <button class="tab-btn" onclick="switchTab('recognize-tab')">
         <span>🎥</span>
-        <span>التعرف على الأشخاص وتصدير الفيديو (1:N)</span>
+        <span>فحص الوشوش وتصدير الفيديو (1:N)</span>
       </button>
       <button class="tab-btn" onclick="switchTab('compare-tab')">
         <span>🔍</span>
-        <span>مقارنة فيديو مع صورة مباشرة (1:1)</span>
+        <span>مقارنة فيديو مع صورة وش مباشرة (1:1)</span>
       </button>
       <button class="tab-btn" onclick="switchTab('profiles-tab')">
         <span>👤</span>
-        <span>إدارة الأشخاص المسجلين</span>
+        <span>الناس المسجلين في السيستم</span>
       </button>
       <button class="tab-btn" onclick="switchTab('voice-tab')">
         <span>🎙️</span>
-        <span>بصمة الصوت والتعرف على المتحدث (Speaker VoiceID)</span>
+        <span>بصمة الصوت وتحديد المتحدث (VoiceID)</span>
       </button>
     </div>
 
@@ -831,10 +831,10 @@
       <div class="card">
         <div class="card-title">
           <span>📹</span>
-          <span>بث كاميرا اللاب توب المباشر مع رصد الوجوه (Live Face HUD)</span>
+          <span>بث كاميرا اللاب الحي مع رصد الوشوش (Live Face HUD)</span>
         </div>
         <div class="card-desc">
-          يفتح السيرفر كاميرا اللاب توب تلقائياً، ويقوم محرك UniFace برصد الوجوه لحظياً في كل إطار، وتحديد هوية الأشخاص المسجلين مع رسم صناديق التتبع التفاعلية ونقاط ملامح الوجه ونسبة التطابق في الزمن الفعلي.
+          السيرفر بيفتح كاميرا اللاب تلقائياً، ومحرك UniFace بيرصد الوشوش لحظة بلحظة في كل كادر، وبيحدد مين من الناس المسجلين موجود مع رسم مربعات التتبع ونسب التطابق في نفس اللحظة.
         </div>
 
         <!-- Camera Toolbar -->
@@ -849,28 +849,28 @@
           </div>
 
           <button id="btn-start-camera" onclick="startCameraStream()" class="btn-submit" style="padding: 9px 22px; width: auto; background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);">
-            <span>▶ تشغيل الكاميرا المباشرة</span>
+            <span>▶ شغّل الكاميرا الحية</span>
           </button>
 
           <button id="btn-stop-camera" onclick="stopCameraStream()" class="btn-submit" style="padding: 9px 22px; width: auto; display: none; background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);">
-            <span>⏹ إيقاف الكاميرا</span>
+            <span>⏹ وقّف الكاميرا</span>
           </button>
 
           <button id="btn-snapshot-camera" onclick="captureCameraSnapshot()" class="btn-docs" style="padding: 9px 18px;">
-            <span>📸 التقاط لقطة فورية</span>
+            <span>📸 خد لقطة فورية</span>
           </button>
 
           <!-- Telemetry Badges -->
           <div style="margin-right: auto; display: flex; gap: 10px; align-items: center;">
             <span id="camera-status-pill" style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: rgba(100, 116, 139, 0.2); border: 1px solid rgba(100, 116, 139, 0.3); color: #94a3b8;">
               <span style="width: 8px; height: 8px; border-radius: 50%; background: #64748b;"></span>
-              <span id="camera-status-text">متوقفة (Standby)</span>
+              <span id="camera-status-text">واقفة (مستنية التشغيل)</span>
             </span>
             <span id="camera-fps-badge" style="font-size: 0.8rem; font-weight: 700; color: #a5f3fc; background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.3); padding: 5px 12px; border-radius: 9999px;">
               FPS: <span id="camera-fps-val">--</span>
             </span>
             <span id="camera-faces-badge" style="font-size: 0.8rem; font-weight: 700; color: #fed7aa; background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.3); padding: 5px 12px; border-radius: 9999px;">
-              الوجوه: <span id="camera-faces-val">0</span>
+              الوشوش: <span id="camera-faces-val">0</span>
             </span>
           </div>
         </div>
@@ -880,12 +880,12 @@
           <!-- Standby Screen -->
           <div id="camera-standby-screen" style="text-align: center; padding: 3rem 1.5rem;">
             <div style="font-size: 3.5rem; margin-bottom: 1rem; opacity: 0.8;">📹</div>
-            <h3 style="font-size: 1.25rem; font-weight: 800; color: #e2e8f0; margin-bottom: 0.5rem;">كاميرا اللاب توب في وضع الاستعداد</h3>
+            <h3 style="font-size: 1.25rem; font-weight: 800; color: #e2e8f0; margin-bottom: 0.5rem;">كاميرا اللاب في وضع الاستعداد</h3>
             <p style="font-size: 0.88rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.5rem;">
-              اضغط على زر <strong>"▶ تشغيل الكاميرا المباشرة"</strong> لبدء البث اللحظي واكتشاف الوجوه وتتبعها مباشرة مع حساب نسب التطابق بالذكاء الاصطناعي.
+              دوس على زرار <strong>"▶ شغّل الكاميرا الحية"</strong> عشان يبدأ البث اللحظي وكشف الوشوش وتتبعها وحساب نسب التطابق بالذكاء الاصطناعي.
             </p>
             <button onclick="startCameraStream()" class="btn-submit" style="width: auto; padding: 10px 24px; display: inline-flex; align-items: center; gap: 8px; margin: 0 auto;">
-              <span>⚡ تشغيل الكاميرا الآن</span>
+              <span>⚡ شغّل الكاميرا دلوقتي</span>
             </button>
           </div>
 
@@ -898,24 +898,24 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
             <h4 style="font-size: 1rem; font-weight: 700; color: #f1f5f9; display: flex; align-items: center; gap: 8px;">
               <span>📸</span>
-              <span>اللقطة الملتقطة من الكاميرا:</span>
+              <span>اللقطة اللي صورناها من الكاميرا:</span>
             </h4>
             <a id="download-snapshot-link" href="#" download="webcam_snapshot.jpg" class="btn-docs" style="padding: 6px 12px; font-size: 0.8rem;">
-              <span>⬇ تنزيل الصورة</span>
+              <span>⬇ نزّل الصورة دي</span>
             </a>
           </div>
           <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
             <img id="snapshot-img-preview" src="" style="max-width: 260px; max-height: 180px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
             <div style="flex: 1; min-width: 220px;">
               <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.8rem;">
-                تم التقاط هذه اللقطة فورياً من البث المباشر مع صناديق ورسومات التتبع.
+                اللقطة دي اتصورت فورياً من البث الحي مع مربعات التتبع والملامح.
               </p>
               <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <button onclick="appendCurrentSnapshotAsAngle('ahmed')" class="btn-submit" style="width: auto; padding: 8px 18px; font-size: 0.9rem; background: linear-gradient(135deg, #059669, #0d9488);">
-                  <span>➕ حفظ هذه الوضعية كزاوية إضافية لـ ahmed</span>
+                  <span>➕ احفظ الزاوية دي كزاوية إضافية لأحمد</span>
                 </button>
                 <button onclick="switchTab('profiles-tab')" class="btn-docs">
-                  <span>➕ تسجيل شخص جديد</span>
+                  <span>➕ سجّل شخص جديد</span>
                 </button>
               </div>
             </div>
@@ -929,17 +929,17 @@
       <div class="card">
         <div class="card-title">
           <span>🎥</span>
-          <span>فحص الفيديو والتعرف على الأشخاص ونسبة التطابق</span>
+          <span>فحص الفيديو وكشف الوشوش ونسب التطابق</span>
         </div>
         <div class="card-desc">
-          قم برفع مقطع الفيديو (MP4/MOV/AVI). سيقوم النظام بمسح إطارات الفيديو، وتحديد كافة الوجوه، ومطابقتها مع الأشخاص المسجلين في قاعدة البيانات وعرض اسم كل شخص ونسبة التطابق بدقة مع صور لقطات الظهور.
+          ارفع ملف الفيديو هنا. السيستم هيمسح كوادر الفيديو ويحدد كل الوشوش اللي ظهرت، ويطابقها مع الناس المسجلين في الداتابيز ويطلعلك اسم كل واحد ونسبة تطابقه بدقة مع لقطات ظهوره.
         </div>
 
         <form id="recognize-form" onsubmit="handleRecognizeSubmit(event)">
           <div class="dropzone" id="recognize-dropzone" onclick="document.getElementById('video-input').click()">
             <div class="dropzone-icon">📹</div>
-            <div class="dropzone-title">اضغط لاختيار الفيديو أو اسحبه وأفلته هنا</div>
-            <div class="dropzone-hint">يدعم MP4, MOV, AVI, MKV (يصل إلى 200MB)</div>
+            <div class="dropzone-title">اسحب ملف الفيديو هنا أو دوس عشان تختار</div>
+            <div class="dropzone-hint">بيدعم MP4, MOV, AVI, MKV (لحد 200 ميجابايت)</div>
             <input type="file" id="video-input" class="file-input" accept="video/*" onchange="handleVideoSelected(this, 'recognize-selected-file')">
             <div id="recognize-selected-file" class="file-selected-badge" style="display:none;"></div>
           </div>
@@ -956,7 +956,7 @@
 
             <div class="setting-item">
               <div class="setting-label">
-                <span>معدل أخذ الإطارات (ثواني)</span>
+                <span>معدل سحب الكوادر (بالثواني)</span>
                 <span class="setting-val" id="interval-val">0.5 ثانية</span>
               </div>
               <input type="range" id="interval-slider" min="0.1" max="2.0" step="0.1" value="0.5" oninput="document.getElementById('interval-val').innerText = this.value + ' ثانية'">
@@ -964,7 +964,7 @@
 
             <div class="setting-item">
               <div class="setting-label">
-                <span>الحد الأدنى لجودة الوجه</span>
+                <span>أقل جودة مقبولة للوش</span>
                 <span class="setting-val" id="conf-val">60%</span>
               </div>
               <input type="range" id="conf-slider" min="0.30" max="0.95" step="0.05" value="0.60" oninput="document.getElementById('conf-val').innerText = Math.round(this.value * 100) + '%'">
@@ -973,10 +973,10 @@
 
           <div style="display: flex; gap: 12px; margin-top: 1rem; flex-wrap: wrap;">
             <button type="submit" id="recognize-btn" class="btn-submit" style="flex: 1; min-width: 240px;">
-              <span>⚡ بدء فحص الفيديو والتعرف على الشخص</span>
+              <span>⚡ ابدأ افحص الفيديو وطلع نسب التطابق</span>
             </button>
             <button type="button" id="annotate-video-btn" onclick="handleAnnotateVideoSubmit(event)" class="btn-submit" style="flex: 1; min-width: 240px; background: linear-gradient(135deg, #059669, #0d9488); box-shadow: 0 4px 15px rgba(13, 148, 136, 0.4);">
-              <span>🎬 رسم وتصدير الفيديو بالكامل (Annotate HUD)</span>
+              <span>🎬 ارسم مربعات التتبع وصدر الفيديو كامل (Annotate HUD)</span>
             </button>
           </div>
         </form>
@@ -986,10 +986,10 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 12px;">
             <div style="font-size: 1.15rem; font-weight: 800; color: #a7f3d0; display: flex; align-items: center; gap: 10px;">
               <span style="font-size: 1.4rem;">🎬</span>
-              <span>الفيديو المعالج بعد رسم الوجوه وتتبعها (HUD Video):</span>
+              <span>الفيديو بعد معالجته ورسم الوشوش وتتبعها (HUD Video):</span>
             </div>
             <a id="download-annotated-link" href="#" download="annotated_video.mp4" class="btn-docs" style="background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); color: #6ee7b7; padding: 8px 16px;">
-              <span>⬇ تحميل الفيديو المعالج (MP4)</span>
+              <span>⬇ نزّل الفيديو المعالج (MP4)</span>
             </a>
           </div>
           <video id="annotated-video-player" controls style="width: 100%; max-height: 520px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: #000;"></video>
@@ -1006,15 +1006,15 @@
           <div class="stats-row">
             <div class="stat-card">
               <div class="stat-num" id="stat-persons-count">0</div>
-              <div class="stat-title">الأشخاص المعترف عليهم</div>
+              <div class="stat-title">الناس اللي اتعرفنا عليهم</div>
             </div>
             <div class="stat-card">
               <div class="stat-num" id="stat-total-detections">0</div>
-              <div class="stat-title">إجمالي الوجوه المكتشفة</div>
+              <div class="stat-title">كل الوشوش اللي اتمسكت</div>
             </div>
             <div class="stat-card">
               <div class="stat-num" id="stat-best-pct">0%</div>
-              <div class="stat-title">أعلى نسبة تطابق مسجلة</div>
+              <div class="stat-title">أعلى نسبة تطابق طلعت</div>
             </div>
           </div>
 
@@ -1024,7 +1024,7 @@
 
           <!-- Timeline -->
           <div id="timeline-container" style="display:none; margin-top: 1rem;">
-            <div class="timeline-title">⏱️ شريط إطارات الظهور في الفيديو:</div>
+            <div class="timeline-title">⏱️ شريط كوادر الظهور في الفيديو:</div>
             <div class="timeline-gallery" id="timeline-gallery"></div>
           </div>
         </div>
@@ -1036,10 +1036,10 @@
       <div class="card">
         <div class="card-title">
           <span>🔍</span>
-          <span>مقارنة فيديو مع صورة مباشرة وحساب نسبة التطابق</span>
+          <span>مقارنة فيديو مع صورة وش مباشرة وحساب التطابق</span>
         </div>
         <div class="card-desc">
-          قارن مباشرة بين فيديو وصورة شخصية محددة دون الحاجة لتسجيلها مسبقاً في قاعدة البيانات. سيكتشف النظام ما إذا كان الشخص موجوداً في الفيديو ويعرض لك نسبة التطابق المئوية وأفضل لقطة.
+          قارن مباشرة بين فيديو وصورة وش من غير ما تسجلها في الداتابيز الأول. السيستم هيكتشف لو الشخص ده موجود في الفيديو وهيطلعلك نسبة التطابق وأحسن لقطة ظهر فيها.
         </div>
 
         <form id="compare-form" onsubmit="handleCompareSubmit(event)">
@@ -1047,7 +1047,7 @@
             <!-- Image Drop -->
             <div class="dropzone" id="compare-img-dropzone" onclick="document.getElementById('compare-image-input').click()">
               <div class="dropzone-icon">👤</div>
-              <div class="dropzone-title">اختر الصورة المرجعية للشخص</div>
+              <div class="dropzone-title">اختار صورة وش الشخص اللي هتقارن بيه</div>
               <div class="dropzone-hint">JPEG / PNG</div>
               <input type="file" id="compare-image-input" class="file-input" accept="image/*" onchange="handleImageSelected(this, 'compare-selected-img')">
               <div id="compare-selected-img" class="file-selected-badge" style="display:none;"></div>
@@ -1056,7 +1056,7 @@
             <!-- Video Drop -->
             <div class="dropzone" id="compare-vid-dropzone" onclick="document.getElementById('compare-video-input').click()">
               <div class="dropzone-icon">📹</div>
-              <div class="dropzone-title">اختر الفيديو المطلوب فحصه</div>
+              <div class="dropzone-title">اختار ملف الفيديو اللي عايز تفحصه</div>
               <div class="dropzone-hint">MP4, MOV, AVI</div>
               <input type="file" id="compare-video-input" class="file-input" accept="video/*" onchange="handleVideoSelected(this, 'compare-selected-vid')">
               <div id="compare-selected-vid" class="file-selected-badge" style="display:none;"></div>
@@ -1081,7 +1081,7 @@
           </div>
 
           <button type="submit" id="compare-btn" class="btn-submit">
-            <span>🔍 فحص الفيديو وحساب نسبة التطابق مع الصورة</span>
+            <span>🔍 افحص الفيديو واحسب نسبة التطابق مع الصورة</span>
           </button>
         </form>
 
@@ -1089,8 +1089,8 @@
         <div id="compare-results" class="results-section">
           <div id="comparison-status-banner" class="comparison-banner match">
             <div>
-              <h2 id="compare-result-title" style="font-size: 1.4rem; font-weight: 800; margin-bottom: 4px;">✅ تم التطابق بنجاح</h2>
-              <p id="compare-result-sub" style="font-size: 0.9rem; opacity: 0.9;">تم العثور على الشخص داخل الفيديو بنسبة تطابق عالية.</p>
+              <h2 id="compare-result-title" style="font-size: 1.4rem; font-weight: 800; margin-bottom: 4px;">✅ الوش متطابق تمام</h2>
+              <p id="compare-result-sub" style="font-size: 0.9rem; opacity: 0.9;">لقينا الشخص ده في الفيديو بنسبة تطابق عالية جداً.</p>
             </div>
             <div class="match-gauge-box" id="cmp-gauge-box">
               <div class="match-pct-text" id="cmp-pct-display">0.0%</div>
@@ -1101,12 +1101,12 @@
           <div class="versus-row" id="compare-versus">
             <div class="versus-item">
               <img id="versus-ref-img" class="versus-img" src="" alt="الصورة المرجعية">
-              <div class="versus-label" id="versus-ref-label">الصورة المرجعية الأصلية</div>
+              <div class="versus-label" id="versus-ref-label">صورة الوش الأصلية</div>
             </div>
             <div style="font-size: 1.8rem; font-weight: 900; color: var(--text-muted);">⟷</div>
             <div class="versus-item">
               <img id="versus-cand-img" class="versus-img" src="" alt="لقطة الفيديو">
-              <div class="versus-label" id="versus-cand-label">أوضح لقطة من الفيديو (00:00)</div>
+              <div class="versus-label" id="versus-cand-label">أوضح كادر من الفيديو (00:00)</div>
             </div>
           </div>
 
@@ -1114,10 +1114,10 @@
           <div id="compare-multi-people-sec" style="display:none; margin-top: 1.8rem; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem;">
             <h3 style="font-size: 1.15rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 8px;">
               <span>👥</span>
-              <span>نتيجة فحص جميع الأشخاص في الصورة:</span>
+              <span>نتيجة فحص كل الناس اللي في الصورة:</span>
             </h3>
             <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.25rem;">
-              تم التعرف على الشخص المشترك في الفيديو وتحديد الأشخاص الآخرين في الصورة الذين لم يظهروا:
+              اتعرفنا على الشخص اللي ظهر في الفيديو وميزنا باقي الناس اللي م ظهروش:
             </p>
             <div id="compare-multi-people-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;"></div>
           </div>
@@ -1130,40 +1130,40 @@
       <div class="card">
         <div class="card-title">
           <span>👤</span>
-          <span>تسجيل شخص جديد في النظام</span>
+          <span>تسجيل شخص وبصمة وش جديدة في السيستم</span>
         </div>
         <div class="card-desc">
-          سجل شخصاً جديداً بصورته ليتمكن النظام من التعرف عليه آلياً عند وضع أي فيديو يظهر فيه.
+          سجل شخص جديد بصورته عشان السيستم يعرفه علطول أول ما يظهر في الكاميرا أو في أي فيديو.
         </div>
 
         <form id="register-form" onsubmit="handleRegisterSubmit(event)">
           <div class="form-group">
-            <label for="reg-name">اسم الشخص بالكامل أو المعرف:</label>
+            <label for="reg-name">اسم الشخص بالكامل أو كوده:</label>
             <input type="text" id="reg-name" class="form-control" placeholder="مثال: مازن عبد الرحيم" required>
           </div>
 
           <div class="form-group">
-            <label>صورة الشخص الواضحة:</label>
+            <label>صورة واضحة لوش الشخص:</label>
             <input type="file" id="reg-image" class="form-control" accept="image/*" required>
           </div>
 
           <div style="display: flex; align-items: center; gap: 10px; margin: 0.5rem 0 1rem; background: rgba(99, 102, 241, 0.1); padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid rgba(99, 102, 241, 0.25);">
             <input type="checkbox" id="reg-append" style="width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer;">
             <label for="reg-append" style="font-size: 0.88rem; color: #e2e8f0; cursor: pointer; user-select: none;">
-              <strong>إضافة كزاوية إضافية (Multi-Angle):</strong> حدد هذا الخيار إذا كان الشخص مسجلاً بالفعل وتريد حفظ زاوية جديدة لوجهه (جانبية، مائلة، إضاءة مختلفة) ليتعرف عليه النظام في جميع الأوضاع بدقة 100%.
+              <strong>حفظ كزاوية تانية (Multi-Angle):</strong> علّم هنا لو الشخص ده متسجل قبل كده وعايز تحفظله زاوية تانية لوشه (جنب، مايل، إضاءة غير) عشان السيستم يلقطه في كل الأوضاع بدقة 100%.
             </label>
           </div>
 
           <button type="submit" id="reg-btn" class="btn-submit" style="margin-top: 1rem;">
-            <span>➕ حفظ وتثبيت الشخص في قاعدة البيانات</span>
+            <span>➕ احفظ وثبت بصمة الوش في الداتابيز</span>
           </button>
         </form>
 
         <hr style="border: none; border-top: 1px solid var(--border); margin: 2rem 0;">
 
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h3 style="font-size: 1.15rem; font-weight: 800;">الأشخاص المسجلون حالياً في قاعدة البيانات:</h3>
-          <button onclick="loadRegisteredProfiles()" class="btn-docs">🔄 تحديث القائمة</button>
+          <h3 style="font-size: 1.15rem; font-weight: 800;">الناس المتسجلين في الداتابيز دلوقتي:</h3>
+          <button onclick="loadRegisteredProfiles()" class="btn-docs">🔄 حدّث القائمة</button>
         </div>
 
         <div class="profiles-grid" id="profiles-grid">
@@ -1178,20 +1178,20 @@
         <div style="display: flex; align-items: center; gap: 12px;">
           <div style="width: 40px; height: 40px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #10b981, #06b6d4); display: flex; align-items: center; justify-content: center; font-size: 20px;">🎙️</div>
           <div>
-            <h3 style="font-size: 1.05rem; font-weight: 800; color: #fff;">محرك بصمة الصوت الحيوي (Biometric VoiceID Engine)</h3>
+            <h3 style="font-size: 1.05rem; font-weight: 800; color: #fff;">محرك بصمات الصوت الحيوية (VoiceID Engine)</h3>
             <p style="font-size: 0.8rem; color: var(--text-muted);" id="voice-backend-desc">نموذج التشفير الصوتي 192-D (MFCCs + LPC Formants + Pitch Harmonics)</p>
           </div>
         </div>
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
           <span class="badge-status" id="voice-engine-pill">
             <span class="status-dot"></span>
-            <span id="voice-engine-status-text">جاهز للتعرف</span>
+            <span id="voice-engine-status-text">جاهز للتعرف ومستني</span>
           </span>
           <span style="font-size: 0.8rem; font-weight: 700; color: #a5f3fc; background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.3); padding: 5px 12px; border-radius: 9999px;">
-            البصمات المسجلة: <span id="voice-enrolled-count">--</span>
+            البصمات المتسجلة: <span id="voice-enrolled-count">--</span>
           </span>
           <span style="font-size: 0.8rem; font-weight: 700; color: #fed7aa; background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.3); padding: 5px 12px; border-radius: 9999px;">
-            حد التطابق الافتراضي: <span id="voice-threshold-badge">82%</span>
+            حد التطابق الأساسي: <span id="voice-threshold-badge">82%</span>
           </span>
         </div>
       </div>
@@ -1200,10 +1200,10 @@
       <div class="card">
         <div class="card-title">
           <span>🎙️</span>
-          <span>فحص والتعرف على هوية المتحدث (1:N Voice Identification)</span>
+          <span>فحص ومعرفة مين اللي بيتكلم (1:N Voice Identification)</span>
         </div>
         <div class="card-desc">
-          تحدث مباشرة عبر المايك أو ارفع تسجيلاً صوتياً (WAV/MP3/M4A). سيقوم محرك البصمة الصوتية بتحليل الترددات الحيوية وطبقات الحنجرة وتحديد هوية صاحب الصوت ونسبة تطابقه فورياً، أو إشعارك بأن الصوت غير مسجل في السيستم.
+          اتكلم علطول في المايك أو ارفع تسجيل صوت (WAV/MP3/M4A). محرك بصمة الصوت هيحلل نبرات وطبقات الحنجرة ويحدد مين صاحب الصوت ونسبة تطابقه في ثواني، أو هيقولك إن الصوت ده مش متسجل عندنا.
         </div>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
@@ -1211,21 +1211,21 @@
           <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: space-between;">
             <div>
               <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🎙️</div>
-              <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem;">التسجيل المباشر من المايك</h4>
-              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.25rem;">اضغط على الزر وتحدث لمدة 2 - 5 ثوانٍ، ثم أوقف التسجيل لفحص الصوت لحظياً.</p>
+              <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem;">سجل صوتك بالمايك علطول</h4>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.25rem;">دوس على الزرار واتكلم من ثانيتين لـ 5 ثواني، وبعدها وقّف عشان نفحص الصوت في ساعتها.</p>
             </div>
 
             <!-- Recording HUD / Timer -->
             <div id="voice-rec-hud" style="display: none; align-items: center; gap: 10px; margin-bottom: 1rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); padding: 6px 16px; border-radius: 9999px;">
               <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444; animation: pulse 1s infinite;"></span>
               <span style="font-size: 0.9rem; font-weight: 800; color: #fca5a5; font-family: monospace;" id="voice-rec-timer">00:00</span>
-              <span style="font-size: 0.75rem; color: #fca5a5;">(جارٍ تسجيل الصوت...)</span>
+              <span style="font-size: 0.75rem; color: #fca5a5;">(بنسجل صوتك دلوقتي...)</span>
             </div>
 
             <div style="width: 100%;">
               <button type="button" id="btn-mic-toggle" onclick="toggleVoiceRecording('identify')" class="btn-submit" style="background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 18px rgba(239, 68, 68, 0.4);">
                 <span id="btn-mic-icon">🔴</span>
-                <span id="btn-mic-text">بدء تسجيل الصوت وفحصه</span>
+                <span id="btn-mic-text">ابدأ سجل الصوت وافحصه</span>
               </button>
             </div>
           </div>
@@ -1234,19 +1234,19 @@
           <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
             <div>
               <div style="font-size: 2.5rem; text-align: center; margin-bottom: 0.5rem;">📁</div>
-              <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem; text-align: center;">رفع ملف صوتي للفحص</h4>
-              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; text-align: center;">يدعم جميع أنواع المسجلات والتسجيلات: WAV, MP3, M4A (iPhone), OGG, Opus (WhatsApp), WebM, AAC, FLAC, AMR (Android).</p>
+              <h4 style="font-size: 1.1rem; font-weight: 800; color: #f1f5f9; margin-bottom: 0.4rem; text-align: center;">ارفع ملف صوت وافحصه</h4>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; text-align: center;">بيدعم كل أنواع التسجيلات: WAV, MP3, M4A (آيفون), OGG, Opus (واتساب), WebM, AAC, FLAC, AMR (أندرويد).</p>
             </div>
 
             <div class="dropzone" id="voice-file-dropzone" onclick="document.getElementById('voice-file-input').click()" style="padding: 1.25rem 1rem; margin-bottom: 1rem;">
               <div class="dropzone-icon" style="font-size: 1.6rem;">🎵</div>
-              <div class="dropzone-title" style="font-size: 0.95rem;">اضغط لاختيار ملف صوتي</div>
+              <div class="dropzone-title" style="font-size: 0.95rem;">دوس هنا واختار ملف صوت</div>
               <input type="file" id="voice-file-input" class="file-input" accept="audio/*" onchange="handleVoiceFileSelected(this)">
               <div id="voice-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
             </div>
 
             <button type="button" id="btn-identify-file" onclick="handleIdentifyFileSubmit()" class="btn-submit" style="background: linear-gradient(135deg, #06b6d4, #0284c7); box-shadow: 0 4px 18px rgba(6, 182, 212, 0.35);">
-              <span>⚡ فحص الملف الصوتي المرفوع</span>
+              <span>⚡ افحص ملف الصوت ده دلوقتي</span>
             </button>
           </div>
         </div>
@@ -1273,20 +1273,20 @@
       <div class="card" style="margin-top: 2rem;">
         <div class="card-title">
           <span>👥</span>
-          <span>تحليل المتحدثين المتعددين وتتبع اللغات (Multi-Speaker Diarization & Languages)</span>
+          <span>تحليل أصوات المتحدثين وفرز اللغات (Diarization & Languages)</span>
         </div>
         <div class="card-desc">
-          تحليل المحادثات والتسجيلات الجماعية: <strong>1. كشف كم شخص تحدث</strong> في التسجيل، <strong>2. تحديد لغة كل مقطع ومتحدث</strong> (العربية، الإنجليزية، الفرنسية...)، و<strong>3. رصد ما إذا كان أي شخص قد تحدث بأكثر من لغة وكشف هويته فورياً</strong>.
+          تحليل المكالمات والتسجيلات الجماعية: <strong>1. كشف كام شخص اتكلم</strong> في التسجيل، <strong>2. معرفة لغة كل كلام وكل متحدث</strong>، و<strong>3. كشف لو في حد اتكلم بكذا لغة وتحديد هويته في ساعتها</strong>.
         </div>
 
         <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.5rem;">
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 1.25rem;">
             <!-- File Upload -->
             <div>
-              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📁 اختيار ملف التسجيل الصوتي للمحادثة:</label>
+              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📁 اختار تسجيل المكالمة أو المحادثة:</label>
               <div class="dropzone" id="diarize-dropzone" onclick="document.getElementById('diarize-file-input').click()" style="padding: 1.25rem 1rem;">
                 <div class="dropzone-icon" style="font-size: 1.6rem;">👥</div>
-                <div class="dropzone-title" style="font-size: 0.95rem;">اضغط لاختيار ملف محادثة صوتية (WAV / MP3 / M4A)</div>
+                <div class="dropzone-title" style="font-size: 0.95rem;">دوس هنا واختار ملف تسجيل المحادثة (WAV / MP3 / M4A)</div>
                 <input type="file" id="diarize-file-input" class="file-input" accept="audio/*" onchange="handleDiarizeFileSelected(this)">
                 <div id="diarize-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
               </div>
@@ -1294,8 +1294,8 @@
 
             <!-- Optional Transcripts or Options -->
             <div>
-              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📝 نصوص الحوار المكتوبة (اختياري / Transcripts):</label>
-              <textarea id="diarize-transcripts-input" class="form-control" rows="4" style="font-size: 0.82rem; font-family: monospace; background: #0f172a;" placeholder="اختياري: يمكنك كتابة نصوص الجمل أو لصق JSON من Whisper، أو اترك الحقل فارغاً ليعتمد المحرك على التحليل الصوتي التلقائي (Acoustic Phonetics)."></textarea>
+              <label style="display: block; font-weight: 700; color: #e2e8f0; margin-bottom: 0.5rem;">📝 كلام المحادثة مكتوب (اختياري / Transcripts):</label>
+              <textarea id="diarize-transcripts-input" class="form-control" rows="4" style="font-size: 0.82rem; font-family: monospace; background: #0f172a;" placeholder="اختياري: تقدر تكتب الكلام أو تسيب الخانة فاضية عشان السيستم يعتمد على تحليله الصوتي الذاتي."></textarea>
             </div>
           </div>
 
@@ -1307,7 +1307,7 @@
             </div>
 
             <button type="button" id="btn-diarize-submit" onclick="handleDiarizeSubmit()" class="btn-submit" style="width: auto; padding: 10px 28px; background: linear-gradient(135deg, #8b5cf6, #3b82f6); box-shadow: 0 4px 18px rgba(139, 92, 246, 0.4);">
-              <span>👥 بدء تحليل المتحدثين واللغات</span>
+              <span>👥 ابدأ حلل المتحدثين واللغات</span>
             </button>
           </div>
         </div>
@@ -1322,10 +1322,10 @@
       <div class="card" style="margin-top: 2rem;">
         <div class="card-title">
           <span>⚖️</span>
-          <span>مقارنة مقطعين صوتيين وكشف الهوية واللغات (Two Voices Comparison & Language Identification)</span>
+          <span>مقارنة مقطعين صوت وكشف الهوية واللغات</span>
         </div>
         <div class="card-desc">
-          مقارنة مباشرة بين مقطعين صوتيين: <strong>1. فحص هل الصوتين لنفس الشخص أم لشخصين مختلفين</strong>، <strong>2. كشف هوية كل صوت ومن صاحبه في السيستم</strong> (مع عرض User ID, Face ID, Personality ID, Memory ID)، و<strong>3. تحديد لغة كل مقطع بدقة (العربية 🇪🇬 أم الإنجليزية 🇬🇧)</strong>.
+          مقارنة مباشرة بين ملفين صوت: <strong>1. اتأكد هل الصوتين لنفس الشخص ولا شخصين مختلفين</strong>، <strong>2. اعرف صاحب كل صوت في السيستم</strong>، و<strong>3. حدد لغة كل تسجيل بدقة (عربي 🇪🇬 ولا إنجليزي 🇬🇧)</strong>.
         </div>
 
         <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.5rem;">
@@ -1333,12 +1333,12 @@
             <!-- Voice 1 Upload -->
             <div style="background: rgba(15, 23, 42, 0.6); border: 1px dashed rgba(56, 189, 248, 0.4); border-radius: var(--radius-md); padding: 1.25rem;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
-                <label style="font-weight: 700; color: #38bdf8; font-size: 0.95rem;">🎙️ التسجيل الصوتي الأول (Voice 1):</label>
-                <span style="font-size: 0.75rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 2px 8px; border-radius: 9999px;">الملف الأول</span>
+                <label style="font-weight: 700; color: #38bdf8; font-size: 0.95rem;">🎙️ التسجيل الصوتي الأول:</label>
+                <span style="font-size: 0.75rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 2px 8px; border-radius: 9999px;">الصوت الأول</span>
               </div>
               <div class="dropzone" id="compare-dropzone-1" onclick="document.getElementById('compare-file-input-1').click()" style="padding: 1.2rem 1rem; border-color: rgba(56, 189, 248, 0.3);">
                 <div class="dropzone-icon" style="font-size: 1.5rem;">📁</div>
-                <div class="dropzone-title" style="font-size: 0.88rem;">اضغط لاختيار الصوت الأول (WAV, MP3, M4A, OGG...)</div>
+                <div class="dropzone-title" style="font-size: 0.88rem;">دوس هنا عشان تختار ملف الصوت الأول</div>
                 <input type="file" id="compare-file-input-1" class="file-input" accept="audio/*" onchange="handleCompareFileSelected(1, this)">
                 <div id="compare-badge-1" class="file-selected-badge" style="display:none; margin-top: 6px; background: rgba(56, 189, 248, 0.2); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.4);"></div>
               </div>
@@ -1348,12 +1348,12 @@
             <!-- Voice 2 Upload -->
             <div style="background: rgba(15, 23, 42, 0.6); border: 1px dashed rgba(168, 85, 247, 0.4); border-radius: var(--radius-md); padding: 1.25rem;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
-                <label style="font-weight: 700; color: #c084fc; font-size: 0.95rem;">🎙️ التسجيل الصوتي الثاني (Voice 2):</label>
-                <span style="font-size: 0.75rem; background: rgba(168, 85, 247, 0.15); color: #c084fc; padding: 2px 8px; border-radius: 9999px;">الملف الثاني</span>
+                <label style="font-weight: 700; color: #c084fc; font-size: 0.95rem;">🎙️ التسجيل الصوتي الثاني:</label>
+                <span style="font-size: 0.75rem; background: rgba(168, 85, 247, 0.15); color: #c084fc; padding: 2px 8px; border-radius: 9999px;">الصوت الثاني</span>
               </div>
               <div class="dropzone" id="compare-dropzone-2" onclick="document.getElementById('compare-file-input-2').click()" style="padding: 1.2rem 1rem; border-color: rgba(168, 85, 247, 0.3);">
                 <div class="dropzone-icon" style="font-size: 1.5rem;">📁</div>
-                <div class="dropzone-title" style="font-size: 0.88rem;">اضغط لاختيار الصوت الثاني (WAV, MP3, M4A, OGG...)</div>
+                <div class="dropzone-title" style="font-size: 0.88rem;">دوس هنا عشان تختار ملف الصوت الثاني</div>
                 <input type="file" id="compare-file-input-2" class="file-input" accept="audio/*" onchange="handleCompareFileSelected(2, this)">
                 <div id="compare-badge-2" class="file-selected-badge" style="display:none; margin-top: 6px; background: rgba(168, 85, 247, 0.2); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.4);"></div>
               </div>
@@ -1369,7 +1369,7 @@
             </div>
 
             <button type="button" id="btn-compare-submit" onclick="handleCompareSubmit()" class="btn-submit" style="width: auto; padding: 11px 32px; background: linear-gradient(135deg, #0ea5e9, #8b5cf6); box-shadow: 0 4px 20px rgba(14, 165, 233, 0.45);">
-              <span>⚖️ بدء المقارنة وتحديد اللغات والهويات</span>
+              <span>⚖️ ابدأ المقارنة وحدد اللغات وأصحاب الأصوات</span>
             </button>
           </div>
         </div>
@@ -1384,17 +1384,17 @@
       <div class="card" style="margin-top: 2rem;">
         <div class="card-title">
           <span>➕</span>
-          <span>تسجيل بصمة صوت جديدة (Voiceprint Enrollment)</span>
+          <span>تسجيل بصمة صوت جديدة في السيستم</span>
         </div>
         <div class="card-desc">
-          قم بتسجيل بصمة صوت جديدة لشخص ما ليتمكن النظام من التعرف على صوته آلياً في أي وقت.
+          سجل بصمة صوت جديدة لأي شخص عشان السيستم يعرف نبرة صوته علطول في أي وقت.
         </div>
 
         <form id="voice-enroll-form" onsubmit="handleVoiceEnrollSubmit(event)">
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem;">
             <div class="form-group" style="margin-bottom: 0;">
               <label for="enroll-speaker-name" style="font-weight: 700; color: #e2e8f0;">👤 اسم المتحدث:</label>
-              <input type="text" id="enroll-speaker-name" class="form-control" placeholder="مثال: أحمد / ahmed" required>
+              <input type="text" id="enroll-speaker-name" class="form-control" placeholder="مثال: مازن / أحمد" required>
             </div>
 
             <div class="form-group" style="margin-bottom: 0;">
@@ -1417,25 +1417,25 @@
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
             <!-- Mic for enrollment -->
             <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem; text-align: center;">
-              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 1: تسجيل صوتي مباشر للتسجيل</p>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الطريقة الأولى: اتكلم وسجل صوتك بالمايك</p>
               <button type="button" id="btn-enroll-mic" onclick="toggleVoiceRecording('enroll')" class="btn-submit" style="width: auto; padding: 8px 20px; font-size: 0.95rem; margin: 0 auto; background: linear-gradient(135deg, #10b981, #059669);">
                 <span id="btn-enroll-mic-icon">🎙️</span>
-                <span id="btn-enroll-mic-text">تسجيل عينة الصوت</span>
+                <span id="btn-enroll-mic-text">سجل عينة بصوتك</span>
               </button>
               <div id="enroll-rec-timer-badge" style="display:none; margin-top: 8px; font-size: 0.8rem; font-weight: 700; color: #86efac;">
-                تم تسجيل: <span id="enroll-rec-sec">0.0</span> ثانية
+                سجلنا: <span id="enroll-rec-sec">0.0</span> ثانية
               </div>
             </div>
 
             <!-- File for enrollment -->
             <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
-              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 2: رفع تسجيل صوتي (يقبل جميع أنواع المسجلات: WAV / MP3 / M4A / OGG / Opus / WebM / AAC / AMR)</p>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الطريقة التانية: ارفع ملف صوت جاهز (WAV / MP3 / M4A / OGG / Opus / WebM / AAC / AMR)</p>
               <input type="file" id="enroll-file-input" class="form-control" accept="audio/*" onchange="handleEnrollFileSelected(this)">
             </div>
           </div>
 
           <button type="submit" id="btn-submit-enroll" class="btn-submit" style="background: linear-gradient(135deg, #6366f1, #06b6d4);">
-            <span>➕ حفظ وتثبيت بصمة الصوت في قاعدة البيانات</span>
+            <span>➕ احفظ وثبت بصمة الصوت في الداتابيز</span>
           </button>
         </form>
 
@@ -1443,8 +1443,8 @@
 
         <!-- Enrolled Voiceprints List -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-          <h3 style="font-size: 1.15rem; font-weight: 800; color: #fff;">البصمات الصوتية المسجلة حالياً في النظام:</h3>
-          <button onclick="loadEnrolledSpeakers()" class="btn-docs">🔄 تحديث القائمة</button>
+          <h3 style="font-size: 1.15rem; font-weight: 800; color: #fff;">بصمات الصوت المتسجلة في السيستم دلوقتي:</h3>
+          <button onclick="loadEnrolledSpeakers()" class="btn-docs">🔄 حدّث القائمة</button>
         </div>
 
         <div id="speakers-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
@@ -1511,13 +1511,13 @@
       e.preventDefault();
       const videoInput = document.getElementById('video-input');
       if (!videoInput.files || !videoInput.files[0]) {
-        showToast('يرجى اختيار ملف فيديو أولاً!');
+        showToast('من فضلك اختار ملف فيديو الأول!');
         return;
       }
 
       const btn = document.getElementById('recognize-btn');
       btn.disabled = true;
-      btn.innerHTML = `<div class="spinner"></div><span>جارٍ فحص الإطارات والتعرف على الأشخاص...</span>`;
+      btn.innerHTML = `<div class="spinner"></div><span>بنفحص الكوادر وبنطابق الوشوش دلوقتي...</span>`;
 
       const threshold = document.getElementById('threshold-slider').value;
       const interval = document.getElementById('interval-slider').value;
@@ -1532,7 +1532,7 @@
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.detail || data.error || 'حدث خطأ أثناء معالجة الفيديو.');
+          throw new Error(data.detail || data.error || 'حصلت مشكلة وإحنا بنعالج الفيديو.');
         }
 
         renderRecognizeResults(data);
@@ -1540,7 +1540,7 @@
         showToast('خطأ: ' + err.message);
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<span>⚡ بدء فحص الفيديو والتعرف على الشخص</span>`;
+        btn.innerHTML = `<span>⚡ ابدأ افحص الفيديو وطلع نسب التطابق</span>`;
       }
     }
 
@@ -1574,10 +1574,10 @@
         listContainer.innerHTML = `
           <div style="padding: 2rem; text-align: center; background: rgba(244, 63, 94, 0.08); border-radius: var(--radius-md); border: 1px solid rgba(244, 63, 94, 0.2);">
             <div style="font-size: 2rem; margin-bottom: 0.5rem;">🤷‍♂️</div>
-            <h3 style="color: var(--accent-rose); font-weight: 800;">لم يتم التعرف على أشخاص مسجلين</h3>
+            <h3 style="color: var(--accent-rose); font-weight: 800;">ملقناش أي وشوش متسجلة عندنا</h3>
             <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
-              قد تكون الوجوه غير مسجلة مسبقاً في قاعدة البيانات، أو نسبة التطابق أقل من حد القبول المحدد (${Math.round(data.threshold * 100)}%).
-              يمكنك تسجيل الشخص من تبويب "إدارة الأشخاص المسجلين" أو تجربة تبويب "المقارنة المباشرة 1:1".
+              الوشوش دي مش متسجلة عندنا في الداتابيز، أو نسبة التطابق أقل من الحد المطلوب (${Math.round(data.threshold * 100)}%).
+              تقدر تسجل الشخص من تبويب "الناس المسجلين" أو جرب "المقارنة المباشرة".
             </p>
           </div>
         `;
@@ -1598,7 +1598,7 @@
             <div class="person-info">
               <div class="person-name">
                 <span>${p.name}</span>
-                <span style="font-size: 0.8rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); padding: 2px 8px; border-radius: 4px;">تم التعرف</span>
+                <span style="font-size: 0.8rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); padding: 2px 8px; border-radius: 4px;">اتعرفنا عليه</span>
               </div>
               <div class="person-meta">
                 <span class="meta-tag">ظهور: <b>${p.occurrences} مرات</b></span>
@@ -1608,7 +1608,7 @@
             </div>
             <div class="match-gauge-box ${isLow ? 'low-match' : ''}">
               <div class="match-pct-text">${pct.toFixed(1)}%</div>
-              <div class="match-pct-label">نسبة التطابق (Match %)</div>
+              <div class="match-pct-label">نسبة التطابق</div>
             </div>
           `;
           listContainer.appendChild(card);
@@ -1646,17 +1646,17 @@
       const vidInput = document.getElementById('compare-video-input');
 
       if (!imgInput.files || !imgInput.files[0]) {
-        showToast('يرجى اختيار الصورة المرجعية أولاً!');
+        showToast('اختار صورة الوش الأول!');
         return;
       }
       if (!vidInput.files || !vidInput.files[0]) {
-        showToast('يرجى اختيار مقطع الفيديو أولاً!');
+        showToast('اختار ملف الفيديو الأول!');
         return;
       }
 
       const btn = document.getElementById('compare-btn');
       btn.disabled = true;
-      btn.innerHTML = `<div class="spinner"></div><span>جارٍ مقارنة الفيديو مع الصورة المرجعية...</span>`;
+      btn.innerHTML = `<div class="spinner"></div><span>بنقارن الفيديو مع صورة الوش دلوقتي...</span>`;
 
       const threshold = document.getElementById('cmp-threshold').value;
       const interval = document.getElementById('cmp-interval').value;
@@ -1671,7 +1671,7 @@
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.detail || data.error || 'فشلت المقارنة.');
+          throw new Error(data.detail || data.error || 'معرفناش نعمل المقارنة.');
         }
 
         renderCompareResults(data, imgInput.files[0]);
@@ -1679,7 +1679,7 @@
         showToast('خطأ: ' + err.message);
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<span>🔍 فحص الفيديو وحساب نسبة التطابق مع الصورة</span>`;
+        btn.innerHTML = `<span>🔍 افحص الفيديو واحسب نسبة التطابق مع الصورة</span>`;
       }
     }
 
@@ -1703,12 +1703,12 @@
       if (isMatch) {
         banner.className = 'comparison-banner match';
         gauge.className = 'match-gauge-box';
-        title.innerText = '✅ تم التطابق بنجاح';
-        sub.innerText = data.summary || `تم العثور على الشخص في الفيديو عند الدقيقة ${data.best_match_timestamp || '00:00'}.`;
+        title.innerText = '✅ الوش متطابق تمام';
+        sub.innerText = data.summary || `لقينا الشخص في الفيديو عند الدقيقة ${data.best_match_timestamp || '00:00'}.`;
       } else {
         banner.className = 'comparison-banner no-match';
         gauge.className = 'match-gauge-box low-match';
-        title.innerText = '❌ لم يتطابق مع الشخص';
+        title.innerText = '❌ الوش مش متطابق خالص';
         sub.innerText = data.summary || `نسبة التشابه (${pct.toFixed(1)}%) أقل من الحد الأدنى للقبول (${Math.round(data.threshold * 100)}%).`;
       }
 
@@ -1730,10 +1730,10 @@
       const candLabel = document.getElementById('versus-cand-label');
       if (data.best_match_crop_base64) {
         candImgElem.src = toDataUrl(data.best_match_crop_base64);
-        candLabel.innerText = `أوضح لقطة من الفيديو (${data.best_match_timestamp || ''})`;
+        candLabel.innerText = `أوضح كادر من الفيديو (${data.best_match_timestamp || ''})`;
       } else {
         candImgElem.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="%2364748b"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
-        candLabel.innerText = 'لم يتم العثور على وجه متطابق';
+        candLabel.innerText = 'ملقناش وش متطابق في الفيديو';
       }
 
       // Render Multiple Faces Breakdown (if more than 1 face in image)
@@ -1776,7 +1776,7 @@
                 </div>
               ` : `
                 <div style="flex: 1; font-size: 0.8rem; color: var(--text-muted);">
-                  هذا الشخص لم يظهر في أي إطار من إطارات الفيديو.
+                  الشخص ده مظهرش في أي كادر من كوادر الفيديو.
                 </div>
               `}
             </div>
@@ -1792,11 +1792,11 @@
 
     async function appendCurrentSnapshotAsAngle(name) {
       if (!lastCapturedSnapshotBlob) {
-        showToast('يرجى التقاط لقطة فورية من الكاميرا أولاً!');
+        showToast('خد لقطة فورية من الكاميرا الأول!');
         return;
       }
       try {
-        showToast('جارٍ حفظ الوضعية والزاوية الحالية لـ ' + name + '...');
+        showToast('بنحفظ زاوية الوش الجديدة لـ ' + name + ' دلوقتي...');
         const formData = new FormData();
         formData.append('name', name);
         formData.append('file', lastCapturedSnapshotBlob, 'pose_angle.jpg');
@@ -1805,7 +1805,7 @@
         const res = await fetch('/api/v1/faces/register', { method: 'POST', body: formData });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || data.error || 'فشل الحفظ');
-        showToast('🎉 تم حفظ وضعية الرأس بنجاح! سيتعرف عليك النظام في هذه الوضعية بدقة 100%.');
+        showToast('🎉 حفظنا زاوية وشك بنجاح! السيستم هيعرفك في الوضعية دي بدقة 100%.');
       } catch (err) {
         showToast('خطأ: ' + err.message);
       }
@@ -1818,13 +1818,13 @@
       const fileInput = document.getElementById('reg-image');
 
       if (!name || !fileInput.files || !fileInput.files[0]) {
-        showToast('يرجى كتابة الاسم واختيار الصورة!');
+        showToast('اكتب الاسم واختار صورة واضحة الأول!');
         return;
       }
 
       const btn = document.getElementById('reg-btn');
       btn.disabled = true;
-      btn.innerHTML = `<div class="spinner"></div><span>جارٍ استخراج بصمة الوجه وحفظ الشخص...</span>`;
+      btn.innerHTML = `<div class="spinner"></div><span>بنستخرج بصمة الوش وبنحفظها في السيستم...</span>`;
 
       const append = document.getElementById('reg-append')?.checked || false;
       const formData = new FormData();
@@ -1837,24 +1837,24 @@
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.detail || data.error || 'فشل تسجيل الشخص.');
+          throw new Error(data.detail || data.error || 'معرفناش نسجل بصمة الوش.');
         }
 
-        showToast(`🎉 تم تسجيل ${name} بنجاح!`);
+        showToast(`🎉 سجلنا ${name} وبصمة وشه بنجاح!`);
         document.getElementById('register-form').reset();
         loadRegisteredProfiles();
       } catch (err) {
         showToast('خطأ: ' + err.message);
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<span>➕ حفظ وتثبيت الشخص في قاعدة البيانات</span>`;
+        btn.innerHTML = `<span>➕ احفظ وثبت بصمة الوش في الداتابيز</span>`;
       }
     }
 
     // Load Profiles
     async function loadRegisteredProfiles() {
       const grid = document.getElementById('profiles-grid');
-      grid.innerHTML = '<div style="color: var(--text-muted); padding: 1rem;">جارٍ تحميل الأشخاص المسجلين...</div>';
+      grid.innerHTML = '<div style="color: var(--text-muted); padding: 1rem;">بنحمّل الناس المسجلين دلوقتي...</div>';
 
       try {
         const res = await fetch('/api/v1/faces/');
@@ -1862,7 +1862,7 @@
         const profiles = data.profiles || data.faces || [];
 
         if (profiles.length === 0) {
-          grid.innerHTML = '<div style="color: var(--text-muted); padding: 1rem;">لا يوجد أشخاص مسجلون حالياً. استخدم النموذج بالأعلى للتسجيل.</div>';
+          grid.innerHTML = '<div style="color: var(--text-muted); padding: 1rem;">مفيش أي أشخاص متسجلين حالياً، تقدر تسجل فوق.</div>';
           return;
         }
 
@@ -1882,7 +1882,7 @@
               <div class="profile-name">${p.name}</div>
               <div class="profile-date">ID: #${p.id}</div>
             </div>
-            <button class="btn-delete" onclick="deleteProfile(${p.id}, '${p.name}')">حذف</button>
+            <button class="btn-delete" onclick="deleteProfile(${p.id}, '${p.name}')">امسح</button>
           `;
           grid.appendChild(card);
         });
@@ -1892,12 +1892,12 @@
     }
 
     async function deleteProfile(id, name) {
-      if (!confirm(`هل أنت متأكد من رغبتك في حذف بروفايل "${name}"؟`)) return;
+      if (!confirm(`متأكد إنك عايز تمسح بروفايل "${name}"؟`)) return;
 
       try {
         const res = await fetch(`/api/v1/faces/${id}`, { method: 'DELETE' });
         if (!res.ok) throw new Error('فشل الحذف');
-        showToast(`تم حذف ${name}`);
+        showToast(`مسحنا بروفايل ${name} خلاص`);
         loadRegisteredProfiles();
       } catch (err) {
         showToast('خطأ في الحذف: ' + err.message);

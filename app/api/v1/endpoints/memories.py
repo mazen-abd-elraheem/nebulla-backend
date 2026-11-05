@@ -139,7 +139,7 @@ async def add_memory(
     if not actual_content:
         raise HTTPException(
             status_code=400,
-            detail="Memory content cannot be empty. Please provide 'content' or 'text' in the request body.",
+            detail="نص المعلومة مينفعش يكون فاضي، اكتب المعلومة اللي عايز تحفظها.",
         )
 
     if not pid:
@@ -164,7 +164,7 @@ async def add_memory(
             "ids": created_ids,
             "count": len(created_ids),
             "personality_id": pid,
-            "message": f"Successfully added {len(created_ids)} memories and embedded them.",
+            "message": f"حفظنا {len(created_ids)} معلومة في الذاكرة وعملنالهم التضمين بنجاح.",
         }
 
     mid = await _rag.add_memory(
@@ -177,7 +177,7 @@ async def add_memory(
         "id": mid,
         "content": actual_content,
         "personality_id": pid,
-        "message": "Memory added and embedded successfully",
+        "message": "المعلومة اتحفظت واتسجلت في عقل الروبوت بنجاح.",
     }
 
 
@@ -189,7 +189,7 @@ async def delete_memory(
 ):
     m = await db.get(Memory, mid)
     if not m:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=404, detail="المعلومة دي مش موجودة في الذاكرة.")
     await db.delete(m)
     await db.commit()
 

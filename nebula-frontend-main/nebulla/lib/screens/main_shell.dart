@@ -27,10 +27,10 @@ class _MainShellState extends State<MainShell> {
 
   final List<_NavItem> _navItems = const [
     _NavItem(icon: Icons.dashboard_outlined, label: 'الرئيسية'),
-    _NavItem(icon: Icons.chat_bubble_outline, label: 'المحادثة'),
+    _NavItem(icon: Icons.chat_bubble_outline, label: 'الدردشة'),
     _NavItem(icon: Icons.person_pin_outlined, label: 'الشخصيات'),
-    _NavItem(icon: Icons.developer_board_outlined, label: 'التشخيص'),
-    _NavItem(icon: Icons.settings_outlined, label: 'الإعدادات'),
+    _NavItem(icon: Icons.developer_board_outlined, label: 'فحص السيستم'),
+    _NavItem(icon: Icons.settings_outlined, label: 'الظبط'),
   ];
 
   @override

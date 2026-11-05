@@ -40,6 +40,7 @@ def is_greeting_or_persona_inquiry(message: str) -> bool:
     # Common greetings (Arabic and English)
     greetings = [
         "صباح الخير", "مساء الخير", "صباح النور", "مساء النور", "صباح الورد", "مساء الورد",
+        "صباح الفل", "مساء الفل", "صباح الياسمين", "صباح القشطة", "يا هلا", "سلام", "سلامات", "تحياتي",
         "أهلاً", "اهلا", "ازيك", "إزيك", "عامل إيه", "عامل ايه", "سلام عليكم", "السلام عليكم",
         "مرحبا", "مرحباً", "هاي", "hello", "hi", "hey", "good morning", "good evening",
         "شكراً", "شكرا", "تسلم", "تسلمي", "thanks", "thank you"
@@ -55,7 +56,11 @@ def is_greeting_or_persona_inquiry(message: str) -> bool:
         r"\bمين\s+(صممك|عملك|برمجك|صنعك|طورك)\b",
         r"\bبتعمل\s+(إيه|ايه)\b",
         r"\bتقدر\s+تعمل\s+(إيه|ايه)\b",
+        r"\b(عرف\s+نفسك|عرفنا\s+بنفسك|كلمنا\s+عن\s+نفسك)\b",
         r"\b(who are you|what is your name|who made you|who created you|what can you do)\b",
+        r"\b(أنا|معاك|اسمي)\s+[\w]+\b",
+        r"\b(فاكر|عارف|فاكرني|عارفني)\b",
+        r"\b(شايف|سامع|مين\s+قدامك|مين\s+اللي\s+قدامك|شايفني|سامعني)\b",
     ]
     return any(re.search(pat, msg) for pat in persona_patterns)
 
@@ -263,7 +268,7 @@ async def build_grounding_context(
     current_face: Dict[str, Any] = {}
 
     try:
-        from app.services.vision.face_service import get_face_service
+        from app.websocket.handlers import get_face_service
         face_service = get_face_service()
         if not registered_faces and getattr(face_service, "_known_embeddings", None):
             registered_faces = list(face_service._known_embeddings.keys())
@@ -425,96 +430,70 @@ async def build_grounding_context(
 
     voice_str = voice_info["voice_sample_path"]
 
-    # Formulate System Prompt
-    if is_arabic:
-        if memories:
-            mem_bullets = "\n".join(f"- {m}" for m in memories)
-            grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
+    # 7. Formulate Unified System Prompt in Authentic Egyptian Arabic (arz) with Strict RAG Grounding
+    if memories:
+        mem_bullets = "\n".join(f"[المصدر {idx}]: {m.strip()}" for idx, m in enumerate(memories, 1))
+        grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
 {persona_extra}
+توجيهات التشغيل والاستناد الصارم للذاكرة (Strict RAG Grounding & Zero-Hallucination):
+1. استخرج الإجابة حصراً وبدقة متناهية من سياق الذاكرة المعتمدة أدناه. ممنوع منعاً باتاً تخمين، تأليف، أو افتراض أي وقائع أو ذكريات أو تفاصيل لم تُذكر صراحة في المصادر.
+2. إذا كان السؤال يطلب تفصيلة أو رقماً غير موجود نصاً في الذاكرة أدناه (مثل أرقام الهواتف الشخصية، كلمات السر، أو البيانات المالية)، يجب الرد حصراً بعبارة:
+   "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+3. أسلوب الرد: أجب بجملة واحدة مباشرة أو جملتين كحد أقصى بالعامية المصرية القاهرية المهذبة لتناسب النطق الصوتي (TTS)، وبدون أي جداول أو علامات نجمية أو روابط.
+4. وسم المشاعر: اختم إجابتك دائماً وبشكل إلزامي بوسم مشاعر واحد فقط في النهاية مثل: [happy] أو [wave] أو [like] أو [neutral] أو [sad].
 
-المهمة: استخرج الإجابة حصراً وبدقة متناهية من نص الذاكرة المعتمدة أدناه.
-القواعد:
-1. أجب بجملة واحدة مباشرة بالعامية المصرية القاهرية بدون أي تأليف أو تفاصيل إضافية غير مذكورة.
-2. اختم إجابتك دائماً بوسم مشاعر واحد فقط في النهاية: [happy] أو [wave] أو [like].
+أمثلة توضيحية لأسلوب الإجابة المباشر ومنع التأليف:
+- المصدر المعتمد: [المصدر 1]: أحمد مهندس برمجيات مقيم في حلوان.
+  سؤال: أحمد شغال إيه؟
+  إجابة: أحمد شغال مهندس برمجيات في حلوان. [like]
+- المصدر المعتمد: [المصدر 1]: أحمد مهندس برمجيات مقيم في حلوان.
+  سؤال: ممكن تديني رقم تليفون أحمد الشخصي؟
+  إجابة: المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]
 
-أمثلة توضيحية لأسلوب الإجابة المباشر:
-الذاكرة المعتمدة:
-- أحمد مهندس برمجيات في حلوان.
-سؤال: أحمد شغال إيه؟
-إجابة: أحمد شغال مهندس برمجيات في حلوان. [like]
-
-الذاكرة المعتمدة:
-- سارة تحب القراءة وممارسة الرياضة.
-سؤال: سارة بتحب إيه؟
-إجابة: سارة بتحب القراءة وممارسة الرياضة. [happy]
-
-الذاكرة المعتمدة:
+سياق الذاكرة المعتمدة:
 {mem_bullets}
-
-تنبيه صارم: أجب مباشرة فقط عن المطلوب باستخدام الذاكرة أعلاه، وبدون أي حشو أو كلام إضافي.
 """
-        else:
-            if is_greeting_or_persona_inquiry(message):
-                grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
+    elif is_greeting_or_persona_inquiry(message):
+        grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
 {persona_extra}
-المستخدم يحييك أو يسأل عنك: رحب به بلطف بلهجة مصرية وعرفه بنفسك كـ {robot_name} وصانعك {creator_name}، واسأله كيف تساعده اليوم. اختم إجابتك بوسم مشاعر مثل [happy] أو [wave].
+المستخدم يحييك أو يسأل عن هويتك وصانعك:
+1. رحب بالمستخدم بلطف بلهجة مصرية قاهرية ودودة وعرفه بنفسك كـ {robot_name} وبصانعك {creator_name}، واسأله كيف تساعده اليوم.
+2. أجب بإيجاز (جملة أو جملتين) بالعامية المصرية القاهرية وبدون حشو أو جداول أو علامات نجمية لتناسب قارئ الصوت (TTS).
+3. اختم إجابتك دائماً وبشكل إلزامي بوسم مشاعر مناسب في النهاية مثل [happy] أو [wave] أو [like].
 """
-            else:
-                grounded_system_prompt = f"""أنت "{robot_name}" (Nebula).
-الذاكرة: لا توجد معلومات مسجلة لهذا السؤال.
-تنبيه صارم: اعتذر فوراً بعبارة:
-"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
-"""
-
-        # Append environmental & hardware telemetry
-        if face_detected and current_face.get("face_id"):
-            grounded_system_prompt += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
-        if verified_speaker:
-            grounded_system_prompt += f"- الصوت: تم التعرف على المتحدث بالبصمة الصوتية: {verified_speaker}.\n"
-        if person_profile and person_profile.get("photo_url"):
-            grounded_system_prompt += f"- شاشة العرض والصور: صورة {person_profile['name']} مسجلة في النظام ومتاحة للعرض على الشاشة.\n"
-        if trusted_contacts:
-            grounded_system_prompt += f"- جهات الاتصال المسموحة (أسماء فقط): {', '.join(trusted_contacts)}.\n"
-        if active_reminders_list:
-            grounded_system_prompt += f"- التذكيرات الحالية: {', '.join(active_reminders_list)}.\n"
-
     else:
-        # User is speaking English
-        from scripts.generate_rag_dataset import to_english_memory
-        if memories:
-            mem_bullets = "\n".join(f"- {to_english_memory(m)}" for m in memories)
-            grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
+        grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
 {persona_extra}
-Directives:
-1. Extract the direct factual answer exclusively from the verified memory below without adding extra details.
-2. Reply in concise natural English (single sentence). No markdown tables or URLs.
-3. Conclude with exactly one emotion tag (e.g. [happy], [wave], [like], [neutral]).
+سياق الذاكرة: لا توجد أي معلومات مسجلة متعلقة بهذا السؤال.
+تنبيه صارم لمنع الهلوسة والتخمين:
+يجب الاعتذار فوراً وبدقة بدون أي تأليف بالعبارة المحددة التالية فقط:
+"المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
 
-- Devices: Phone ({phone_str}) | Desktop ({desk_str}) | Robot ({esp_str})
-Verified Memory:
-{mem_bullets}
-"""
-        else:
-            if is_greeting_or_persona_inquiry(message):
-                grounded_system_prompt = f"""You are "{robot_name}", digital twin robot created by {creator_name}.
-{persona_extra}
-Greet warmly in English as {robot_name} and ask how you can help. Conclude with [wave] or [happy].
-"""
-            else:
-                grounded_system_prompt = f"""You are "{robot_name}".
-Verified Memory: None found.
-Strict Directive: Reply with:
-"I do not have this information recorded in my memory. [wave]"
+قواعد التشغيل والتوجيه الصوتي:
+1. أجب حصراً بالعامية المصرية القاهرية وبجملة الرفض المحددة أعلاه بدون أي كلام إضافي.
+2. يُمنع منعاً باتاً تخمين أو افتراض أي إجابة خارج ما هو مسجل في الذاكرة.
+3. اختم ردك دائماً بوسم المشاعر [wave].
 """
 
-        # Append environmental & hardware telemetry
-        if face_detected and current_face.get("face_id"):
-            grounded_system_prompt += f"- Vision: Person in front of camera is {current_face['face_id']}.\n"
-        if verified_speaker:
-            grounded_system_prompt += f"- Voice: Speaker verified as {verified_speaker}.\n"
-        if person_profile and person_profile.get("photo_url"):
-            grounded_system_prompt += f"- Screen Display: Photo of {person_profile['name']} is available for screen display.\n"
+    # System Status & Hardware Context (appended across all prompt branches for complete situational awareness)
+    sys_status_block = f"""
+معلومات النظام والسياق النشط:
+- الشخصية النشطة: {robot_name} (اللهجة: {p_info.get('dialect') or 'cairo'})
+- بصمة الصوت: {voice_str}
+- التشخيص وحالة الأجهزة: الهاتف ({phone_str}) | الحاسوب ({desk_str}) | شريحة الروبوت ({esp_str})
+"""
+    if face_detected and current_face.get("face_id"):
+        sys_status_block += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
+    if verified_speaker:
+        sys_status_block += f"- الصوت: تم التعرف على المتحدث بالبصمة الصوتية: {verified_speaker}.\n"
+    if person_profile and person_profile.get("photo_url"):
+        sys_status_block += f"- شاشة العرض والصور: صورة {person_profile['name']} مسجلة في النظام ومتاحة للعرض على الشاشة.\n"
+    if trusted_contacts:
+        sys_status_block += f"- جهات الاتصال المسموحة (أسماء فقط): {', '.join(trusted_contacts)}.\n"
+    if active_reminders_list:
+        sys_status_block += f"- التذكيرات الحالية: {', '.join(active_reminders_list)}.\n"
 
+    grounded_system_prompt += sys_status_block
     grounding_data = GroundingInfo(
         personality=p_info,
         faces=faces_info,
