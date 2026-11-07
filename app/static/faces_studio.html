@@ -2848,12 +2848,15 @@
               </div>
             </div>
           </div>
-          <div style="text-align: right; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); padding: 0.75rem 1.25rem; border-radius: var(--radius-sm);">
+          <div style="text-align: right; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); padding: 0.75rem 1.25rem; border-radius: var(--radius-sm); min-width: 145px;">
             <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 2px;">نسبة التطابق بين الصوتين</div>
             <div style="font-size: 1.8rem; font-weight: 900; color: ${bannerBadgeColor}; font-family: monospace;">
-              ${isSame ? matchPct + '%' : sim + '%'}
+              ${isSame ? matchPct + '%' : '0.0%'}
             </div>
-            <div style="font-size: 0.72rem; color: var(--text-muted);">Similarity: ${data.similarity}</div>
+            <div style="font-size: 0.75rem; color: ${isSame ? '#34d399' : '#f87171'}; font-weight: 800; margin-top: 1px;">
+              ${isSame ? '✅ متطابقان' : '❌ غير متطابقين'}
+            </div>
+            <div style="font-size: 0.70rem; color: var(--text-muted); margin-top: 3px;">Similarity: ${data.similarity}</div>
           </div>
         </div>
 

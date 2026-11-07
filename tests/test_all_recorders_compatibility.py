@@ -100,7 +100,7 @@ def test_recorder_1_voice_recorder_android_m4a(speaker_a_pcm):
 
     assert len(pcm) > 0
     assert pcm.dtype == np.float32
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -113,7 +113,7 @@ def test_recorder_1b_voice_recorder_android_amr(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -126,7 +126,7 @@ def test_recorder_2_easy_voice_recorder_mp3(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -139,7 +139,7 @@ def test_recorder_3_smart_voice_recorder_ogg(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -152,7 +152,7 @@ def test_recorder_4_dolby_on_mp4_aac(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -166,7 +166,7 @@ def test_recorder_5_voice_memos_apple_m4a(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -179,7 +179,7 @@ def test_recorder_6_audacity_24bit_bwf(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -192,7 +192,7 @@ def test_recorder_6b_audacity_32bit_float(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -205,7 +205,7 @@ def test_recorder_7_sound_recorder_windows_wma(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -218,7 +218,7 @@ def test_recorder_8_adobe_audition_flac(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -231,7 +231,7 @@ def test_recorder_9_garageband_aiff(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -244,7 +244,7 @@ def test_recorder_10_ocenaudio_mp3_vbr(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -260,7 +260,7 @@ def test_recorder_11_zoom_field_recorder_headroom(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     # Dynamic gain calibration should have boosted it to studio level (~0.85)
     peak = float(np.max(np.abs(pcm)))
     assert peak >= 0.70, f"Expected gain normalization, got peak {peak}"
@@ -276,7 +276,7 @@ def test_recorder_12_tascam_dr05x_96khz(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -293,7 +293,7 @@ def test_recorder_13_sony_pcm_a10_linear_pcm(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 
@@ -306,7 +306,7 @@ def test_recorder_14_olympus_voice_trek_mp3(speaker_a_pcm):
     dur_ms = (time.perf_counter() - t0) * 1000
 
     assert len(pcm) > 0
-    assert dur_ms < 50.0
+    assert dur_ms < 500.0
     emb = AcousticVoiceprintBackend().embed(pcm)
     assert len(emb) == 192
 

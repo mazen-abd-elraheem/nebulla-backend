@@ -1225,7 +1225,7 @@ class SpeakerVerificationService:
         else:
             name1_str = f"[{best_name1}]" if is_identified1 else "[شخص غير مسجل]"
             name2_str = f"[{best_name2}]" if is_identified2 else "[شخص غير مسجل]"
-            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ {name1_str} والصوت الثاني لـ {name2_str} (معامل التشابه بينهما: {sim_12:.3f})."
+            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ {name1_str} والصوت الثاني لـ {name2_str} (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
 
         # 7. Build Human-Readable Arabic Summary
         summary_lines = [
