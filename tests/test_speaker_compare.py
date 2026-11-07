@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Tests for Two-Voice Comparison and Arabic vs English Language Detection.
+Tests for Two-Voice Comparison and Sub-Second Speaker Identification.
 User Requirements:
-1. "عاوز اضيف الجوزء اللي هو يقارن فيه بين اتنين فويس انا اللي ابعتهم و يقولي كل صوت بتاع مين"
-2. "و عاوز الجوزء بتاع الوغات العربي و الانجليزي يقولي الشخص اللي اتكلم اتكلم باني لوغه فيهم"
+1. "عاوز الغي الجوزاء بتاع التعرف علي الوغات" (Remove language detection).
+2. "و عاوز يتعرف علي الصوت اقل من ثانيه" (Recognize voice clips in less than 1 second, e.g. 0.25s).
 """
 import io
 import wave
@@ -36,8 +36,8 @@ def generate_tone(freq: float, duration_sec: float, sr: int = 16000, high_freq_b
 @pytest.mark.asyncio
 async def test_compare_two_speakers_same_person():
     """Verify comparing two clips from the same speaker yields is_same_speaker=True with high match %."""
-    spk_wav1 = generate_tone(140.0, 1.8)
-    spk_wav2 = generate_tone(140.0, 1.8)
+    spk_wav1 = generate_tone(140.0, 1.2)
+    spk_wav2 = generate_tone(140.0, 1.2)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -60,8 +60,8 @@ async def test_compare_two_speakers_same_person():
 async def test_compare_two_speakers_different_people_and_identities():
     """Verify comparing two different speakers correctly distinguishes them and returns identity + IDs."""
     speaker_name = "TestCompareAhmed"
-    enrolled_audio = generate_tone(130.0, 2.0)
-    different_audio = generate_tone(320.0, 2.0, high_freq_boost=0.5)
+    enrolled_audio = generate_tone(130.0, 1.5)
+    different_audio = generate_tone(320.0, 1.5, high_freq_boost=0.5)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -105,17 +105,11 @@ async def test_compare_two_speakers_different_people_and_identities():
         assert v1["personality_id"] == 88
         assert v1["memory_id"] == 99
         assert v1["match_percentage"] >= 80.0
-        assert "language" in v1
 
         # Voice 2 should be recognized as un-enrolled / unknown
         v2 = data["voice2"]
         assert v2["is_enrolled"] is False
         assert "غير مسجل" in v2["speaker_name"]
-        assert "language" in v2
-
-        # Language verdict presence
-        assert "language_verdict" in data
-        assert len(data["language_verdict"]) > 0
 
         # Arabic summary presence
         assert "arabic_summary" in data
@@ -128,29 +122,100 @@ async def test_compare_two_speakers_different_people_and_identities():
 
 
 @pytest.mark.asyncio
-async def test_compare_two_speakers_language_detection():
-    """Verify explicit language classification (Arabic vs English) for compared audio clips."""
-    # Low centroid harmonic -> Arabic
-    arabic_audio = generate_tone(150.0, 1.5, high_freq_boost=0.0)
-    # High frequency boost / high centroid -> English
-    english_audio = generate_tone(220.0, 1.5, high_freq_boost=0.8)
+async def test_subsecond_voice_identification_and_compare():
+    """
+    Verify voice recognition works on audio LESS THAN 1 SECOND (e.g. 0.25s and 0.35s).
+    Requirement: 'عاوز يتعرف علي الصوت اقل من ثانيه'
+    """
+    speaker_name = "SubSecondSpeaker"
+    # Audio of only 0.45s for enrollment
+    enroll_audio = generate_tone(150.0, 0.45)
+    # Audio of only 0.25s (< 1 second!) for testing
+    subsecond_voice1 = generate_tone(150.0, 0.25)
+    subsecond_voice2 = generate_tone(150.0, 0.30)
+    subsecond_diff = generate_tone(340.0, 0.25)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        files = {
-            "file1": ("audio_ar.wav", arabic_audio, "audio/wav"),
-            "file2": ("audio_en.wav", english_audio, "audio/wav"),
-        }
-        res = await client.post("/api/v1/speakers/compare", files=files)
-        assert res.status_code == 200, f"Compare failed: {res.text}"
+        # 1. Enroll speaker with sub-second sample
+        enroll_files = {"file": ("enroll.wav", enroll_audio, "audio/wav")}
+        enroll_res = await client.post(
+            "/api/v1/speakers/enroll",
+            data={"speaker_name": speaker_name, "face_id": "42"},
+            files=enroll_files
+        )
+        assert enroll_res.status_code == 200, f"Enroll failed: {enroll_res.text}"
+
+        speaker_service = get_speaker_service()
+        speaker_service.invalidate()
+
+        # 2. Test 1:N Identify on 0.25s audio (< 1s)
+        ident_res = await client.post(
+            "/api/v1/speakers/identify",
+            files={"file": ("short.wav", subsecond_voice1, "audio/wav")}
+        )
+        assert ident_res.status_code == 200, f"Identify failed: {ident_res.text}"
+        ident_data = ident_res.json()
+        assert ident_data["is_identified"] is True
+        assert ident_data["speaker_name"] == speaker_name
+        assert ident_data["audio_seconds"] == 0.25
+        assert ident_data["face_id"] == 42
+
+        # 3. Test Compare on sub-second audio (0.25s vs 0.30s of same speaker)
+        comp_res = await client.post(
+            "/api/v1/speakers/compare?threshold=0.82",
+            files={
+                "file1": ("s1.wav", subsecond_voice1, "audio/wav"),
+                "file2": ("s2.wav", subsecond_voice2, "audio/wav"),
+            }
+        )
+        assert comp_res.status_code == 200, f"Compare sub-second failed: {comp_res.text}"
+        comp_data = comp_res.json()
+        assert comp_data["success"] is True
+        assert comp_data["is_same_speaker"] is True
+        assert comp_data["voice1"]["speaker_name"] == speaker_name
+        assert comp_data["voice2"]["speaker_name"] == speaker_name
+        assert comp_data["voice1"]["audio_seconds"] == 0.25
+        assert comp_data["voice2"]["audio_seconds"] == 0.30
+
+        # 4. Test Compare on sub-second audio of different speakers (0.25s vs 0.25s)
+        comp_diff_res = await client.post(
+            "/api/v1/speakers/compare?threshold=0.82",
+            files={
+                "file1": ("s1.wav", subsecond_voice1, "audio/wav"),
+                "file2": ("diff.wav", subsecond_diff, "audio/wav"),
+            }
+        )
+        assert comp_diff_res.status_code == 200
+        comp_diff_data = comp_diff_res.json()
+        assert comp_diff_data["is_same_speaker"] is False
+        assert comp_diff_data["voice1"]["is_enrolled"] is True
+        assert comp_diff_data["voice2"]["is_enrolled"] is False
+
+        # Clean up
+        await client.delete(f"/api/v1/speakers/{speaker_name}")
+        speaker_service.invalidate()
+
+
+@pytest.mark.asyncio
+async def test_strict_arabic_arz_language_policy():
+    """Verify that language policy strictly enforces Egyptian Arabic with code 'arz'."""
+    from app.services.voice_verification.speaker_service import detect_spoken_language
+    lang_info = detect_spoken_language()
+    assert lang_info["language_code"] == "arz"
+    assert "العربية" in lang_info["language"]
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        v1 = generate_tone(150.0, 0.5)
+        v2 = generate_tone(150.0, 0.5)
+        res = await client.post(
+            "/api/v1/speakers/compare",
+            files={"file1": ("v1.wav", v1, "audio/wav"), "file2": ("v2.wav", v2, "audio/wav")}
+        )
+        assert res.status_code == 200
         data = res.json()
-
-        assert data["success"] is True
-        v1 = data["voice1"]
-        v2 = data["voice2"]
-
-        assert v1["language_code"] in ["ar", "en"]
-        assert v2["language_code"] in ["ar", "en"]
-        assert "العربية" in v1["language"] or "الإنجليزية" in v1["language"]
-        assert "العربية" in v2["language"] or "الإنجليزية" in v2["language"]
-
+        assert data["voice1"]["language_code"] == "arz"
+        assert data["voice2"]["language_code"] == "arz"
+        assert "العربية" in data["voice1"]["language"]
+        assert "العربية" in data["voice2"]["language"]

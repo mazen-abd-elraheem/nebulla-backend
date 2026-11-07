@@ -131,13 +131,12 @@ async def diarize_speakers(
 
 @router.post(
     "/compare",
-    summary="Compare two voice clips & identify speaker and spoken language",
+    summary="Compare two voice clips & identify speaker identities (sub-second supported)",
     description=(
-        "Compares two uploaded voice clips directly: "
+        "Compares two uploaded voice clips directly (supports sub-second audio down to 0.15s): "
         "1. Checks if they belong to the same person or different people. "
         "2. Identifies Voice 1 from enrolled database voiceprints (with Face ID, Personality ID, Memory ID). "
-        "3. Identifies Voice 2 from enrolled database voiceprints (with Face ID, Personality ID, Memory ID). "
-        "4. Detects whether each person spoke Arabic (العربية) or English (الإنجليزية)."
+        "3. Identifies Voice 2 from enrolled database voiceprints (with Face ID, Personality ID, Memory ID)."
     ),
     status_code=status.HTTP_200_OK,
 )
@@ -147,7 +146,7 @@ async def compare_speakers(
     threshold: Optional[float] = Query(None, description="Cosine similarity threshold override (default: 0.82)"),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Compare two voice recordings and detect spoken language."""
+    """Compare two voice recordings and identify speakers."""
     audio_bytes1 = await file1.read()
     audio_bytes2 = await file2.read()
 
