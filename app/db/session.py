@@ -76,6 +76,8 @@ async def init_db() -> None:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN user_id INTEGER REFERENCES users(id)"))
                 if "updated_at" not in cols:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN updated_at DATETIME"))
+                if "greeting" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN greeting VARCHAR(256)"))
                 try:
                     connection.execute(text("DROP INDEX IF EXISTS ix_personalities_name"))
                 except Exception as e:
@@ -106,6 +108,12 @@ async def init_db() -> None:
 
             if "users" in tables:
                 cols = [c["name"] for c in inspector.get_columns("users")]
+                if "username" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(64)"))
+                    try:
+                        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"))
+                    except Exception:
+                        pass
                 if "face_profile_id" not in cols:
                     connection.execute(text("ALTER TABLE users ADD COLUMN face_profile_id INTEGER REFERENCES face_profiles(id)"))
                 if "terms_accepted" not in cols:
@@ -156,6 +164,7 @@ async def init_db() -> None:
             default_user = User(
                 id=1,
                 full_name="مازن عبد الرحيم (Mazen)",
+                username="mazen",
                 email="admin@nebula.local",
                 hashed_password=get_password_hash("nebula2026"),
                 is_active=True,

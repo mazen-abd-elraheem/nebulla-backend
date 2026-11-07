@@ -6,6 +6,12 @@ Architecture: Phone/Desk/ESP32 all connect to THIS backend.
 No device talks to another device directly (design decision from doc §4).
 """
 
+# Pre-initialize torchvision at startup to prevent circular import in concurrent background warmups
+try:
+    import torchvision  # noqa: F401
+except Exception:
+    pass
+
 import json
 import re
 from contextlib import asynccontextmanager
@@ -58,6 +64,18 @@ async def _warmup_ollama():
         logger.debug(f"Ollama warm-up notice: {e}")
 
 
+async def _warmup_stt():
+    """Pre-warm QwenCleo ASR in RAM/GPU to eliminate cold-start speech-to-text latency."""
+    try:
+        from app.providers.stt.factory import get_stt_provider
+        stt = get_stt_provider('qwencleo')
+        if hasattr(stt, '_ensure_loaded'):
+            await stt._ensure_loaded()
+            logger.info('✅ QwenCleo ASR model is warm and ready in RAM/GPU.')
+    except Exception as e:
+        logger.debug(f'STT warm-up notice: {e}')
+
+
 async def _warmup_rag():
     """Pre-warm RAG SentenceTransformer in RAM to eliminate cold-start retrieval latency."""
     try:
@@ -69,6 +87,20 @@ async def _warmup_rag():
         logger.debug(f"RAG warm-up notice: {e}")
 
 
+async def _warmup_cloned_greeting():
+    """Pre-caches the cloned voice greeting for instant (0ms) playback on connect."""
+    try:
+        from pathlib import Path
+        sample_1 = Path("data/voice_samples/personality_1.wav")
+        greeting_1 = Path("data/voice_samples/greeting_personality_1.wav")
+        if sample_1.exists() and not greeting_1.exists():
+            from app.services.voice_clone.voice_clone_service import VoiceCloneService
+            await VoiceCloneService.get_instance().generate_and_cache_greeting(1)
+            logger.info("✅ Cloned voice greeting is pre-cached and ready.")
+    except Exception as e:
+        logger.debug(f"Cloned greeting warm-up notice: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
@@ -78,6 +110,8 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_warmup_vision())
     asyncio.create_task(_warmup_ollama())
     asyncio.create_task(_warmup_rag())
+    asyncio.create_task(_warmup_stt())
+    asyncio.create_task(_warmup_cloned_greeting())
 
     # Chapter 14: reminders (medicine / tasks) with family escalation
     scheduler = None

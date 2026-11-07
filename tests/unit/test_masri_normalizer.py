@@ -54,3 +54,45 @@ def test_clean_llm_output_for_speech_strips_tags():
     assert "[action:nod]" not in cleaned
     assert "بال API" in cleaned
     assert "أَرْبَعَه و رُبع" in cleaned
+
+
+def test_quote_and_url_shielding():
+    """Protected quotes, URLs, and code blocks must remain uncorrupted by dialect transforms."""
+    norm = MasriNormalizer()
+    text = 'قال لي "لا تقلق سوف أساعدك" وزور https://example.com/api'
+    res = norm.normalize(text)
+    # The text inside quotes is protected from "ماتقلقش" / "هساعدك"
+    assert '"لا تقلق سوف أساعدك"' in res
+    assert "https://example.com/api" in res
+
+
+def test_egyptian_phone_numbers_speech():
+    """Egyptian mobile numbers should expand into natural spoken digit words."""
+    norm = MasriNormalizer()
+    res = norm.normalize("رقمي هو 01012345678 كلمني")
+    assert "صفر واحد صفر واحد اتنين تلاتة أربعة خمسة ستة سبعة تمانية" in res
+
+
+def test_egyptian_dual_and_countable_plurals():
+    """Colloquial Egyptian duals and 3-10 plural truncation."""
+    norm = MasriNormalizer()
+    res_dual = norm.normalize("فاضل 2 يوم و 2 ساعة و 2 جنيه")
+    assert "يومين" in res_dual
+    assert "ساعتين" in res_dual
+    assert "جنيهين" in res_dual
+
+    res_plural = norm.normalize("عشت هناك 3 سنين و 5 شهور")
+    assert "تلات سنين" in res_plural
+    assert "خمس شهور" in res_plural
+
+
+def test_contextual_verbal_negations_and_modals():
+    """Authentic Masri verbal negation and modal conversion."""
+    norm = MasriNormalizer()
+    assert "مش هقدر" in norm.normalize("أنا لا أستطيع الخروج")
+    assert "ماعرفش" in norm.normalize("أنا لا أعرف الإجابة")
+    assert "معنديش" in norm.normalize("ليس لدي رصيد")
+    assert "مفيش" in norm.normalize("لا يوجد حل آخر")
+    assert "هساعدك" in norm.normalize("سوف أساعدك حالا")
+    assert "لازم" in norm.normalize("يجب أن ترتاح")
+

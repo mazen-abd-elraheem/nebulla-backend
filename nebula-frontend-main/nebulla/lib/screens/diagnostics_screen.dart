@@ -45,7 +45,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen>
                 child: Row(
                   children: [
                     const Expanded(
-                      child: Text('التشخيص والتحكم',
+                      child: Text('فحص وتحكم السيستم',
                           style: TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 20,
@@ -55,7 +55,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen>
                     IconButton(
                       icon: const Icon(Icons.person_add_outlined,
                           color: AppColors.teal),
-                      tooltip: 'تسجيل وجه',
+                      tooltip: 'سجّل بصمة وش جديدة',
                       onPressed: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -65,7 +65,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen>
                     ),
                     IconButton(
                       icon: const Icon(Icons.gesture, color: AppColors.purple),
-                      tooltip: 'الإشارات',
+                      tooltip: 'إشارات وحركات الروبوت',
                       onPressed: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -97,9 +97,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen>
                       fontWeight: FontWeight.w700,
                       fontSize: 12),
                   tabs: const [
-                    Tab(text: 'السيرفو'),
-                    Tab(text: 'المحركات / LED'),
-                    Tab(text: 'المعايرة'),
+                    Tab(text: 'مواتير السيرفو'),
+                    Tab(text: 'المواتير و الليدات'),
+                    Tab(text: 'معايرة الزوايا'),
                   ],
                 ),
               ),
@@ -145,9 +145,9 @@ class _ServoTabState extends State<_ServoTab> {
     try {
       await widget.repo
           .testServo(_servoId, angle: _angle, speedMs: _speedMs);
-      if (mounted) showSuccessSnackbar(context, 'تم تحريك السيرفو');
+      if (mounted) showSuccessSnackbar(context, 'حركنا السيرفو تمام');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ: $e');
+      if (mounted) showErrorSnackbar(context, 'حصلت مشكلة: $e');
     } finally {
       if (mounted) setState(() => _testing = false);
     }
@@ -157,9 +157,9 @@ class _ServoTabState extends State<_ServoTab> {
     setState(() => _homing = true);
     try {
       await widget.repo.homeAllServos();
-      if (mounted) showSuccessSnackbar(context, 'تم إعادة الكل لموضع البيت');
+      if (mounted) showSuccessSnackbar(context, 'رجعنا كل السيرفوهات لوضع السكون');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ: $e');
+      if (mounted) showErrorSnackbar(context, 'حصلت مشكلة: $e');
     } finally {
       if (mounted) setState(() => _homing = false);
     }
@@ -171,7 +171,7 @@ class _ServoTabState extends State<_ServoTab> {
       final data = await widget.repo.getSensorDistance();
       setState(() => _distance = (data['distance'] as num?)?.toDouble());
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ: $e');
+      if (mounted) showErrorSnackbar(context, 'حصلت مشكلة: $e');
     } finally {
       if (mounted) setState(() => _gettingDist = false);
     }
@@ -187,7 +187,7 @@ class _ServoTabState extends State<_ServoTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SectionHeader(title: 'اختبار السيرفو'),
+                const SectionHeader(title: 'تجربة مواتير السيرفو'),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -195,7 +195,7 @@ class _ServoTabState extends State<_ServoTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('معرّف السيرفو: $_servoId',
+                          Text('رقم السيرفو: $_servoId',
                               style: const TextStyle(
                                   color: AppColors.textSecondary,
                                   fontFamily: 'Cairo',
@@ -216,7 +216,7 @@ class _ServoTabState extends State<_ServoTab> {
                     ),
                   ],
                 ),
-                Text('الزاوية: ${_angle.toStringAsFixed(0)}°',
+                Text('الزاوية: ${_angle.toStringAsFixed(0)} درجة',
                     style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontFamily: 'Cairo',
@@ -231,7 +231,7 @@ class _ServoTabState extends State<_ServoTab> {
                   label: '${_angle.toStringAsFixed(0)}°',
                   onChanged: (v) => setState(() => _angle = v),
                 ),
-                Text('السرعة: $_speedMs ms',
+                Text('السرعة: $_speedMs مللي ثانية',
                     style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontFamily: 'Cairo',
@@ -252,7 +252,7 @@ class _ServoTabState extends State<_ServoTab> {
                   children: [
                     Expanded(
                       child: NebulaPrimaryButton(
-                        label: 'اختبار',
+                        label: 'جرّب الحركة',
                         icon: Icons.play_arrow_outlined,
                         onTap: _test,
                         loading: _testing,
@@ -279,7 +279,7 @@ class _ServoTabState extends State<_ServoTab> {
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                         color: AppColors.purple))
-                                : const Text('موضع البيت',
+                                : const Text('وضع السكون (الهوم)',
                                     style: TextStyle(
                                         color: AppColors.purple,
                                         fontFamily: 'Cairo',
@@ -299,7 +299,7 @@ class _ServoTabState extends State<_ServoTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SectionHeader(title: 'مستشعر المسافة HC-SR04'),
+                const SectionHeader(title: 'حساس المسافة بالألتراسونيك (HC-SR04)'),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -313,13 +313,13 @@ class _ServoTabState extends State<_ServoTab> {
                                   fontWeight: FontWeight.w800,
                                   fontFamily: 'Cairo'),
                             )
-                          : const Text('اضغط لقراءة المسافة',
+                          : const Text('دوس هنا عشان تقيس المسافة',
                               style: TextStyle(
                                   color: AppColors.textMuted,
                                   fontFamily: 'Cairo')),
                     ),
                     NebulaPrimaryButton(
-                      label: 'قراءة',
+                      label: 'قيس دلوقتي',
                       icon: Icons.radar,
                       onTap: _getDistance,
                       loading: _gettingDist,
@@ -359,9 +359,9 @@ class _MotorLedTabState extends State<_MotorLedTab> {
     try {
       await widget.repo.testMotors(
           left: _left, right: _right, durationMs: _durationMs);
-      if (mounted) showSuccessSnackbar(context, 'تم تشغيل المحركات');
+      if (mounted) showSuccessSnackbar(context, 'شغّلنا المواتير بنجاح');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ: $e');
+      if (mounted) showErrorSnackbar(context, 'حصلت مشكلة: $e');
     } finally {
       if (mounted) setState(() => _testingMotor = false);
     }
@@ -371,9 +371,9 @@ class _MotorLedTabState extends State<_MotorLedTab> {
     setState(() => _settingLed = true);
     try {
       await widget.repo.setLed(_ledState);
-      if (mounted) showSuccessSnackbar(context, 'تم ضبط LED');
+      if (mounted) showSuccessSnackbar(context, 'ظبطنا إضاءة الليدات تمام');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ: $e');
+      if (mounted) showErrorSnackbar(context, 'حصلت مشكلة: $e');
     } finally {
       if (mounted) setState(() => _settingLed = false);
     }
@@ -383,9 +383,9 @@ class _MotorLedTabState extends State<_MotorLedTab> {
     setState(() => _stopping = true);
     try {
       await widget.repo.emergencyStop();
-      if (mounted) showSuccessSnackbar(context, '🚨 تم الإيقاف الطارئ');
+      if (mounted) showSuccessSnackbar(context, '🚨 وقفنا كل المواتير والسيستم فوراً');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ: $e');
+      if (mounted) showErrorSnackbar(context, 'حصلت مشكلة: $e');
     } finally {
       if (mounted) setState(() => _stopping = false);
     }
@@ -402,9 +402,9 @@ class _MotorLedTabState extends State<_MotorLedTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SectionHeader(title: 'اختبار المحركات'),
+                const SectionHeader(title: 'تجربة مواتير الحركة'),
                 const SizedBox(height: 16),
-                Text('الأيسر: $_left',
+                Text('الموتور الشمال: $_left',
                     style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontFamily: 'Cairo',
@@ -419,7 +419,7 @@ class _MotorLedTabState extends State<_MotorLedTab> {
                   label: _left.toString(),
                   onChanged: (v) => setState(() => _left = v.round()),
                 ),
-                Text('الأيمن: $_right',
+                Text('الموتور اليمين: $_right',
                     style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontFamily: 'Cairo',
@@ -434,7 +434,7 @@ class _MotorLedTabState extends State<_MotorLedTab> {
                   label: _right.toString(),
                   onChanged: (v) => setState(() => _right = v.round()),
                 ),
-                Text('المدة: $_durationMs ms',
+                Text('المدة: $_durationMs مللي ثانية',
                     style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontFamily: 'Cairo',
@@ -452,7 +452,7 @@ class _MotorLedTabState extends State<_MotorLedTab> {
                 ),
                 const SizedBox(height: 12),
                 NebulaPrimaryButton(
-                  label: 'تشغيل المحركات',
+                  label: 'دور المواتير',
                   icon: Icons.settings_outlined,
                   onTap: _testMotors,
                   loading: _testingMotor,
@@ -466,7 +466,7 @@ class _MotorLedTabState extends State<_MotorLedTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SectionHeader(title: 'التحكم بـ LED'),
+                const SectionHeader(title: 'ظبط إضاءة ونبض الليدات (LED)'),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 8,
@@ -503,7 +503,7 @@ class _MotorLedTabState extends State<_MotorLedTab> {
                 ),
                 const SizedBox(height: 14),
                 NebulaPrimaryButton(
-                  label: 'تطبيق',
+                  label: 'شغّل الإضاءة دي',
                   icon: Icons.lightbulb_outline,
                   onTap: _setLed,
                   loading: _settingLed,
@@ -514,7 +514,7 @@ class _MotorLedTabState extends State<_MotorLedTab> {
           const SizedBox(height: 16),
           // Emergency stop
           NebulaDangerButton(
-            label: '🚨 إيقاف طارئ',
+            label: '🚨 وقف كل حركة فوراً',
             icon: Icons.stop_circle_outlined,
             onTap: _stopping ? null : _emergencyStop,
           ),
@@ -550,7 +550,7 @@ class _CalibrationTabState extends State<_CalibrationTab> {
     try {
       _entries = await widget.repo.getCalibrations();
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ في التحميل: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نجيب بيانات المعايرة: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -560,9 +560,9 @@ class _CalibrationTabState extends State<_CalibrationTab> {
     setState(() => _resetting = true);
     try {
       await widget.repo.resetCalibration();
-      if (mounted) showSuccessSnackbar(context, 'تم الإعادة لموضع البيت');
+      if (mounted) showSuccessSnackbar(context, 'رجعنا كل السيرفوهات لوضع السكون');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ: $e');
+      if (mounted) showErrorSnackbar(context, 'حصلت مشكلة: $e');
     } finally {
       if (mounted) setState(() => _resetting = false);
     }
@@ -580,7 +580,7 @@ class _CalibrationTabState extends State<_CalibrationTab> {
       builder: (_) => StatefulBuilder(
         builder: (ctx, ss) => AlertDialog(
           backgroundColor: AppColors.card,
-          title: Text('سيرفو #${entry.servoId}',
+          title: Text('سيرفو رقم #${entry.servoId}',
               style: const TextStyle(
                   fontFamily: 'Cairo', color: AppColors.textPrimary)),
           content: Column(
@@ -591,13 +591,13 @@ class _CalibrationTabState extends State<_CalibrationTab> {
                 style: const TextStyle(
                     color: AppColors.textPrimary, fontFamily: 'Cairo'),
                 decoration: const InputDecoration(
-                    labelText: 'التسمية',
+                    labelText: 'اسم السيرفو (مثلاً: الرقبة، العين)',
                     labelStyle:
                         TextStyle(color: AppColors.textSecondary)),
               ),
               const SizedBox(height: 10),
               Text(
-                  'الحد الأدنى: ${minAngle.toStringAsFixed(0)}°',
+                  'أقل زاوية: ${minAngle.toStringAsFixed(0)}°',
                   style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontFamily: 'Cairo',
@@ -609,7 +609,7 @@ class _CalibrationTabState extends State<_CalibrationTab> {
                   activeColor: AppColors.teal,
                   inactiveColor: AppColors.cardBorder,
                   onChanged: (v) => ss(() => minAngle = v)),
-              Text('الحد الأقصى: ${maxAngle.toStringAsFixed(0)}°',
+              Text('أعلى زاوية: ${maxAngle.toStringAsFixed(0)}°',
                   style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontFamily: 'Cairo',
@@ -622,7 +622,7 @@ class _CalibrationTabState extends State<_CalibrationTab> {
                   inactiveColor: AppColors.cardBorder,
                   onChanged: (v) => ss(() => maxAngle = v)),
               Text(
-                  'زاوية البيت: ${homeAngle.toStringAsFixed(0)}°',
+                  'زاوية السكون (الهوم): ${homeAngle.toStringAsFixed(0)}°',
                   style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontFamily: 'Cairo',
@@ -653,16 +653,16 @@ class _CalibrationTabState extends State<_CalibrationTab> {
                     'home_angle': homeAngle,
                   });
                   if (mounted) {
-                    showSuccessSnackbar(context, 'تم الحفظ');
+                    showSuccessSnackbar(context, 'حفظنا المعايرة تمام');
                   }
                   _load();
                 } catch (e) {
                   if (mounted) {
-                    showErrorSnackbar(context, 'خطأ: $e');
+                    showErrorSnackbar(context, 'حصلت مشكلة: $e');
                   }
                 }
               },
-              child: const Text('حفظ',
+              child: const Text('احفظ التعديلات',
                   style: TextStyle(color: AppColors.teal)),
             ),
           ],
@@ -683,7 +683,7 @@ class _CalibrationTabState extends State<_CalibrationTab> {
                 if (_entries.isEmpty)
                   const NebulaCard(
                     child: Center(
-                      child: Text('لا توجد معايرات',
+                      child: Text('مفيش أي بيانات معايرة متسجلة',
                           style: TextStyle(
                               color: AppColors.textMuted,
                               fontFamily: 'Cairo')),
@@ -752,7 +752,7 @@ class _CalibrationTabState extends State<_CalibrationTab> {
                       ))),
                 const SizedBox(height: 8),
                 NebulaDangerButton(
-                  label: 'إعادة الكل لموضع البيت',
+                  label: 'رجّع كل السيرفوهات لوضع السكون',
                   icon: Icons.home_outlined,
                   onTap: _resetting ? null : _reset,
                 ),

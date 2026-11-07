@@ -5,8 +5,10 @@ Voice Clone Service
 High-level service that manages:
   • Voice sample upload + validation
   • Personality ↔ reference-WAV binding
-  • XTTS synthesis with the cloned voice
+  • XTTS / VoiceTut synthesis with the cloned voice
   • Streaming chunks back to the phone app
+  • QwenCleo Egyptian Arabic STT auto-transcription (multithreaded chunks)
+  • Automatic VAD silence trimming to remove leading empty pause ("الريك الفاضي")
 
 Used by the REST API (/api/v1/voice-clone/*) and by the AI pipeline.
 """
@@ -37,17 +39,15 @@ _MAX_DURATION_S = 120.0  # cap to avoid huge uploads
 
 class VoiceCloneService:
     """
-    Manages voice samples and drives VoiceTut synthesis (in-process or microservice).
+    Manages voice samples and drives VoiceTut/XTTS synthesis.
     Swaps reference audio per personality and applies Egyptian dialect normalizer.
     """
 
     def __init__(self):
-        from app.providers.tts.voicetut import VoiceTutProvider
-        self._voicetut = VoiceTutProvider()
-        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
-        self._voicetut_service = VoiceTutMicroserviceProvider()
+        from app.providers.tts.xtts.provider import XTTSProvider
+        self._xtts = XTTSProvider()
+        self._voicetut = self._xtts
         self._personality_voice_map: dict[int, str] = {}  # personality_id → wav path
-
 
     # ── Sample management ─────────────────────────────────────────────────────
 
@@ -59,7 +59,8 @@ class VoiceCloneService:
     ) -> str:
         """
         Receive an audio or video upload (WAV or MP4), convert to standard WAV,
-        validate duration, save it, and bind it to a personality.
+        trim leading/trailing dead silence, validate duration, save it,
+        auto-transcribe using QwenCleo STT (multithreaded chunks), and bind it to a personality.
 
         Returns the saved file path.
         Accepted formats: .wav, .mp4, .m4a, .mp3, .webm, .ogg, .aac, .opus, .flac, .3gp, .amr, .wma
@@ -84,6 +85,7 @@ class VoiceCloneService:
         raw = await file.read()
         dest = _SAMPLES_DIR / f"personality_{personality_id}.wav"
 
+        # Convert and automatically trim leading and trailing dead silence ("الريك الفاضي")
         duration = _save_and_convert_to_wav(raw, ext, dest)
 
         if duration < _MIN_DURATION_S:
@@ -91,7 +93,7 @@ class VoiceCloneService:
                 dest.unlink()
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Sample too short ({duration:.1f}s). Minimum is {_MIN_DURATION_S}s.",
+                detail=f"مدة الصوت الفعلي قصيرة جداً ({duration:.1f} ثانية). الحد الأدنى هو {_MIN_DURATION_S} ثانية من الكلام البشري.",
             )
         if duration > _MAX_DURATION_S:
             if dest.exists():
@@ -106,20 +108,23 @@ class VoiceCloneService:
             txt_dest.write_text(transcript.strip(), encoding="utf-8")
             logger.info(f"Saved transcript for personality {personality_id}")
         else:
-            # Auto-transcribe using Whisper STT on CUDA for maximum zero-shot cloning fidelity
+            # Auto-transcribe using QwenCleo Egyptian Arabic STT (multithreaded chunks processing)
             try:
                 from app.providers.stt.factory import get_stt_provider
-                stt = get_stt_provider("whisper")
+                stt = get_stt_provider("qwencleo")
                 auto_txt = await stt.transcribe(dest.read_bytes())
                 if auto_txt and auto_txt.strip():
                     txt_dest.write_text(auto_txt.strip(), encoding="utf-8")
-                    logger.info(f"Auto-transcribed reference audio with Whisper for maximum cloning likeness: {auto_txt.strip()[:60]}...")
+                    logger.info(f"Auto-transcribed reference audio with QwenCleo: {auto_txt.strip()[:60]}...")
             except Exception as stt_err:
-                logger.warning(f"Could not auto-transcribe reference audio: {stt_err}")
+                logger.warning(f"Could not auto-transcribe reference audio with QwenCleo: {stt_err}")
 
         self._personality_voice_map[personality_id] = str(dest)
         logger.info(f"Voice sample saved for personality {personality_id}: {dest} ({duration:.1f}s)")
         await self._sync_db_voice_sample(personality_id, str(dest))
+        # Trigger background pre-caching of greeting with the new cloned voice
+        import asyncio
+        asyncio.create_task(self.generate_and_cache_greeting(personality_id))
         return str(dest)
 
     async def _sync_db_voice_sample(self, personality_id: int, path: str | None) -> None:
@@ -197,9 +202,66 @@ class VoiceCloneService:
         if deleted:
             self._personality_voice_map.pop(personality_id, None)
             logger.info(f"Deleted voice sample for personality {personality_id}")
+            greet_p = self._xtts.get_greeting_cache_path(personality_id)
+            if greet_p.exists():
+                try:
+                    greet_p.unlink()
+                except Exception:
+                    pass
             await self._sync_db_voice_sample(personality_id, None)
             return True
         return False
+
+    # ── Cloned Greeting Caching ───────────────────────────────────────────────
+
+    def get_cached_greeting(self, personality_id: int | None = None) -> bytes | None:
+        """Fetch pre-cached greeting audio if available on disk (0ms instant playback)."""
+        pid = personality_id if personality_id is not None else 1
+        return self._xtts.get_cached_greeting(pid)
+
+    async def generate_and_cache_greeting(
+        self,
+        personality_id: int | None = None,
+        text: str | None = None,
+    ) -> str | None:
+        """Pre-synthesize greeting with the cloned voice and persist to cache."""
+        pid = personality_id if personality_id is not None else 1
+        greeting_text = text
+        if not greeting_text:
+            try:
+                from app.db.session import AsyncSessionLocal
+                from sqlalchemy import select
+                from app.models.personality import Personality
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(
+                        select(Personality).where(Personality.id == pid)
+                    )
+                    p = res.scalar_one_or_none()
+                    if p and getattr(p, "greeting", None) and p.greeting.strip():
+                        greeting_text = p.greeting.strip()
+            except Exception as e:
+                logger.debug(f"Could not load personality greeting: {e}")
+
+        if not greeting_text:
+            greeting_text = "أهلاً بيك، أنا نيبولا توأمك الرقمي، جاهز أساعدك في أي وقت"
+
+        sample_path = self.get_sample_path(pid)
+        if not sample_path or not os.path.exists(sample_path):
+            sample_path = str(Path("data/voice_samples/personality_1.wav").resolve())
+            if not os.path.exists(sample_path):
+                return None
+
+        try:
+            await self._xtts.precache_greeting(
+                personality_id=pid,
+                text=greeting_text,
+                sample_path=sample_path,
+            )
+            cache_path = self._xtts.get_greeting_cache_path(pid)
+            return str(cache_path)
+        except Exception as e:
+            logger.warning(f"Failed to pre-cache greeting for personality {pid}: {e}")
+            return None
 
     # ── Synthesis ─────────────────────────────────────────────────────────────
 
@@ -222,7 +284,6 @@ class VoiceCloneService:
           2. Personality-bound sample (personality_id lookup)
           3. Default provider synthesis
         """
-        # Normalize text to remove thinking tags, action commands, and tune Egyptian pronunciation
         clean_text = clean_llm_output_for_speech(text)
         if not clean_text:
             clean_text = text.strip()
@@ -240,36 +301,14 @@ class VoiceCloneService:
                     ref_text = txt_path.read_text(encoding="utf-8").strip()
                 except Exception:
                     pass
+
         steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", 48)
         cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
         spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
-        target_provider = getattr(settings, "TTS_PROVIDER", "voicetut_service")
 
-        # Synthesize using configured VoiceTut provider
-        if target_provider == "voicetut_service":
-            try:
-                res = await self._voicetut_service.synthesize(
-                    clean_text,
-                    ref_audio=wav_path,
-                    ref_text=ref_text,
-                    num_step=steps,
-                    guidance_scale=cfg,
-                    speed=spd,
-                    language=language,
-                )
-                if res and len(res) > 1000:
-                    return res
-                raise RuntimeError(f"VoiceTut microservice produced invalid audio ({len(res) if res else 0} bytes)")
-            except Exception as exc:
-                logger.error(f"VoiceTut microservice failed: {exc}", exc_info=True)
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Voice synthesis failed via microservice: {exc}",
-                ) from exc
-
-        # Target provider is in-process voicetut
+        # Primary VoiceTut-powered XTTS synthesis
         try:
-            res = await self._voicetut.synthesize(
+            return await self._xtts.synthesize(
                 clean_text,
                 ref_audio=wav_path,
                 ref_text=ref_text,
@@ -278,14 +317,11 @@ class VoiceCloneService:
                 speed=spd,
                 language=language,
             )
-            if res and len(res) > 1000:
-                return res
-            raise RuntimeError(f"VoiceTut in-process engine produced invalid audio ({len(res) if res else 0} bytes)")
         except Exception as exc:
-            logger.error(f"VoiceTut in-process engine failed: {exc}", exc_info=True)
+            logger.error(f"XTTS synthesis error: {exc}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Voice synthesis failed via in-process VoiceTut: {exc}",
+                detail=f"Voice synthesis failed: {exc}",
             ) from exc
 
     async def synthesize_stream(
@@ -293,7 +329,7 @@ class VoiceCloneService:
         text: str,
         personality_id: int | None = None,
         reference_wav: str | None = None,
-        language: str = "ar",
+        language: str = "arz",
     ) -> AsyncIterator[bytes]:
         """Streaming variant — yields WAV chunks for low-latency playback."""
         wav_bytes = await self.synthesize(text, personality_id, reference_wav, language)
@@ -313,6 +349,60 @@ class VoiceCloneService:
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
+def trim_audio_silence(
+    raw_wav_bytes: bytes,
+    threshold_ratio: float = 0.025,
+    pad_ms: int = 80,
+) -> tuple[bytes, float, bool]:
+    """
+    Trim leading and trailing silence from WAV audio.
+    Eliminates the empty waiting delay ('الريك فاضي') at the start/end of recordings,
+    while retaining a natural 80ms cushion for smooth voice onset.
+    Returns (trimmed_bytes, duration_seconds, is_completely_silent).
+    """
+    import io
+    import numpy as np
+    import soundfile as sf
+
+    try:
+        audio, sr = sf.read(io.BytesIO(raw_wav_bytes))
+        if len(audio) == 0:
+            return raw_wav_bytes, 0.0, True
+
+        mono = audio.mean(axis=1) if audio.ndim > 1 else audio
+        frame_size = max(1, int(sr * 0.02))  # 20ms frames
+        num_frames = len(mono) // frame_size
+        if num_frames == 0:
+            dur = len(audio) / sr
+            return raw_wav_bytes, dur, False
+
+        frames = mono[: num_frames * frame_size].reshape(num_frames, frame_size)
+        rms = np.sqrt(np.mean(frames ** 2, axis=1))
+        peak_rms = float(np.max(rms))
+
+        # Peak RMS check for empty/silent recording
+        if peak_rms < 1e-4:
+            return raw_wav_bytes, len(audio) / sr, True
+
+        threshold = max(0.002, peak_rms * threshold_ratio)
+        active = np.where(rms > threshold)[0]
+        if len(active) == 0:
+            return raw_wav_bytes, len(audio) / sr, True
+
+        pad_samples = int(sr * (pad_ms / 1000.0))
+        start_idx = max(0, active[0] * frame_size - pad_samples)
+        end_idx = min(len(audio), (active[-1] + 1) * frame_size + pad_samples)
+
+        trimmed_audio = audio[start_idx:end_idx]
+        out_buf = io.BytesIO()
+        sf.write(out_buf, trimmed_audio, sr, format="WAV", subtype="PCM_16")
+        dur = len(trimmed_audio) / sr
+        return out_buf.getvalue(), dur, False
+    except Exception as exc:
+        logger.warning(f"Silence trimming notice (retaining original): {exc}")
+        return raw_wav_bytes, _wav_duration(raw_wav_bytes), False
+
+
 def _wav_duration(raw: bytes) -> float:
     """Return the duration of a WAV file in seconds."""
     try:
@@ -327,7 +417,8 @@ def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
     Save incoming audio/video bytes to standard WAV (16-bit PCM, 24kHz, mono).
     If it's already a clean WAV, save directly.
     If it's MP4, M4A, or non-standard WAV, convert using ffmpeg.
-    Returns audio duration in seconds.
+    Then trims leading and trailing dead silence ("الريك الفاضي") so voice starts instantly.
+    Returns trimmed audio duration in seconds.
     """
     import shutil
     ffmpeg_exe = shutil.which("ffmpeg")
@@ -339,6 +430,7 @@ def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
             logger.debug(f"imageio_ffmpeg lookup: {exc}")
             ffmpeg_exe = None
 
+    converted = False
     if ext == ".wav":
         try:
             with wave.open(io.BytesIO(raw), "rb") as wf:
@@ -346,46 +438,57 @@ def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
                 if dur > 0:
                     if not ffmpeg_exe or (wf.getnchannels() == 1 and wf.getframerate() == 24000 and wf.getsampwidth() == 2):
                         dest.write_bytes(raw)
-                        return dur
+                        converted = True
         except Exception:
             pass  # Use ffmpeg conversion if WAV format is compressed or non-standard
 
-    if not ffmpeg_exe:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server audio conversion component is not available.",
-        )
-
-    # Write temporary file to pass to ffmpeg
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        tmp_name = tmp.name
-        tmp.write(raw)
-
-    try:
-        cmd = [
-            ffmpeg_exe,
-            "-y",
-            "-i", tmp_name,
-            "-vn",                   # Strip video track (in case of MP4 video)
-            "-acodec", "pcm_s16le",  # Standard 16-bit PCM
-            "-ar", "24000",          # 24kHz sample rate (XTTS native)
-            "-ac", "1",              # Mono audio
-            str(dest),
-        ]
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if res.returncode != 0:
-            err = res.stderr.decode("utf-8", errors="ignore")
-            logger.error(f"FFmpeg conversion failed: {err}")
+    if not converted:
+        if not ffmpeg_exe:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Could not extract audio track from file. Please ensure it has a valid audio stream.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Server audio conversion component is not available.",
             )
 
-        duration = _wav_duration(dest.read_bytes())
-        return duration
-    finally:
-        if os.path.exists(tmp_name):
-            try:
-                os.unlink(tmp_name)
-            except OSError:
-                pass
+        # Write temporary file to pass to ffmpeg
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp_name = tmp.name
+            tmp.write(raw)
+
+        try:
+            cmd = [
+                ffmpeg_exe,
+                "-y",
+                "-i", tmp_name,
+                "-vn",                   # Strip video track (in case of MP4 video)
+                "-acodec", "pcm_s16le",  # Standard 16-bit PCM
+                "-ar", "24000",          # 24kHz sample rate (XTTS/VoiceTut native)
+                "-ac", "1",              # Mono audio
+                str(dest),
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if res.returncode != 0:
+                err = res.stderr.decode("utf-8", errors="ignore")
+                logger.error(f"FFmpeg conversion failed: {err}")
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Could not extract audio track from file. Please ensure it has a valid audio stream.",
+                )
+        finally:
+            if os.path.exists(tmp_name):
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+
+    # Trim leading and trailing silence so recordings never start with long empty delays
+    raw_out = dest.read_bytes()
+    trimmed_bytes, duration, is_silent = trim_audio_silence(raw_out)
+    if is_silent:
+        if dest.exists():
+            dest.unlink()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="التسجيل الصوتي فارغ أو صامت تماماً. يرجى التحدث بوضوح في الميكروفون ثم إعادة المحاولة.",
+        )
+    dest.write_bytes(trimmed_bytes)
+    return duration

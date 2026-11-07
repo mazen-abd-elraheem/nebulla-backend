@@ -59,6 +59,23 @@ class ContactUpdate(BaseModel):
     notify_on_missed: Optional[bool] = None
 
 
+class ContactBulkSyncItem(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64, description="اسم جهة الاتصال كما في دليل الهاتف")
+    phone_number: str = Field(..., min_length=5, max_length=32, description="رقم الهاتف")
+    aliases: Optional[str] = Field("", max_length=255, description="الأسماء البديلة المنطوقة")
+    slug: Optional[str] = Field("", max_length=64, description="معرف لاتيني اختياري")
+    relationship: Optional[str] = Field(None, max_length=32, description="نوع العلاقة (ماما، بابا، صديق)")
+    is_allowlisted: bool = Field(True, description="هل مسموح للروبوت الاتصال بهذه الجهة")
+    requires_confirmation: bool = Field(True, description="طلب تأكيد صوتي قبل الاتصال")
+    required_level: int = Field(1, ge=1, le=2, description="مستوى الأمان")
+    notify_on_missed: bool = Field(False, description="إبلاغ هذه الجهة عند إهمال تذكير")
+
+
+class ContactBulkSyncRequest(BaseModel):
+    contacts: List[ContactBulkSyncItem] = Field(..., description="قائمة جهات الاتصال المراد مزامنتها من الهاتف")
+    replace_existing: bool = Field(False, description="استبدال القائمة السابقة بالكامل إذا كانت True")
+
+
 class ContactResponse(BaseModel):
     id: int
     user_id: Optional[int] = None
@@ -190,6 +207,79 @@ async def create_contact(
     await db.refresh(contact)
     logger.info(f"Added allowlisted contact: {contact.name} (id={contact.id}) for user {current_user.id}")
     return contact
+
+
+@router.post("/contacts/sync", response_model=List[ContactResponse], summary="Bulk sync device contacts from phone")
+async def sync_contacts(
+    body: ContactBulkSyncRequest,
+    current_user: User = Depends(get_current_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Sync phone address book contacts into the robot database:
+    - Normalizes phone numbers (+2010... or local 01xxxxxxxxx)
+    - Auto-derives slugs and aliases for Arabic voice recognition
+    - If replace_existing=True, deletes prior user contacts before inserting
+    - Otherwise, upserts by phone_number
+    """
+    if body.replace_existing:
+        await db.execute(delete(Contact).where(Contact.user_id == current_user.id))
+        await db.commit()
+
+    saved_contacts: List[Contact] = []
+    # Load existing user contacts to avoid duplicates
+    existing_res = await db.execute(select(Contact).where(Contact.user_id == current_user.id))
+    existing_map = {c.phone_number: c for c in existing_res.scalars().all()}
+
+    for item in body.contacts:
+        norm_phone = normalize_phone(item.phone_number)
+        if not norm_phone:
+            clean_digits = re.sub(r"[^\d+]", "", item.phone_number)
+            if len(clean_digits) >= 7:
+                norm_phone = clean_digits
+            else:
+                continue
+
+        slug = (item.slug or "").strip().lower()
+        if not slug:
+            slug = re.sub(r"[^a-zA-Z0-9_\-]", "", item.name.lower()) or "contact"
+
+        if norm_phone in existing_map:
+            c = existing_map[norm_phone]
+            c.name = item.name.strip()
+            if item.aliases:
+                c.aliases = item.aliases.strip()
+            c.slug = slug
+            if item.relationship:
+                c.relationship = item.relationship
+            c.is_allowlisted = item.is_allowlisted
+            c.requires_confirmation = item.requires_confirmation
+            c.required_level = item.required_level
+            c.notify_on_missed = item.notify_on_missed
+            saved_contacts.append(c)
+        else:
+            new_c = Contact(
+                user_id=current_user.id,
+                name=item.name.strip(),
+                aliases=(item.aliases or "").strip(),
+                slug=slug,
+                phone_number=norm_phone,
+                relationship=item.relationship,
+                is_allowlisted=item.is_allowlisted,
+                requires_confirmation=item.requires_confirmation,
+                required_level=item.required_level,
+                notify_on_missed=item.notify_on_missed,
+            )
+            db.add(new_c)
+            existing_map[norm_phone] = new_c
+            saved_contacts.append(new_c)
+
+    await db.commit()
+    for sc in saved_contacts:
+        await db.refresh(sc)
+
+    logger.info(f"Bulk-synced {len(saved_contacts)} contacts for user {current_user.id} ({current_user.email})")
+    return saved_contacts
 
 
 @router.put("/contacts/{contact_id}", response_model=ContactResponse, summary="Update contact")

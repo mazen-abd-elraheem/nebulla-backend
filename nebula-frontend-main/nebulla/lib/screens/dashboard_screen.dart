@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 import '../services/nebula_repository.dart';
+import '../services/phone_channel_service.dart';
 import '../widgets/common_widgets.dart';
+import 'contacts_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -24,6 +26,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _load();
+    PhoneChannelService.instance.connect();
   }
 
   Future<void> _load() async {
@@ -44,7 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     } catch (e) {
       setState(() => _loading = false);
-      if (mounted) showErrorSnackbar(context, 'خطأ في تحميل البيانات: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نجيب البيانات: $e');
     }
   }
 
@@ -52,9 +55,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => _stoppingEmergency = true);
     try {
       await _repo.emergencyStop();
-      if (mounted) showSuccessSnackbar(context, '🚨 تم إيقاف الطوارئ');
+      if (mounted) showSuccessSnackbar(context, '🚨 وقفنا كل حاجة فوراً (طوارئ)');
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل الإيقاف: $e');
+      if (mounted) showErrorSnackbar(context, 'معرفناش نوقف السيستم: $e');
     } finally {
       if (mounted) setState(() => _stoppingEmergency = false);
     }
@@ -94,7 +97,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             color: AppColors.teal, size: 18),
                       ),
                       const SizedBox(width: 10),
-                      const Text('لوحة التحكم',
+                      const Text('شاشة التحكم (الداشبورد)',
                           style: TextStyle(
                               fontFamily: 'Cairo',
                               fontWeight: FontWeight.w700,
@@ -125,13 +128,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         _ActivePersonalityCard(
                             personality: _activePersonality),
                         const SizedBox(height: 16),
+                        // Phone & Contacts Quick Access
+                        _PhoneActionsCard(),
+                        const SizedBox(height: 16),
                         // System overview
                         _SystemOverviewCard(
                             personalities: _personalities),
                         const SizedBox(height: 24),
                         // Emergency stop
                         NebulaDangerButton(
-                          label: '🚨 إيقاف طارئ فوري',
+                          label: '🚨 وقف كل حاجة فوراً (طوارئ)',
                           icon: Icons.stop_circle_outlined,
                           onTap:
                               _stoppingEmergency ? null : _emergencyStop,
@@ -163,21 +169,21 @@ class _ConnectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'حالة الاتصال'),
+          const SectionHeader(title: 'حالة الاتصال بالأجهزة'),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _ChannelStatus(
-                  label: 'الهاتف',
+                  label: 'الموبايل (الشاشة)',
                   icon: Icons.phone_android,
                   connected: status?.phoneConnected ?? false),
               _ChannelStatus(
-                  label: 'سطح المكتب',
+                  label: 'الكمبيوتر (أوضة التحكم)',
                   icon: Icons.desktop_windows_outlined,
                   connected: status?.deskConnected ?? false),
               _ChannelStatus(
-                  label: 'ESP32',
+                  label: 'شريحة الروبوت (ESP32)',
                   icon: Icons.memory_outlined,
                   connected: status?.esp32Connected ?? false),
             ],
@@ -225,7 +231,7 @@ class _ChannelStatus extends StatelessWidget {
             style: TextStyle(
                 color: color, fontSize: 12, fontFamily: 'Cairo')),
         Text(
-          connected ? 'متصل' : 'غير متصل',
+          connected ? 'متصل وشغال' : 'مش متصل',
           style: TextStyle(
               color: color.withValues(alpha: 0.7),
               fontSize: 11,
@@ -267,16 +273,16 @@ class _ActivePersonalityCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('الشخصية النشطة',
+                const Text('الشخصية اللي شغالة دلوقتي',
                     style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
                         fontFamily: 'Cairo')),
                 const SizedBox(height: 4),
                 Text(
-                  personality?.name ?? 'لا توجد شخصية نشطة',
+                  personality?.name ?? 'مفيش شخصية شغالة دلوقتي',
                   style: const TextStyle(
-                      color: AppColors.textPrimary,
+                       color: AppColors.textPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       fontFamily: 'Cairo'),
@@ -306,7 +312,7 @@ class _ActivePersonalityCard extends StatelessWidget {
                       : AppColors.textMuted.withValues(alpha: 0.3)),
             ),
             child: Text(
-              personality != null ? 'نشط' : 'خامل',
+              personality != null ? 'شغالة' : 'واقفة',
               style: TextStyle(
                   color: personality != null
                       ? AppColors.success
@@ -331,20 +337,20 @@ class _SystemOverviewCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'نظرة عامة'),
+          const SectionHeader(title: 'نظرة سريعة على السيستم'),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
                   child: _StatItem(
-                      label: 'الشخصيات',
+                      label: 'كل الشخصيات',
                       value: personalities.length.toString(),
                       icon: Icons.people_outline,
                       color: AppColors.purple)),
               const SizedBox(width: 12),
               Expanded(
                   child: _StatItem(
-                      label: 'نشطة',
+                      label: 'اللي شغالين',
                       value: personalities
                           .where((p) => p.isActive)
                           .length
@@ -405,4 +411,82 @@ class _StatItem extends StatelessWidget {
     );
   }
 }
+
+class _PhoneActionsCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return NebulaCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.teal.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.phone_in_talk,
+                    color: AppColors.teal, size: 20),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'أوامر التليفون وجهات الاتصال',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      'مزامنة الأرقام والسماح بالمكالمات الصوتية',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.teal,
+                  foregroundColor: Colors.black,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.contacts, size: 16),
+                label: const Text(
+                  'إدارة',
+                  style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12),
+                ),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ContactsScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 

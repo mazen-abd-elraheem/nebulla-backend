@@ -152,7 +152,18 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
         except RuntimeError:
             raise
         except Exception as exc:
-            err_msg = f"VoiceTuT Studio microservice request failed: {exc}"
-            logger.error(err_msg, exc_info=True)
-            raise RuntimeError(err_msg) from exc
+            logger.warning(f"VoiceTuT microservice connection failed ({exc}). Falling back to in-process XTTS provider.")
+            from app.providers.tts.xtts.provider import XTTSProvider
+            return await XTTSProvider().synthesize(
+                text=text,
+                ref_audio=ref_audio,
+                ref_text=ref_text,
+                num_step=num_step,
+                guidance_scale=guidance_scale,
+                speed=speed,
+                language=language,
+            )
+
+
+
 

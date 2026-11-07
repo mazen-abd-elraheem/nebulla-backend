@@ -68,4 +68,11 @@ class StorageService {
 
   String getDeviceName() =>
       _prefs?.getString(AppConstants.prefDeviceName) ?? 'nebula-app';
+
+  Future<void> setPairingCode(String code) async {
+    await _prefs?.setString('pairing_code', code);
+  }
+
+  String getPairingCode() =>
+      _prefs?.getString('pairing_code') ?? 'change-me-in-production';
 }

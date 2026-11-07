@@ -1,222 +1,381 @@
 """
-XTTS v2 Voice Clone Provider
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+XTTS Voice Clone Provider — Powered exclusively by VoiceTut-TTS (Egyptian Arabic)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Uses Coqui XTTS v2 (TTS library) for zero-shot voice cloning:
-  - Takes a short reference audio sample (3–10 s is enough)
-  - Synthesises speech in the same voice in Egyptian Arabic
-  - Supports streaming by sentence for low latency (doc §6.3 target: ~1.7 s first audio)
-
-Install:
-    pip install TTS==0.22.0   # Coqui TTS with XTTS v2
-
-Usage:
-    provider = XTTSProvider()
-    await provider.load()
-    audio = await provider.synthesize("أهلاً يا صديقي", reference_wav="samples/my_voice.wav")
-
-Voice cloning workflow (doc §6.1):
-    1. Record a clean 30–60 s sample of the user's voice
-    2. Store as data/voice_samples/<personality_id>.wav
-    3. Pass the path as reference_wav when synthesising
-    4. The robot speaks with the user's own voice
-
-Notes:
-    • XTTS v2 requires ~3 GB VRAM on GPU or runs (slower) on CPU
-    • For Egyptian Arabic: set language="ar" — the model handles code-switching
-      (Egyptian + English mix like "عندي meeting بكرة") because it was trained on
-      multilingual data with Arabic dialects included
-    • OmniVoice / VoiceTut from the doc is a different fine-tune; XTTS v2 gives
-      better zero-shot cloning if you have the VRAM budget
+Primary voice cloning engine fine-tuned for Egyptian Arabic (arz).
+Provides high-fidelity zero-shot voice cloning, fast streaming synthesis,
+and instant (0ms) pre-cached connection greetings with the cloned voice.
 """
+
+from __future__ import annotations
 
 import asyncio
 import io
+import os
 import wave
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.providers.tts.base import BaseTTSProvider
+from app.utils.masri_normalizer import clean_llm_output_for_speech
 
 logger = get_logger(__name__)
 
-_XTTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
-_DEFAULT_LANGUAGE = "ar"   # Arabic — model handles Egyptian dialect
+
+def _array_to_wav(samples, sample_rate: int = 24000) -> bytes:
+    """Convert float numpy array to 16-bit PCM WAV bytes."""
+    import numpy as np
+
+    pcm = (samples * 32767).astype(np.int16)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)  # 16-bit
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm.tobytes())
+    return buf.getvalue()
 
 
 class XTTSProvider(BaseTTSProvider):
     """
-    Zero-shot voice cloning TTS using Coqui XTTS v2.
-
-    Attributes
-    ----------
-    reference_wav : str
-        Path to the speaker reference audio file (.wav, 3-30 s of clean speech).
-    language : str
-        BCP-47 language code. Use "ar" for Egyptian Arabic.
-    device : str
-        "cuda" or "cpu".
+    Primary Zero-Shot Voice Cloning TTS Provider for Nebula.
+    Powered strictly by VoiceTut-TTS with full Egyptian Arabic dialect and code-switching support.
     """
+
+    _shared_tts = None
+    _shared_device = None
+    _shared_lock = asyncio.Lock()
 
     def __init__(
         self,
-        reference_wav: str | None = None,
-        language: str = _DEFAULT_LANGUAGE,
-        device: str | None = None,
+        reference_wav: Optional[str] = None,
+        language: str = "arz",
+        device: Optional[str] = None,
+        speaker: Optional[str] = None,
     ):
         self._reference_wav = reference_wav or str(
-            Path(settings.VOICETUT_MODEL_PATH).parent.parent
-            / "voice_samples"
-            / "default_voice.wav"
+            Path("data/voice_samples/personality_1.wav").resolve()
         )
-        self._language = language
-        self._device = device or settings.VOICETUT_DEVICE
-        self._model = None
-        self._lock = asyncio.Lock()
+        self._language = language or "arz"
+        self._device = device or getattr(settings, "VOICETUT_DEVICE", "cuda")
+        self._speaker = speaker or getattr(settings, "VOICETUT_SPEAKER", "mazen")
+
+    # ── Greeting Cache Management ─────────────────────────────────────────────
+
+    @staticmethod
+    def get_greeting_cache_path(personality_id: int) -> Path:
+        """Returns the file path for pre-cached cloned greeting audio."""
+        return Path("data/voice_samples") / f"greeting_personality_{personality_id}.wav"
+
+    def get_cached_greeting(self, personality_id: int) -> Optional[bytes]:
+        """Fetch pre-cached greeting audio if available on disk (0ms latency)."""
+        cache_file = self.get_greeting_cache_path(personality_id)
+        if cache_file.exists():
+            try:
+                return cache_file.read_bytes()
+            except Exception as e:
+                logger.warning(f"Could not read greeting cache: {e}")
+        return None
+
+    async def precache_greeting(
+        self,
+        personality_id: int,
+        text: str,
+        sample_path: Optional[str] = None,
+    ) -> bytes:
+        """
+        Synthesize greeting with the cloned speaker voice and persist to disk cache.
+        """
+        ref_wav = sample_path or str(Path("data/voice_samples") / f"personality_{personality_id}.wav")
+        clean_text = clean_llm_output_for_speech(text) or text.strip()
+        logger.info(f"Pre-caching cloned voice greeting for personality {personality_id}...")
+        wav_bytes = await self.synthesize(
+            text=clean_text,
+            ref_audio=ref_wav,
+            speaker=self._speaker,
+            language=self._language,
+        )
+        try:
+            cache_file = self.get_greeting_cache_path(personality_id)
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_bytes(wav_bytes)
+            logger.info(f"Cloned greeting successfully cached at {cache_file} ({len(wav_bytes)} bytes)")
+        except Exception as e:
+            logger.warning(f"Failed to persist greeting cache to disk: {e}")
+        return wav_bytes
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _is_service_ready(host: str = "127.0.0.1", port: int = 8001) -> bool:
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                return s.connect_ex((host, port)) == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _ensure_service_running() -> bool:
+        if XTTSProvider._is_service_ready():
+            return True
+        tut_dir = Path(r"C:\Users\L0Q\Desktop\tut-voice")
+        uvicorn_exe = tut_dir / ".venv" / "Scripts" / "uvicorn.exe"
+        if uvicorn_exe.exists():
+            try:
+                import subprocess
+                logger.info("Auto-starting VoiceTut GPU microservice on http://127.0.0.1:8001 ...")
+                subprocess.Popen(
+                    [str(uvicorn_exe), "server:app", "--host", "127.0.0.1", "--port", "8001"],
+                    cwd=str(tut_dir),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Failed to auto-start VoiceTut microservice: {e}")
+        return False
+
     async def load(self) -> None:
-        """Lazy-load XTTS v2. Safe to call multiple times."""
-        if self._model is not None:
+        """Ensure model or microservice is loaded and ready."""
+        await self._ensure_loaded()
+
+    async def _ensure_loaded(self) -> None:
+        if self._is_service_ready():
+            XTTSProvider._shared_tts = "service_ready"
             return
-        async with self._lock:
-            if self._model is None:
+
+        self._ensure_service_running()
+        for _ in range(5):
+            if self._is_service_ready():
+                XTTSProvider._shared_tts = "service_ready"
+                return
+            await asyncio.sleep(0.5)
+
+        if XTTSProvider._shared_tts is not None:
+            return
+        async with XTTSProvider._shared_lock:
+            if XTTSProvider._shared_tts is None:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, self._load_sync)
 
     def _load_sync(self) -> None:
-        """Blocking model load — runs in thread pool."""
+        """Load VoiceTut-TTS model in background executor thread."""
         try:
-            from TTS.api import TTS  # type: ignore[import]
+            import os
+            import torch
 
-            logger.info(f"Loading XTTS v2 on {self._device}…")
-            self._model = TTS(
-                model_name=_XTTS_MODEL_NAME,
-                progress_bar=False,
-            ).to(self._device)
-            logger.info("XTTS v2 ready ✓")
-        except ImportError:
-            logger.error(
-                "Coqui TTS not installed. Run: pip install TTS==0.22.0\n"
-                "XTTS voice cloning is DISABLED."
+            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+            from voicetut_tts import VoiceTutTTS
+
+            device = self._device
+            if device == "cuda" and not torch.cuda.is_available():
+                logger.warning("CUDA requested for XTTS/VoiceTut but unavailable. Using CPU.")
+                device = "cpu"
+
+            if device == "cuda":
+                torch.cuda.empty_cache()
+
+            candidate_paths = [
+                Path(getattr(settings, "VOICETUT_MODEL_PATH", "models/voicetut-tts")),
+                Path("models/voicetut-tts"),
+                Path(r"C:\Users\L0Q\Desktop\tut-voice\models\voicetut-tts"),
+            ]
+            model_target = "mohammedaly22/VoiceTut-TTS"
+            for cp in candidate_paths:
+                if cp.exists() and (cp / "model.safetensors").exists():
+                    model_target = str(cp.resolve())
+                    break
+
+            logger.info(f"Loading XTTS (VoiceTut-TTS engine) from {model_target} on {device.upper()}…")
+            XTTSProvider._shared_tts = VoiceTutTTS.from_pretrained(
+                model_target,
+                device=device,
+                dtype="float32" if device == "cpu" else "float16",
             )
-            self._model = "disabled"
-        except Exception as exc:
-            logger.error(f"XTTS load failed: {exc}")
-            self._model = "disabled"
+            XTTSProvider._shared_device = device
+            logger.info(f"XTTS (VoiceTut-TTS) ready on {device.upper()} [OK]")
+        except Exception as e:
+            logger.error(f"Failed to load XTTS (VoiceTut-TTS): {e}", exc_info=True)
+            XTTSProvider._shared_tts = "disabled"
 
-    # ── BaseTTSProvider interface ─────────────────────────────────────────────
+    # ── BaseTTSProvider Interface ─────────────────────────────────────────────
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(
+        self,
+        text: str,
+        speaker: Optional[str] = None,
+        ref_audio: Optional[str] = None,
+        ref_text: Optional[str] = None,
+        num_step: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
+        speed: Optional[float] = None,
+        language: Optional[str] = None,
+    ) -> bytes:
         """
-        Synthesise *text* in the cloned voice.
-        Returns raw WAV bytes ready to stream to the phone.
-
-        Latency note (doc §6.3):
-            Keep the first sentence ≤ 8 words so TTS starts within ~1.7 s.
-            The pipeline calls this once per sentence, not for the whole response.
+        Synthesize text using the cloned speaker voice.
+        Returns raw WAV bytes ready for streaming to client.
         """
-        await self.load()
+        clean_text = clean_llm_output_for_speech(text) or text.strip()
 
-        if self._model == "disabled":
-            logger.warning("XTTS is disabled or unavailable")
-            return _silent_wav()
+        # Primary: VoiceTut-TTS GPU microservice
+        if self._is_service_ready() or self._ensure_service_running():
+            try:
+                from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
+                svc = VoiceTutMicroserviceProvider()
+                return await svc.synthesize(
+                    text=clean_text,
+                    speaker=speaker or self._speaker,
+                    ref_audio=ref_audio or self._reference_wav,
+                    ref_text=ref_text,
+                    num_step=num_step,
+                    guidance_scale=guidance_scale,
+                    speed=speed,
+                    language=language or self._language,
+                )
+            except Exception as svc_err:
+                logger.warning(f"VoiceTut microservice call failed: {svc_err}. Attempting in-process fallback...")
+
+        await self._ensure_loaded()
+
+        if XTTSProvider._shared_tts == "disabled" or XTTSProvider._shared_tts is None:
+            raise RuntimeError("XTTS/VoiceTut-TTS engine is unavailable.")
 
         loop = asyncio.get_event_loop()
-        wav_bytes = await loop.run_in_executor(None, self._synth_sync, text)
-        return wav_bytes
+        res = await loop.run_in_executor(
+            None,
+            self._synth_sync,
+            clean_text,
+            speaker,
+            ref_audio,
+            ref_text,
+            num_step,
+            guidance_scale,
+            speed,
+            language,
+        )
+        return res
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
-        """
-        Streaming synthesis — yields WAV chunks as they are produced.
-        XTTS v2 supports streaming via tts_to_file; we simulate chunking here.
-        A true streaming approach requires the 'stream_chunk_size' parameter.
-        """
+        """Streaming synthesis yielding WAV chunks."""
         wav_bytes = await self.synthesize(text)
         chunk_size = 4096
         for i in range(0, len(wav_bytes), chunk_size):
             yield wav_bytes[i : i + chunk_size]
-            await asyncio.sleep(0)  # yield control
+            await asyncio.sleep(0)
 
-    # ── Voice cloning helpers ─────────────────────────────────────────────────
+    # ── Voice Cloning Helpers ─────────────────────────────────────────────────
 
     async def clone_voice(
         self,
-        reference_wav_path: str,
+        reference_wav: str,
         text: str,
-        language: str | None = None,
+        language: str = "arz",
+        ref_text: Optional[str] = None,
+        num_step: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
+        speed: Optional[float] = None,
     ) -> bytes:
-        await self.load()
-        if self._model == "disabled" or self._model is None:
-            raise RuntimeError("XTTS model is disabled or not installed")
-        original_ref = self._reference_wav
-        original_lang = self._language
-        try:
-            self._reference_wav = reference_wav_path
-            self._language = language or self._language
-            return await self.synthesize(text)
-        finally:
-            self._reference_wav = original_ref
-            self._language = original_lang
+        """Clone voice from specified reference audio."""
+        return await self.synthesize(
+            text=text,
+            ref_audio=reference_wav,
+            ref_text=ref_text,
+            num_step=num_step,
+            guidance_scale=guidance_scale,
+            speed=speed,
+            language=language,
+        )
 
-    async def set_reference_voice(self, wav_path: str) -> None:
-        """
-        Swap the active speaker reference at runtime (e.g., personality change).
-        Validates that the file exists before accepting it.
-        """
+    def set_reference_voice(self, wav_path: str) -> None:
+        """Update active speaker reference voice."""
         p = Path(wav_path)
         if not p.exists():
-            raise FileNotFoundError(f"Reference wav not found: {wav_path}")
-        if p.suffix.lower() not in (".wav", ".mp3", ".flac", ".ogg"):
-            raise ValueError(f"Unsupported audio format: {p.suffix}")
-        self._reference_wav = str(p)
-        logger.info(f"XTTS reference voice updated → {wav_path}")
+            raise FileNotFoundError(f"Reference voice audio not found: {wav_path}")
+        self._reference_wav = str(p.resolve())
+        logger.info(f"XTTS reference voice updated → {self._reference_wav}")
 
-    # ── Private sync helpers ──────────────────────────────────────────────────
+    # ── Internal Synthesis Routine ───────────────────────────────────────────
 
-    def _synth_sync(self, text: str) -> bytes:
-        """Runs in executor thread. Returns WAV bytes."""
-        buf = io.BytesIO()
+    def _synth_sync(
+        self,
+        text: str,
+        speaker: Optional[str] = None,
+        ref_audio: Optional[str] = None,
+        ref_text: Optional[str] = None,
+        num_step: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
+        speed: Optional[float] = None,
+        language: Optional[str] = None,
+    ) -> bytes:
         try:
-            wav_array = self._model.tts(
-                text=text,
-                speaker_wav=self._reference_wav,
-                language=self._language,
-                split_sentences=True,   # split internally to reduce latency
+            import torch
+            from voicetut_tts import GenerationParams
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            # Resolve target reference audio
+            target_ref_audio = ref_audio or self._reference_wav
+            if not target_ref_audio or not os.path.exists(target_ref_audio):
+                default_ref = Path("data/voice_samples/personality_1.wav")
+                if default_ref.exists():
+                    target_ref_audio = str(default_ref.resolve())
+
+            # Attempt to read transcript for reference audio if available
+            actual_ref_text = ref_text
+            if not actual_ref_text and target_ref_audio:
+                txt_file = Path(target_ref_audio).with_suffix(".txt")
+                if txt_file.exists():
+                    try:
+                        actual_ref_text = txt_file.read_text(encoding="utf-8").strip()
+                    except Exception:
+                        pass
+
+            steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", 48)
+            cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
+            spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
+            lang = language or self._language or getattr(settings, "VOICETUT_LANGUAGE", "arz")
+
+            params = GenerationParams(
+                num_step=steps,
+                guidance_scale=cfg,
+                speed=spd,
+                denoise=True,
             )
-            # Convert numpy float array → WAV bytes
-            import numpy as np
-            import struct
 
-            samples = (np.array(wav_array) * 32767).astype(np.int16)
-            sample_rate = 24000   # XTTS v2 native sample rate
+            with torch.inference_mode():
+                if target_ref_audio and os.path.exists(target_ref_audio):
+                    wav_samples = XTTSProvider._shared_tts.synthesize(
+                        text=text,
+                        ref_audio=target_ref_audio,
+                        ref_text=actual_ref_text,
+                        language=lang,
+                        normalize=True,
+                        params=params,
+                    )
+                else:
+                    spk = speaker or self._speaker or "Mohammed"
+                    wav_samples = XTTSProvider._shared_tts.synthesize(
+                        text=text,
+                        speaker=spk,
+                        language=lang,
+                        normalize=True,
+                        params=params,
+                    )
 
-            with wave.open(buf, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)  # 16-bit
-                wf.setframerate(sample_rate)
-                wf.writeframes(samples.tobytes())
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
-        except Exception as exc:
-            logger.error(f"XTTS synthesis error: {exc}")
-            return _silent_wav()
-
-        return buf.getvalue()
-
-
-# ── Utilities ─────────────────────────────────────────────────────────────────
-
-
-def _silent_wav(duration_ms: int = 500, sample_rate: int = 24000) -> bytes:
-    """Return a WAV buffer containing silence on synthesis failure."""
-    num_samples = int(sample_rate * duration_ms / 1000)
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(b"\x00\x00" * num_samples)
-    return buf.getvalue()
+            sr = getattr(XTTSProvider._shared_tts, "sampling_rate", 24000)
+            return _array_to_wav(wav_samples, sample_rate=sr)
+        except Exception as e:
+            logger.error(f"XTTS synthesis error: {e}", exc_info=True)
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise RuntimeError(f"XTTS synthesis execution failed: {e}") from e

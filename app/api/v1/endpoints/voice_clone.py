@@ -60,7 +60,7 @@ async def upload_voice_sample_default(
     pid = personality_id or 1
     path = await svc.upload_sample(pid, file, transcript=transcript)
     return {
-        "message": "Voice recording uploaded and cloned successfully!",
+        "message": "تم رفع تسجيل الصوت واستنساخه بنجاح!",
         "path": path,
         "personality_id": pid,
     }
@@ -93,7 +93,7 @@ async def upload_voice_sample(
         personality.voice_sample_path = path
         await db.commit()
 
-    return {"message": "Sample saved and cloned successfully", "path": path, "personality_id": personality_id}
+    return {"message": "تم حفظ عينة الصوت واستنساخها بنجاح", "path": path, "personality_id": personality_id}
 
 
 # ── List samples ──────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ async def delete_sample(
 ):
     deleted = await svc.delete_sample(personality_id)
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sample not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عينة الصوت دي مش موجودة.")
 
     res = await db.execute(select(Personality).where(Personality.id == personality_id))
     personality = res.scalar_one_or_none()
@@ -147,7 +147,7 @@ async def delete_sample(
         personality.voice_sample_path = None
         await db.commit()
 
-    return {"message": "Sample deleted", "personality_id": personality_id}
+    return {"message": "مسحنا عينة الصوت خلاص", "personality_id": personality_id}
 
 
 # ── Synthesise ────────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ class SynthesizeRequest(BaseModel):
     personality_id: int | None = Field(None, description="معرف الشخصية (اختياري)")
     language: str = Field("arz", description="اللهجة (arz للمصري)")
     ref_text: str | None = Field(None, description="نص العينة المرجعية (اختياري، يتم جلبه تلقائياً)")
-    num_steps: int | None = Field(16, description="عدد خطوات التوليد (16 لجودة ونقاء صوت ونبرة ممتازة)")
+    num_steps: int | None = Field(48, description="عدد خطوات التوليد (48 لجودة ستوديو فائقة النقاء وعالية الدقة)")
     guidance_scale: float | None = Field(2.6, description="مقياس مطابقة نبرة الصوت المرجعي بدقة (2.5 - 2.8)")
     speed: float | None = Field(1.15, description="سرعة الكلام (1.15 للريتم الطبيعي السريع للعامية المصرية)")
 
@@ -190,12 +190,12 @@ async def synthesize(
     if not cleaned_text:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Text cannot be empty.",
+            detail="الكلام اللي عايز تنطقه مينفعش يكون فاضي.",
         )
     if all(ch in "?!.,;: \t\n\r" for ch in cleaned_text):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Received text has no pronounceable characters.",
+            detail="النص ده مفهوش أي حروف قابلة للنطق.",
         )
 
     # Sanitize target PID
@@ -224,7 +224,7 @@ async def synthesize(
         target_pid = 1
 
     actual_ref_text = body.ref_text if (body.ref_text and body.ref_text.strip() and body.ref_text.strip() != "string") else None
-    steps = body.num_steps if (body.num_steps and body.num_steps > 0) else 16
+    steps = body.num_steps if (body.num_steps and body.num_steps > 0) else getattr(settings, "VOICETUT_NUM_STEPS", 48)
     cfg = body.guidance_scale if (body.guidance_scale and body.guidance_scale > 0) else 2.6
     spd = body.speed if (body.speed and body.speed > 0) else 1.15
 
@@ -241,7 +241,7 @@ async def synthesize(
     if not wav_bytes or len(wav_bytes) <= 1000:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Voice cloning failed to produce valid audio output.",
+            detail="معرفناش نستنسخ الصوت ونطلع مقطع صوت سليم.",
         )
 
     # Cache latest audio to disk and memory for immediate browser streaming
@@ -275,7 +275,7 @@ async def synthesize_get(
     text: str | None = Query(None, description="النص المراد نطقه بالصوت المستنسخ"),
     voice_id: int | None = Query(None, description="معرف الصوت المستنسخ (ID مثل 1)"),
     personality_id: int | None = Query(None, description="معرف الشخصية (ID مثل 1)"),
-    num_steps: int | None = Query(16, description="عدد خطوات التوليد (الافتراضي: 16 لدقة النبرة والوضوح)"),
+    num_steps: int | None = Query(48, description="عدد خطوات التوليد (الافتراضي: 48 لجودة ستوديو فائقة النقاء)"),
     speed: float | None = Query(1.15, description="سرعة الكلام (الافتراضي: 1.15 للعامية المصرية)"),
     guidance_scale: float | None = Query(2.6, description="مطابقة نبرة الصوت المستنسخ"),
     _user: str | None = Depends(get_optional_user),
@@ -292,7 +292,7 @@ async def synthesize_get(
             text=text,
             voice_id=voice_id,
             personality_id=personality_id,
-            num_steps=num_steps or 16,
+            num_steps=num_steps or 48,
             guidance_scale=guidance_scale or 2.6,
             speed=speed or 1.15,
         )
@@ -411,7 +411,7 @@ async def train_lora_endpoint(
     if not target_audio or not os.path.exists(target_audio):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No reference audio found for LoRA training.",
+            detail="ملقناش أي ملف صوت مرجعي عشان تدريب الـ LoRA.",
         )
 
     target_transcript = body.transcript
@@ -433,7 +433,7 @@ async def train_lora_endpoint(
     if not target_transcript:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Transcript is required for LoRA alignment training.",
+            detail="لازم تبعت النص المكتوب عشان تدريب ومحاذاة الـ LoRA.",
         )
 
     # If dedicated microservice is running, delegate character registration & acoustic prompt adaptation
@@ -450,7 +450,7 @@ async def train_lora_endpoint(
                         "reference_text": target_transcript,
                         "description": f"VoiceTuT LoRA character: {body.character_name} (rank={body.lora_rank})",
                         "tags": ["LoRA Fine-Tuned", "99% Clone", "Nebulla Team"],
-                        "num_step": 36,
+                        "num_step": 48,
                         "guidance_scale": 2.2,
                         "speed": 1.0,
                     },

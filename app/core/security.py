@@ -21,7 +21,7 @@ class RateLimiter:
         if len(timestamps) >= self._max:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Command rate limit exceeded",
+                detail="اتعديت عدد الأوامر المسموح بيه في الثانية، استنى لحظة وجرب تاني.",
             )
         timestamps.append(now)
         self._buckets[device_id] = timestamps

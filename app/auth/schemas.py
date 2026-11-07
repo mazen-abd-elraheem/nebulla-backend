@@ -19,6 +19,7 @@ class UserRegister(BaseModel):
     """
     Schema for user registration as shown in the UI screen:
     - الاسم الكامل (Full Name)
+    - اسم المستخدم (Username - optional)
     - البريد الإلكتروني (Email)
     - كلمة المرور المشفرة (Encrypted Password)
     - تأكيد كلمة المرور (Confirm Password)
@@ -29,6 +30,11 @@ class UserRegister(BaseModel):
         min_length=2,
         max_length=128,
         description="الاسم الكامل للمستخدم (Full Name, e.g. د. عبد الرحمن الخالدي)",
+    )
+    username: Optional[str] = Field(
+        None,
+        max_length=64,
+        description="اسم المستخدم الفريد (اختياري)",
     )
     email: EmailStr = Field(
         ...,
@@ -54,7 +60,21 @@ class UserRegister(BaseModel):
     def validate_name(cls, v: str) -> str:
         clean = v.strip()
         if len(clean) < 2:
-            raise ValueError("الاسم الكامل يجب أن يحتوي على حرفين على الأقل.")
+            raise ValueError("اسمك لازم يكون فيه حرفين على الأقل.")
+        return clean
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        clean = v.strip().lower()
+        if not clean:
+            return None
+        if len(clean) < 3:
+            raise ValueError("اسم المستخدم لازم يكون 3 حروف على الأقل.")
+        if not re.match(r"^[a-zA-Z0-9_\-\u0600-\u06FF]+$", clean):
+            raise ValueError("اسم المستخدم مينفعش يحتوي على مسافات أو رموز خاصة غير _ و -.")
         return clean
 
     @field_validator("email")
@@ -66,32 +86,40 @@ class UserRegister(BaseModel):
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         if len(v) < 8:
-            raise ValueError("كلمة المرور يجب ألا تقل عن 8 خانات.")
+            raise ValueError("الباسورد لازم ميكونش أقل من 8 خانات.")
         if not re.search(r"[a-zA-Z\u0600-\u06FF]", v):
-            raise ValueError("كلمة المرور يجب أن تحتوي على أحرف.")
+            raise ValueError("الباسورد لازم يحتوي على حروف.")
         if not re.search(r"[0-9]", v):
-            raise ValueError("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل.")
+            raise ValueError("الباسورد لازم يحتوي على رقم واحد على الأقل.")
         return v
 
     @model_validator(mode="after")
     def validate_confirm_and_terms(self) -> "UserRegister":
         if self.password != self.confirm_password:
-            raise ValueError("كلمة المرور وتأكيد كلمة المرور غير متطابقين.")
+            raise ValueError("الباسورد وتأكيد الباسورد مش متطابقين.")
         if not self.terms_accepted:
-            raise ValueError("يجب الموافقة على شروط استخدام الذكاء الاصطناعي المركزي للمتابعة.")
+            raise ValueError("لازم توافق على شروط استخدام الذكاء الاصطناعي المركزي للمتابعة.")
         return self
 
 
 class UserLogin(BaseModel):
     """
     Schema for standard user login as shown in the UI screen:
-    - البريد الإلكتروني (Email)
+    - البريد الإلكتروني أو اسم المستخدم (Email or Username)
     - كلمة المرور (Password)
     - تذكّرني على هذا الجهاز (Remember me on this device)
     """
-    email: EmailStr = Field(
-        ...,
-        description="البريد الإلكتروني المسجل",
+    email: Optional[str] = Field(
+        None,
+        description="البريد الإلكتروني أو اسم المستخدم المسجل",
+    )
+    username: Optional[str] = Field(
+        None,
+        description="اسم المستخدم المسجل",
+    )
+    identifier: Optional[str] = Field(
+        None,
+        description="اسم المستخدم أو البريد الإلكتروني",
     )
     password: str = Field(
         ...,
@@ -103,10 +131,16 @@ class UserLogin(BaseModel):
         description="تذكّرني على هذا الجهاز (تمديد صلاحية الجلسة إلى 30 يوماً)",
     )
 
-    @field_validator("email")
+    @field_validator("email", "username", "identifier")
     @classmethod
-    def normalize_email(cls, v: str) -> str:
-        return v.strip().lower()
+    def normalize_identifiers(cls, v: Optional[str]) -> Optional[str]:
+        return v.strip().lower() if v else None
+
+    @model_validator(mode="after")
+    def check_identifier_present(self) -> "UserLogin":
+        if not (self.email or self.username or self.identifier):
+            raise ValueError("لازم تكتب اسم المستخدم أو البريد الإلكتروني عشان تسجل دخول.")
+        return self
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -129,17 +163,17 @@ class ResetPasswordRequest(BaseModel):
     @classmethod
     def validate_new_password(cls, v: str) -> str:
         if len(v) < 8:
-            raise ValueError("كلمة المرور الجديدة يجب ألا تقل عن 8 خانات.")
+            raise ValueError("الباسورد الجديد لازم ميكونش أقل من 8 خانات.")
         if not re.search(r"[a-zA-Z\u0600-\u06FF]", v):
-            raise ValueError("كلمة المرور يجب أن تحتوي على أحرف.")
+            raise ValueError("الباسورد الجديد لازم يحتوي على حروف.")
         if not re.search(r"[0-9]", v):
-            raise ValueError("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل.")
+            raise ValueError("الباسورد الجديد لازم يحتوي على رقم واحد على الأقل.")
         return v
 
     @model_validator(mode="after")
     def validate_matching_passwords(self) -> "ResetPasswordRequest":
         if self.new_password != self.confirm_password:
-            raise ValueError("كلمة المرور الجديدة وتأكيدها غير متطابقين.")
+            raise ValueError("الباسورد الجديد وتأكيده مش متطابقين.")
         return self
 
 
@@ -147,6 +181,7 @@ class UserResponse(BaseModel):
     """Public user profile response."""
     id: int
     full_name: str
+    username: Optional[str] = None
     email: str
     is_active: bool
     has_biometric: bool = False
