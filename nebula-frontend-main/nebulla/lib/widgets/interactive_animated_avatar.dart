@@ -218,9 +218,11 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                               child: Stack(
                                 alignment: Alignment.center,
                                 children: [
-                                  // Base Character Image with subtle organic micro-breathing
+                                  // Base Character Image with subtle organic micro-breathing & speech resonance
                                   Transform.scale(
-                                    scale: 1.0 + (0.012 * (_breathingAnimation?.value ?? 0.0)),
+                                    scale: 1.0 +
+                                        (0.012 * (_breathingAnimation?.value ?? 0.0)) +
+                                        (isSpeaking ? amplitude * 0.015 : 0.0),
                                     alignment: const Alignment(0.0, 0.25),
                                     child: Image.asset(
                                       assetPath,
@@ -228,6 +230,26 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                                       height: imgH,
                                       fit: BoxFit.fill,
                                       errorBuilder: (_, _, _) => _buildFallback(isFemale),
+                                    ),
+                                  ),
+
+                                  // Natural Organic Eye Blinking (Positioned accurately on actual eye sockets)
+                                  Positioned.fill(
+                                    child: CustomPaint(
+                                      painter: _NaturalEyeBlinkPainter(
+                                        isFemale: isFemale,
+                                        blinkProgress: _blinkAnimation?.value ?? 0.0,
+                                      ),
+                                    ),
+                                  ),
+
+                                  // Dynamic Lip-Sync Mouth Movement (Positioned accurately directly on the lips)
+                                  Positioned.fill(
+                                    child: CustomPaint(
+                                      painter: _RealisticMouthLipSyncPainter(
+                                        isFemale: isFemale,
+                                        mouthOpen: isSpeaking ? amplitude : 0.0,
+                                      ),
                                     ),
                                   ),
 
@@ -386,5 +408,158 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
       default:
         return const Color(0xFF0EA5E9); // Electric Tech Blue
     }
+  }
+}
+
+/// Organic, photorealistic eye blinking painter positioned accurately on actual eye sockets
+class _NaturalEyeBlinkPainter extends CustomPainter {
+  final bool isFemale;
+  final double blinkProgress; // 0.0 = open, 1.0 = fully closed
+
+  _NaturalEyeBlinkPainter({
+    required this.isFemale,
+    required this.blinkProgress,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (blinkProgress < 0.04) return;
+
+    // Exact center coordinates in 1:1 image pixel space (1024h)
+    final leftCenter = isFemale
+        ? const Offset(166.0, 416.0)
+        : const Offset(158.0, 370.0);
+    final rightCenter = isFemale
+        ? const Offset(252.0, 416.0)
+        : const Offset(290.0, 370.0);
+
+    final eyeW = isFemale ? 42.0 : 44.0;
+    final eyeH = isFemale ? 18.0 : 18.0;
+
+    final lidColor = isFemale ? const Color(0xFFE4CEBF) : const Color(0xFFD2B29F);
+    final shadowColor = isFemale ? const Color(0xFF382A26) : const Color(0xFF281E1C);
+
+    _paintSingleEye(canvas, leftCenter, eyeW, eyeH, lidColor, shadowColor);
+    _paintSingleEye(canvas, rightCenter, eyeW, eyeH, lidColor, shadowColor);
+  }
+
+  void _paintSingleEye(
+    Canvas canvas,
+    Offset center,
+    double w,
+    double h,
+    Color lid,
+    Color shadow,
+  ) {
+    final drop = h * blinkProgress * 1.05;
+    final rect = Rect.fromCenter(center: center, width: w, height: h);
+
+    final path = Path();
+    path.moveTo(rect.left, center.dy - (h * 0.35));
+    path.quadraticBezierTo(
+      center.dx,
+      center.dy - (h * 0.35) + drop,
+      rect.right,
+      center.dy - (h * 0.35),
+    );
+    path.quadraticBezierTo(
+      center.dx,
+      center.dy - (h * 0.35) + (drop * 0.78),
+      rect.left,
+      center.dy - (h * 0.35),
+    );
+    path.close();
+
+    final paint = Paint()
+      ..color = lid.withValues(alpha: (0.95 * blinkProgress).clamp(0.0, 1.0))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(path, paint);
+
+    final linePaint = Paint()
+      ..color = shadow.withValues(alpha: (0.75 * blinkProgress).clamp(0.0, 1.0))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(path, linePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _NaturalEyeBlinkPainter old) {
+    return old.blinkProgress != blinkProgress || old.isFemale != isFemale;
+  }
+}
+
+/// Organic, photorealistic mouth speaking painter positioned accurately directly on lips
+class _RealisticMouthLipSyncPainter extends CustomPainter {
+  final bool isFemale;
+  final double mouthOpen; // 0.0 = closed, 1.0 = fully open
+
+  _RealisticMouthLipSyncPainter({
+    required this.isFemale,
+    required this.mouthOpen,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (mouthOpen < 0.06) return;
+
+    // Exact center coordinates on actual lips
+    final mouthCenter = isFemale
+        ? const Offset(209.0, 554.0)
+        : const Offset(224.0, 562.0);
+
+    final mouthW = isFemale ? 56.0 : 68.0;
+    final maxOpenH = isFemale ? 8.5 : 9.5;
+    final openH = (mouthOpen * maxOpenH).clamp(1.5, maxOpenH);
+
+    final mouthRect = Rect.fromCenter(
+      center: mouthCenter,
+      width: mouthW * (1.0 - (mouthOpen * 0.06)),
+      height: openH,
+    );
+
+    // 1. Inner mouth cavity
+    final cavityPaint = Paint()
+      ..color = const Color(0xFF240A0D)
+      ..style = PaintingStyle.fill;
+    final cavityRRect = RRect.fromRectAndRadius(mouthRect, Radius.circular(openH * 0.55));
+    canvas.drawRRect(cavityRRect, cavityPaint);
+
+    // 2. Upper teeth hint when open
+    if (openH > 3.2) {
+      final teethPaint = Paint()
+        ..color = const Color(0xFFFBF8F5).withValues(alpha: 0.95)
+        ..style = PaintingStyle.fill;
+      final teethRect = Rect.fromLTWH(
+        mouthRect.left + (mouthRect.width * 0.24),
+        mouthRect.top,
+        mouthRect.width * 0.52,
+        min(2.4, openH * 0.32),
+      );
+      canvas.drawRRect(RRect.fromRectAndRadius(teethRect, const Radius.circular(1.2)), teethPaint);
+    }
+
+    // 3. Lower Lip highlight
+    final lipColor = isFemale ? const Color(0xFFDB7C7C) : const Color(0xFFBF7568);
+    final lowerLipPaint = Paint()
+      ..color = lipColor.withValues(alpha: 0.92)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round;
+
+    final lowerLipPath = Path();
+    lowerLipPath.moveTo(mouthRect.left, mouthCenter.dy);
+    lowerLipPath.quadraticBezierTo(
+      mouthCenter.dx,
+      mouthCenter.dy + (openH * 0.5) + 1.0,
+      mouthRect.right,
+      mouthCenter.dy,
+    );
+    canvas.drawPath(lowerLipPath, lowerLipPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RealisticMouthLipSyncPainter old) {
+    return old.mouthOpen != mouthOpen || old.isFemale != isFemale;
   }
 }

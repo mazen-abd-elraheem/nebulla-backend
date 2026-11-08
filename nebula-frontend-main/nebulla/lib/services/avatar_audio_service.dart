@@ -122,14 +122,48 @@ class AvatarAudioService {
       // 2. Play audio natively on Windows or platform
       if (audioBytes != null && audioBytes.isNotEmpty && Platform.isWindows) {
         await _playWavOnWindows(audioBytes, estimatedDurationMs);
+      } else if (Platform.isWindows) {
+        // Fallback: Speak with native Windows speech synthesizer so sound ALWAYS plays
+        await _speakWindowsNativeFallback(clean, estimatedDurationMs);
       } else {
         // Fallback simulation when offline/soundcard busy
         _startLipSyncPulse(estimatedDurationMs);
       }
     } catch (e) {
       debugPrint('AvatarAudioService speak error: $e');
-      _startLipSyncPulse(3000);
+      if (Platform.isWindows) {
+        _speakWindowsNativeFallback(clean, 3000);
+      } else {
+        _startLipSyncPulse(3000);
+      }
     }
+  }
+
+  Future<void> _speakWindowsNativeFallback(String cleanText, int durationMs) async {
+    _startLipSyncPulse(durationMs);
+    try {
+      final safe = cleanText.replaceAll("'", "''").replaceAll('"', ' ');
+      final tempDir = Directory.systemTemp;
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final script = File('${tempDir.path}\\speak_$ts.ps1');
+      await script.writeAsString("""
+Add-Type -AssemblyName System.Speech
+\$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+\$synth.Speak('$safe')
+""");
+      _activeAudioProcess = await Process.start('powershell', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        script.path,
+      ]);
+      _activeAudioProcess?.exitCode.then((_) {
+        try {
+          if (script.existsSync()) script.deleteSync();
+        } catch (_) {}
+      });
+    } catch (_) {}
   }
 
   Future<void> _playWavOnWindows(Uint8List audioBytes, int fallbackDurationMs) async {
