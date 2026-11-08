@@ -61,7 +61,7 @@ class AvatarAudioService {
       // 1. Fetch audio from backend (supports /api/v1/voice-clone/synthesize or /api/v1/audio/voicetut)
       Uint8List? audioBytes;
       try {
-        final baseUrl = StorageService.instance.getBaseUrl();
+        final baseUrl = StorageService.instance.getBaseUrl().replaceAll('localhost', '127.0.0.1');
         final uri = Uri.parse(
           '$baseUrl/api/v1/voice-clone/synthesize?text=${Uri.encodeComponent(clean)}&personality_id=$targetPid',
         );
@@ -94,7 +94,7 @@ class AvatarAudioService {
       // Fallback to voicetut endpoint if needed
       if (audioBytes == null) {
         try {
-          final baseUrl = StorageService.instance.getBaseUrl();
+          final baseUrl = StorageService.instance.getBaseUrl().replaceAll('localhost', '127.0.0.1');
           final uri = Uri.parse('$baseUrl/api/v1/audio/voicetut');
           final token = StorageService.instance.getToken();
           final client = HttpClient();

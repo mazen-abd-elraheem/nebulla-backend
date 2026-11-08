@@ -186,8 +186,11 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
 
         return GestureDetector(
           onTap: () {
-            _triggerTapFeedback();
-            widget.onAvatarTapped?.call();
+            if (widget.onAvatarTapped != null) {
+              widget.onAvatarTapped!();
+            } else {
+              _triggerTapFeedback();
+            }
           },
           onDoubleTap: () {
             final nextType = isFemale ? 'male' : 'female';
