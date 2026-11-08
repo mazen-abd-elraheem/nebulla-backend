@@ -34,6 +34,7 @@ from app.providers.tts.base import BaseTTSProvider
 from app.providers.llm.base import BaseLLMProvider
 from app.services.ai.context_builder import build_grounding_context, is_greeting_or_persona_inquiry
 from app.services.memory.rag_service import RAGService
+from app.services.memory.fact_verifier import FactVerifier
 from app.services.motion.signal_planner import SignalPlanner
 from app.services.voice_clone.voice_clone_service import VoiceCloneService
 from app.services.phone_action import ActionOutcome, get_phone_action_service
@@ -54,6 +55,81 @@ logger = get_logger(__name__)
 _TAG_RE = re.compile(r"\[(?:action:|gesture:|cmd:)?([\w\u0600-\u06FF]+)(?::[^\]]+)?\]", re.IGNORECASE)
 
 
+class StreamingThinkFilter:
+    """
+    Real-time streaming filter for internal reasoning tags (<think> ... </think>).
+    Guarantees zero-leakage of token-boundary split tags (e.g. '<' then 'think>')
+    into spoken text, TTS queue, or desktop user interface.
+    Yields list of (is_thought: bool, token: str).
+    """
+
+    def __init__(self):
+        self.in_think = False
+        self.buffer = ""
+
+    def process(self, token: str) -> List[Tuple[bool, str]]:
+        out: List[Tuple[bool, str]] = []
+        self.buffer += token
+
+        while self.buffer:
+            if not self.in_think:
+                idx = self.buffer.find("<think>")
+                if idx != -1:
+                    normal_part = self.buffer[:idx]
+                    if normal_part:
+                        out.append((False, normal_part))
+                    self.in_think = True
+                    self.buffer = self.buffer[idx + 7:]
+                    continue
+
+                prefix_match = False
+                for p_len in range(min(len(self.buffer), 6), 0, -1):
+                    cand = self.buffer[-p_len:]
+                    if "<think>".startswith(cand):
+                        prefix_match = True
+                        if len(self.buffer) > p_len:
+                            out.append((False, self.buffer[:-p_len]))
+                        self.buffer = cand
+                        break
+                if prefix_match:
+                    break
+                else:
+                    out.append((False, self.buffer))
+                    self.buffer = ""
+            else:
+                idx = self.buffer.find("</think>")
+                if idx != -1:
+                    thought_part = self.buffer[:idx]
+                    if thought_part:
+                        out.append((True, thought_part))
+                    self.in_think = False
+                    self.buffer = self.buffer[idx + 8:]
+                    continue
+
+                prefix_match = False
+                for p_len in range(min(len(self.buffer), 7), 0, -1):
+                    cand = self.buffer[-p_len:]
+                    if "</think>".startswith(cand):
+                        prefix_match = True
+                        if len(self.buffer) > p_len:
+                            out.append((True, self.buffer[:-p_len]))
+                        self.buffer = cand
+                        break
+                if prefix_match:
+                    break
+                else:
+                    out.append((True, self.buffer))
+                    self.buffer = ""
+        return out
+
+    def flush(self) -> List[Tuple[bool, str]]:
+        out: List[Tuple[bool, str]] = []
+        if self.buffer:
+            out.append((self.in_think, self.buffer))
+            self.buffer = ""
+        return out
+
+
 def clean_text_for_tts(text: str) -> str:
     """Preprocess text with Egyptian Masri dialect normalizer before sending to TTS."""
     return clean_llm_output_for_speech(text)
@@ -65,12 +141,20 @@ def _extract_emotion(text: str) -> str:
     tags = _TAG_RE.findall(text)
     for tag in tags:
         t_clean = tag.strip("[]").lower()
-        if t_clean in ("happy", "فرحان", "smile", "joy"):
+        if t_clean in ("happy", "فرحان", "smile", "joy", "سعيد"):
             return "happy"
         if t_clean in ("sad", "حزين"):
             return "sad"
         if t_clean in ("surprised", "متفاجئ", "shocked"):
             return "surprised"
+        if t_clean in ("wave", "لوح", "سلام", "باي"):
+            return "wave"
+        if t_clean in ("like", "اعجاب", "تمام", "عاش", "ممتاز"):
+            return "like"
+        if t_clean in ("love", "حب", "قلب"):
+            return "love"
+        if t_clean in ("neutral", "طبيعي"):
+            return "neutral"
 
     if any(w in text_lower for w in ["happy", "فرحان", "😊"]):
         return "happy"
@@ -78,6 +162,10 @@ def _extract_emotion(text: str) -> str:
         return "sad"
     if any(w in text_lower for w in ["surprised", "متفاجئ", "😲"]):
         return "surprised"
+    if any(w in text_lower for w in ["wave", "👋", "سلام", "باي"]):
+        return "wave"
+    if any(w in text_lower for w in ["like", "👍", "عاش"]):
+        return "like"
     return "neutral"
 
 
@@ -476,36 +564,135 @@ class AIPipeline:
 
         tts_worker_task = asyncio.create_task(_tts_worker())
 
+        # Strict Zero-Hallucination Guardrail (sub-10ms short-circuit, zero fallback model)
+        is_ar = bool(re.search(r"[؀-ۿ]", transcript))
+        refusal_reply = (
+            "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
+            if is_ar
+            else "I do not have this information recorded in my memory. [wave]"
+        )
+        has_memories = bool(memories)
+        is_greeting_persona = is_greeting_or_persona_inquiry(transcript)
+
+        if not has_memories and not is_greeting_persona:
+            full_response = refusal_reply
+            emotion = "wave"
+            total_ms = (time.perf_counter() - t_start) * 1000
+            await manager.send_to_phone({"t": "eyes", "mood": emotion})
+
+            # Send refusal speech directly through decoupled TTS worker
+            tts_text = clean_text_for_tts(refusal_reply)
+            if tts_text:
+                await tts_queue.put(tts_text)
+            await tts_queue.put(None)
+            await tts_worker_task
+            total_tts_ms = sum(tts_latencies)
+
+            await manager.broadcast_to_desks({
+                "t": "text_stream",
+                "token": "",
+                "is_final": True,
+                "response": full_response,
+                "latency": {
+                    "stt_ms": round(stt_ms),
+                    "llm_ms": 0,
+                    "tts_ms": round(total_tts_ms),
+                    "total_ms": round(total_ms),
+                },
+            })
+
+            commands = await self._planner.extract_from_response(full_response)
+            for cmd in commands:
+                await manager.send_to_esp(cmd)
+
+            asyncio.create_task(
+                self._save_conversation_turn(
+                    personality_id=active_pid,
+                    user_transcript=transcript,
+                    robot_response=full_response,
+                    stt_ms=stt_ms,
+                    llm_ms=0.0,
+                    tts_ms=total_tts_ms,
+                    total_ms=total_ms,
+                    emotion=emotion,
+                )
+            )
+            logger.info(f"Pipeline short-circuit refusal complete in {total_ms:.0f}ms")
+            return
+
         t_llm_start = time.perf_counter()
         full_response = ""
         sentence_buffer = ""
-        in_think_block = False
+        think_filter = StreamingThinkFilter()
+        first_emotion_set = False
         dispatched_actions: set[str] = set()
         is_first_chunk = True
 
         try:
-            async for token in self._llm.generate_stream(
+            async for raw_token in self._llm.generate_stream(
                 transcript,
                 context=memories,
                 system_prompt=active_prompt,
                 history=history,
             ):
-                full_response += token
+                for is_thought, token in think_filter.process(raw_token):
+                    if is_thought:
+                        await manager.broadcast_to_desks({
+                            "t": "thought_stream",
+                            "token": token,
+                        })
+                    else:
+                        full_response += token
+                        sentence_buffer += token
 
-                # Track internal thinking tags (<think> ... </think>)
-                if "<think>" in token or "<think>" in full_response and "</think>" not in full_response:
-                    in_think_block = True
-                if "</think>" in token or "</think>" in full_response:
-                    in_think_block = False
+                        # Stream clean spoken text to desktop display
+                        await manager.broadcast_to_desks({
+                            "t": "text_stream",
+                            "token": token,
+                            "is_final": False,
+                        })
 
-                if in_think_block:
-                    # Stream thought to desktop developer monitor without speaking it
+                        # Real-time emotion update to phone display as soon as detected
+                        if not first_emotion_set:
+                            detected_emotion = _extract_emotion(sentence_buffer)
+                            if detected_emotion != "neutral":
+                                await manager.send_to_phone({"t": "eyes", "mood": detected_emotion})
+                                first_emotion_set = True
+
+                        # Check for action tags in real-time and execute on robot actuators
+                        for tag_match in _TAG_RE.finditer(sentence_buffer):
+                            tag_str = tag_match.group(0)
+                            if tag_str not in dispatched_actions:
+                                dispatched_actions.add(tag_str)
+                                act_cmds = await self._planner.extract_from_response(tag_str)
+                                for cmd in act_cmds:
+                                    await manager.send_to_esp(cmd)
+
+                        # As sentences complete, enqueue to TTS with deterministic Fact Verification
+                        if _is_sentence_end(sentence_buffer):
+                            raw_tts_text = clean_text_for_tts(sentence_buffer)
+                            sentence_buffer = ""
+                            if raw_tts_text:
+                                verified_tts = FactVerifier.verify_and_sanitize(
+                                    query=transcript,
+                                    response=raw_tts_text,
+                                    retrieved_memories=memories,
+                                    is_greeting=is_greeting_persona,
+                                )
+                                tts_clean = clean_text_for_tts(verified_tts)
+                                if tts_clean:
+                                    await tts_queue.put(tts_clean)
+
+            # Flush any remaining tokens in think filter
+            for is_thought, token in think_filter.flush():
+                if is_thought:
                     await manager.broadcast_to_desks({
                         "t": "thought_stream",
                         "token": token,
                     })
                     continue
 
+                full_response += token
                 sentence_buffer += token
 
                 # Stream clean spoken text to desktop display
@@ -524,11 +711,19 @@ class AIPipeline:
 
                 # Micro-chunking: as soon as natural clause or punctuation is ready, enqueue to TTS (<300ms TTFA)
                 if _is_micro_chunk_ready(sentence_buffer, is_first_chunk=is_first_chunk):
-                    tts_text = clean_text_for_tts(sentence_buffer)
+                    raw_tts = clean_text_for_tts(sentence_buffer)
                     sentence_buffer = ""
-                    if tts_text:
+                    if raw_tts:
                         is_first_chunk = False
-                        await tts_queue.put(tts_text)
+                        verified_tts = FactVerifier.verify_and_sanitize(
+                            query=transcript,
+                            response=raw_tts,
+                            retrieved_memories=memories,
+                            is_greeting=is_greeting_persona,
+                        )
+                        tts_clean = clean_text_for_tts(verified_tts)
+                        if tts_clean:
+                            await tts_queue.put(tts_clean)
 
         except Exception as e:
             logger.error(f"Error during LLM stream: {e}")
@@ -537,20 +732,36 @@ class AIPipeline:
         t_llm = time.perf_counter()
         llm_ms = (t_llm - t_llm_start) * 1000
 
-        # Send any remaining micro-chunk to TTS queue without duplicate synthesis
+        # Send any remaining micro-chunk to TTS queue with fact verification (NO duplicate synthesis)
         remaining_text = clean_text_for_tts(sentence_buffer)
         if remaining_text:
-            await tts_queue.put(remaining_text)
+            verified_remaining = FactVerifier.verify_and_sanitize(
+                query=transcript,
+                response=remaining_text,
+                retrieved_memories=memories,
+                is_greeting=is_greeting_persona,
+            )
+            tts_clean_rem = clean_text_for_tts(verified_remaining)
+            if tts_clean_rem:
+                await tts_queue.put(tts_clean_rem)
 
         # Wait for TTS worker to finish synthesizing all queued audio
         await tts_queue.put(None)
         await tts_worker_task
         total_tts_ms = sum(tts_latencies)
 
+        # Strict Fact Verification on full response before persistence & final broadcast
+        full_response = FactVerifier.verify_and_sanitize(
+            query=transcript,
+            response=full_response,
+            retrieved_memories=memories,
+            is_greeting=is_greeting_persona,
+        )
+
         # ── 4. Non-blocking physical motion dispatch for any remaining gestures ─────────
         self._dispatch_actuator_async(full_response)
 
-        # ── 5. Update emotion on phone display ────────────────────────────
+        # Update final emotion on phone display
         emotion = _extract_emotion(full_response)
         await manager.send_to_phone({"t": "eyes", "mood": emotion})
 
@@ -795,6 +1006,39 @@ class AIPipeline:
             "personality_id": pid,
         }
 
+        # Strict Zero-Hallucination Guardrail (sub-10ms short-circuit, zero fallback model)
+        is_ar = bool(re.search(r"[؀-ۿ]", text))
+        refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
+        has_memories = bool(memories)
+        is_greeting_persona = is_greeting_or_persona_inquiry(text)
+
+        if not has_memories and not is_greeting_persona:
+            full_response = refusal_reply
+            emotion = "wave"
+            yield {
+                "type": "token",
+                "content": full_response,
+            }
+            asyncio.create_task(
+                self._record_turn(
+                    session_id=session_id,
+                    user_text=text,
+                    assistant_text=full_response,
+                    emotion=emotion,
+                    llm_ms=0.0,
+                    total_ms=0.0,
+                    personality_id=pid,
+                )
+            )
+            yield {
+                "type": "done",
+                "session_id": session_id,
+                "response": full_response,
+                "emotion": emotion,
+                "llm_ms": 0.0,
+            }
+            return
+
         # 2. Stream LLM tokens
         full_response = ""
         t_llm_start = time.perf_counter()
@@ -811,6 +1055,7 @@ class AIPipeline:
             }
 
         llm_ms = (time.perf_counter() - t_llm_start) * 1000
+        full_response = self._rag.verify_response(text, full_response, memories, is_greeting=is_greeting_persona)
         emotion = _extract_emotion(full_response)
 
         asyncio.create_task(
@@ -1047,6 +1292,7 @@ def _is_sentence_end(text: str) -> bool:
     if not stripped_no_tags:
         return False
     return any(stripped_no_tags.endswith(p) for p in (".", "!", "?", "؟", "،", "\n"))
+
 
 
 

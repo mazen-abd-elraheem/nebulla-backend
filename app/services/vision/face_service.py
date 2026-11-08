@@ -1385,3 +1385,13 @@ class FaceService:
 
         return output_file, summary
 
+
+_face_service_singleton: Optional["FaceService"] = None
+
+
+def get_face_service() -> "FaceService":
+    global _face_service_singleton
+    if _face_service_singleton is None:
+        _face_service_singleton = FaceService()
+    return _face_service_singleton
+
