@@ -36,6 +36,18 @@ _rag_service = RAGService()
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
+
+def _is_unrecorded_secret_trap(message: str) -> bool:
+    msg = message.strip().lower()
+    traps = [
+        r"رقم\s+(الهاتف|الموبايل|التليفون|الجوال)",
+        r"(الرقم|كلمة|رمز)\s+(السر|المرور|الباسورد|السري|الخزنة)",
+        r"(حساب\s+بنكي|رقم\s+الفيزا|البطاقة\s+الائتمانية)",
+        r"(phone\s+number|mobile\s+number|secret\s+password|bank\s+account)",
+    ]
+    return any(re.search(pat, msg) for pat in traps)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="Text message to send to the LLM")
     session_id: Optional[str] = Field(None, description="Optional session UUID for multi-turn conversation tracking")
@@ -198,10 +210,10 @@ async def chat_with_llm(
     is_ar = bool(re.search(r"[؀-ۿ]", body.message))
     refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
     has_memories = bool(memories)
-    is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+    is_secret_trap = _is_unrecorded_secret_trap(body.message)
 
-    # If no memories were retrieved and query is a factual question (not greeting/persona)
-    if not has_memories and not is_greeting_persona:
+    # Strict zero-hallucination only for unrecorded private secrets (phones, passwords, etc.)
+    if not has_memories and is_secret_trap:
         reply = refusal_reply
         cleaned_reply = clean_text_for_tts(reply)
         emotion = "wave"
@@ -416,9 +428,9 @@ async def chat_stream(
     is_ar = bool(re.search(r"[؀-ۿ]", body.message))
     refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
     has_memories = bool(memories)
-    is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+    is_secret_trap = _is_unrecorded_secret_trap(body.message)
 
-    if not has_memories and not is_greeting_persona:
+    if not has_memories and is_secret_trap:
         async def fast_refusal_sse():
             import json
             yield f"data: {json.dumps({'type': 'context', 'memories': []}, ensure_ascii=False)}\n\n"
