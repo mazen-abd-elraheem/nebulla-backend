@@ -41,7 +41,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final confirmPassword = _confirmPasswordCtrl.text;
 
     if (password != confirmPassword) {
-      showErrorSnackbar(context, 'كلمة المرور وتأكيد كلمة المرور غير متطابقين.');
+      showErrorSnackbar(context, 'الباسورد وتأكيده مش متطابقين خالص.');
       return;
     }
 
@@ -58,7 +58,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       showSuccessSnackbar(
         context,
-        'مرحباً بك يا ${user.fullName}! تم إنشاء الحساب بنجاح.',
+        'نورت نيبولا يا ${user.fullName}! حسابك اتعمل بنجاح.',
       );
 
       Navigator.of(context).pushAndRemoveUntil(
@@ -67,7 +67,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      showErrorSnackbar(context, 'فشل إنشاء الحساب: $e');
+      showErrorSnackbar(context, 'معرفناش نعمل الحساب: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

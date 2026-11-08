@@ -391,4 +391,51 @@ class NebulaRepository {
       'file',
     );
   }
+
+  // ── Contacts & Phone Actions ──────────────────────────────────────────────
+
+  Future<List<ContactModel>> getContacts({String? search}) async {
+    final params = <String, dynamic>{};
+    if (search != null && search.trim().isNotEmpty) {
+      params['search'] = search.trim();
+    }
+    final data = await _api.get(AppConstants.actionContacts, params);
+    if (data is List) {
+      return data
+          .map((item) => ContactModel.fromJson(item as Map<String, dynamic>))
+          .toList();
+    }
+    return [];
+  }
+
+  Future<ContactModel> createContact(Map<String, dynamic> body) async {
+    final data = await _api.post(AppConstants.actionContacts, body);
+    return ContactModel.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<ContactModel> updateContact(int id, Map<String, dynamic> body) async {
+    final data = await _api.put('${AppConstants.actionContacts}/$id', body);
+    return ContactModel.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteContact(int id) async {
+    await _api.delete('${AppConstants.actionContacts}/$id');
+  }
+
+  Future<List<ContactModel>> syncContacts({
+    required List<ContactBulkSyncItem> contacts,
+    bool replaceExisting = false,
+  }) async {
+    final payload = {
+      'contacts': contacts.map((c) => c.toJson()).toList(),
+      'replace_existing': replaceExisting,
+    };
+    final data = await _api.post(AppConstants.actionContactsSync, payload);
+    if (data is List) {
+      return data
+          .map((item) => ContactModel.fromJson(item as Map<String, dynamic>))
+          .toList();
+    }
+    return [];
+  }
 }

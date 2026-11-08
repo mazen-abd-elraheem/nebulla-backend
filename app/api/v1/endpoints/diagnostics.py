@@ -38,10 +38,13 @@ class LEDRequest(BaseModel):
 
 @router.get("/status", summary="Live backend + channel status")
 async def full_status(_u=Depends(get_optional_user)):
-    """Returns connection state of all three WS channels."""
+    """Returns connection state of all three WS channels and local Ollama health."""
+    from app.providers.llm.local_ollama import LocalOllamaProvider
+    ollama_health = await LocalOllamaProvider.check_health()
     return {
         "channels": manager.status(),
         "backend": "ok",
+        "ollama": ollama_health,
     }
 
 
@@ -111,4 +114,4 @@ async def emergency_stop(_u=Depends(get_optional_user)):
     await manager.send_to_esp({"t": "stop"})
     await manager.send_to_phone({"t": "eyes", "mood": "alert"})
     await manager.broadcast_to_desks({"t": "event", "event": "emergency_stop"})
-    return {"message": "Emergency stop sent to all channels"}
+    return {"message": "بعتنا أمر وقف الطوارئ الفوري لكل الأجهزة والقنوات"}

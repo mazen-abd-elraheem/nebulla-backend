@@ -25,7 +25,6 @@ from app.services.voice_clone.voice_clone_service import _save_and_convert_to_wa
 logger = get_logger(__name__)
 
 router = APIRouter()
-_voicetut = VoiceTutProvider()
 
 _AUDIO_RESPONSES = {
     200: {

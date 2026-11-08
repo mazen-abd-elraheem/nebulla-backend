@@ -16,6 +16,7 @@ Strategy:
 """
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import re
 import time
 import uuid
@@ -58,6 +59,143 @@ def clean_text_for_tts(text: str) -> str:
     return clean_llm_output_for_speech(text)
 
 
+def _extract_emotion(text: str) -> str:
+    """Extract emotion marker from LLM response (supports [tags] and keywords)."""
+    text_lower = text.lower()
+    tags = _TAG_RE.findall(text)
+    for tag in tags:
+        t_clean = tag.strip("[]").lower()
+        if t_clean in ("happy", "فرحان", "smile", "joy"):
+            return "happy"
+        if t_clean in ("sad", "حزين"):
+            return "sad"
+        if t_clean in ("surprised", "متفاجئ", "shocked"):
+            return "surprised"
+
+    if any(w in text_lower for w in ["happy", "فرحان", "😊"]):
+        return "happy"
+    if any(w in text_lower for w in ["sad", "حزين", "😢"]):
+        return "sad"
+    if any(w in text_lower for w in ["surprised", "متفاجئ", "😲"]):
+        return "surprised"
+    return "neutral"
+
+
+def _is_micro_chunk_ready(text: str, is_first_chunk: bool = False) -> bool:
+    """
+    Evaluates whether buffered LLM tokens form a natural, prosodically complete micro-chunk.
+    - First chunk: triggers on 4+ words + punctuation (، . ! ؟ ,) OR 7+ words (for <300ms TTFA).
+    - Later chunks: triggers on 6+ words + punctuation OR 12+ words.
+    """
+    if text.count("[") > text.count("]"):
+        return False
+    stripped = text.strip()
+    stripped_no_tags = _TAG_RE.sub("", stripped).strip()
+    if not stripped_no_tags:
+        return False
+    words = stripped_no_tags.split()
+    min_words = 4 if is_first_chunk else 6
+    max_words = 8 if is_first_chunk else 14
+    has_punct = any(stripped_no_tags.endswith(p) for p in (".", "!", "?", "؟", "،", ",", ":", "؛", "\n"))
+    return (len(words) >= min_words and has_punct) or (len(words) >= max_words)
+
+
+class EgyptianFastPathCache:
+    """
+    In-memory millisecond fast-path cache for common Egyptian Arabic greetings,
+    social cues, and robot identity queries.
+    Bypasses RAG and LLM inference entirely to deliver <10ms response latency.
+    """
+
+    _GREETINGS = [
+        (
+            re.compile(r"(صباح\s+(الخير|النور|الورد|الفل|الجمال))", re.IGNORECASE),
+            "صباح الفل والورد عليك! منور يا فندم، جاهز أساعدك في أي حاجة محتاجها دلوقتي. [happy] [gesture:wave]",
+        ),
+        (
+            re.compile(r"(مساء\s+(الخير|النور|الورد|الفل|الجمال))", re.IGNORECASE),
+            "مساء النور والسرور يا غالي! أهلاً بيك، أقدر أساعدك في إيه النهاردة؟ [happy] [gesture:wave]",
+        ),
+        (
+            re.compile(r"(أهلاً|اهلا|أهلا|مرحباً|مرحبا|هاي|هالو|hello|hi)", re.IGNORECASE),
+            "أهلاً وسهلاً بيك! أنا نيبولا توأمك الرقمي، منورني النهاردة وجاهز أساعدك في أي وقت. [happy] [gesture:wave]",
+        ),
+        (
+            re.compile(r"(إزيك|ازيك|عامل\s+إيه|عامل\s+ايه|أخبارك\s+إيه|اخبارك\s+ايه|أخبارك|اخبارك|إيه\s+الأخبار|ايه\s+الاخبار|كله\s+تمام)", re.IGNORECASE),
+            "الحمد لله كله تمام وزي الفل، إنت عامل إيه يا فندم؟ يا رب تكون بأحسن حال. [happy] [action:nod]",
+        ),
+        (
+            re.compile(r"(سلام\s+عليكم|السلام\s+عليكم|سلامو\s+عليكو|سلام)", re.IGNORECASE),
+            "وعليكم السلام ورحمة الله وبركاته! أهلاً بيك، نورت نيبولا يا فندم. [happy] [gesture:wave]",
+        ),
+        (
+            re.compile(r"(شكراً|شكرا|تسلم|تسلمي|ألف\s+شكر|الف\s+شكر|مشكور|thanks|thank\s+you)", re.IGNORECASE),
+            "العفو يا فندم، الشكر لله! أنا في خدمتك دايماً في أي وقت. [like] [action:nod]",
+        ),
+    ]
+
+    _IDENTITY_PATTERNS = [
+        re.compile(r"(إنت\s+مين|انت\s+مين|مين\s+إنت|مين\s+انت|مين\s+حضرتك|اسمك\s+إيه|اسمك\s+ايه|عرف\s+نفسك|عرفنا\s+بنفسك)", re.IGNORECASE),
+    ]
+
+    _CREATOR_PATTERNS = [
+        re.compile(r"مين\s+(صممك|عملك|برمجك|صنعك|طورك|صانعك|اخترعك)", re.IGNORECASE),
+    ]
+
+    _CAPABILITY_PATTERNS = [
+        re.compile(r"(بتعمل\s+إيه|بتعمل\s+ايه|تقدر\s+تعمل\s+إيه|تقدر\s+تعمل\s+ايه|وظيفتك\s+إيه|وظيفتك\s+ايه|بتساعدني\s+في\s+إيه|بتساعدني\s+في\s+ايه)", re.IGNORECASE),
+    ]
+
+    @classmethod
+    def match(cls, text: str, personality_id: Optional[int] = None, personality_name: Optional[str] = None) -> Optional[Tuple[str, str]]:
+        """
+        Fast-path pattern matching in <1ms.
+        Returns Tuple[response_text, emotion] if matched, else None.
+        """
+        if not text:
+            return None
+        msg = text.strip()
+
+        # Check standard Egyptian greetings
+        for pat, reply in cls._GREETINGS:
+            if pat.search(msg):
+                emotion = _extract_emotion(reply)
+                return reply, emotion
+
+        # Determine if persona is Menna or Mazen
+        p_name = (personality_name or "").lower()
+        is_menna = personality_id == 2 or "منه" in p_name or "منّة" in p_name or "menna" in p_name
+
+        # Check identity inquiries
+        for pat in cls._IDENTITY_PATTERNS:
+            if pat.search(msg):
+                if is_menna:
+                    reply = "أنا نيبولا (Nebula)، التوأم الرقمي الذكي والمساعد الشخصي للمهندسة منه محمد. [action:nod] [happy]"
+                else:
+                    reply = "أنا نيبولا (Nebula)، الروبوت الذكي والتوأم الرقمي الفيزيائي للمهندس مازن عبد الرحيم. [action:nod] [happy]"
+                emotion = _extract_emotion(reply)
+                return reply, emotion
+
+        # Check creator inquiries
+        for pat in cls._CREATOR_PATTERNS:
+            if pat.search(msg):
+                if is_menna:
+                    reply = "صممتني وبرمجتني وطورتني المهندسة منه محمد، مطورة نظام نيبولا للذكاء الاصطناعي. [action:nod] [like]"
+                else:
+                    reply = "صممني وبرمجني وطورني المهندس مازن عبد الرحيم، رئيس ومطور مشروع نيبولا للتوأم الرقمي. [action:nod] [like]"
+                emotion = _extract_emotion(reply)
+                return reply, emotion
+
+        # Check capability inquiries
+        for pat in cls._CAPABILITY_PATTERNS:
+            if pat.search(msg):
+                reply = "أنا توأمك الرقمي الفيزيائي، بتحكم في مفاصل وحركات الروبوت، وبشوف الوشوش بنظام UniFace، وبسمعك وبساعدك في تنظيم مهامك ومواعيدك وذاكرتك بالكامل. [action:nod] [like]"
+                emotion = _extract_emotion(reply)
+                return reply, emotion
+
+        return None
+
+
 class AIPipeline:
     """
     End-to-end voice and text conversation pipeline with RAG memory grounding.
@@ -73,10 +211,22 @@ class AIPipeline:
         self._audio_buffer: bytearray = bytearray()
         self.session_id: str = session_id or str(uuid.uuid4())
         self._active_task: Optional[asyncio.Task] = None
+        self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pipeline_worker")
         # Chapter 14: phone actions + voice verification
         self._actions = get_phone_action_service()
         self._verifier = get_speaker_service()
         self._actions.set_speaker(self.speak)
+
+    def _dispatch_actuator_async(self, tag_str: str) -> None:
+        """Non-blocking background dispatch of physical robot motions to ESP32 (0ms overhead)."""
+        async def _worker():
+            try:
+                act_cmds = await self._planner.extract_from_response(tag_str)
+                for cmd in act_cmds:
+                    await manager.send_to_esp(cmd)
+            except Exception as e:
+                logger.debug(f"Actuator background dispatch notice: {e}")
+        asyncio.create_task(_worker())
 
     def reload_providers(self) -> None:
         """Reload STT, LLM, and TTS providers dynamically when settings change."""
@@ -175,6 +325,56 @@ class AIPipeline:
         logger.info(f"STT ({stt_ms:.0f}ms): {len(transcript)} chars")
 
         if not transcript.strip():
+            return
+
+        # ── 1c. Fast-Path In-Memory Cache (<5ms response for greetings/identity) ──
+        fast_result = EgyptianFastPathCache.match(transcript)
+        if fast_result is not None:
+            fast_reply, fast_emotion = fast_result
+            t_fast = (time.perf_counter() - t_start) * 1000
+            logger.info(f"⚡ Fast-Path match in {t_fast:.1f}ms: '{transcript}' -> '{fast_reply}'")
+
+            # Update emotion and broadcast text instantly
+            await manager.send_to_phone({"t": "eyes", "mood": fast_emotion})
+            await manager.broadcast_to_desks({
+                "t": "text_stream",
+                "token": fast_reply,
+                "is_final": True,
+                "response": fast_reply,
+                "latency": {
+                    "stt_ms": round(stt_ms),
+                    "llm_ms": 0,
+                    "tts_ms": 0,
+                    "total_ms": round(t_fast),
+                },
+            })
+
+            # Dispatch physical gestures asynchronously (zero latency impact)
+            self._dispatch_actuator_async(fast_reply)
+
+            # Synthesize & speak in cloned voice
+            cleaned_fast = clean_text_for_tts(fast_reply)
+            if cleaned_fast:
+                try:
+                    active_pid, _ = await self._get_active_personality()
+                    audio_out = await self._generate_tts(cleaned_fast, active_pid)
+                    await manager.send_to_phone(audio_out)
+                except Exception as ex:
+                    logger.error(f"TTS error during fast-path playback: {ex}")
+
+            # Persist turn asynchronously
+            asyncio.create_task(
+                self._save_conversation_turn(
+                    personality_id=1,
+                    user_transcript=transcript,
+                    robot_response=fast_reply,
+                    stt_ms=stt_ms,
+                    llm_ms=0.0,
+                    tts_ms=0.0,
+                    total_ms=t_fast,
+                    emotion=fast_emotion,
+                )
+            )
             return
 
         # ── 1b. Phone actions («كلّم ماما», open maps, reminders …) ───────
@@ -281,6 +481,7 @@ class AIPipeline:
         sentence_buffer = ""
         in_think_block = False
         dispatched_actions: set[str] = set()
+        is_first_chunk = True
 
         try:
             async for token in self._llm.generate_stream(
@@ -314,20 +515,19 @@ class AIPipeline:
                     "is_final": False,
                 })
 
-                # Check for action tags in real-time and execute on robot actuators
+                # Check for action tags in real-time and execute asynchronously (zero latency impact)
                 for tag_match in _TAG_RE.finditer(sentence_buffer):
                     tag_str = tag_match.group(0)
                     if tag_str not in dispatched_actions:
                         dispatched_actions.add(tag_str)
-                        act_cmds = await self._planner.extract_from_response(tag_str)
-                        for cmd in act_cmds:
-                            await manager.send_to_esp(cmd)
+                        self._dispatch_actuator_async(tag_str)
 
-                # As sentences complete, enqueue to TTS without pausing LLM stream
-                if _is_sentence_end(sentence_buffer):
+                # Micro-chunking: as soon as natural clause or punctuation is ready, enqueue to TTS (<300ms TTFA)
+                if _is_micro_chunk_ready(sentence_buffer, is_first_chunk=is_first_chunk):
                     tts_text = clean_text_for_tts(sentence_buffer)
                     sentence_buffer = ""
                     if tts_text:
+                        is_first_chunk = False
                         await tts_queue.put(tts_text)
 
         except Exception as e:
@@ -337,13 +537,9 @@ class AIPipeline:
         t_llm = time.perf_counter()
         llm_ms = (t_llm - t_llm_start) * 1000
 
-        # Send any remaining sentence to TTS
+        # Send any remaining micro-chunk to TTS queue without duplicate synthesis
         remaining_text = clean_text_for_tts(sentence_buffer)
         if remaining_text:
-            t_rem_start = time.perf_counter()
-            audio_out = await self._generate_tts(remaining_text, active_pid)
-            remaining_tts_ms = (time.perf_counter() - t_rem_start) * 1000
-            await manager.send_to_phone(audio_out)
             await tts_queue.put(remaining_text)
 
         # Wait for TTS worker to finish synthesizing all queued audio
@@ -351,10 +547,8 @@ class AIPipeline:
         await tts_worker_task
         total_tts_ms = sum(tts_latencies)
 
-        # ── 4. Extract any remaining gesture / emotion markers from response ─────────────
-        commands = await self._planner.extract_from_response(full_response)
-        for cmd in commands:
-            await manager.send_to_esp(cmd)
+        # ── 4. Non-blocking physical motion dispatch for any remaining gestures ─────────
+        self._dispatch_actuator_async(full_response)
 
         # ── 5. Update emotion on phone display ────────────────────────────
         emotion = _extract_emotion(full_response)
@@ -410,6 +604,40 @@ class AIPipeline:
             sys_prompt = p.system_prompt if p else None
         else:
             pid, sys_prompt = await self._get_active_personality()
+
+        # 0. Smart Fast-Path In-Memory Cache (<5ms response for greetings/identity)
+        fast_result = EgyptianFastPathCache.match(text, personality_id=pid)
+        if fast_result is not None:
+            fast_reply, fast_emotion = fast_result
+            total_ms = (time.perf_counter() - t_start) * 1000
+            logger.info(f"⚡ Fast-Path process_text match in {total_ms:.1f}ms: '{text}' -> '{fast_reply}'")
+            if broadcast_to_clients:
+                await manager.broadcast_to_desks({
+                    "t": "text_stream",
+                    "token": fast_reply,
+                    "is_final": True,
+                    "response": fast_reply,
+                    "latency": {"llm_ms": 0, "total_ms": round(total_ms)},
+                })
+                await manager.send_to_phone({"t": "eyes", "mood": fast_emotion})
+            self._dispatch_actuator_async(fast_reply)
+            asyncio.create_task(
+                self._record_turn(
+                    session_id=session_id,
+                    user_text=text,
+                    assistant_text=fast_reply,
+                    emotion=fast_emotion,
+                    llm_ms=0.0,
+                    total_ms=total_ms,
+                    personality_id=pid,
+                )
+            )
+            return {
+                "session_id": session_id,
+                "response": fast_reply,
+                "retrieved_memories": [],
+                "personality_id": pid,
+            }
 
         # 1. Full Grounding Context & RAG retrieval
         grounding = None
@@ -795,39 +1023,9 @@ class AIPipeline:
         except Exception as e:
             logger.warning(f"Failed to persist conversation turn to DB: {e}")
 
-    async def process_text(self, text: str) -> None:
-        """Process incoming text message from websocket phone/desktop."""
-        clean_text = text.strip()
-        if not clean_text:
-            return
-
-        await manager.send_to_phone({"t": "eyes", "mood": "thinking"})
-        active_pid, active_prompt = await self._get_active_personality()
-        memories = await self._rag.retrieve(clean_text, personality_id=active_pid)
-        history = await self._get_recent_history(limit=6)
-
-        try:
-            full_response = ""
-            async for token in self._llm.generate_stream(
-                clean_text,
-                context=memories,
-                system_prompt=active_prompt,
-                history=history,
-            ):
-                full_response += token
-
-            full_response = self._rag.verify_response(clean_text, full_response, memories)
-            emotion = _extract_emotion(full_response)
-            cleaned = clean_text_for_tts(full_response)
-            await manager.send_to_phone({"t": "eyes", "mood": emotion})
-            await manager.broadcast_to_desks({
-                "t": "chat",
-                "role": "robot",
-                "text": cleaned,
-                "emotion": emotion,
-            })
-        except Exception as e:
-            logger.error(f"Error processing text in AIPipeline: {e}")
+    async def process_chat_message(self, text: str) -> None:
+        """Process incoming text message from websocket phone/desktop with millisecond latency."""
+        await self.process_text(text, broadcast_to_clients=True)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -850,27 +1048,6 @@ def _is_sentence_end(text: str) -> bool:
         return False
     return any(stripped_no_tags.endswith(p) for p in (".", "!", "?", "؟", "،", "\n"))
 
-
-def _extract_emotion(text: str) -> str:
-    """Extract emotion marker from LLM response (supports [tags] and keywords)."""
-    text_lower = text.lower()
-    tags = _TAG_RE.findall(text)
-    for tag in tags:
-        t_clean = tag.strip("[]").lower()
-        if t_clean in ("happy", "فرحان", "smile", "joy"):
-            return "happy"
-        if t_clean in ("sad", "حزين"):
-            return "sad"
-        if t_clean in ("surprised", "متفاجئ", "shocked"):
-            return "surprised"
-
-    if any(w in text_lower for w in ["happy", "فرحان", "😊"]):
-        return "happy"
-    if any(w in text_lower for w in ["sad", "حزين", "😢"]):
-        return "sad"
-    if any(w in text_lower for w in ["surprised", "متفاجئ", "😲"]):
-        return "surprised"
-    return "neutral"
 
 
 # ── Provider Factories ───────────────────────────────────────────────────────

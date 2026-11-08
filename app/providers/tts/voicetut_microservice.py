@@ -1,8 +1,8 @@
 """
-VoiceTut Microservice Provider (Method 2: Dedicated GPU Microservice Bridge)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VoiceTut Microservice Provider (Dedicated GPU Microservice Bridge)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Bridges Nebulla Backend to the standalone VoiceTuT Studio server (running on port 8001)
-via HTTP REST API. Features health checks and character routing.
+via HTTP REST API. Features health checks, automatic sample upload, and character routing.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 import struct
 import tempfile
-from typing import Optional
+from typing import Dict, Optional
 import wave
 
 import httpx
@@ -25,6 +25,9 @@ from app.providers.tts.base import BaseTTSProvider
 from app.utils.masri_normalizer import clean_llm_output_for_speech
 
 logger = get_logger(__name__)
+
+# Cache uploaded reference audio URLs so we don't re-upload the same WAV repeatedly
+_UPLOADED_AUDIO_URLS: Dict[str, str] = {}
 
 
 class VoiceTutMicroserviceProvider(BaseTTSProvider):
@@ -50,7 +53,7 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
         return self._client
 
     async def is_healthy(self) -> bool:
-        """Check if the VoiceTuT Studio microservice is reachable."""
+        """Check if the VoiceTuT Studio microservice is reachable and online."""
         try:
             client = self._get_client()
             resp = await client.get(f"{self._url}/health", timeout=2.0)
@@ -158,7 +161,9 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
                 except Exception:
                     actual_ref_text = None
 
-        steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", 48)
+        steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", 32)
+        # Cap steps at 36 for fast response on laptop GPU
+        steps = min(steps, 36)
         cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
         spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
 

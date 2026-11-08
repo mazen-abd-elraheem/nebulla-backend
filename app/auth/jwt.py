@@ -96,7 +96,7 @@ async def get_current_user(
         if settings.DEBUG:
             logger.info(f"DEBUG mode active: permitting request with unmatched dev key: '{clean_api_key}'")
             return "dev_user"
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API key")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="مفتاح الـ API ده مش صح.")
 
     # 3. Try JWT Bearer token
     if clean_auth and clean_auth.startswith("Bearer "):
@@ -138,26 +138,29 @@ async def get_current_user_model(
     if sub.isdigit():
         user = await db.get(User, int(sub))
     else:
-        res = await db.execute(select(User).where(User.email == sub.lower()))
+        sub_lower = sub.lower()
+        res = await db.execute(
+            select(User).where((User.email == sub_lower) | (User.username == sub_lower))
+        )
         user = res.scalar_one_or_none()
 
     if user:
         if not user.is_active:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is deactivated.")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="الحساب ده واقف حالياً.")
         return user
 
     # If sub is a recognized hardware/developer identity, look for default user
-    res_admin = await db.execute(select(User).order_by(User.id).limit(1))
-    first_user = res_admin.scalar_one_or_none()
-    if first_user:
-        return first_user
+    if sub in ("dev_user", "api_key_client", "control_room_desktop"):
+        res_admin = await db.execute(select(User).order_by(User.id).limit(1))
+        first_user = res_admin.scalar_one_or_none()
+        if first_user:
+            return first_user
 
-    # If in DEBUG mode or using API key and no users exist yet in DB, auto-provision default user
-    if settings.DEBUG or sub in ("dev_user", "api_key_client"):
         from app.core.security import get_password_hash
         default_user = User(
             id=1,
             full_name="مازن عبد الرحيم (Mazen)",
+            username="mazen",
             email="admin@nebula.local",
             hashed_password=get_password_hash("nebula2026"),
             is_active=True,
@@ -170,7 +173,7 @@ async def get_current_user_model(
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="User associated with token not found.",
+        detail="صاحب الحساب المرتبط بالتوكن ده مش موجود.",
     )
 
 

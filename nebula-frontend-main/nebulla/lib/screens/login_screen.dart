@@ -65,7 +65,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       showSuccessSnackbar(
         context,
-        'تم تسجيل الدخول بنجاح. أهلاً بك يا ${user.fullName}',
+        'نورت يا ${user.fullName}! دخلت على حسابك تمام.',
       );
 
       Navigator.of(context).pushReplacement(
@@ -73,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      showErrorSnackbar(context, 'فشل تسجيل الدخول: $e');
+      showErrorSnackbar(context, 'مش عارفين ندخلك: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

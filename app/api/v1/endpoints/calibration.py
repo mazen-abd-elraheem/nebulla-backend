@@ -47,11 +47,13 @@ async def upsert_calibration(
 async def reset_to_home(_u=Depends(get_optional_user)):
     """Send every servo to its home angle."""
     from app.websocket.manager import manager
+    from app.services.motion.motion_guard import MotionGuard
+    guard = MotionGuard()
     if manager.esp_connected:
         for sid in range(12):
             cmd = {"t": "joint", "id": sid, "deg": 90, "ms": 800}
             await manager.send_to_esp(cmd)
-    return {"message": "Home command sent to all servos", "esp_connected": manager.esp_connected}
+    return {"message": "بعتنا أمر الرجوع لوضع السكون (الهوم) لكل مواتير السيرفو", "esp_connected": manager.esp_connected}
 
 
 def _c(c: ServoCalibration) -> dict:

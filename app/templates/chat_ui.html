@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>شات روبوت Nebula — Digital Twin Playground</title>
+  <title>شات وتوأم نيبولا الرقمي (شات روبوت Nebula) — شاشة الدردشة والتجربة الحية</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -464,14 +464,14 @@
         <div class="status-dot"></div>
       </div>
       <div class="brand-text">
-        <h1>روبوت نيبولا — شات تفاعلي حي <span class="badge model" id="activeModelBadge">LLM Ready</span></h1>
-        <p>مساعد التوأم الرقمي المصري • متصل بنظام الرؤية والهاردوير والمشاعر</p>
+        <h1>روبوت نيبولا — دردشة مباشرة وحية <span class="badge model" id="activeModelBadge">النموذج جاهز</span></h1>
+        <p>التوأم الرقمي المصري الذكي • مربوط بالكاميرا وشرايح الهاردوير وإشارات المشاعر</p>
       </div>
     </div>
     <div class="header-actions">
-      <div class="badge mood" id="moodBadge">😊 مزاج: هادئ</div>
+      <div class="badge mood" id="moodBadge">😊 المزاج: رايق وهادي</div>
       <button class="btn-secondary" onclick="newConversation()">
-        <span>🔄</span> جلسة جديدة
+        <span>🔄</span> شات جديد
       </button>
       <a href="/docs" target="_blank" class="btn-secondary">
         <span>📖</span> Swagger API
@@ -494,8 +494,8 @@
               جاهز أدردش معاك بالمصري العامي، أتعرف على الوجوه، وأتحكم في حركات الروبوت عبر إشارات المشاعر!
             </div>
             <div class="meta-tag">
-              <span>متصل بالنظام</span>
-              <span class="tag-gesture">[wave] ترحيب</span>
+              <span>متصل بالسيستم</span>
+              <span class="tag-gesture">[wave] ترحيب بيسلّم</span>
             </div>
           </div>
         </div>
@@ -503,21 +503,21 @@
 
       <!-- Quick prompts -->
       <div class="quick-prompts">
-        <button class="quick-btn" onclick="sendPrompt('مين أنت وعرف نفسك بالمصري؟')">👋 عرف نفسك</button>
-        <button class="quick-btn" onclick="sendPrompt('شايف مين قدامك دلوقتي؟')">👁️ شايف مين قدامك؟</button>
-        <button class="quick-btn" onclick="sendPrompt('قولي نصيحة سريعة في البرمجة')">💡 نصيحة برمجة</button>
-        <button class="quick-btn" onclick="sendPrompt('إيه حالة الأجهزة المتصلة بيك؟')">🔌 حالة الهاردوير</button>
-        <button class="quick-btn" onclick="sendPrompt('قولي نكتة مصرية تضحك')">😂 نكتة مصرية</button>
+        <button class="quick-btn" onclick="sendPrompt('مين أنت وعرفنا بنفسك بالمصري؟')">👋 مين أنت وعرفنا بنفسك؟</button>
+        <button class="quick-btn" onclick="sendPrompt('شايف مين في الكاميرا دلوقتي؟')">👁️ شايف مين في الكاميرا دلوقتي؟</button>
+        <button class="quick-btn" onclick="sendPrompt('اديني نصيحة سريعة في البرمجة')">💡 اديني نصيحة سريعة في البرمجة</button>
+        <button class="quick-btn" onclick="sendPrompt('إيه أخبار الأجهزة المتصلة بيك؟')">🔌 إيه أخبار الأجهزة المتصلة بيك؟</button>
+        <button class="quick-btn" onclick="sendPrompt('قولي نكتة مصرية تضحك')">😂 قولي نكتة مصرية تضحك</button>
       </div>
 
       <!-- Input Area -->
       <div class="input-wrapper">
         <div class="input-bar">
-          <textarea id="userInput" rows="1" placeholder="اكتب رسالتك هنا... (اضغط Enter للإرسال)" onkeydown="handleKey(event)"></textarea>
+          <textarea id="userInput" rows="1" placeholder="اكتب رسالتك هنا بالمصري... (دوس Enter عشان تبعت)" onkeydown="handleKey(event)"></textarea>
           <div class="input-controls">
             <label class="stream-toggle">
               <input type="checkbox" id="streamToggle" checked>
-              <span>تدفق مباشر (Streaming)</span>
+              <span>نطق وكتابة لحظية (Streaming)</span>
             </label>
             <button class="btn-send" id="sendBtn" onclick="sendMessage()">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -533,28 +533,28 @@
     <!-- Side Grounding Panel -->
     <div class="grounding-panel">
       <div class="panel-card">
-        <h3>👁️ الرؤية والوجوه (Vision)</h3>
-        <p id="visionPerson">جاري الكشف عبر الكاميرا...</p>
+        <h3>👁️ الرؤية والتعرف على الوجوه</h3>
+        <p id="visionPerson">بنكشف على الوشوش في الكاميرا دلوقتي...</p>
         <p style="margin-top: 6px; font-size: 0.72rem; color: #64748b;">
-          الملفات المسجلة: <span id="registeredFacesCount">-</span>
+          بصمات الوشوش المتسجلة: <span id="registeredFacesCount">-</span>
         </p>
       </div>
 
       <div class="panel-card">
-        <h3>🎭 الشخصية واللهجة (Personality)</h3>
-        <p>الاسم: <b id="pName" style="color:#fff;">توت (الافتراضي)</b></p>
-        <p>اللهجة: <span id="pDialect" style="color:var(--primary);">مصرية (قاهرة)</span></p>
-        <p style="margin-top: 6px; font-size: 0.72rem;" id="pPrompt">أنت توأم رقمي مصري ذكي وودود.</p>
+        <h3>🎭 الشخصية واللهجة الموحدة</h3>
+        <p>الاسم: <b id="pName" style="color:#fff;">مازن (الافتراضي)</b></p>
+        <p>اللهجة: <span id="pDialect" style="color:var(--primary);">مصرية قاهرية (arz)</span></p>
+        <p style="margin-top: 6px; font-size: 0.72rem;" id="pPrompt">أنت نيبولا التوأم الرقمي المصري الذكي والودود.</p>
       </div>
 
       <!-- 🎙️ Voice Clone Studio Card -->
       <div class="panel-card" style="border: 1px solid rgba(139, 92, 246, 0.4); background: linear-gradient(180deg, rgba(139, 92, 246, 0.08), rgba(6, 182, 212, 0.04));">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <h3 style="color:#c084fc; margin-bottom:0; font-size:0.88rem;">🎙️ استنساخ الصوت (Voice Clone)</h3>
-          <span id="voiceBadge" class="badge" style="font-size:0.68rem; padding:2px 8px; color:var(--primary); border-color:rgba(6,182,212,0.3);">فحص البصمة...</span>
+          <h3 style="color:#c084fc; margin-bottom:0; font-size:0.88rem;">🎙️ استنساخ صوتك ونبرتك (Voice Clone)</h3>
+          <span id="voiceBadge" class="badge" style="font-size:0.68rem; padding:2px 8px; color:var(--primary); border-color:rgba(6,182,212,0.3);">بنفحص بصمة الصوت...</span>
         </div>
         <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
-          سجّل صوتك من المايك أو ارفع مقطع صوتي (1.5 إلى 120 ثانية)، وهيتم استنساخ صوتك ونطق أي كلام بالمصري بنفس نبرتك!
+          سجّل صوتك من المايك أو ارفع مقطع صوت (1.5 إلى 120 ثانية)، وهنستنسخ نبرة صوتك عشان الروبوت ينطق أي كلام بنفس صوتك بالمصري!
         </p>
 
         <!-- Method Tabs: Mic Recording / File Upload -->
@@ -563,7 +563,7 @@
             🎙️ تسجيل بالمايك
           </button>
           <button id="tabFileBtn" onclick="switchVoiceTab('file')" style="flex:1; padding:6px; border-radius:6px; font-size:0.75rem; font-weight:600; cursor:pointer; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); color:var(--text-muted);">
-            📁 رفع ملف صوتي
+            📁 رفع ملف صوت
           </button>
         </div>
 
@@ -572,7 +572,7 @@
           <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
             <button id="recordVoiceBtn" onclick="toggleVoiceRecording()" style="flex:1; padding:8px 12px; border-radius:8px; border:none; background:linear-gradient(135deg, #ef4444, #dc2626); color:#fff; font-size:0.8rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 0 12px rgba(239,68,68,0.3);">
               <span id="recDot" style="width:10px; height:10px; border-radius:50%; background:#fff; display:inline-block;"></span>
-              <span id="recBtnText">بدء التسجيل من المايك</span>
+              <span id="recBtnText">ابدأ اتكلم وسجل صوتك</span>
             </button>
             <span id="recTimer" style="font-family:'JetBrains Mono',monospace; font-size:0.82rem; color:var(--warning); min-width:48px; text-align:center; display:none;">00:00</span>
           </div>
@@ -585,18 +585,18 @@
         </div>
 
         <!-- Optional Transcript -->
-        <input type="text" id="voiceTranscript" placeholder="اختياري: ماذا قلت في التسجيل؟ (يزيد الدقة)" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; color:#fff; font-size:0.75rem; margin-bottom:8px;">
+        <input type="text" id="voiceTranscript" placeholder="اختياري: قولت إيه في التسجيل؟ (بيظبط نطق ومخارج الصوت)" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; color:#fff; font-size:0.75rem; margin-bottom:8px;">
 
         <!-- Upload & Clone Button -->
         <button id="uploadVoiceBtn" onclick="uploadVoiceSample()" style="width:100%; padding:7px; border-radius:6px; border:none; background:linear-gradient(135deg, #8b5cf6, #06b6d4); color:#fff; font-size:0.78rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:10px;">
-          🚀 تفعيل واستنساخ بصمتي الصوتية
+          🚀 فعّل واستنسخ نبرة صوتي دلوقتي
         </button>
         <div id="voiceUploadStatus" style="font-size:0.72rem; margin-bottom:8px; display:none;"></div>
 
         <!-- Synthesis & Speak Testing Section -->
         <div style="padding-top:10px; border-top:1px solid rgba(255,255,255,0.08);">
-          <h4 style="font-size:0.78rem; color:#38bdf8; margin-bottom:6px;">🔊 نطق أي نص بصوتك المستنسخ:</h4>
-          <textarea id="ttsSynthesizeText" rows="2" placeholder="اكتب أي جملة بالمصري لتنطقها بصوتك..." style="width:100%; background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; color:#fff; font-size:0.78rem; resize:none; margin-bottom:6px; font-family:inherit;">أهلاً يا باشا! أنا الروبوت نيبولا وبكلمك بنفس نبرة صوتك دلوقتي.</textarea>
+          <h4 style="font-size:0.78rem; color:#38bdf8; margin-bottom:6px;">🔊 انطق أي كلام بالمصري بنبرة صوتك:</h4>
+          <textarea id="ttsSynthesizeText" rows="2" placeholder="اكتب أي جملة بالمصري عشان تسمعها بصوتك..." style="width:100%; background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; color:#fff; font-size:0.78rem; resize:none; margin-bottom:6px; font-family:inherit;">أهلاً يا باشا! أنا الروبوت نيبولا وبكلمك بنفس نبرة صوتك دلوقتي.</textarea>
           
           <!-- Quick sample phrases -->
           <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
@@ -606,54 +606,54 @@
 
           <div style="display:flex; gap:6px;">
             <button id="synthVoiceBtn" onclick="synthesizeClonedVoice()" style="flex:2; padding:7px; border-radius:6px; border:none; background:linear-gradient(135deg, #10b981, #059669); color:#fff; font-size:0.78rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">
-              <span>🗣️</span> نطق النص بصوتي
+              <span>🗣️</span> انطق الجملة دي بصوتي
             </button>
             <button id="testVoiceBtn" onclick="testQuickGreeting()" class="btn-secondary" style="flex:1; font-size:0.72rem; justify-content:center; padding:7px 4px;" title="تجربة ترحيب فوري بصوتك">
-              ⚡ ترحيب سريع
+              ⚡ سلّم عليا بصوتي
             </button>
           </div>
 
           <!-- Playback Element -->
           <div id="synthAudioContainer" style="margin-top:8px; display:none;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <span id="synthLatencyText" style="font-size:0.7rem; color:#34d399; font-family:'JetBrains Mono',monospace;">⚡ تم التوليد بنجاح</span>
-              <a id="synthDownloadLink" href="#" download="cloned_voice.wav" style="font-size:0.7rem; color:var(--primary); text-decoration:none;">⬇️ تحميل WAV</a>
+              <span id="synthLatencyText" style="font-size:0.7rem; color:#34d399; font-family:'JetBrains Mono',monospace;">⚡ ولدنا الصوت بنجاح</span>
+              <a id="synthDownloadLink" href="#" download="cloned_voice.wav" style="font-size:0.7rem; color:var(--primary); text-decoration:none;">⬇️ نزل ملف الصوت WAV</a>
             </div>
             <audio id="clonedAudioPlayer" controls autoplay style="width:100%; height:32px; border-radius:6px;"></audio>
           </div>
 
           <!-- Active Samples list / Delete -->
           <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-size:0.72rem; color:var(--text-muted);">
-            <span id="activeSampleInfo">جاري فحص العينات...</span>
+            <span id="activeSampleInfo">بنفحص عينات الصوت...</span>
             <button id="deleteVoiceSampleBtn" onclick="deleteCurrentVoiceSample()" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:0.72rem; display:none;" title="حذف العينة المسجلة">
-              🗑️ مسح العينة
+              🗑️ امسح العينة الصوتية
             </button>
           </div>
         </div>
       </div>
 
       <div class="panel-card">
-        <h3>🔌 تشخيص الأجهزة (Diagnostics)</h3>
+        <h3>🔌 فحص توصيل الأجهزة</h3>
         <ul>
-          <li><span class="status-pill online" id="dotPhone"></span> تطبيق الموبايل (الشاشة)</li>
-          <li><span class="status-pill online" id="dotDesk"></span> غرفة التحكم (Desktop)</li>
-          <li><span class="status-pill online" id="dotEsp"></span> المتحكم الحركي (ESP32)</li>
+          <li><span class="status-pill online" id="dotPhone"></span> أبلكيشن الموبايل (الشاشة)</li>
+          <li><span class="status-pill online" id="dotDesk"></span> برنامج الكمبيوتر (أوضة التحكم)</li>
+          <li><span class="status-pill online" id="dotEsp"></span> متحكم الحركة (ESP32)</li>
         </ul>
       </div>
 
       <div class="panel-card">
-        <h3>🧠 الذاكرة المسترجعة للرد (RAG)</h3>
+        <h3>🧠 المعلومات والذكريات المسترجعة (RAG)</h3>
         <ul id="memoriesList">
-          <li style="color:var(--text-muted);font-size:0.75rem;">لم يتم استرجاع ذكريات لهذا الرد بعد.</li>
+          <li style="color:var(--text-muted);font-size:0.75rem;">مفيش ذكريات استرجعناها للرد ده لحد دلوقتي.</li>
         </ul>
 
         <!-- Add Memory Form -->
         <div style="margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--card-border);">
-          <h4 style="font-size:0.8rem; margin-bottom: 6px; color:var(--primary);">➕ حفظ معلومة في ذاكرة الروبوت</h4>
+          <h4 style="font-size:0.8rem; margin-bottom: 6px; color:var(--primary);">➕ احفظ معلومة جديدة في عقل الروبوت</h4>
           <div style="display:flex; flex-direction:column; gap:6px;">
-            <input type="text" id="newMemoryInput" placeholder="مثال: المستخدم يفضل القهوة بدون سكر" style="background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; color:#fff; font-size:0.78rem;">
+            <input type="text" id="newMemoryInput" placeholder="مثال: مازن بيحب يشرب القهوة سادة بدون سكر" style="background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; color:#fff; font-size:0.78rem;">
             <button onclick="saveNewMemory()" style="background:linear-gradient(135deg, var(--primary), var(--accent)); color:#fff; border:none; border-radius:6px; padding:6px; font-size:0.78rem; cursor:pointer; font-weight:600;">
-              💾 حفظ وتضمين في RAG
+              💾 احفظ المعلومة في الذاكرة
             </button>
             <span id="memSaveStatus" style="font-size:0.72rem; display:none;"></span>
           </div>
@@ -662,7 +662,7 @@
         <!-- View all memories -->
         <div style="margin-top: 10px;">
           <button onclick="toggleAllMemories()" class="btn-secondary" style="width:100%; font-size:0.75rem; justify-content:center;">
-            📚 كل الذكريات المخزنة (<span id="allMemoriesCount">0</span>)
+            📚 كل الذكريات والمعلومات المتسجلة (<span id="allMemoriesCount">0</span>)
           </button>
           <div id="allMemoriesContainer" style="display:none; max-height:160px; overflow-y:auto; margin-top:8px; font-size:0.72rem; border:1px solid var(--card-border); border-radius:6px; padding:6px; background:rgba(0,0,0,0.25);">
             <ul id="allMemoriesList" style="list-style:none;"></ul>
@@ -700,7 +700,7 @@
           <div class="msg-avatar">🤖</div>
           <div class="bubble-wrapper">
             <div class="bubble">
-              بدأنا جلسة جديدة! اطلب أي حاجة وعيني ليك يا فندم. ✨
+              بدأنا شات جديد! اطلب أي حاجة وعيني ليك يا باشا. ✨
             </div>
           </div>
         </div>
@@ -726,7 +726,7 @@
       row.innerHTML = `
         <div class="msg-avatar">🤖</div>
         <div class="bubble-wrapper">
-          <div class="bubble typing-cursor"><span class="thinking-text" style="color:var(--text-muted);font-size:0.9rem;">جاري التفكير والتوليد... ⏳</span></div>
+          <div class="bubble typing-cursor"><span class="thinking-text" style="color:var(--text-muted);font-size:0.9rem;">بيفكر وهيرد عليك حالا... ⏳</span></div>
           <div class="meta-tag" style="display:none;"></div>
         </div>
       `;
@@ -816,7 +816,7 @@
             streamMeta += `<span class="tag-gesture">${tagMatch[0]}</span>`;
             updateMoodBadge(tagMatch[1]);
           }
-          streamMeta += `<button onclick="speakText(this)" class="tag-gesture" style="cursor:pointer; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); color:var(--primary); padding:2px 8px; border-radius:12px; font-size:0.72rem;">🔊 نطق بصوتك</button>`;
+          streamMeta += `<button onclick="speakText(this)" class="tag-gesture" style="cursor:pointer; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); color:var(--primary); padding:2px 8px; border-radius:12px; font-size:0.72rem;">🔊 انطق بصوتي</button>`;
           robotMsg.meta.innerHTML = streamMeta;
 
         } else {
@@ -851,7 +851,7 @@
             metaHtml += `<span class="tag-gesture">[${data.emotion}]</span>`;
             updateMoodBadge(data.emotion);
           }
-          metaHtml += `<button onclick="speakText(this)" class="tag-gesture" style="cursor:pointer; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); color:var(--primary); padding:2px 8px; border-radius:12px; font-size:0.72rem;">🔊 نطق بصوتك</button>`;
+          metaHtml += `<button onclick="speakText(this)" class="tag-gesture" style="cursor:pointer; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); color:var(--primary); padding:2px 8px; border-radius:12px; font-size:0.72rem;">🔊 انطق بصوتي</button>`;
           robotMsg.meta.innerHTML = metaHtml;
 
           // Update grounding panel & memories
@@ -864,7 +864,7 @@
         }
       } catch (err) {
         robotMsg.bubble.classList.remove("typing-cursor");
-        robotMsg.bubble.textContent = `❌ حدث خطأ أثناء المعالجة: ${err.message}`;
+        robotMsg.bubble.textContent = `❌ حصلت مشكلة وإحنا بنعالج الرد: ${err.message}`;
         robotMsg.bubble.style.color = "#f87171";
       } finally {
         userInput.disabled = false;
@@ -876,26 +876,26 @@
 
     function updateMoodBadge(emotion) {
       const map = {
-        "happy": "😊 مزاج: سعيد ومتحمس",
-        "wave": "👋 مزاج: ودود ومرحب",
-        "like": "👍 مزاج: مؤيد ومعجب",
-        "sad": "😢 مزاج: حزين",
-        "surprised": "😲 مزاج: متفاجئ",
-        "neutral": "😐 مزاج: هادئ"
+        "happy": "😊 المزاج: مبسوط ومتحمس",
+        "wave": "👋 المزاج: ودود وبيسلّم",
+        "like": "👍 المزاج: متفق معاك وعاجبه",
+        "sad": "😢 المزاج: زعلان شوية",
+        "surprised": "😲 المزاج: متفاجئ",
+        "neutral": "😐 المزاج: رايق وهادي"
       };
-      moodBadge.textContent = map[emotion] || `✨ مزاج: ${emotion}`;
+      moodBadge.textContent = map[emotion] || `✨ المزاج: ${emotion}`;
     }
 
     function updateGroundingPanel(g) {
       if (g.faces) {
-        document.getElementById("visionPerson").textContent = g.faces.current_person || "لا يوجد أحد";
+        document.getElementById("visionPerson").textContent = g.faces.current_person || "مفيش حد قدام الكاميرا";
         if (g.faces.registered_profiles) {
-          document.getElementById("registeredFacesCount").textContent = g.faces.registered_profiles.join(", ") || "لا توجد";
+          document.getElementById("registeredFacesCount").textContent = g.faces.registered_profiles.join(", ") || "مفيش وشوش متسجلة";
         }
       }
       if (g.personality) {
         document.getElementById("pName").textContent = g.personality.name;
-        document.getElementById("pDialect").textContent = g.personality.dialect || "قاهرة";
+        document.getElementById("pDialect").textContent = g.personality.dialect || "مصرية قاهرية";
         document.getElementById("pPrompt").textContent = g.personality.system_prompt;
       }
       if (g.diagnostics) {
@@ -911,7 +911,7 @@
     function updateMemoriesList(mems) {
       const el = document.getElementById("memoriesList");
       if (!mems || mems.length === 0) {
-        el.innerHTML = '<li style="color:var(--text-muted);font-size:0.75rem;">لم يتم استرجاع ذكريات لهذا الرد.</li>';
+        el.innerHTML = '<li style="color:var(--text-muted);font-size:0.75rem;">مفيش ذكريات استرجعناها للرد ده.</li>';
       } else {
         el.innerHTML = mems.map(m => `<li style="color:#a7f3d0;font-size:0.78rem;margin-bottom:4px;list-style:disc;margin-right:16px;">${escapeHtml(m)}</li>`).join("");
       }
@@ -925,7 +925,7 @@
 
       status.style.display = "block";
       status.style.color = "var(--warning)";
-      status.textContent = "جاري الحفظ والتضمين في RAG...";
+      status.textContent = "بنحفظ المعلومة وبنعمل التضمين في الذاكرة...";
 
       try {
         const resp = await fetch("/api/v1/memories/", {
@@ -936,12 +936,12 @@
         if (!resp.ok) throw new Error(`خطأ: ${resp.status}`);
         inp.value = "";
         status.style.color = "var(--success)";
-        status.textContent = "✅ تم حفظ المعلومة بنجاح وتضمينها!";
+        status.textContent = "✅ حفظنا المعلومة في الذاكرة بنجاح!";
         setTimeout(() => { status.style.display = "none"; }, 3500);
         await loadAllMemories();
       } catch (err) {
         status.style.color = "#f87171";
-        status.textContent = "❌ فشل الحفظ: " + err.message;
+        status.textContent = "❌ معرفناش نحفظ المعلومة: " + err.message;
       }
     }
 
@@ -954,7 +954,7 @@
         document.getElementById("allMemoriesCount").textContent = mems.length;
         const listEl = document.getElementById("allMemoriesList");
         if (mems.length === 0) {
-          listEl.innerHTML = '<li style="color:var(--text-muted);">لا توجد ذكريات مخزنة بعد.</li>';
+          listEl.innerHTML = '<li style="color:var(--text-muted);">لسه مفيش أي ذكريات متسجلة.</li>';
         } else {
           listEl.innerHTML = mems.map(m => `
             <li style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
@@ -967,7 +967,7 @@
     }
 
     async function deleteMemoryItem(id) {
-      if (!confirm("هل أنت متأكد من حذف هذه المعلومة من الذاكرة؟")) return;
+      if (!confirm("متأكد إنك عايز تمسح المعلومة دي من الذاكرة؟")) return;
       try {
         await fetch(`/api/v1/memories/${id}`, { method: "DELETE" });
         await loadAllMemories();
@@ -1027,7 +1027,7 @@
         voiceMediaRecorder.stop();
         clearInterval(voiceRecInterval);
         recBtn.style.background = "linear-gradient(135deg, #ef4444, #dc2626)";
-        recBtnText.textContent = "تسجيل عينة جديدة";
+        recBtnText.textContent = "سجل عينة جديدة";
         recDot.style.background = "#fff";
         timerEl.style.display = "none";
         return;
@@ -1056,7 +1056,7 @@
         timerEl.style.display = "inline-block";
         timerEl.textContent = "00:00";
         recBtn.style.background = "linear-gradient(135deg, #10b981, #059669)";
-        recBtnText.textContent = "⏹️ إيقاف وحفظ التسجيل";
+        recBtnText.textContent = "⏹️ وقّف واحفظ التسجيل";
         recDot.style.background = "#fbbf24";
 
         voiceRecInterval = setInterval(() => {
@@ -1070,7 +1070,7 @@
         }, 1000);
 
       } catch (err) {
-        alert("تعذر الوصول للميكروفون: " + err.message + "\nتأكد من السماح بالمايك في المتصفح أو اختر رفع ملف صوتي.");
+        alert("مش عارفين نوصل للمايك: " + err.message + "\nاتأكد إنك سامح بالمايك في المتصفح أو ارفع ملف صوت جاهز.");
       }
     }
 
@@ -1094,13 +1094,13 @@
       if (!fileToUpload) {
         statusEl.style.display = "block";
         statusEl.style.color = "#f87171";
-        statusEl.textContent = "⚠️ برجاء تسجيل مقطع صوتي أولاً أو اختيار ملف من جهازك.";
+        statusEl.textContent = "⚠️ من فضلك سجل صوتك بالمايك الأول أو اختار ملف صوت من جهازك.";
         return;
       }
 
       statusEl.style.display = "block";
       statusEl.style.color = "var(--warning)";
-      statusEl.textContent = "⏳ جاري رفع الصوت واستخراج البصمة الصوتية...";
+      statusEl.textContent = "⏳ بنرفع الصوت وبنستخرج البصمة الصوتية دلوقتي...";
       btn.disabled = true;
 
       try {
@@ -1125,11 +1125,11 @@
 
         const resData = await resp.json();
         statusEl.style.color = "var(--success)";
-        statusEl.textContent = "✅ تم استنساخ وتفعيل بصمتك الصوتية بنجاح! يمكنك الآن تجربة النطق أدناه.";
+        statusEl.textContent = "✅ استنسخنا وفعلنا بصمة صوتك بنجاح! جرب تنطق أي جملة تحت دلوقتي.";
         await refreshVoiceSampleStatus();
       } catch (err) {
         statusEl.style.color = "#f87171";
-        statusEl.textContent = "❌ فشل استنساخ الصوت: " + err.message;
+        statusEl.textContent = "❌ معرفناش نستنسخ الصوت: " + err.message;
       } finally {
         btn.disabled = false;
       }
@@ -1142,7 +1142,7 @@
     async function synthesizeClonedVoice() {
       const text = document.getElementById("ttsSynthesizeText").value.trim();
       if (!text) {
-        alert("برجاء إدخال نص لنطقه بصوتك.");
+        alert("اكتب الكلام اللي عايز تنطقه بصوتك الأول.");
         return;
       }
       await speakCustomText(text);
@@ -1151,19 +1151,19 @@
     async function testQuickGreeting() {
       const btn = document.getElementById("testVoiceBtn");
       btn.disabled = true;
-      btn.textContent = "⏳ جاري النطق...";
+      btn.textContent = "⏳ بينطق دلوقتي...";
       try {
         const resp = await fetch(`/api/v1/voice-clone/test?personality_id=${activeVoicePersonalityId}`, {
           method: "POST"
         });
         if (!resp.ok) throw new Error(`خطأ: ${resp.status}`);
         const blob = await resp.blob();
-        playWavBlob(blob, "أهلاً يا صديقي! الروبوت بيكلم بصوتك.");
+        playWavBlob(blob, "منور يا غالي! الروبوت دلوقتي بيكلمك بنفس نبرة صوتك بالمصري.");
       } catch (err) {
-        alert("فشل الاختبار السريع: " + err.message);
+        alert("فشل الترحيب السريع: " + err.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = "⚡ ترحيب سريع";
+        btn.textContent = "⚡ سلّم عليا بصوتي";
       }
     }
 
@@ -1171,7 +1171,7 @@
       const btn = document.getElementById("synthVoiceBtn");
       const originalText = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML = "<span>⏳</span> جاري توليد الصوت...";
+      btn.innerHTML = "<span>⏳</span> بنولد الصوت دلوقتي...";
 
       const t0 = performance.now();
       try {
@@ -1199,7 +1199,7 @@
         const latency = Math.round(performance.now() - t0);
         playWavBlob(blob, text, latency);
       } catch (err) {
-        alert("فشل توليد الصوت: " + err.message);
+        alert("معرفناش نولد الصوت: " + err.message);
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalText;
@@ -1217,9 +1217,9 @@
       downloadLink.href = url;
       container.style.display = "block";
       if (latency) {
-        latencyText.textContent = `⚡ نطق الصوت (${latency} ms)`;
+        latencyText.textContent = `⚡ نطقنا الصوت (${latency} مللي ثانية)`;
       } else {
-        latencyText.textContent = "⚡ نطق ترحيبي بصوتك المستنسخ";
+        latencyText.textContent = "⚡ ترحيب بنبرة صوتك المستنسخ";
       }
       player.play().catch(() => {});
     }
@@ -1248,33 +1248,33 @@
         if (samples.length > 0) {
           const s = samples[0];
           activeVoicePersonalityId = s.personality_id;
-          badge.textContent = "✅ بصمة صوتية مفعلة";
+          badge.textContent = "✅ بصمة صوتك متفعلة وجاهزة";
           badge.style.color = "var(--success)";
           badge.style.borderColor = "rgba(16,185,129,0.3)";
-          info.innerHTML = `بصمة مسجلة: <b>${s.duration_s} ثانية</b> (${Math.round(s.size_bytes/1024)} KB)`;
+          info.innerHTML = `بصمة صوت متسجلة: <b>${s.duration_s} ثانية</b> (${Math.round(s.size_bytes/1024)} KB)`;
           delBtn.style.display = "inline-block";
         } else {
-          badge.textContent = "لا توجد بصمة";
+          badge.textContent = "مفيش بصمة صوت";
           badge.style.color = "#fbbf24";
           badge.style.borderColor = "rgba(251,191,36,0.3)";
-          info.textContent = "لم يتم تسجيل بصمة صوتية بعد.";
+          info.textContent = "لسه مفيش أي بصمة صوت متسجلة.";
           delBtn.style.display = "none";
         }
       } catch (_) {}
     }
 
     async function deleteCurrentVoiceSample() {
-      if (!confirm("هل أنت متأكد من حذف بصمتك الصوتية المسجلة؟")) return;
+      if (!confirm("متأكد إنك عايز تمسح بصمة صوتك المسجلة؟")) return;
       try {
         await fetch(`/api/v1/voice-clone/samples/${activeVoicePersonalityId}`, {
           method: "DELETE"
         });
-        document.getElementById("voiceUploadStatus").textContent = "تم حذف البصمة الصوتية بنجاح.";
+        document.getElementById("voiceUploadStatus").textContent = "مسحنا البصمة الصوتية بنجاح خلاص.";
         document.getElementById("voiceUploadStatus").style.display = "block";
         document.getElementById("voiceUploadStatus").style.color = "var(--warning)";
         await refreshVoiceSampleStatus();
       } catch (err) {
-        alert("فشل الحذف: " + err.message);
+        alert("معرفناش نمسح البصمة: " + err.message);
       }
     }
 
