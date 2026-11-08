@@ -59,8 +59,33 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
             return False
 
     async def _fallback_synthesize(self, text: str) -> bytes:
-        """Native SAPI or speech waveform synthesis fallback for desktop/offline usage."""
-        clean = text.replace('"', ' ').replace("'", " ")[:300]
+        """High quality real Arabic/English speech synthesis fallback."""
+        import re
+        clean = re.sub(r"\[.*?\]|<.*?>", "", text).replace('"', ' ').replace("'", " ").strip()[:350]
+        if not clean:
+            clean = "أهلاً بك"
+
+        # 1. Try Google Text-to-Speech (gTTS) for natural human voice
+        try:
+            from gtts import gTTS
+            is_ar = bool(re.search(r"[\u0600-\u06FF]", clean))
+            lang_code = "ar" if is_ar else "en"
+            loop = asyncio.get_event_loop()
+
+            def _gtts_task():
+                tts = gTTS(text=clean, lang=lang_code)
+                b = io.BytesIO()
+                tts.write_to_fp(b)
+                return b.getvalue()
+
+            data = await loop.run_in_executor(None, _gtts_task)
+            if data and len(data) > 500:
+                logger.info(f"gTTS synthesized {len(data)} bytes of real voice for: {clean[:40]}...")
+                return data
+        except Exception as ge:
+            logger.debug(f"gTTS note: {ge}")
+
+        # 2. Try Windows SAPI SpeechSynthesizer
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
                 wav_path = tf.name

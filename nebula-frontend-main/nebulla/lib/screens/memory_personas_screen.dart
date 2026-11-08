@@ -81,7 +81,8 @@ class PersonaProfileData {
 }
 
 class MemoryPersonasScreen extends StatefulWidget {
-  const MemoryPersonasScreen({super.key});
+  final ValueChanged<int>? onNavigate;
+  const MemoryPersonasScreen({super.key, this.onNavigate});
 
   @override
   State<MemoryPersonasScreen> createState() => _MemoryPersonasScreenState();
@@ -729,6 +730,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
             activeIndex: 2,
             onNavigate: (idx) {
               _memScaffoldKey.currentState?.closeDrawer();
+              widget.onNavigate?.call(idx);
             },
             onClose: () => _memScaffoldKey.currentState?.closeDrawer(),
           ),

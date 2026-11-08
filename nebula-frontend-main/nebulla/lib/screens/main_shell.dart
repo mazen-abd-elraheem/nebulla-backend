@@ -12,6 +12,18 @@ class MainShell extends StatefulWidget {
   const MainShell({super.key, this.initialIndex = 0});
   final int initialIndex;
 
+  static void navigateTo(BuildContext context, int index) {
+    final state = context.findAncestorStateOfType<_MainShellState>();
+    if (state != null) {
+      state._onNavigate(index);
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => MainShell(initialIndex: index)),
+        (route) => false,
+      );
+    }
+  }
+
   @override
   State<MainShell> createState() => _MainShellState();
 }
@@ -26,7 +38,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _onNavigate(int index) {
-    if (index >= 0 && index < 4) {
+    if (index >= 0 && index < 6) {
       setState(() => _currentIndex = index);
     }
   }
@@ -35,8 +47,8 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final screens = [
       DashboardScreen(onNavigate: _onNavigate),
-      const ChatScreen(),
-      const MemoryPersonasScreen(),
+      ChatScreen(onNavigate: _onNavigate),
+      MemoryPersonasScreen(onNavigate: _onNavigate),
       const ProfileScreen(),
       const DiagnosticsScreen(),
       const SettingsScreen(),

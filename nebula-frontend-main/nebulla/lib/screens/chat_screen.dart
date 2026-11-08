@@ -9,7 +9,8 @@ import '../widgets/interactive_animated_avatar.dart';
 import '../widgets/nebula_side_menu.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final ValueChanged<int>? onNavigate;
+  const ChatScreen({super.key, this.onNavigate});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -279,6 +280,7 @@ class _ChatScreenState extends State<ChatScreen> {
           activeIndex: 1,
           onNavigate: (idx) {
             _chatScaffoldKey.currentState?.closeDrawer();
+            widget.onNavigate?.call(idx);
           },
           onClose: () => _chatScaffoldKey.currentState?.closeDrawer(),
         ),

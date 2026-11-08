@@ -4,6 +4,7 @@ import '../services/avatar_audio_service.dart';
 import '../services/storage_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
+import '../screens/main_shell.dart';
 
 /// The shared side menu overlay / drawer matching the provided design.
 /// Can be opened from any screen via hamburger menu.
@@ -62,29 +63,29 @@ class NebulaSideMenu extends StatelessWidget {
   }
 
   void _handleItemTap(BuildContext context, int targetIdx) {
+    if (onClose != null) {
+      onClose!();
+    } else {
+      Navigator.of(context).maybePop();
+    }
+
     if (targetIdx == -1) {
-      if (onClose != null) {
-        onClose!();
-      } else {
-        Navigator.of(context).maybePop();
-      }
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
       return;
     }
     if (targetIdx == -2) {
-      if (onClose != null) {
-        onClose!();
-      } else {
-        Navigator.of(context).maybePop();
-      }
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const RegisterScreen()),
       );
       return;
     }
-    onNavigate?.call(targetIdx);
+
+    if (onNavigate != null) {
+      onNavigate!(targetIdx);
+    }
+    MainShell.navigateTo(context, targetIdx);
   }
 
   @override

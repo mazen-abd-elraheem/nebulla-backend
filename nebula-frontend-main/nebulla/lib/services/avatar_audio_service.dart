@@ -132,38 +132,54 @@ class AvatarAudioService {
     }
   }
 
-  Future<void> _playWavOnWindows(Uint8List wavBytes, int fallbackDurationMs) async {
+  Future<void> _playWavOnWindows(Uint8List audioBytes, int fallbackDurationMs) async {
     try {
       stop();
+      final isMp3 = audioBytes.length >= 3 &&
+          ((audioBytes[0] == 0x49 && audioBytes[1] == 0x44 && audioBytes[2] == 0x33) ||
+           (audioBytes[0] == 0xFF && (audioBytes[1] & 0xE0) == 0xE0));
+      final ext = isMp3 ? 'mp3' : 'wav';
       final tempDir = Directory.systemTemp;
-      final tempFile = File('${tempDir.path}\\nebula_speech_${DateTime.now().millisecondsSinceEpoch}.wav');
-      await tempFile.writeAsBytes(wavBytes, flush: true);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final tempFile = File('${tempDir.path}\\nebula_speech_$timestamp.$ext');
+      await tempFile.writeAsBytes(audioBytes, flush: true);
       _lastAudioFile = tempFile;
 
-      // Calculate exact duration from WAV header if possible (sample rate * channels * bytesPerSample)
       int durationMs = fallbackDurationMs;
-      if (wavBytes.length > 44) {
+      if (!isMp3 && audioBytes.length > 44) {
         try {
-          final byteData = ByteData.sublistView(wavBytes);
+          final byteData = ByteData.sublistView(audioBytes);
           final byteRate = byteData.getUint32(28, Endian.little);
           if (byteRate > 0) {
-            durationMs = ((wavBytes.length - 44) * 1000 / byteRate).round();
+            durationMs = ((audioBytes.length - 44) * 1000 / byteRate).round();
           }
         } catch (_) {}
       }
 
       _startLipSyncPulse(durationMs);
 
-      // Play sound asynchronously via native PowerShell SoundPlayer
-      final safePath = tempFile.path.replaceAll("'", "''");
+      final safePath = tempFile.absolute.path.replaceAll('/', '\\').replaceAll("'", "''");
+      final psScript = """
+Add-Type -AssemblyName PresentationCore
+\$player = New-Object System.Windows.Media.MediaPlayer
+\$player.Open([System.Uri]'$safePath')
+\$player.Play()
+Start-Sleep -Milliseconds ${durationMs + 600}
+""";
+      final scriptFile = File('${tempDir.path}\\play_$timestamp.ps1');
+      await scriptFile.writeAsString(psScript);
+
       _activeAudioProcess = await Process.start('powershell', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        '(New-Object System.Media.SoundPlayer \'$safePath\').PlaySync();',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        scriptFile.path,
       ]);
 
       _activeAudioProcess?.exitCode.then((_) {
+        try {
+          if (scriptFile.existsSync()) scriptFile.deleteSync();
+        } catch (_) {}
         _cleanupAudioFile(tempFile);
       });
     } catch (e) {
