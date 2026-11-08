@@ -510,8 +510,8 @@ class FaceService:
         best_sim, best_i1, face1, best_i2, face2 = valid_pairs[0]
 
         best_sim = float(best_sim)
-        is_match = best_sim >= threshold
-        match_percentage = self._calculate_match_percentage(best_sim, threshold)
+        is_match = bool(best_sim >= threshold)
+        match_percentage = self._calculate_match_percentage(best_sim, threshold) if is_match else 0.0
 
         return {
             "is_match": is_match,

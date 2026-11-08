@@ -1723,7 +1723,7 @@
       const gauge = document.getElementById('cmp-gauge-box');
 
       const isMatch = data.is_match;
-      const pct = data.match_percentage || 0;
+      const pct = isMatch ? (data.match_percentage || 0) : 0.0;
 
       pctDisp.innerText = pct.toFixed(1) + '%';
 
@@ -1736,7 +1736,7 @@
         banner.className = 'comparison-banner no-match';
         gauge.className = 'match-gauge-box low-match';
         title.innerText = '❌ الوش مش متطابق خالص';
-        sub.innerText = data.summary || `نسبة التشابه (${pct.toFixed(1)}%) أقل من الحد الأدنى للقبول (${Math.round(data.threshold * 100)}%).`;
+        sub.innerText = data.summary || `الوشين لشخصين مختلفين (نسبة التطابق 0.0% | معامل التشابه ${data.similarity || 0} أقل من حد القبول ${Math.round(data.threshold * 100)}%).`;
       }
 
       // Render Ref Image
