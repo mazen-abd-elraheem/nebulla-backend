@@ -337,19 +337,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 // 5. Bottom Modern Floating Input Bar matching mockup 100%
                 _buildModernInputBar(),
 
-                // Bottom Home Pill Indicator
-                const SizedBox(height: 6),
-                Center(
-                  child: Container(
-                    width: 120,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFCBD5E1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
+                // Bottom spacing to guarantee the input bar is 100% visible and sits cleanly above the bottom navigation bar
+                SizedBox(
+                  height: MediaQuery.of(context).viewInsets.bottom > 0 ? 8 : 88,
                 ),
-                const SizedBox(height: 8),
               ],
             ),
           ),
@@ -1271,8 +1262,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF0F172A),
                       ),
+                      textInputAction: TextInputAction.send,
                       decoration: const InputDecoration(
-                        hintText: '...اكتب رسالتك هنا',
+                        hintText: 'اكتب رسالتك هنا...', 
                         hintStyle: TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 13,

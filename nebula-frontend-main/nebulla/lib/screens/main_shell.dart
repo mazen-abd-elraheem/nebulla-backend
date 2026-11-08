@@ -65,10 +65,12 @@ class _MainShellState extends State<MainShell> {
           ),
 
           // Floating Translucent Frosted Glass Bottom Navigation Bar matching Image 2
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: _buildFloatingGlassNavBar(),
-          ),
+          // Automatically hide when keyboard is open so it never obstructs typing
+          if (MediaQuery.of(context).viewInsets.bottom == 0)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: _buildFloatingGlassNavBar(),
+            ),
         ],
       ),
     );
