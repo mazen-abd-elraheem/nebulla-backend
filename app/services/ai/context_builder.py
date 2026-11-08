@@ -432,13 +432,13 @@ async def build_grounding_context(
 """
     if face_detected and current_face.get("face_id"):
         sys_status_block += f"- الكاميرا: الشخص أمامك هو {current_face['face_id']}.\n"
+    if verified_speaker:
+        sys_status_block += f"- الصوت: تم التعرف على المتحدث بالبصمة الصوتية: {verified_speaker}.\n"
     if spk_name:
         main_tag = " | متحدث رئيسي" if is_main_speaker else ""
         sys_status_block += f"- المتحدث: {spk_name} (حالة البصمة: {spk_status}{main_tag}).\n"
         if spk_directive:
             sys_status_block += f"- توجيه المتحدث: {spk_directive}\n"
-    elif verified_speaker:
-        sys_status_block += f"- الصوت: تم التعرف على المتحدث بالبصمة الصوتية: {verified_speaker}.\n"
 
     if action_meta.get("has_action"):
         sys_status_block += (
