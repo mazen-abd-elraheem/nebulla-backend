@@ -147,7 +147,6 @@ class LocalOllamaProvider(BaseLLMProvider):
         if context:
             memories_text = "\n".join(f"- {m}" for m in context if m)
             already_in_prompt = any(
-            already_in_prompt = any(
                 kw in effective_system_prompt
                 for kw in (
                     "ذكريات", "الذاكرة", "RAG Context", "Verified Context",
