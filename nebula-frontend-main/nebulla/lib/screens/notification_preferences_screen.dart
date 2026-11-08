@@ -45,8 +45,11 @@ class _NotificationPreferencesScreenState
           backgroundColor: Colors.white,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_forward_ios_rounded,
-                color: Color(0xFF1E293B), size: 20),
+            icon: const Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: Color(0xFF1E293B),
+              size: 20,
+            ),
             onPressed: () => Navigator.of(context).pop(),
           ),
           title: const Text(
@@ -237,8 +240,11 @@ class _NotificationPreferencesScreenState
                       : const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.check_circle_outline_rounded,
-                                color: Colors.white, size: 20),
+                            Icon(
+                              Icons.check_circle_outline_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                             SizedBox(width: 8),
                             Text(
                               'حفظ تفضيلات الإشعارات',
@@ -259,8 +265,11 @@ class _NotificationPreferencesScreenState
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.verified_user_outlined,
-                      size: 13, color: Color(0xFF64748B)),
+                  Icon(
+                    Icons.verified_user_outlined,
+                    size: 13,
+                    color: Color(0xFF64748B),
+                  ),
                   SizedBox(width: 4),
                   Text(
                     'سيتم حفظ وتطبيق التفضيلات فوراً على حسابك',
@@ -359,7 +368,9 @@ class _NotificationPreferencesScreenState
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: (iconColor ?? const Color(0xFF0072FF)).withValues(alpha: 0.1),
+              color: (iconColor ?? const Color(0xFF0072FF)).withValues(
+                alpha: 0.1,
+              ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(

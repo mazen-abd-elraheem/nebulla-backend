@@ -159,17 +159,26 @@ class AvatarAudioService {
       _startLipSyncPulse(durationMs);
 
       final safePath = tempFile.absolute.path.replaceAll('/', '\\').replaceAll("'", "''");
-      final psScript = """
-Add-Type -AssemblyName PresentationCore
-\$player = New-Object System.Windows.Media.MediaPlayer
-\$player.Open([System.Uri]'$safePath')
-\$player.Play()
-Start-Sleep -Milliseconds ${durationMs + 600}
+      final psScript = isMp3
+          ? """
+\$wmp = New-Object -ComObject WMPlayer.OCX
+\$wmp.settings.volume = 100
+\$wmp.URL = '$safePath'
+\$wmp.controls.play()
+Start-Sleep -Milliseconds 300
+while (\$wmp.playState -eq 3 -or \$wmp.playState -eq 6 -or \$wmp.playState -eq 9) {
+    Start-Sleep -Milliseconds 100
+}
+"""
+          : """
+\$sp = New-Object System.Media.SoundPlayer '$safePath'
+\$sp.PlaySync()
 """;
       final scriptFile = File('${tempDir.path}\\play_$timestamp.ps1');
       await scriptFile.writeAsString(psScript);
 
       _activeAudioProcess = await Process.start('powershell', [
+        '-NoProfile',
         '-ExecutionPolicy',
         'Bypass',
         '-File',
