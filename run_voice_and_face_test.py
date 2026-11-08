@@ -130,21 +130,21 @@ async def run_face_tests():
     emb_2_diff = emb_2_diff / np.linalg.norm(emb_2_diff)
 
     sim_same = face_service._cosine_similarity(emb_1, emb_1_variant)
-    pct_same = face_service._calculate_match_percentage(sim_same, threshold=0.40)
+    pct_same = face_service._calculate_match_percentage(sim_same, threshold=0.55)
 
     sim_diff = face_service._cosine_similarity(emb_1, emb_2_diff)
-    pct_diff = 0.0 if sim_diff < 0.40 else face_service._calculate_match_percentage(sim_diff, threshold=0.40)
+    pct_diff = 0.0 if sim_diff < 0.55 else face_service._calculate_match_percentage(sim_diff, threshold=0.55)
 
     print("1. فحص تطابق الوجه لنفس الشخص (Same Face Match):")
-    print(f"   • هل الوجهان متطابقان؟: {'✅ نعم متطابقان' if sim_same >= 0.40 else '❌ لا'}")
+    print(f"   • هل الوجهان متطابقان؟: {'✅ نعم متطابقان' if sim_same >= 0.55 else '❌ لا'}")
     print(f"   • نسبة التطابق المحسوبة: {pct_same:.1f}%")
     print(f"   • معامل التشابه الكوزيني: {sim_same:.4f}")
 
     print("\n" + "-" * 75)
     print("2. فحص وجهين لشخصين مختلفين (Different Faces):")
-    print(f"   • هل الوجهان متطابقان؟: {'❌ لا (شخصان مختلفان)' if sim_diff < 0.40 else 'نعم'}")
+    print(f"   • هل الوجهان متطابقان؟: {'❌ لا (شخصان مختلفان)' if sim_diff < 0.55 else 'نعم'}")
     print(f"   • نسبة التطابق المعتمدة: {pct_diff:.1f}%  <-- (0% عند عدم التطابق)")
-    print(f"   • معامل التشابه: {sim_diff:.4f} (أقل من حد القبول 0.40)")
+    print(f"   • معامل التشابه: {sim_diff:.4f} (أقل من حد القبول 0.55)")
 
     print("\n" + "-" * 75)
     print("3. فحص فك تشفير وفحص جودة الصور (Laplacian Sharpness):")
