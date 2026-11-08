@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'storage_service.dart';
+import 'audio_viseme_analyzer.dart';
 
 /// Manages real-time audio playback, backend speech synthesis,
 /// and live synchronization with avatar facial expressions and lip-sync.
@@ -14,6 +15,7 @@ class AvatarAudioService {
 
   final ValueNotifier<bool> isSpeaking = ValueNotifier<bool>(false);
   final ValueNotifier<double> speechAmplitude = ValueNotifier<double>(0.0);
+  final ValueNotifier<VisemeFrame> currentViseme = ValueNotifier<VisemeFrame>(VisemeFrame.neutral);
   final ValueNotifier<String> currentEmotion = ValueNotifier<String>('neutral');
   final ValueNotifier<String> activeAvatarType = ValueNotifier<String>('female'); // 'male' | 'female'
   final ValueNotifier<int> activePersonalityId = ValueNotifier<int>(1);
@@ -190,7 +192,7 @@ Add-Type -AssemblyName System.Speech
         } catch (_) {}
       }
 
-      _startLipSyncPulse(durationMs);
+      _startLipSyncPulse(durationMs, audioBytes);
 
       final safePath = tempFile.absolute.path.replaceAll('/', '\\').replaceAll("'", "''");
       final psScript = isMp3
@@ -231,29 +233,31 @@ while (\$wmp.playState -eq 3 -or \$wmp.playState -eq 6 -or \$wmp.playState -eq 9
     }
   }
 
-  void _startLipSyncPulse(int durationMs) {
+  void _startLipSyncPulse(int durationMs, [Uint8List? audioBytes]) {
     _amplitudeTimer?.cancel();
     isSpeaking.value = true;
 
-    final start = DateTime.now();
-    final random = Random();
+    final analyzer = AudioVisemeAnalyzer.instance;
+    final frames = analyzer.analyzeAudioTrack(audioBytes ?? Uint8List(0), durationMs);
 
-    // Rhythmic phoneme pulses at 25 Hz (every 40ms)
-    _amplitudeTimer = Timer.periodic(const Duration(milliseconds: 40), (timer) {
+    final start = DateTime.now();
+
+    // High fidelity 50 FPS (every 20ms) viseme playback loop
+    _amplitudeTimer = Timer.periodic(const Duration(milliseconds: 20), (timer) {
       final elapsed = DateTime.now().difference(start).inMilliseconds;
       if (elapsed >= durationMs) {
         stop();
         return;
       }
 
-      // Generate natural syllable cadence: sine wave modulated with slight random variation
-      final t = elapsed / 1000.0;
-      final syllableCarrier = 0.5 + 0.5 * sin(2 * pi * 3.8 * t);
-      final consonantFlutter = 0.2 * sin(2 * pi * 12.0 * t);
-      final jitter = (random.nextDouble() - 0.5) * 0.15;
+      final frameIndex = (elapsed ~/ 20).clamp(0, frames.length - 1);
+      final current = frames[frameIndex];
+      final next = (frameIndex + 1 < frames.length) ? frames[frameIndex + 1] : current;
+      final subT = ((elapsed % 20) / 20.0).clamp(0.0, 1.0);
 
-      final amp = (syllableCarrier + consonantFlutter + jitter).clamp(0.08, 1.0);
-      speechAmplitude.value = amp;
+      final smoothFrame = VisemeFrame.lerp(current, next, subT);
+      currentViseme.value = smoothFrame;
+      speechAmplitude.value = smoothFrame.openness;
     });
   }
 
@@ -262,6 +266,7 @@ while (\$wmp.playState -eq 3 -or \$wmp.playState -eq 6 -or \$wmp.playState -eq 9
     _amplitudeTimer = null;
     isSpeaking.value = false;
     speechAmplitude.value = 0.0;
+    currentViseme.value = VisemeFrame.neutral;
     try {
       _activeAudioProcess?.kill();
       _activeAudioProcess = null;
