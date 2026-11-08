@@ -107,6 +107,9 @@ class ApiService {
     } catch (_) {
       msg = response.body;
     }
+    if (response.statusCode == 401) {
+      StorageService.instance.clearToken();
+    }
     throw ApiException(response.statusCode, msg);
   }
 

@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core/theme.dart';
@@ -37,6 +38,15 @@ class NebulaApp extends StatelessWidget {
       title: 'نيبولا',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.trackpad,
+          PointerDeviceKind.unknown,
+        },
+      ),
       // RTL for Arabic
       locale: const Locale('ar'),
       builder: (context, child) {
