@@ -39,7 +39,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final confirmPassword = _confirmPasswordCtrl.text;
 
     if (password != confirmPassword) {
-      showErrorSnackbar(context, 'كلمة المرور وتأكيد كلمة المرور غير متطابقين.');
+      showErrorSnackbar(context, 'الباسورد وتأكيده مش متطابقين خالص.');
       return;
     }
 
@@ -56,7 +56,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       showSuccessSnackbar(
         context,
-        'مرحباً بك يا ${user.fullName}! تم إنشاء الحساب بنجاح.',
+        'نورت نيبولا يا ${user.fullName}! حسابك اتعمل بنجاح.',
       );
 
       Navigator.of(context).pushAndRemoveUntil(
@@ -65,7 +65,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      showErrorSnackbar(context, 'فشل إنشاء الحساب: $e');
+      showErrorSnackbar(context, 'معرفناش نعمل الحساب: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -173,28 +173,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           children: [
                             const SizedBox(height: 36),
 
-                            // Header Section: Title
+                            // Header Section: Title matching Mockup
                             const Text(
                               'إنشاء حساب جديد',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontFamily: 'Cairo',
-                                fontSize: 28,
+                                fontSize: 30,
                                 fontWeight: FontWeight.w900,
                                 color: Color(0xFF0F172A), // Deep Slate/Navy 900
                                 letterSpacing: 0.2,
                                 height: 1.25,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            const Text(
-                              'انضم إلى شبكة نيبولا للذكاء الاصطناعي المركزي',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF64748B),
                               ),
                             ),
 
@@ -343,7 +332,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               trailingIcon: Icons.person_outline_rounded,
               validator: (v) {
                 if (v == null || v.trim().length < 2) {
-                  return 'يرجى إدخال الاسم الكامل (حرفين على الأقل)';
+                  return 'اكتب اسمك بالكامل (حرفين على الأقل)';
                 }
                 return null;
               },
@@ -359,14 +348,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
             const SizedBox(height: 6),
             _buildInputField(
               controller: _emailCtrl,
-              hint: 'user@synthcore.ai',
+              hint: '',
               keyboardType: TextInputType.emailAddress,
               validator: (v) {
                 if (v == null || v.trim().isEmpty) {
-                  return 'يرجى إدخال البريد الإلكتروني';
+                  return 'من فضلك اكتب إيميلك';
                 }
                 if (!v.contains('@') || !v.contains('.')) {
-                  return 'البريد الإلكتروني غير صالح';
+                  return 'الإيميل ده مش مظبوط';
                 }
                 return null;
               },
@@ -382,14 +371,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
             const SizedBox(height: 6),
             _buildInputField(
               controller: _passwordCtrl,
-              hint: '••••••••••••',
+              hint: '',
               obscureText: _obscurePassword,
               onToggleVisibility: () {
                 setState(() => _obscurePassword = !_obscurePassword);
               },
               validator: (v) {
                 if (v == null || v.length < 8) {
-                  return 'كلمة المرور يجب ألا تقل عن 8 خانات';
+                  return 'الباسورد مينفعش يقل عن 8 خانات';
                 }
                 return null;
               },
@@ -413,10 +402,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               },
               validator: (v) {
                 if (v == null || v.isEmpty) {
-                  return 'يرجى تأكيد كلمة المرور';
+                  return 'من فضلك أكّد الباسورد';
                 }
                 if (v != _passwordCtrl.text) {
-                  return 'كلمتا المرور غير متطابقتين';
+                  return 'الباسورد وتأكيده مش متطابقين خالص';
                 }
                 return null;
               },
@@ -613,9 +602,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               color: Color(0xFF64748B),
             ),
             children: [
-              TextSpan(text: 'لديك حساب مفعل بالفعل؟ '),
+              TextSpan(text: 'لديك حساب مفعّل بالفعل؟ '),
               TextSpan(
-                text: 'تسجيل الدخول ›',
+                text: 'تسجيل الدخول >',
                 style: TextStyle(
                   color: Color(0xFF00A3C4), // Cyan link
                   fontWeight: FontWeight.w800,

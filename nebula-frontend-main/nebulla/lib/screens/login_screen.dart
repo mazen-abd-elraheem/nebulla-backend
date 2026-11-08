@@ -64,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       showSuccessSnackbar(
         context,
-        'تم تسجيل الدخول بنجاح. أهلاً بك يا ${user.fullName}',
+        'نورت يا ${user.fullName}! دخلت على حسابك تمام.',
       );
 
       Navigator.of(context).pushReplacement(
@@ -72,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      showErrorSnackbar(context, 'فشل تسجيل الدخول: $e');
+      showErrorSnackbar(context, 'مش عارفين ندخلك: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -83,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (email.isEmpty) {
       showErrorSnackbar(
         context,
-        'يرجى إدخال البريد الإلكتروني أولاً للتحقق من بصمة الوجه.',
+        'اكتب إيميلك الأول عشان نقدر نطابق بصمة وشك.',
       );
       return;
     }
@@ -114,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       showSuccessSnackbar(
         context,
-        'تم التحقق البيومتري بنجاح! مرحباً ${user.fullName}',
+        'اتأكدنا من بصمة وشك بنجاح! منور يا ${user.fullName}.',
       );
 
       Navigator.of(context).pushReplacement(
@@ -123,7 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // dismiss scanning dialog if open
-      showErrorSnackbar(context, 'فشل التحقق البيومتري: $e');
+      showErrorSnackbar(context, 'معرفناش نطابق بصمة الوش: $e');
     } finally {
       if (mounted) setState(() => _biometricLoading = false);
     }
@@ -190,7 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 18),
                 const Text(
-                  'جاري التحقق من بصمة الوجه',
+                  'بنفحص بصمة وشك دلوقتي...',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontFamily: 'Cairo',
@@ -201,7 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'مطابقة الملامح عبر شبكة Neural Face ID...',
+                  'بنطابق ملامح الوش عبر شبكة Neural Face ID...',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontFamily: 'Cairo',
@@ -386,7 +386,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 4),
                             const Text(
-                              'مرحباً بك مجددًا، سجّل الدخول للمتابعة إلى نظامك',
+                              'مرحبًا بك مجددًا، سجّل الدخول للمتابعة إلى نظامك',
                               textAlign: TextAlign.right,
                               style: TextStyle(
                                 fontFamily: 'Cairo',
@@ -605,7 +605,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               validator: (v) {
                 if (v == null || v.trim().isEmpty) {
-                  return 'يرجى إدخال البريد الإلكتروني أو المعرّف';
+                  return 'لازم تكتب الإيميل أو كود التعريف بتاعك';
                 }
                 return null;
               },
@@ -700,7 +700,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) {
-                  return 'يرجى إدخال كلمة المرور';
+                  return 'من فضلك اكتب الباسورد بتاعك';
                 }
                 return null;
               },
@@ -957,7 +957,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
   Future<void> _requestReset() async {
     final email = _emailCtrl.text.trim();
     if (email.isEmpty || !email.contains('@')) {
-      showErrorSnackbar(context, 'يرجى إدخال بريد إلكتروني صالح.');
+      showErrorSnackbar(context, 'اكتب إيميل مظبوط عشان نقدر نبعتلك.');
       return;
     }
 
@@ -969,7 +969,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
       setState(() => _step = 2);
     } catch (e) {
       if (!mounted) return;
-      showErrorSnackbar(context, 'فشل طلب الاستعادة: $e');
+      showErrorSnackbar(context, 'معرفناش نطلب كود الاسترجاع: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -981,15 +981,15 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
     final confirmPassword = _confirmPasswordCtrl.text;
 
     if (token.isEmpty) {
-      showErrorSnackbar(context, 'يرجى إدخال رمز الاستعادة.');
+      showErrorSnackbar(context, 'اكتب كود الاسترجاع اللي وصلك.');
       return;
     }
     if (newPassword.length < 8) {
-      showErrorSnackbar(context, 'كلمة المرور يجب ألا تقل عن 8 خانات.');
+      showErrorSnackbar(context, 'الباسورد مينفعش يقل عن 8 خانات.');
       return;
     }
     if (newPassword != confirmPassword) {
-      showErrorSnackbar(context, 'كلمتا المرور غير متطابقتين.');
+      showErrorSnackbar(context, 'الباسورد وتأكيده مش متطابقين خالص.');
       return;
     }
 
@@ -1005,7 +1005,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      showErrorSnackbar(context, 'فشل تعيين كلمة المرور: $e');
+      showErrorSnackbar(context, 'معرفناش نغير الباسورد: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1041,7 +1041,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
             ),
             const SizedBox(height: 18),
             Text(
-              _step == 1 ? 'استعادة كلمة المرور' : 'تعيين كلمة المرور الجديدة',
+              _step == 1 ? 'استرجاع الباسورد' : 'اكتب الباسورد الجديد',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'Cairo',
@@ -1053,8 +1053,8 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
             const SizedBox(height: 6),
             Text(
               _step == 1
-                  ? 'أدخل بريدك الإلكتروني المسجل لإرسال رمز الاستعادة.'
-                  : 'أدخل رمز الاستعادة وكلمة المرور الجديدة لإتمام العملية.',
+                  ? 'اكتب إيميلك المسجل عشان نبعتلك كود الاسترجاع حالاً.'
+                  : 'اكتب كود الاسترجاع والباسورد الجديد عشان نكمل.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'Cairo',
@@ -1066,39 +1066,39 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
             if (_step == 1) ...[
               _buildModalInput(
                 controller: _emailCtrl,
-                hint: 'البريد الإلكتروني',
+                hint: 'الإيميل بتاعك',
                 icon: Icons.mail_outline_rounded,
                 isLtr: true,
               ),
               const SizedBox(height: 18),
               _buildModalButton(
-                title: 'إرسال رمز الاستعادة',
+                title: 'ابعت كود الاسترجاع',
                 onTap: _requestReset,
               ),
             ] else ...[
               _buildModalInput(
                 controller: _tokenCtrl,
-                hint: 'رمز الاستعادة (Token)',
+                hint: 'كود الاسترجاع اللي وصلك',
                 icon: Icons.key_outlined,
                 isLtr: true,
               ),
               const SizedBox(height: 12),
               _buildModalInput(
                 controller: _newPasswordCtrl,
-                hint: 'كلمة المرور الجديدة',
+                hint: 'الباسورد الجديد',
                 icon: Icons.lock_outline_rounded,
                 obscure: true,
               ),
               const SizedBox(height: 12),
               _buildModalInput(
                 controller: _confirmPasswordCtrl,
-                hint: 'تأكيد كلمة المرور الجديدة',
+                hint: 'أكّد الباسورد الجديد تاني',
                 icon: Icons.lock_outline_rounded,
                 obscure: true,
               ),
               const SizedBox(height: 18),
               _buildModalButton(
-                title: 'تأكيد كلمة المرور',
+                title: 'تأكيد الباسورد الجديد',
                 onTap: _confirmReset,
               ),
             ],

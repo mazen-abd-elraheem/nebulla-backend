@@ -83,7 +83,7 @@ async def create_personality(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Personality could not be created due to database constraint: {exc.orig}",
+            detail=f"معرفناش نعمل الشخصية بسبب مشكلة في البيانات: {exc.orig}",
         )
     return _p(p)
 
@@ -96,14 +96,14 @@ async def get_personality(
 ):
     p = await db.get(Personality, pid)
     if not p:
-        raise HTTPException(status_code=404, detail="Personality not found")
+        raise HTTPException(status_code=404, detail="الشخصية دي مش موجودة عندنا.")
 
     # If personality is private to a user, enforce ownership
     if p.user_id is not None:
         if not current_user or current_user.id != p.user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to access this personality.",
+                detail="معندكش صلاحية تفتح أو تشوف الشخصية دي.",
             )
 
     return _p(p)
@@ -118,18 +118,18 @@ async def update_personality(
 ):
     p = await db.get(Personality, pid)
     if not p:
-        raise HTTPException(status_code=404, detail="Personality not found")
+        raise HTTPException(status_code=404, detail="الشخصية دي مش موجودة عندنا.")
 
     if p.user_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot modify a global system default personality.",
+            detail="الشخصية دي من شخصيات السيستم الأساسية ومينفعش تعدلها.",
         )
 
     if p.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only modify your own personalities.",
+            detail="تقدر تعدل الشخصيات بتاعتك أنت بس.",
         )
 
     for k, v in body.model_dump(exclude_none=True).items():
@@ -140,7 +140,7 @@ async def update_personality(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Personality update violates database constraint: {exc.orig}",
+            detail=f"معرفناش نعدل الشخصية بسبب مشكلة في البيانات: {exc.orig}",
         )
     return _p(p)
 
@@ -153,18 +153,18 @@ async def delete_personality(
 ):
     p = await db.get(Personality, pid)
     if not p:
-        raise HTTPException(status_code=404, detail="Personality not found")
+        raise HTTPException(status_code=404, detail="الشخصية دي مش موجودة عندنا.")
 
     if p.user_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot delete a global system default personality.",
+            detail="مينفعش تمسح شخصية أساسية من شخصيات السيستم.",
         )
 
     if p.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only delete your own personalities.",
+            detail="تقدر تمسح الشخصيات اللي أنت عملتها بس.",
         )
 
     await db.delete(p)
@@ -178,12 +178,12 @@ async def activate_personality(
 ):
     target = await db.get(Personality, pid)
     if not target:
-        raise HTTPException(status_code=404, detail="Personality not found")
+        raise HTTPException(status_code=404, detail="الشخصية دي مش موجودة عندنا.")
 
     if target.user_id is not None and current_user and target.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot activate another user's private personality.",
+            detail="مينفعش تشغل شخصية خاصة بمستخدم تاني.",
         )
 
     # Deactivate all accessible personalities

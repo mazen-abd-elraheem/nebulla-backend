@@ -1,194 +1,212 @@
-# Nebula Backend — Architecture Overview
+# دليل المعمارية التقنية لسيرفر نيبولا (Nebula Architecture Overview)
 
-## System Topology (doc §4)
-
-```
-📱 Flutter Phone    ←── ws/phone ──→  ┌─────────────────────────┐
-🖥️ Flutter Desktop  ←── ws/desk  ──→  │     Nebula Backend      │
-🔌 ESP32 Firmware   ←── ws/esp   ──→  │  FastAPI on local PC    │
-                                      └─────────────────────────┘
-                                              │
-                          ┌───────────────────┼───────────────────┐
-                       AI Pipeline       Services           REST API
-                       STT→LLM→TTS      Vision             /auth
-                       XTTS v2          Motion Guard       /personalities
-                       RAG Memory       Signal Planner     /memories
-                                                           /voice-clone
-                                                           /diagnostics
-```
-
-## All 79 Python Files
-
-| Path | Purpose |
-|------|---------|
-| `app/main.py` | FastAPI entry point, lifespan, CORS, router registration |
-| **`app/auth/`** | **🔐 Authentication** |
-| `app/auth/jwt.py` | JWT helpers + FastAPI `get_current_user` dependency |
-| `app/auth/models.py` | APIKey ORM model |
-| `app/auth/router.py` | `POST /auth/token`, `GET /auth/me` |
-| **`app/core/`** | **⚙️ Core** |
-| `app/core/config.py` | All settings via `.env` (swappable providers) |
-| `app/core/logger.py` | Rotating file + console logger |
-| `app/core/security.py` | Pairing code verify + per-device rate limiter |
-| **`app/db/`** | **🗃️ Database** |
-| `app/db/session.py` | Async SQLAlchemy engine + `get_db()` dependency |
-| **`app/models/`** | **📋 ORM Models** |
-| `app/models/device.py` | Phone / Desktop / ESP32 device records |
-| `app/models/personality.py` | Robot personality profiles |
-| `app/models/memory.py` | Long-term memories (RAG store with embeddings) |
-| `app/models/conversation.py` | Sessions + messages with latency fields |
-| `app/models/signal.py` | Named gesture sequences → joint commands |
-| `app/models/calibration.py` | Per-servo min/max/home angles |
-| `app/models/tracking.py` | Telemetry time-series |
-| `app/models/log.py` | System event log |
-| **`app/websocket/`** | **🔌 WebSocket Hub** |
-| `app/websocket/hub.py` | Routes: `/ws/phone` `/ws/desk` `/ws/esp` |
-| `app/websocket/manager.py` | `ConnectionManager` singleton — all fan-out logic |
-| `app/websocket/handlers.py` | Per-channel message processing loops |
-| `app/websocket/messages.py` | Typed Pydantic schemas for all WS messages |
-| **`app/services/ai/`** | **🤖 AI Pipeline** |
-| `app/services/ai/pipeline.py` | STT→LLM→TTS with first-sentence streaming |
-| **`app/services/vision/`** | **👁️ Vision** |
-| `app/services/vision/face_service.py` | UniFace integration, EMA gaze smoothing |
-| **`app/services/motion/`** | **🦾 Motion** |
-| `app/services/motion/motion_guard.py` | Servo angle clamping + speed validation |
-| `app/services/motion/signal_planner.py` | `[tag]` → joint commands resolver |
-| **`app/services/memory/`** | **🧠 Memory** |
-| `app/services/memory/rag_service.py` | Cosine similarity retrieval + memory add |
-| **`app/services/voice_clone/`** | **🎙️ Voice Clone** |
-| `app/services/voice_clone/voice_clone_service.py` | WAV upload + XTTS synthesis management |
-| **`app/providers/stt/`** | **STT Providers** |
-| `app/providers/stt/factory.py` | `get_stt_provider(name)` factory |
-| `app/providers/stt/qwencleo.py` | QwenCleo-ASR — Egyptian Arabic primary |
-| `app/providers/stt/whisper.py` | Whisper large-v3 STT provider |
-| `app/providers/stt/nemotron.py` | Nemotron stub |
-| **`app/providers/tts/`** | **TTS Providers** |
-| `app/providers/tts/factory.py` | `get_tts_provider(name)` factory |
-| `app/providers/tts/voicetut.py` | VoiceTut (OmniVoice fine-tune on Egyptian podcasts) |
-| `app/providers/tts/ar_eg_free.py` | Edge-TTS free Egyptian neural voice (no GPU needed) |
-| `app/providers/tts/xtts/provider.py` | ⭐ **XTTS v2 zero-shot voice clone** |
-| **`app/providers/llm/`** | **LLM Providers** |
-| `app/providers/llm/factory.py` | `get_llm_provider(name)` factory |
-| `app/providers/llm/local_ollama.py` | Local Ollama streaming with Egyptian prompt |
-| `app/providers/llm/openai_provider.py` | OpenAI + Anthropic |
-| **`app/api/v1/endpoints/`** | **REST Endpoints** |
-| `endpoints/devices.py` | `GET /status`, list, delete devices |
-| `endpoints/personalities.py` | Full CRUD + `POST /{id}/activate` |
-| `endpoints/memories.py` | CRUD + `GET /search?q=...` semantic search |
-| `endpoints/conversations.py` | Read-only conversation + message history |
-| `endpoints/signals.py` | CRUD + `POST /{name}/fire` immediate dispatch |
-| `endpoints/calibration.py` | `PUT /{servo_id}`, `POST /reset` home all servos |
-| `endpoints/voice_clone.py` | `POST /upload`, `POST /synthesize`, `POST /test` |
-| `endpoints/settings.py` | `GET /`, `PATCH /providers` hot-swap |
-| `endpoints/diagnostics.py` | Servo/motor/LED test + emergency stop |
-
-## REST API Endpoint Groups
-
-| Prefix | Key Endpoints |
-|--------|--------------|
-| `POST /api/v1/auth/token` | Exchange pairing code → JWT |
-| `GET /api/v1/devices/status` | Live phone/desk/ESP32 connection state |
-| `GET/POST/PATCH/DELETE /api/v1/personalities` | Robot character CRUD + activate |
-| `GET/POST/DELETE /api/v1/memories` | Memory CRUD + `GET /search?q=` |
-| `GET /api/v1/conversations/{id}/messages` | Live conversation history |
-| `POST /api/v1/signals/{name}/fire` | Trigger a named gesture now |
-| `PUT /api/v1/calibration/{servo_id}` | Set servo min/max/home |
-| `POST /api/v1/voice-clone/upload/{id}` | Upload WAV reference sample |
-| `POST /api/v1/voice-clone/synthesize` | Synthesise text in cloned voice |
-| `PATCH /api/v1/settings/providers` | Hot-swap STT/TTS/LLM at runtime |
-| `POST /api/v1/diagnostics/emergency-stop` | 🚨 Stop everything immediately |
-
-## Auth Flow
+## طوبولوجيا وتوصيل السيستم (System Topology)
 
 ```
-Device              Backend
-  │                    │
-  ├─ POST /auth/token ►│  body: { pairing_code, device_name }
-  │◄── { access_token }┤
-  │                    │
-  ├─ GET /api/v1/... ─►│  header: X-API-Key or Bearer <token>
-  │◄──── response ─────┤
-  │                    │
-  ├─ WS /ws/phone?pairing_code=... ►│
-  │◄──────── WebSocket open ────────┤
+📱 أبلكيشن الموبايل (الوش)   ←── ws/phone ──→  ┌─────────────────────────┐
+🖥️ برنامج الكمبيوتر (التحكم)  ←── ws/desk  ──→  │      سيرفر نيبولا       │
+🔌 شريحة الروبوت (ESP32)     ←── ws/esp   ──→  │   FastAPI على الكمبيوتر  │
+                                               └─────────────────────────┘
+                                                           │
+                           ┌───────────────────────────────┼───────────────────────────────┐
+                     منظومة الذكاء الاصطناعي             الخدمات المركزية             نقاط الـ REST API
+                     تحويل صوت ← عقل ← نطق صوت          رؤية الوشوش وتتبع العين         المصادقة وتوكن الدخول
+                     استنساخ النبرة XTTS v2             حماية المواتير Motion Guard    الشخصيات والبروفايلات
+                     بنك معلومات الـ RAG                مخطط الحركات والإيماءات         الذكريات والبحث الدلالي
+                                                                                        استنساخ الصوت وفحص الهاردوير
 ```
 
-## Voice Clone Pipeline (XTTS v2)
+---
+
+## جدول كافة ملفات البايثون في المشروع (79 ملفاً)
+
+| مسار الملف | وظيفة الملف بالمصري الدقيق |
+|---|---|
+| `app/main.py` | المدخل الأساسي للباك إند، إعدادات CORS، دورة حياة التشغيل، وتسجيل كل المسارات |
+| **`app/auth/`** | **🔐 الأمان وتسجيل الدخول** |
+| `app/auth/jwt.py` | توليد وفحص توكن الـ JWT وفحص الصلاحيات واستخراج المستخدم الحالي |
+| `app/auth/models.py` | جدول مفاتيح الـ API في قاعدة البيانات |
+| `app/auth/router.py` | نقاط تسجيل الحساب الجديد، تسجيل الدخول بالباسورد أو بصمة الوش، واسترجاع الحساب |
+| `app/auth/schemas.py` | فحص صحة بيانات الدخول والتسجيل وكلمات السر بالعامية المصرية |
+| **`app/core/`** | **⚙️ النواة والإعدادات الأساسية** |
+| `app/core/config.py` | قراءة كل المتغيرات والإعدادات من ملف الـ `.env` |
+| `app/core/logger.py` | تسجيل سجلات النظام (Logs) على الشاشة وحفظها دورياً في ملفات |
+| `app/core/security.py` | تشفير كلمات المرور باستخدام bcrypt ومطابقة كود التوأمة ومحدد سرعة الأوامر |
+| **`app/db/`** | **🗃️ قاعدة البيانات** |
+| `app/db/session.py` | إدارة جلسات الاتصال غير المتزامن بـ SQLite والتهجير التلقائي للجداول والبيانات الأولية |
+| **`app/models/`** | **📋 جداول قاعدة البيانات (ORM Models)** |
+| `app/models/user.py` | جدول حسابات المستخدمين وبيانات الباسورد المشفر وبصمة الوش |
+| `app/models/device.py` | تسجيل الأجهزة المتصلة (الموبايل، الكمبيوتر، ESP32) وحالة الاتصال |
+| `app/models/personality.py` | بروفايلات وشخصيات الروبوت واللهجة ونبرة الصوت النشطة |
+| `app/models/memory.py` | ذكريات الروبوت طويلة المدى وبنك معلومات الـ RAG بتضمينات المتجهات |
+| `app/models/conversation.py` | جلسات الدردشة وسجل الرسايل المتبادلة وحساب زمن استجابة الموديل |
+| `app/models/signal.py` | حركات وإيماءات الروبوت المبرمجة بالزوايا لكل مفصل |
+| `app/models/calibration.py` | حدود زوايا مواتير السيرفو (أقل وأقصى زاوية وزاوية السكون) |
+| `app/models/tracking.py` | بيانات التيليمتري اللحظية من حساسات الروبوت |
+| `app/models/log.py` | سجل الأحداث وتنبيهات الأمان والتشغيل |
+| `app/models/face_profile.py` | بصمات الوشوش المسجلة والمتجهات الحسابية للتعرف البصري |
+| **`app/websocket/`** | **🔌 شبكة قنوات الـ WebSocket** |
+| `app/websocket/hub.py` | مسارات القنوات: `/ws/phone` للموبايل، `/ws/desk` للكمبيوتر، `/ws/esp` للروبوت |
+| `app/websocket/manager.py` | الموزع المركزي ConnectionManager لإدارة الاتصالات وتوزيع الرسايل |
+| `app/websocket/handlers.py` | دوال استقبال ومعالجة رسايل كل جهاز وتوجيهها للخدمة المناسبة |
+| `app/websocket/messages.py` | كلاسات الـ Pydantic لتوثيق وتدقيق هياكل رسايل بروتوكول الـ JSON |
+| **`app/services/ai/`** | **🤖 خط أنابيب الذكاء الاصطناعي** |
+| `app/services/ai/pipeline.py` | خط المعالجة الكامل: تفريغ الصوت ← استنتاج الموديل ← نطق الرد الصوتي اللحظي |
+| `app/services/ai/context_builder.py` | بناء توجيه الموديل بالمصري والتقييد الصارم بالـ RAG لمنع الهلوسة |
+| **`app/services/vision/`** | **👁️ الرؤية الحاسوبية والوجوه** |
+| `app/services/vision/face_service.py` | اكتشاف ومطابقة الوجوه وتتبع حركة العين عبر شبكة UniFace وتنعيم النظرات |
+| **`app/services/motion/`** | **🦾 حركة المواتير والحماية** |
+| `app/services/motion/motion_guard.py` | الحارس البرمجي لفحص حدود الزوايا ومنع السرعات العالية المفاجئة |
+| `app/services/motion/signal_planner.py` | تحويل وسوم الحركة في الشات `[tag]` لزوايا وسرعات حقيقية للمواتير |
+| **`app/services/memory/`** | **🧠 الذاكرة واسترجاع المعلومات (RAG)** |
+| `app/services/memory/rag_service.py` | البحث الدلالي في الذكريات بتشابه الجيب تمام (Cosine Similarity) وحفظ الذكريات |
+| **`app/services/voice_clone/`** | **🎙️ استنساخ الصوت** |
+| `app/services/voice_clone/voice_clone_service.py` | إدارة ملفات الصوت المرجعية وتوليد النطق بالصوت المستنسخ |
+| **`app/providers/stt/`** | **مزودات تحويل الصوت لنص (STT)** |
+| `app/providers/stt/base.py` | الكلاس المرجعي المجرد (ABC) لمزودات الـ STT |
+| `app/providers/stt/factory.py` | دالة اختيار مزود الـ STT النشط من الإعدادات |
+| `app/providers/stt/qwencleo.py` | مزود QwenCleo المتخصص في اللهجة المصرية العامية |
+| `app/providers/stt/whisper.py` | مزود Whisper large-v3 للتفريغ الصوتي متعدد اللغات |
+| `app/providers/stt/nemotron.py` | مزود تجريبي احتياطي |
+| **`app/providers/tts/`** | **مزودات نطق الكلام (TTS)** |
+| `app/providers/tts/base.py` | الكلاس المرجعي المجرد لمزودات الـ TTS |
+| `app/providers/tts/factory.py` | دالة اختيار مزود الـ TTS النشط من الإعدادات |
+| `app/providers/tts/voicetut.py` | مزود VoiceTut بنبرات مصرية واقعية مدربة على البودكاستات |
+| `app/providers/tts/ar_eg_free.py` | الصوت المصري المجاني المعتمد على Edge-TTS بدون كارت شاشة |
+| `app/providers/tts/xtts/provider.py` | ⭐ مزود XTTS v2 لاستنساخ نبرة الصوت المرجعية فورياً (Zero-Shot) |
+| **`app/providers/llm/`** | **نماذج وعقول الذكاء الاصطناعي (LLM)** |
+| `app/providers/llm/factory.py` | دالة اختيار مزود الـ LLM |
+| `app/providers/llm/local_ollama.py` | تشغيل الموديلات المحلية على Ollama بالتدفق اللحظي مع التوجيه المصري |
+| `app/providers/llm/openai_provider.py` | التكامل مع موديلات OpenAI و Anthropic |
+| **`app/api/v1/endpoints/`** | **نقاط نهاية الـ REST API** |
+| `endpoints/auth.py` | التسجيل وتسجيل الدخول وبصمة الوش |
+| `endpoints/devices.py` | عرض حالة الأجهزة المتصلة وحذف الأجهزة القديمة |
+| `endpoints/personalities.py` | إضافة وتعديل وتفعيل شخصيات الروبوت المستقلة للمستخدمين |
+| `endpoints/memories.py` | إدارة ذكريات الـ RAG والبحث الدلالي الفوري |
+| `endpoints/conversations.py` | الشات المباشر مع الروبوت وسجل المحادثات وتدفق الـ SSE |
+| `endpoints/signals.py` | حفظ وتشغيل حركات الروبوت الفورية |
+| `endpoints/calibration.py` | تعديل معايرة الزوايا وإعادة الكل لوضع السكون |
+| `endpoints/voice_clone.py` | رفع الصوت واستنساخه وتوليد مقاطع WAV بالنبرة الخاصة |
+| `endpoints/settings.py` | استعلام وتغيير مزودات الذكاء الاصطناعي أثناء التشغيل |
+| `endpoints/diagnostics.py` | فحص السيرفو، المواتير، الليدات، وزر إيقاف الطوارئ الفوري |
+
+---
+
+## مجموعات نقاط الـ REST API الرئيسية
+
+| المسار | الوظيفة بالمصري |
+|---|---|
+| `POST /api/v1/auth/register` | تسجيل حساب جديد بالاسم والإيميل والباسورد |
+| `POST /api/v1/auth/login` | تسجيل الدخول واستلام توكن الـ JWT مع دعم "افتكرني" |
+| `POST /api/v1/auth/login/biometric` | تسجيل الدخول الفوري ببصمة الوش عبر الكاميرا |
+| `GET /api/v1/devices/status` | حالة الاتصال المباشرة للموبايل والكمبيوتر وشريحة ESP32 |
+| `GET/POST/PATCH/DELETE /api/v1/personalities` | التحكم الكامل في شخصيات وبروفايلات الروبوت وتفعيلها |
+| `GET/POST/DELETE /api/v1/memories` | التحكم في الذكريات وإضافتها والبحث الدلالي بالـ RAG |
+| `POST /api/v1/conversations/chat` | شات فوري مع الروبوت مدعوم بالـ RAG والرؤية والحركات |
+| `POST /api/v1/signals/{name}/fire` | إطلاق حركة أو إيماءة مسجلة فوراً للروبوت |
+| `PUT /api/v1/calibration/{servo_id}` | تعديل حدود زوايا موتور سيرفو محدد |
+| `POST /api/v1/calibration/reset` | إرجاع كل مواتير السيرفو الـ 12 لوضع السكون (90 درجة) |
+| `POST /api/v1/voice-clone/upload` | رفع عينة صوت واستنساخ نبرتها على طول |
+| `POST /api/v1/voice-clone/synthesize` | نطق أي كلام بصوتك المستنسخ |
+| `PATCH /api/v1/settings/providers` | تبديل مزودات الـ STT أو الـ LLM أو الـ TTS على الهوا |
+| `POST /api/v1/diagnostics/emergency-stop` | 🚨 وقف كل الحركات فوراً في حالة الطوارئ |
+
+---
+
+## دورة حياة المصادقة (Auth Flow)
 
 ```
-1. Upload WAV    →  POST /voice-clone/upload/{personality_id}
-                    Validates: WAV format, min 3s, max 120s
-2. Stored at     →  data/voice_samples/personality_{id}.wav
-3. AI response   →  pipeline.py calls VoiceCloneService.synthesize(text, pid)
-4. XTTS v2       →  provider.py clones voice from reference WAV
-5. WAV bytes     →  streamed back to phone over ws/phone binary channel
+الجهاز (موبايل/كمبيوتر)                    السيرفر المركزي (الباك إند)
+      │                                                │
+      ├───── POST /api/v1/auth/login ─────────────────►│  بيانات: الإيميل أو اليوزرنيم + الباسورد
+      │◄──── 200 OK + access_token (JWT) ──────────────┤  استلام التوكن وبيانات الحساب
+      │                                                │
+      ├───── GET /api/v1/personalities ───────────────►│  الهيدر: Authorization: Bearer <token>
+      │◄──── 200 OK (بيانات الشخصيات المسموح بيها) ────┤
+      │                                                │
+      ├───── WS /ws/phone?pairing_code=... ───────────►│  فحص كود التوأمة السري
+      │◄──── تم فتح قناة الـ WebSocket بنجاح ──────────┤
 ```
 
-## WebSocket JSON Protocol (doc §6)
+---
+
+## خط أنابيب استنساخ الصوت (Voice Clone Pipeline)
+
+```
+1. رفع الصوت      ←  POST /api/v1/voice-clone/upload
+                     فحص الصيغة، والتأكد إن مدة العينة من 3 ثوانٍ لـ دقيقتين بصوت واضح.
+2. مكان الحفظ     ←  يتحفظ الملف في: data/voice_samples/personality_{id}.wav
+3. استدعاء النطق  ←  الباك إند يطلب من VoiceCloneService.synthesize(text, pid) نطق الكلام.
+4. التوليد الفوري ←  موديل XTTS v2 يستخرج البصمة الصوتية من ملف الـ WAV وينطق الكلام بالمصري.
+5. البث للموبايل  ←  مقطع الصوت (WAV) يتبعت للموبايل فوراً عشان ينطقه عبر سماعات الروبوت.
+```
+
+---
+
+## بروتوكول الـ WebSocket JSON للتواصل بين الأجهزة
 
 ```json
-// Phone → Backend  (binary: raw PCM audio)
-// Phone → Backend  (binary: JPEG camera frame 320×240)
+// من الموبايل للباك إند:
+// صوت المايك الخام بيبعت باينري مباشر (PCM Audio)
+// صور الكاميرا بتبعت باينري مباشر (JPEG Frames بدقة 320×240)
 
-// Backend → Phone
+// من الباك إند للموبايل (شاشة وش الروبوت):
 { "t": "eyes", "mood": "happy" }
 { "t": "gaze", "x": 0.2, "y": -0.1 }
 { "t": "text_stream", "token": "أهلاً", "is_final": false }
-// + binary WAV audio chunks
+// + مقاطع الصوت المولد باينري للتشغيل الفوري بالسماعات
 
-// Desktop → Backend
+// من كمبيوتر أوضة التحكم للباك إند:
 { "t": "cmd", "gesture": "like" }
 { "t": "cmd", "joint_id": 3, "angle": 90, "speed_ms": 300 }
 
-// Backend → ESP32
+// من الباك إند لشريحة الروبوت (ESP32):
 { "t": "joint", "id": 3, "deg": 90, "ms": 300 }
 { "t": "motor", "left": 128, "right": 128 }
 { "t": "stop" }
 { "t": "led", "state": "blink_fast" }
 
-// ESP32 → Backend
+// من الـ ESP32 للباك إند:
 { "t": "tele", "bat": 7.6, "dist": 85 }
-{ "t": "error", "code": "OVERCURRENT", "message": "..." }
+{ "t": "error", "code": "OVERCURRENT", "message": "حمل زايد على موتور السيرفو" }
 ```
 
-## Safety Layers (doc §4 + §10)
+---
 
-| Layer | Where | What it does |
-|-------|-------|-------------|
-| Pairing Code | WS channels + REST | Rejects unknown devices before accepting connection |
-| JWT/API Key | All REST endpoints | Only authenticated clients can call the API |
-| Rate Limiter | `core/security.py` | Max 20 commands/sec per device |
-| Motion Guard | `services/motion/motion_guard.py` | Clamps angles to calibrated min/max, rejects speed < 50ms |
-| ESP32 Watchdog | Firmware (not in this repo) | Robot stops safely on WiFi disconnect |
-| Emergency Stop | `diagnostics.py` | `POST /emergency-stop` broadcasts stop to all channels |
+## طبقات الحماية والأمان (Safety Layers)
 
-## Provider Swap — No Code Changes Required
+| طبقة الأمان | مكان التنفيذ | وظيفتها بالمصري |
+|---|---|---|
+| كود التوأمة السري | قنوات الـ WS و الـ API | بيرفض أي جهاز غريب يحاول يشبك على السيستم |
+| توكن المصادقة JWT | كل نقاط الـ REST API | بيتأكد إن المستخدم مسجل دخوله وصاحب صلاحية |
+| محدد السرعة | `core/security.py` | بيمنع زيادة الأوامر عن 20 أمر/ثانية عشان الهاردوير ميهنجش |
+| حارس الحركة Motion Guard | `motion_guard.py` | بيقص زوايا المواتير عند الحدود الآمنة وبيرفض الأوامر السريعة جداً |
+| مراقب الاتصال Watchdog | فيرموير شريحة ESP32 | لو الواي فاي فصل، الروبوت بيقف مكانه فوراً لحماية المحيطين |
+| إيقاف الطوارئ الفوري | `diagnostics.py` | بيبعت أمر STOP فوري لكل القنوات بدون أي تأخير |
 
-```env
-# .env — change and restart (or hot-swap via PATCH /settings/providers)
-STT_PROVIDER=qwencleo    # qwencleo | whisper | nemotron
-TTS_PROVIDER=xtts        # xtts | voicetut | ar_eg_free
-LLM_PROVIDER=local       # local | openai | anthropic
-```
+---
 
-## Latency Budget (doc §6.3, target 1.5–3 s total)
+## ميزانية زمن الاستجابة اللحظية (Latency Budget: من 1.5 إلى 3 ثوانٍ)
 
-| Stage | Target | Optimisation |
-|-------|--------|-------------|
-| VAD silence detect | 0.25–0.30 s | WebRTC VAD in pipeline |
-| STT (QwenCleo) | 0.20–0.60 s | Streaming on NVIDIA GPU |
-| LLM first token | 0.30–0.80 s | Ollama streaming, reply ≤ 2 sentences |
-| TTS first sentence | 0.50–1.70 s | XTTS, first sentence ≤ 8 words |
-| Network (local WiFi) | ~0.10 s | Router on same LAN |
-| **Total** | **1.5–3 s** | Head-nod on VAD end hides latency |
+| المرحلة | الزمن المستهدف | طريقة التسريع والتحسين بالمصري |
+|---|---|---|
+| اكتشاف سكوت المتحدث (VAD) | 0.25 – 0.30 ثانية | استخدام WebRTC VAD لقص الصمت فوراً |
+| تحويل الصوت لنص (STT) | 0.20 – 0.60 ثانية | موديل QwenCleo شغال بتدفق لحظي على كارت الشاشة |
+| أول توكن من الموديل (LLM) | 0.30 – 0.80 ثانية | تدفق لحظي من أولاما والرد في جملة أو جملتين |
+| أول جملة مسموعة من الـ TTS | 0.50 – 1.70 ثانية | موديل XTTS بينطق أول جملة في الرد على طول قبل ما يكمل الباقي |
+| شبكة الواي فاي المحلية | حوالي 0.10 ثانية | راوتر محلي سريع مخصص للروبوت والأجهزة |
+| **إجمالي الوقت** | **1.5 – 3 ثوانٍ** | الروبوت بيهز راسه إيماءة استماع أول ما السكوت يبدأ عشان يغطي وقت التفكير |
 
-## Quick Start
+---
+
+## دليل التشغيل السريع للمطورين
 
 ```bash
 cd nebulla-backend
-python -m venv .venv && .venv\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate          # على ويندوز
 pip install -r requirements.txt
-cp .env.example .env          # edit PAIRING_SECRET at minimum
+cp .env.example .env            # اكتب الـ PAIRING_SECRET في ملف .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-# → open http://localhost:8000/docs
+# افتح المتصفح على: http://localhost:8000/docs
 ```

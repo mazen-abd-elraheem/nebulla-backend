@@ -60,7 +60,7 @@ async def upload_voice_sample_default(
     pid = personality_id or 1
     path = await svc.upload_sample(pid, file, transcript=transcript)
     return {
-        "message": "Voice recording uploaded and cloned successfully!",
+        "message": "تم رفع تسجيل الصوت واستنساخه بنجاح!",
         "path": path,
         "personality_id": pid,
     }
@@ -93,7 +93,7 @@ async def upload_voice_sample(
         personality.voice_sample_path = path
         await db.commit()
 
-    return {"message": "Sample saved and cloned successfully", "path": path, "personality_id": personality_id}
+    return {"message": "تم حفظ عينة الصوت واستنساخها بنجاح", "path": path, "personality_id": personality_id}
 
 
 # ── List samples ──────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ async def delete_sample(
 ):
     deleted = await svc.delete_sample(personality_id)
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sample not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="عينة الصوت دي مش موجودة.")
 
     res = await db.execute(select(Personality).where(Personality.id == personality_id))
     personality = res.scalar_one_or_none()
@@ -147,7 +147,7 @@ async def delete_sample(
         personality.voice_sample_path = None
         await db.commit()
 
-    return {"message": "Sample deleted", "personality_id": personality_id}
+    return {"message": "مسحنا عينة الصوت خلاص", "personality_id": personality_id}
 
 
 # ── Synthesise ────────────────────────────────────────────────────────────────
@@ -190,12 +190,12 @@ async def synthesize(
     if not cleaned_text:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Text cannot be empty.",
+            detail="الكلام اللي عايز تنطقه مينفعش يكون فاضي.",
         )
     if all(ch in "?!.,;: \t\n\r" for ch in cleaned_text):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Received text has no pronounceable characters.",
+            detail="النص ده مفهوش أي حروف قابلة للنطق.",
         )
 
     # Sanitize target PID
@@ -241,7 +241,7 @@ async def synthesize(
     if not wav_bytes or len(wav_bytes) <= 1000:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Voice cloning failed to produce valid audio output.",
+            detail="معرفناش نستنسخ الصوت ونطلع مقطع صوت سليم.",
         )
 
     # Cache latest audio to disk and memory for immediate browser streaming
@@ -411,7 +411,7 @@ async def train_lora_endpoint(
     if not target_audio or not os.path.exists(target_audio):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No reference audio found for LoRA training.",
+            detail="ملقناش أي ملف صوت مرجعي عشان تدريب الـ LoRA.",
         )
 
     target_transcript = body.transcript
@@ -433,7 +433,7 @@ async def train_lora_endpoint(
     if not target_transcript:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Transcript is required for LoRA alignment training.",
+            detail="لازم تبعت النص المكتوب عشان تدريب ومحاذاة الـ LoRA.",
         )
 
     # If dedicated microservice is running, delegate character registration & acoustic prompt adaptation

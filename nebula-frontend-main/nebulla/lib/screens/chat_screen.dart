@@ -55,7 +55,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ));
       });
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'خطأ في الإرسال: $e');
+      if (mounted) showErrorSnackbar(context, 'حصلت مشكلة في الإرسال: $e');
     } finally {
       if (mounted) setState(() => _sending = false);
       _scrollToBottom();
@@ -122,13 +122,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('محادثة نيبولا',
+                          Text('شات نيبولا',
                               style: TextStyle(
                                   fontFamily: 'Cairo',
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.textPrimary,
                                   fontSize: 15)),
-                          Text('مدعوم بالذكاء الاصطناعي',
+                          Text('شغال بالذكاء الاصطناعي والتوأم الرقمي',
                               style: TextStyle(
                                   fontFamily: 'Cairo',
                                   color: AppColors.teal,
@@ -145,7 +145,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               _messages.clear();
                               _sessionId = null;
                             }),
-                        tooltip: 'محادثة جديدة',
+                        tooltip: 'افتح شات جديد',
                       ),
                   ],
                 ),
@@ -201,13 +201,13 @@ class _EmptyChat extends StatelessWidget {
                 color: AppColors.teal, size: 36),
           ),
           const SizedBox(height: 16),
-          const Text('ابدأ محادثتك مع نيبولا',
+          const Text('ابدأ دردشتك دلوقتي مع نيبولا',
               style: TextStyle(
                   fontFamily: 'Cairo',
                   color: AppColors.textSecondary,
                   fontSize: 15)),
           const SizedBox(height: 8),
-          const Text('اكتب رسالتك في الأسفل',
+          const Text('اكتب اللي نفسك فيه تحت ونيبولا هيرد عليك',
               style: TextStyle(
                   fontFamily: 'Cairo',
                   color: AppColors.textMuted,
@@ -458,7 +458,7 @@ class _InputBar extends StatelessWidget {
               maxLines: 3,
               minLines: 1,
               decoration: InputDecoration(
-                hintText: 'اكتب رسالتك...',
+                hintText: 'اكتب اللي في بالك هنا...',
                 hintStyle: const TextStyle(
                     color: AppColors.textMuted, fontFamily: 'Cairo'),
                 filled: true,

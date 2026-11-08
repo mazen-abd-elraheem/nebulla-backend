@@ -33,13 +33,36 @@ SENSITIVE = "sensitive"   # payments / memory wipe / add user / change permissio
 
 # App vocabulary: folded spoken name (without «ال») → phone-side app id
 _APP_NAMES: Dict[str, str] = {
+    # Maps & Navigation
     "خرايط": "maps", "خريطه": "maps", "خرائط": "maps", "ماب": "maps", "ماپ": "maps",
-    "جوجل ماب": "maps", "جوجل مابس": "maps", "مابس": "maps",
-    "واتساب": "whatsapp", "واتس اب": "whatsapp", "واتس": "whatsapp",
-    "يوتيوب": "youtube",
-    "سبوتيفاي": "spotify",
-    "كاميرا": "camera",
-    "تيليجرام": "telegram", "تليجرام": "telegram",
+    "جوجل ماب": "maps", "جوجل مابس": "maps", "مابس": "maps", "الماب": "maps",
+
+    # Communication & Social Media
+    "واتساب": "whatsapp", "واتس اب": "whatsapp", "واتس": "whatsapp", "الواتس": "whatsapp", "الواتساب": "whatsapp",
+    "تيليجرام": "telegram", "تليجرام": "telegram", "التليجرام": "telegram", "التلجرام": "telegram",
+    "فيسبوك": "facebook", "فيس بوك": "facebook", "فيس": "facebook", "الفيس": "facebook", "الفيسبوك": "facebook",
+    "انستجرام": "instagram", "انستغرام": "instagram", "انستا": "instagram", "الانستا": "instagram", "الانستجرام": "instagram",
+    "تيك توك": "tiktok", "تيكتوك": "tiktok", "التيك توك": "tiktok", "التيكتوك": "tiktok",
+    "تويتر": "twitter", "التويتر": "twitter", "منصة اكس": "twitter", "منصه اكس": "twitter", "اكس": "twitter",
+
+    # Media & Entertainment
+    "يوتيوب": "youtube", "اليوتيوب": "youtube",
+    "سبوتيفاي": "spotify", "السبوتيفاي": "spotify",
+    "انغامي": "anghami", "أنغامي": "anghami", "الانغامي": "anghami",
+
+    # System & Camera & Photos
+    "كاميرا": "camera", "الكاميرا": "camera", "كاميره": "camera", "الكاميره": "camera",
+    "صور": "gallery", "الصور": "gallery", "استوديو": "gallery", "الاستوديو": "gallery", "معرض": "gallery", "المعرض": "gallery", "معرض الصور": "gallery", "البوم": "gallery", "البوم الصور": "gallery",
+
+    # Utilities & Tools
+    "ساعه": "clock", "الساعه": "clock", "ساعة": "clock", "الساعة": "clock", "منبه": "clock", "المنبه": "clock", "مؤقت": "clock", "المؤقت": "clock",
+    "حاسبه": "calculator", "الحاسبه": "calculator", "حاسبة": "calculator", "الحاسبة": "calculator", "اله حاسبه": "calculator", "الاله الحاسبه": "calculator", "الالة الحاسبة": "calculator",
+    "تقويم": "calendar", "التقويم": "calendar", "نتيجه": "calendar", "النتيجه": "calendar", "نتيجة": "calendar", "النتيجة": "calendar", "مواعيد": "calendar", "المواعيد": "calendar",
+    "متصفح": "browser", "المتصفح": "browser", "كروم": "browser", "جوجل كروم": "browser", "جوجل": "browser", "النت": "browser",
+    "جيميل": "email", "الجيميل": "email", "ايميل": "email", "الايميل": "email", "بريد": "email", "البريد": "email", "البريد الالكتروني": "email", "بريد الكتروني": "email",
+    "طقس": "weather", "الطقس": "weather", "جو": "weather", "الجو": "weather", "حاله الجو": "weather", "درجه الحراره": "weather",
+    "اعدادات": "settings", "الاعدادات": "settings", "إعدادات": "settings", "الإعدادات": "settings", "ضبط": "settings", "الضبط": "settings",
+    "ملفات": "files", "الملفات": "files", "مدير الملفات": "files",
 }
 
 # Media requests → generic audio app with a hint (Level 0 per §14.2)
@@ -77,7 +100,12 @@ _CALL = re.compile(r"^(?:كلم|كلمي|كلملي|اتصل|رن\s+علي)\s+(?
 _MSG = re.compile(
     r"^(?:ابعت(?:له|لها|لو)?|ارسل|بعت)\s+(?:رساله\s+)?(?P<rest>.+)$"
 )
-_OPEN_APP = re.compile(r"^(?:افتح|فتح|شغل|ورجيني)\s+(?P<app>.+?)(?:\s+و?(?:وديني|وصلني|خدني)\s+(?P<dest>.+))?$")
+_OPEN_APP = re.compile(
+    r"^(?:افتح|فتح|شغل|وريني|ورجيني)\s+(?P<app>.+?)(?:\s+(?:و?(?:وديني|وصلني|خدني|علي|على|وشغل|شغل|وابحث\s+عن|ابحث\s+عن|دور\s+على|عن))\s+(?P<dest>.+))?$"
+)
+_SEARCH_IN_APP = re.compile(
+    r"^(?:ابحث|دور|سرش)\s+(?:في|علي|على)\s+(?P<app>.+?)\s+(?:عن|علي|على)\s+(?P<dest>.+)$"
+)
 _NAVIGATE = re.compile(r"^(?:وديني|وصلني|خدني|طريق)\s+(?:ل|الي|علي)?\s*(?P<dest>.+)$")
 
 
@@ -92,9 +120,13 @@ class Intent:
 
 def _app_id(spoken_norm: str) -> Optional[str]:
     name = spoken_norm.strip()
+    if name in _APP_NAMES:
+        return _APP_NAMES[name]
     if name.startswith("ال") and len(name) > 3:
-        name = name[2:]
-    return _APP_NAMES.get(name)
+        stripped = name[2:]
+        if stripped in _APP_NAMES:
+            return _APP_NAMES[stripped]
+    return None
 
 
 class ActionPlanner:
@@ -156,6 +188,16 @@ class ActionPlanner:
                 # Unknown app requested → let the Guard refuse explicitly
                 return Intent(APP_OPEN, params={"app": None, "requested": sanitize_free_text(spoken, 32)})
             return None  # e.g. «شغل النور» → not a phone action
+
+        sm = _SEARCH_IN_APP.match(norm)
+        if sm:
+            spoken = sm.group("app").strip()
+            dest = sm.group("dest")
+            app_id = _app_id(spoken)
+            if app_id:
+                ds = sm.start("dest")
+                q = sanitize_destination(light[ds:])
+                return Intent(APP_OPEN, params={"app": app_id, "query": q or None})
 
         nm = _NAVIGATE.match(norm)
         if nm:

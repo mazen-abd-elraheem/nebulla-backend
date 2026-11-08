@@ -260,3 +260,133 @@ class AppSettings {
         if (llmBaseUrl != null) 'llm_base_url': llmBaseUrl,
       };
 }
+
+class ContactModel {
+  final int id;
+  final int? userId;
+  final String name;
+  final String phoneNumber;
+  final String aliases;
+  final String slug;
+  final String? relationship;
+  final bool isAllowlisted;
+  final bool requiresConfirmation;
+  final int requiredLevel;
+  final bool notifyOnMissed;
+  final String? createdAt;
+  final String? updatedAt;
+
+  ContactModel({
+    required this.id,
+    this.userId,
+    required this.name,
+    required this.phoneNumber,
+    this.aliases = '',
+    this.slug = '',
+    this.relationship,
+    this.isAllowlisted = true,
+    this.requiresConfirmation = true,
+    this.requiredLevel = 1,
+    this.notifyOnMissed = false,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory ContactModel.fromJson(Map<String, dynamic> json) => ContactModel(
+        id: json['id'] as int,
+        userId: json['user_id'] as int?,
+        name: json['name'] as String? ?? '',
+        phoneNumber: json['phone_number'] as String? ?? '',
+        aliases: json['aliases'] as String? ?? '',
+        slug: json['slug'] as String? ?? '',
+        relationship: json['relationship'] as String?,
+        isAllowlisted: json['is_allowlisted'] as bool? ?? true,
+        requiresConfirmation: json['requires_confirmation'] as bool? ?? true,
+        requiredLevel: json['required_level'] as int? ?? 1,
+        notifyOnMissed: json['notify_on_missed'] as bool? ?? false,
+        createdAt: json['created_at'] as String?,
+        updatedAt: json['updated_at'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'user_id': userId,
+        'name': name,
+        'phone_number': phoneNumber,
+        'aliases': aliases,
+        'slug': slug,
+        'relationship': relationship,
+        'is_allowlisted': isAllowlisted,
+        'requires_confirmation': requiresConfirmation,
+        'required_level': requiredLevel,
+        'notify_on_missed': notifyOnMissed,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  ContactModel copyWith({
+    int? id,
+    int? userId,
+    String? name,
+    String? phoneNumber,
+    String? aliases,
+    String? slug,
+    String? relationship,
+    bool? isAllowlisted,
+    bool? requiresConfirmation,
+    int? requiredLevel,
+    bool? notifyOnMissed,
+  }) {
+    return ContactModel(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      name: name ?? this.name,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      aliases: aliases ?? this.aliases,
+      slug: slug ?? this.slug,
+      relationship: relationship ?? this.relationship,
+      isAllowlisted: isAllowlisted ?? this.isAllowlisted,
+      requiresConfirmation: requiresConfirmation ?? this.requiresConfirmation,
+      requiredLevel: requiredLevel ?? this.requiredLevel,
+      notifyOnMissed: notifyOnMissed ?? this.notifyOnMissed,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+  }
+}
+
+class ContactBulkSyncItem {
+  final String name;
+  final String phoneNumber;
+  final String? aliases;
+  final String? slug;
+  final String? relationship;
+  final bool isAllowlisted;
+  final bool requiresConfirmation;
+  final int requiredLevel;
+  final bool notifyOnMissed;
+
+  ContactBulkSyncItem({
+    required this.name,
+    required this.phoneNumber,
+    this.aliases = '',
+    this.slug = '',
+    this.relationship,
+    this.isAllowlisted = true,
+    this.requiresConfirmation = true,
+    this.requiredLevel = 1,
+    this.notifyOnMissed = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'phone_number': phoneNumber,
+        'aliases': aliases ?? '',
+        'slug': slug ?? '',
+        'relationship': relationship,
+        'is_allowlisted': isAllowlisted,
+        'requires_confirmation': requiresConfirmation,
+        'required_level': requiredLevel,
+        'notify_on_missed': notifyOnMissed,
+      };
+}

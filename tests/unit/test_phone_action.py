@@ -89,6 +89,44 @@ class TestActionPlanner:
         assert i5 is not None and i5.kind == APP_OPEN
         assert i5.params.get("app") == "music"
 
+        # YouTube with search query
+        i6 = self.planner.plan("افتح يوتيوب وشغل سورة الرحمن")
+        assert i6 is not None and i6.kind == APP_OPEN
+        assert i6.params.get("app") == "youtube"
+        assert "سورة الرحمن" in i6.params.get("query", "")
+
+        # Spotify with playback query
+        i7 = self.planner.plan("افتح سبوتيفاي وشغل عمرو دياب")
+        assert i7 is not None and i7.kind == APP_OPEN
+        assert i7.params.get("app") == "spotify"
+        assert "عمرو دياب" in i7.params.get("query", "")
+
+        # Browser with search query
+        i8 = self.planner.plan("افتح جوجل وابحث عن سعر الذهب")
+        assert i8 is not None and i8.kind == APP_OPEN
+        assert i8.params.get("app") == "browser"
+        assert "سعر الذهب" in i8.params.get("query", "")
+
+        # Search in app syntax
+        i9 = self.planner.plan("ابحث في يوتيوب عن تلاوة هادئة")
+        assert i9 is not None and i9.kind == APP_OPEN
+        assert i9.params.get("app") == "youtube"
+        assert "تلاوة هادئة" in i9.params.get("query", "")
+
+        # System utilities
+        assert self.planner.plan("افتح الكاميرا").params.get("app") == "camera"
+        assert self.planner.plan("افتح الآلة الحاسبة").params.get("app") == "calculator"
+        assert self.planner.plan("افتح المنبه").params.get("app") == "clock"
+        assert self.planner.plan("افتح الصور").params.get("app") == "gallery"
+        assert self.planner.plan("افتح التقويم").params.get("app") == "calendar"
+        assert self.planner.plan("افتح الإعدادات").params.get("app") == "settings"
+
+        # Social apps
+        assert self.planner.plan("افتح الفيسبوك").params.get("app") == "facebook"
+        assert self.planner.plan("افتح الانستجرام").params.get("app") == "instagram"
+        assert self.planner.plan("افتح تيك توك").params.get("app") == "tiktok"
+        assert self.planner.plan("افتح أنغامي").params.get("app") == "anghami"
+
     def test_message_intent(self):
         i1 = self.planner.plan("ابعت لأحمد إني جاي متأخر")
         assert i1 is not None and i1.kind == MSG

@@ -66,5 +66,23 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSContactsUsageDescription</key>
+	<string>يحتاج نيبولا للوصول إلى جهات الاتصال للاتصال وإرسال الرسائل بناءً على أوامرك الصوتية</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>sms</string>
+		<string>whatsapp</string>
+		<string>youtube</string>
+		<string>spotify</string>
+		<string>anghami</string>
+		<string>tg</string>
+		<string>fb</string>
+		<string>instagram</string>
+		<string>tiktok</string>
+		<string>twitter</string>
+		<string>comgooglemaps</string>
+		<string>mailto</string>
+	</array>
 </dict>
 </plist>

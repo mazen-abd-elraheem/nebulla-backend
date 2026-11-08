@@ -45,7 +45,7 @@ async def fire_signal(name: str, _u=Depends(get_current_user)):
     """Immediately send the named gesture to ESP32 (used from signal studio)."""
     commands = await _planner.resolve(name)
     if not commands:
-        raise HTTPException(status_code=404, detail=f"Signal {name!r} not found")
+        raise HTTPException(status_code=404, detail=f"حركة الإشارة '{name}' دي مش موجودة.")
     for cmd in commands:
         validated = _guard.validate_joint(cmd)
         if validated:
@@ -57,7 +57,7 @@ async def fire_signal(name: str, _u=Depends(get_current_user)):
 async def delete_signal(sid: int, db: AsyncSession = Depends(get_db), _u=Depends(get_current_user)):
     s = await db.get(Signal, sid)
     if not s:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=404, detail="الإشارة دي مش موجودة.")
     await db.delete(s)
 
 

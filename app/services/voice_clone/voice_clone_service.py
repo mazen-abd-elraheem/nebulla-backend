@@ -39,15 +39,14 @@ _MAX_DURATION_S = 120.0  # cap to avoid huge uploads
 
 class VoiceCloneService:
     """
-    Manages voice samples and drives VoiceTut synthesis (in-process or microservice).
+    Manages voice samples and drives VoiceTut/XTTS synthesis.
     Swaps reference audio per personality and applies Egyptian dialect normalizer.
     """
 
     def __init__(self):
-        from app.providers.tts.voicetut import VoiceTutProvider
-        self._voicetut = VoiceTutProvider()
-        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
-        self._voicetut_service = VoiceTutMicroserviceProvider()
+        from app.providers.tts.xtts.provider import XTTSProvider
+        self._xtts = XTTSProvider()
+        self._voicetut = self._xtts
         self._personality_voice_map: dict[int, str] = {}  # personality_id → wav path
 
     # ── Sample management ─────────────────────────────────────────────────────
@@ -123,6 +122,9 @@ class VoiceCloneService:
         self._personality_voice_map[personality_id] = str(dest)
         logger.info(f"Voice sample saved for personality {personality_id}: {dest} ({duration:.1f}s)")
         await self._sync_db_voice_sample(personality_id, str(dest))
+        # Trigger background pre-caching of greeting with the new cloned voice
+        import asyncio
+        asyncio.create_task(self.generate_and_cache_greeting(personality_id))
         return str(dest)
 
     async def _sync_db_voice_sample(self, personality_id: int, path: str | None) -> None:
@@ -200,9 +202,66 @@ class VoiceCloneService:
         if deleted:
             self._personality_voice_map.pop(personality_id, None)
             logger.info(f"Deleted voice sample for personality {personality_id}")
+            greet_p = self._xtts.get_greeting_cache_path(personality_id)
+            if greet_p.exists():
+                try:
+                    greet_p.unlink()
+                except Exception:
+                    pass
             await self._sync_db_voice_sample(personality_id, None)
             return True
         return False
+
+    # ── Cloned Greeting Caching ───────────────────────────────────────────────
+
+    def get_cached_greeting(self, personality_id: int | None = None) -> bytes | None:
+        """Fetch pre-cached greeting audio if available on disk (0ms instant playback)."""
+        pid = personality_id if personality_id is not None else 1
+        return self._xtts.get_cached_greeting(pid)
+
+    async def generate_and_cache_greeting(
+        self,
+        personality_id: int | None = None,
+        text: str | None = None,
+    ) -> str | None:
+        """Pre-synthesize greeting with the cloned voice and persist to cache."""
+        pid = personality_id if personality_id is not None else 1
+        greeting_text = text
+        if not greeting_text:
+            try:
+                from app.db.session import AsyncSessionLocal
+                from sqlalchemy import select
+                from app.models.personality import Personality
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(
+                        select(Personality).where(Personality.id == pid)
+                    )
+                    p = res.scalar_one_or_none()
+                    if p and getattr(p, "greeting", None) and p.greeting.strip():
+                        greeting_text = p.greeting.strip()
+            except Exception as e:
+                logger.debug(f"Could not load personality greeting: {e}")
+
+        if not greeting_text:
+            greeting_text = "أهلاً بيك، أنا نيبولا توأمك الرقمي، جاهز أساعدك في أي وقت"
+
+        sample_path = self.get_sample_path(pid)
+        if not sample_path or not os.path.exists(sample_path):
+            sample_path = str(Path("data/voice_samples/personality_1.wav").resolve())
+            if not os.path.exists(sample_path):
+                return None
+
+        try:
+            await self._xtts.precache_greeting(
+                personality_id=pid,
+                text=greeting_text,
+                sample_path=sample_path,
+            )
+            cache_path = self._xtts.get_greeting_cache_path(pid)
+            return str(cache_path)
+        except Exception as e:
+            logger.warning(f"Failed to pre-cache greeting for personality {pid}: {e}")
+            return None
 
     # ── Synthesis ─────────────────────────────────────────────────────────────
 
@@ -225,7 +284,6 @@ class VoiceCloneService:
           2. Personality-bound sample (personality_id lookup)
           3. Default provider synthesis
         """
-        # Normalize text to remove thinking tags, action commands, and tune Egyptian pronunciation
         clean_text = clean_llm_output_for_speech(text)
         if not clean_text:
             clean_text = text.strip()
@@ -243,36 +301,14 @@ class VoiceCloneService:
                     ref_text = txt_path.read_text(encoding="utf-8").strip()
                 except Exception:
                     pass
+
         steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", 48)
         cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
         spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
-        target_provider = getattr(settings, "TTS_PROVIDER", "voicetut_service")
 
-        # Synthesize using configured VoiceTut provider
-        if target_provider == "voicetut_service":
-            try:
-                res = await self._voicetut_service.synthesize(
-                    clean_text,
-                    ref_audio=wav_path,
-                    ref_text=ref_text,
-                    num_step=steps,
-                    guidance_scale=cfg,
-                    speed=spd,
-                    language=language,
-                )
-                if res and len(res) > 1000:
-                    return res
-                raise RuntimeError(f"VoiceTut microservice produced invalid audio ({len(res) if res else 0} bytes)")
-            except Exception as exc:
-                logger.error(f"VoiceTut microservice failed: {exc}", exc_info=True)
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Voice synthesis failed via microservice: {exc}",
-                ) from exc
-
-        # Target provider is in-process voicetut
+        # Primary VoiceTut-powered XTTS synthesis
         try:
-            res = await self._voicetut.synthesize(
+            return await self._xtts.synthesize(
                 clean_text,
                 ref_audio=wav_path,
                 ref_text=ref_text,
@@ -281,14 +317,11 @@ class VoiceCloneService:
                 speed=spd,
                 language=language,
             )
-            if res and len(res) > 1000:
-                return res
-            raise RuntimeError(f"VoiceTut in-process engine produced invalid audio ({len(res) if res else 0} bytes)")
         except Exception as exc:
-            logger.error(f"VoiceTut in-process engine failed: {exc}", exc_info=True)
+            logger.error(f"XTTS synthesis error: {exc}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Voice synthesis failed via in-process VoiceTut: {exc}",
+                detail=f"Voice synthesis failed: {exc}",
             ) from exc
 
     async def synthesize_stream(
@@ -296,7 +329,7 @@ class VoiceCloneService:
         text: str,
         personality_id: int | None = None,
         reference_wav: str | None = None,
-        language: str = "ar",
+        language: str = "arz",
     ) -> AsyncIterator[bytes]:
         """Streaming variant — yields WAV chunks for low-latency playback."""
         wav_bytes = await self.synthesize(text, personality_id, reference_wav, language)
@@ -384,7 +417,7 @@ def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
     Save incoming audio/video bytes to standard WAV (16-bit PCM, 24kHz, mono).
     If it's already a clean WAV, save directly.
     If it's MP4, M4A, or non-standard WAV, convert using ffmpeg.
-    Then trims leading and trailing dead silence ("الريك فاضي") so voice starts instantly.
+    Then trims leading and trailing dead silence ("الريك الفاضي") so voice starts instantly.
     Returns trimmed audio duration in seconds.
     """
     import shutil

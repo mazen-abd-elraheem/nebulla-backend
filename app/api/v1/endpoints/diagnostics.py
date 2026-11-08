@@ -38,10 +38,13 @@ class LEDRequest(BaseModel):
 
 @router.get("/status", summary="Live backend + channel status")
 async def full_status(_u=Depends(get_current_user)):
-    """Returns connection state of all three WS channels."""
+    """Returns connection state of all three WS channels and local Ollama health."""
+    from app.providers.llm.local_ollama import LocalOllamaProvider
+    ollama_health = await LocalOllamaProvider.check_health()
     return {
         "channels": manager.status(),
         "backend": "ok",
+        "ollama": ollama_health,
     }
 
 
@@ -49,7 +52,7 @@ async def full_status(_u=Depends(get_current_user)):
 async def test_servo(body: ServoTestRequest, _u=Depends(get_current_user)):
     """Send a one-off servo command for hardware verification (doc §5.2)."""
     if not manager.esp_connected:
-        raise HTTPException(status_code=503, detail="ESP32 not connected")
+        raise HTTPException(status_code=503, detail="شريحة الروبوت (ESP32) مش متصلة بالسيستم دلوقتي.")
 
     guard = _get_motion_guard()
     cmd_msg = JointCmdMsg(id=body.servo_id, deg=body.angle, ms=body.speed_ms)
@@ -57,7 +60,7 @@ async def test_servo(body: ServoTestRequest, _u=Depends(get_current_user)):
     if not safe:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Servo movement rejected by Motion Guard (safety limits or speed violation)",
+            detail="نظام الحماية (Motion Guard) رفض حركة السيرفو عشان الأمان أو السرعة زيادة.",
         )
 
     await manager.send_to_esp(safe.model_dump())
@@ -67,7 +70,7 @@ async def test_servo(body: ServoTestRequest, _u=Depends(get_current_user)):
 @router.post("/servo/home-all", summary="Send all servos to 90° (home position)")
 async def home_all_servos(_u=Depends(get_current_user)):
     if not manager.esp_connected:
-        raise HTTPException(status_code=503, detail="ESP32 not connected")
+        raise HTTPException(status_code=503, detail="شريحة الروبوت (ESP32) مش متصلة بالسيستم دلوقتي.")
 
     guard = _get_motion_guard()
     for sid in range(12):
@@ -75,13 +78,13 @@ async def home_all_servos(_u=Depends(get_current_user)):
         safe = guard.validate_joint(cmd_msg)
         if safe:
             await manager.send_to_esp(safe.model_dump())
-    return {"message": "All 12 servos sent to home (90°)"}
+    return {"message": "كل الـ 12 موتور سيرفو رجعوا لوضع السكون (90 درجة)"}
 
 
 @router.post("/motor/test", summary="Run motors briefly for wheel test")
 async def test_motors(body: MotorTestRequest, _u=Depends(get_current_user)):
     if not manager.esp_connected:
-        raise HTTPException(status_code=503, detail="ESP32 not connected")
+        raise HTTPException(status_code=503, detail="شريحة الروبوت (ESP32) مش متصلة بالسيستم دلوقتي.")
 
     guard = _get_motion_guard()
     # Bound duration between 50ms and 5000ms to avoid runaway motor lock
@@ -91,7 +94,7 @@ async def test_motors(body: MotorTestRequest, _u=Depends(get_current_user)):
     import asyncio
     await asyncio.sleep(duration_ms / 1000)
     await manager.send_to_esp({"t": "motor", "left": 0, "right": 0})
-    return {"message": f"Motor test done ({duration_ms}ms)"}
+    return {"message": f"خلصنا تجربة المواتير بنجاح ({duration_ms} مللي ثانية)"}
 
 
 @router.post("/led", summary="Control the two blue LED indicators (doc §5.1)")
@@ -105,7 +108,7 @@ async def set_led(body: LEDRequest, _u=Depends(get_current_user)):
       blink_double → low battery
     """
     if not manager.esp_connected:
-        raise HTTPException(status_code=503, detail="ESP32 not connected")
+        raise HTTPException(status_code=503, detail="شريحة الروبوت (ESP32) مش متصلة بالسيستم دلوقتي.")
     await manager.send_to_esp({"t": "led", "state": body.state})
     return {"led_state": body.state}
 
@@ -114,9 +117,9 @@ async def set_led(body: LEDRequest, _u=Depends(get_current_user)):
 async def request_distance(_u=Depends(get_current_user)):
     """Tell ESP32 to send back the current ultrasonic sensor reading."""
     if not manager.esp_connected:
-        raise HTTPException(status_code=503, detail="ESP32 not connected")
+        raise HTTPException(status_code=503, detail="شريحة الروبوت (ESP32) مش متصلة بالسيستم دلوقتي.")
     await manager.send_to_esp({"t": "cmd", "action": "read_distance"})
-    return {"message": "Distance read request sent — check telemetry stream"}
+    return {"message": "طلبنا قياس المسافة من الحساس — بص على بيانات التيليمتري"}
 
 
 @router.post("/emergency-stop", summary="🚨 Immediate full stop of all movement")
@@ -128,4 +131,4 @@ async def emergency_stop(_u=Depends(get_current_user)):
     await manager.send_to_esp({"t": "stop"})
     await manager.send_to_phone({"t": "eyes", "mood": "alert"})
     await manager.broadcast_to_desks({"t": "event", "event": "emergency_stop"})
-    return {"message": "Emergency stop sent to all channels"}
+    return {"message": "بعتنا أمر وقف الطوارئ الفوري لكل الأجهزة والقنوات"}

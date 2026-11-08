@@ -67,8 +67,27 @@ S_INVALID_NUMBER = "الرقم المسجّل للجهة دي مش صالح، ر
 S_ERROR = "حصلت مشكلة وأنا بنفّذ الطلب."
 
 _APP_DISPLAY = {
-    "maps": "الخرايط", "whatsapp": "واتساب", "youtube": "يوتيوب", "spotify": "سبوتيفاي",
-    "camera": "الكاميرا", "telegram": "تيليجرام", "music": "الصوتيات",
+    "maps": "الخرايط",
+    "whatsapp": "واتساب",
+    "youtube": "يوتيوب",
+    "spotify": "سبوتيفاي",
+    "anghami": "أنغامي",
+    "telegram": "تيليجرام",
+    "facebook": "فيسبوك",
+    "instagram": "إنستجرام",
+    "tiktok": "تيك توك",
+    "twitter": "تويتر",
+    "camera": "الكاميرا",
+    "gallery": "معرض الصور",
+    "clock": "المنبه",
+    "calculator": "الآلة الحاسبة",
+    "calendar": "التقويم",
+    "browser": "المتصفح",
+    "email": "البريد الإلكتروني",
+    "weather": "الطقس",
+    "settings": "الإعدادات",
+    "files": "الملفات",
+    "music": "الصوتيات",
 }
 _LOG_TYPE = {
     CALL: "call", MSG: "msg", APP_OPEN: "app", READ_NOTIFICATIONS: "read_notifications",
@@ -506,7 +525,8 @@ class PhoneActionService:
                 app = params.get("app")
                 msg = AppCmdMsg(id=p.log_id, cmd="open", app=app, q=params.get("query"))
                 disp = _APP_DISPLAY.get(app, app)
-                speech = f"فتحت {disp}" + (f" على {params['query']}" if params.get("query") and app == "maps" else "")
+                query_str = f" على {params['query']}" if params.get("query") else ""
+                speech = f"فتحت {disp}{query_str}"
             elif kind == READ_NOTIFICATIONS:
                 msg = AppCmdMsg(id=p.log_id, cmd="read_notifications")
                 speech = "تمام، بجيب الرسايل."

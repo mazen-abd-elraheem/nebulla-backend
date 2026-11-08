@@ -13,6 +13,7 @@ import numpy as np
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select, and_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import (
@@ -49,6 +50,7 @@ def _user_to_response(user: User, personalities_count: int = 0) -> UserResponse:
     return UserResponse(
         id=user.id,
         full_name=user.full_name,
+        username=user.username,
         email=user.email,
         is_active=user.is_active,
         has_biometric=user.face_profile_id is not None,
@@ -101,6 +103,7 @@ async def register(
     """
     Register a new user account with strict validation matching the UI design:
     - الاسم الكامل (Full Name)
+    - اسم المستخدم (Username - optional)
     - البريد الإلكتروني (Email)
     - كلمة المرور المشفرة (Encrypted Password)
     - تأكيد كلمة المرور (Confirm Password)
@@ -113,14 +116,26 @@ async def register(
     if res.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="البريد الإلكتروني مسجل بالفعل. يرجى تسجيل الدخول أو استخدام بريد آخر.",
+            detail="البريد الإلكتروني ده مسجل بالفعل عندنا. يرجى تسجيل الدخول أو استخدام بريد آخر.",
         )
+
+    # Check for existing username if provided
+    clean_username = None
+    if body.username:
+        clean_username = body.username.strip().lower()
+        res_u = await db.execute(select(User).where(User.username == clean_username))
+        if res_u.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="اسم المستخدم ده مسجل بالفعل عندنا. اختار اسم مستخدم تاني.",
+            )
 
     # Hash password with bcrypt
     hashed_pwd = get_password_hash(body.password)
 
     new_user = User(
         full_name=body.full_name.strip(),
+        username=clean_username,
         email=clean_email,
         hashed_password=hashed_pwd,
         terms_accepted=True,
@@ -128,14 +143,21 @@ async def register(
         is_active=True,
     )
     db.add(new_user)
-    await db.flush()
-    await db.refresh(new_user)
+    try:
+        await db.commit()
+        await db.refresh(new_user)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="البريد الإلكتروني أو اسم المستخدم ده مسجل بالفعل عندنا. اختار بيانات تانية.",
+        )
 
     # Create access token (8 hours initial session)
     token_delta = timedelta(hours=8)
     token = create_access_token(
         subject=str(new_user.id),
-        extra={"email": new_user.email, "name": new_user.full_name},
+        extra={"email": new_user.email, "name": new_user.full_name, "username": new_user.username},
         expires_delta=token_delta,
     )
 
@@ -154,33 +176,35 @@ async def register(
 @router.post(
     "/login",
     response_model=AuthTokenResponse,
-    summary="User Login with Email & Password (تسجيل الدخول)",
+    summary="User Login with Email/Username & Password (تسجيل الدخول)",
 )
 async def login(
     body: UserLogin,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Standard login using Email and Password with optional 'Remember Me':
+    Standard login using Email or Username and Password with optional 'Remember Me':
     - If remember_me is True: token valid for 30 days (2,592,000s)
     - If remember_me is False: token valid for 8 hours (28,800s)
     """
-    clean_email = body.email.strip().lower()
+    login_id = (body.username or body.identifier or body.email or "").strip().lower()
 
-    res = await db.execute(select(User).where(User.email == clean_email))
+    res = await db.execute(
+        select(User).where((User.email == login_id) | (User.username == login_id))
+    )
     user = res.scalar_one_or_none()
 
     if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+            detail="البريد الإلكتروني / اسم المستخدم أو كلمة المرور مش صحيحة. اتأكد وجرب تاني.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="هذا الحساب معطل حالياً. يرجى التواصل مع الدعم الفني.",
+            detail="الحساب ده واقف حالياً. يرجى التواصل مع الدعم الفني.",
         )
 
     # Determine token lifetime based on remember_me
@@ -191,7 +215,7 @@ async def login(
 
     token = create_access_token(
         subject=str(user.id),
-        extra={"email": user.email, "name": user.full_name},
+        extra={"email": user.email, "name": user.full_name, "username": user.username},
         expires_delta=token_delta,
     )
 
@@ -227,21 +251,23 @@ async def login_biometric(
     1:1 Biometric Face ID Verification matching the 'Neural Face ID' button in UI:
     Verifies live face image against the user's enrolled biometric profile using UniFace.
     """
-    clean_email = email.strip().lower()
+    clean_identifier = email.strip().lower()
 
-    res = await db.execute(select(User).where(User.email == clean_email))
+    res = await db.execute(
+        select(User).where((User.email == clean_identifier) | (User.username == clean_identifier))
+    )
     user = res.scalar_one_or_none()
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="لم يتم العثور على حساب بهذا البريد الإلكتروني.",
+            detail="ملقناش أي حساب مسجل بالبيانات دي.",
         )
 
     if not user.face_profile_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="بصمة الوجه (Neural Face ID) غير مفعلة لهذا الحساب بعد. سجل الدخول بكلمة المرور لتفعيلها.",
+            detail="بصمة الوش (Neural Face ID) لسه مش متفعلة للحساب ده. ادخل بالباسورد الأول عشان تفعلها.",
         )
 
     # Read image bytes safely
@@ -249,13 +275,13 @@ async def login_biometric(
     if len(image_bytes) > MAX_IMAGE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="حجم صورة الوجه يتجاوز الحد المسموح به (5 ميجابايت).",
+            detail="حجم صورة الوش كبير أوي ومعدي 5 ميجابايت. اختار صورة أصغر.",
         )
 
     if not (image_bytes.startswith(b"\xff\xd8") or image_bytes.startswith(b"\x89PNG\r\n\x1a\n")):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="صيغة الصورة غير مدعومة. يرجى التقاط صورة بصيغة JPEG أو PNG.",
+            detail="صيغة الصورة دي مش مدعومة. صوّر أو ارفع صورة JPEG أو PNG.",
         )
 
     # Fetch user's registered face profile
@@ -263,7 +289,7 @@ async def login_biometric(
     if not face_prof or not face_prof.embedding:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="تعذر العثور على بصمة الوجه المسجلة للحساب.",
+            detail="مش لاقيين بصمة الوش المسجلة للحساب ده.",
         )
 
     # Extract embedding from submitted face
@@ -276,7 +302,7 @@ async def login_biometric(
     if not live_embedding:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="لم يتم اكتشاف وجه واضح في الصورة. يرجى توجيه الكاميرا جيداً وإعادة المحاولة.",
+            detail="ملقناش وش واضح في الصورة. وجّه وشك للكاميرا في إضاءة كويسة وجرب تاني.",
         )
 
     # Compare embeddings with cosine similarity
@@ -332,13 +358,13 @@ async def link_biometric(
     if len(image_bytes) > MAX_IMAGE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="حجم الصورة يتجاوز الحد المسموح به (5 ميجابايت).",
+            detail="حجم الصورة معدي 5 ميجابايت.",
         )
 
     if not (image_bytes.startswith(b"\xff\xd8") or image_bytes.startswith(b"\x89PNG\r\n\x1a\n")):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="صيغة الصورة غير مدعومة. يرجى رفع صورة JPEG أو PNG صالحة.",
+            detail="صيغة الصورة دي مش مدعومة. ارفع صورة JPEG أو PNG.",
         )
 
     face_service = get_face_service()
@@ -350,7 +376,7 @@ async def link_biometric(
     if not embedding:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="لم يتمكن النظام من اكتشاف وجه واضح في الصورة لاستخراج البصمة.",
+            detail="السيستم ملقاش وش واضح في الصورة عشان يستخرج البصمة.",
         )
 
     profile_name = f"user_{current_user.id}_{current_user.email}"
@@ -375,7 +401,7 @@ async def link_biometric(
     logger.info(f"Enrolled Neural Face ID for user {current_user.email} (profile_id={face_prof.id})")
 
     return MessageResponse(
-        message="تم تفعيل بصمة الوجه (Neural Face ID) بنجاح لهذا الحساب.",
+        message="فعلنا بصمة وشك (Neural Face ID) بنجاح لحسابك خلاص.",
         details={"face_profile_id": face_prof.id, "dimensions": len(embedding)},
     )
 
@@ -406,7 +432,7 @@ async def forgot_password(
         logger.info(f"Generated password reset token for: {user.email}")
 
     return MessageResponse(
-        message="إذا كان البريد الإلكتروني مسجلاً لدينا، فسيتم إرسال تعليمات استعادة الحساب.",
+        message="لو الإيميل ده متسجل عندنا، هتوصلك تعليمات استرجاع الباسورد على طول.",
         details={"reset_token": token} if token else None,
     )
 
@@ -437,7 +463,7 @@ async def reset_password(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="رمز استعادة كلمة المرور غير صالح أو انتهت صلاحيته.",
+            detail="كود استرجاع الباسورد ده مش صح أو وقته خلص. اطلب كود جديد.",
         )
 
     # Hash new password and clear token
@@ -450,7 +476,7 @@ async def reset_password(
     logger.info(f"Password reset successfully for user: {user.email}")
 
     return MessageResponse(
-        message="تمت إعادة تعيين كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة."
+        message="غيّرنا الباسورد بنجاح خلاص! تقدر تدخل دلوقتي بالباسورد الجديد."
     )
 
 
@@ -486,7 +512,7 @@ async def exchange_pairing_token(body: LegacyTokenRequest):
     if not verify_pairing_code(body.pairing_code):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid pairing code",
+            detail="كود التوأمة ده مش صح.",
         )
     token = create_access_token(
         subject=body.device_name,

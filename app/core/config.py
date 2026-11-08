@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     STT_PROVIDER: Literal["qwencleo", "nemotron"] = "qwencleo"
 
     # TTS: strictly VoiceTut-TTS ("voicetut_service" or "voicetut")
-    TTS_PROVIDER: Literal["voicetut_service", "voicetut"] = "voicetut_service"
+    TTS_PROVIDER: Literal["xtts", "voicetut", "voicetut_service"] = "xtts"
 
     # LLM: "local" | "openai" | "anthropic" | "huggingface" | "nile"
     LLM_PROVIDER: Literal["local", "openai", "anthropic", "huggingface", "nile"] = "local"
@@ -107,8 +107,8 @@ class Settings(BaseSettings):
     SPEAKER_DEVICE: str = "cpu"
     # Cosine-similarity thresholds. These defaults are starting points only —
     # calibrate on real phone-mic recordings (doc §14.3: FAR≈0 at Level 2).
-    SPEAKER_THRESHOLD_L1: float = 0.45
-    SPEAKER_THRESHOLD_L2: float = 0.55
+    SPEAKER_THRESHOLD_L1: float = 0.50
+    SPEAKER_THRESHOLD_L2: float = 0.65
     # Very short utterances (e.g. "أيوه") cannot be scored reliably; the
     # confirmation step only vetoes when a *scored* match is clearly wrong.
     SPEAKER_CONFIRM_MIN_SIMILARITY: float = 0.25
