@@ -1206,6 +1206,33 @@
           اتكلم علطول في المايك أو ارفع تسجيل صوت (WAV/MP3/M4A). محرك بصمة الصوت هيحلل نبرات وطبقات الحنجرة ويحدد مين صاحب الصوت ونسبة تطابقه في ثواني، أو هيقولك إن الصوت ده مش متسجل عندنا.
         </div>
 
+        <!-- Universal Recorders Compatibility Badge -->
+        <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8)); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: var(--radius-md); padding: 0.85rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.3rem;">🎙️</span>
+            <span style="font-size: 0.85rem; font-weight: 800; color: #38bdf8;">توافق شامل مع جميع مسجلات وتطبيقات الصوت:</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.75rem;">
+            <span style="background: rgba(56, 189, 248, 0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3);">Voice Recorder</span>
+            <span style="background: rgba(56, 189, 248, 0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3);">Easy Voice Recorder</span>
+            <span style="background: rgba(56, 189, 248, 0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3);">Smart Voice Recorder</span>
+            <span style="background: rgba(168, 85, 247, 0.15); color: #d8b4fe; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.3);">Dolby On</span>
+            <span style="background: rgba(236, 72, 153, 0.15); color: #f472b6; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(236, 72, 153, 0.3);">Voice Memos (Apple)</span>
+            <span style="background: rgba(34, 197, 94, 0.15); color: #86efac; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(34, 197, 94, 0.3);">Sound Recorder / Windows</span>
+            <span style="background: rgba(245, 158, 11, 0.15); color: #fcd34d; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(245, 158, 11, 0.3);">Audacity</span>
+            <span style="background: rgba(59, 130, 246, 0.15); color: #93c5fd; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(59, 130, 246, 0.3);">Adobe Audition</span>
+            <span style="background: rgba(236, 72, 153, 0.15); color: #f472b6; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(236, 72, 153, 0.3);">GarageBand</span>
+            <span style="background: rgba(16, 185, 129, 0.15); color: #6ee7b7; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">Ocenaudio</span>
+            <span style="background: rgba(249, 115, 22, 0.15); color: #fdba74; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(249, 115, 22, 0.3);">Zoom (H1n/H4n/H6)</span>
+            <span style="background: rgba(249, 115, 22, 0.15); color: #fdba74; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(249, 115, 22, 0.3);">Tascam (DR-05X)</span>
+            <span style="background: rgba(14, 165, 233, 0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(14, 165, 233, 0.3);">Sony (PCM/ICD)</span>
+            <span style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(99, 102, 241, 0.3);">Olympus / OM System</span>
+          </div>
+          <div style="font-size: 0.72rem; color: #94a3b8; width: 100%; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 6px;">
+            الصيغ المدعومة: <strong>WAV (16/24/32-bit BWF), MP3, M4A/AAC, OGG, Opus, FLAC, WMA, AMR-NB/WB, 3GP, MP4, AIFF, CAF</strong> مع معايرة تلقائية لمستويات الحساسية وديناميكيات الصوت.
+          </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
           <!-- Option 1: Live Microphone Recording -->
           <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: space-between;">
@@ -1241,7 +1268,7 @@
             <div class="dropzone" id="voice-file-dropzone" onclick="document.getElementById('voice-file-input').click()" style="padding: 1.25rem 1rem; margin-bottom: 1rem;">
               <div class="dropzone-icon" style="font-size: 1.6rem;">🎵</div>
               <div class="dropzone-title" style="font-size: 0.95rem;">دوس هنا واختار ملف صوت</div>
-              <input type="file" id="voice-file-input" class="file-input" accept="audio/*" onchange="handleVoiceFileSelected(this)">
+              <input type="file" id="voice-file-input" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleVoiceFileSelected(this)">
               <div id="voice-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
             </div>
 
@@ -1287,7 +1314,7 @@
               <div class="dropzone" id="diarize-dropzone" onclick="document.getElementById('diarize-file-input').click()" style="padding: 1.25rem 1rem;">
                 <div class="dropzone-icon" style="font-size: 1.6rem;">👥</div>
                 <div class="dropzone-title" style="font-size: 0.95rem;">دوس هنا واختار ملف تسجيل المحادثة (WAV / MP3 / M4A)</div>
-                <input type="file" id="diarize-file-input" class="file-input" accept="audio/*" onchange="handleDiarizeFileSelected(this)">
+                <input type="file" id="diarize-file-input" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleDiarizeFileSelected(this)">
                 <div id="diarize-selected-file-badge" class="file-selected-badge" style="display:none; margin-top: 6px;"></div>
               </div>
             </div>
@@ -1318,14 +1345,14 @@
         </div>
       </div>
 
-      <!-- Two Voices Comparison & Language Detection Card -->
+      <!-- Two Voices Comparison Card -->
       <div class="card" style="margin-top: 2rem;">
         <div class="card-title">
           <span>⚖️</span>
-          <span>مقارنة مقطعين صوت وكشف الهوية واللغات</span>
+          <span>مقارنة مقطعين صوتيين وكشف هوية كل صوت (Two Voices Comparison & Speaker Identification)</span>
         </div>
         <div class="card-desc">
-          مقارنة مباشرة بين ملفين صوت: <strong>1. اتأكد هل الصوتين لنفس الشخص ولا شخصين مختلفين</strong>، <strong>2. اعرف صاحب كل صوت في السيستم</strong>، و<strong>3. حدد لغة كل تسجيل بدقة (عربي 🇪🇬 ولا إنجليزي 🇬🇧)</strong>.
+          مقارنة مباشرة وسريعة بين مقطعين صوتيين (حتى أقل من ثانية): <strong>1. فحص هل الصوتين لنفس الشخص أم لشخصين مختلفين</strong>، و<strong>2. كشف هوية كل صوت ومن صاحبه في السيستم</strong> (مع عرض User ID, Face ID, Personality ID, Memory ID).
         </div>
 
         <div style="background: rgba(10, 13, 20, 0.6); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.5rem;">
@@ -1339,7 +1366,7 @@
               <div class="dropzone" id="compare-dropzone-1" onclick="document.getElementById('compare-file-input-1').click()" style="padding: 1.2rem 1rem; border-color: rgba(56, 189, 248, 0.3);">
                 <div class="dropzone-icon" style="font-size: 1.5rem;">📁</div>
                 <div class="dropzone-title" style="font-size: 0.88rem;">دوس هنا عشان تختار ملف الصوت الأول</div>
-                <input type="file" id="compare-file-input-1" class="file-input" accept="audio/*" onchange="handleCompareFileSelected(1, this)">
+                <input type="file" id="compare-file-input-1" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleCompareFileSelected(1, this)">
                 <div id="compare-badge-1" class="file-selected-badge" style="display:none; margin-top: 6px; background: rgba(56, 189, 248, 0.2); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.4);"></div>
               </div>
               <audio id="compare-audio-preview-1" controls style="display:none; width: 100%; margin-top: 10px; height: 32px;"></audio>
@@ -1354,7 +1381,7 @@
               <div class="dropzone" id="compare-dropzone-2" onclick="document.getElementById('compare-file-input-2').click()" style="padding: 1.2rem 1rem; border-color: rgba(168, 85, 247, 0.3);">
                 <div class="dropzone-icon" style="font-size: 1.5rem;">📁</div>
                 <div class="dropzone-title" style="font-size: 0.88rem;">دوس هنا عشان تختار ملف الصوت الثاني</div>
-                <input type="file" id="compare-file-input-2" class="file-input" accept="audio/*" onchange="handleCompareFileSelected(2, this)">
+                <input type="file" id="compare-file-input-2" class="file-input" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleCompareFileSelected(2, this)">
                 <div id="compare-badge-2" class="file-selected-badge" style="display:none; margin-top: 6px; background: rgba(168, 85, 247, 0.2); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.4);"></div>
               </div>
               <audio id="compare-audio-preview-2" controls style="display:none; width: 100%; margin-top: 10px; height: 32px;"></audio>
@@ -1369,7 +1396,7 @@
             </div>
 
             <button type="button" id="btn-compare-submit" onclick="handleCompareSubmit()" class="btn-submit" style="width: auto; padding: 11px 32px; background: linear-gradient(135deg, #0ea5e9, #8b5cf6); box-shadow: 0 4px 20px rgba(14, 165, 233, 0.45);">
-              <span>⚖️ ابدأ المقارنة وحدد اللغات وأصحاب الأصوات</span>
+              <span>⚖️ بدء المقارنة وكشف هوية كل صوت</span>
             </button>
           </div>
         </div>
@@ -1429,8 +1456,8 @@
 
             <!-- File for enrollment -->
             <div style="background: rgba(10, 13, 20, 0.5); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.25rem;">
-              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الطريقة التانية: ارفع ملف صوت جاهز (WAV / MP3 / M4A / OGG / Opus / WebM / AAC / AMR)</p>
-              <input type="file" id="enroll-file-input" class="form-control" accept="audio/*" onchange="handleEnrollFileSelected(this)">
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">الخيار 2: رفع تسجيل صوتي (يقبل جميع أنواع المسجلات: WAV / MP3 / M4A / OGG / Opus / WebM / AAC / AMR)</p>
+              <input type="file" id="enroll-file-input" class="form-control" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.wma,.amr,.3gp,.mp4,.aiff,.aif,.caf" onchange="handleEnrollFileSelected(this)">
             </div>
           </div>
 
@@ -2460,34 +2487,7 @@
     }
 
     function getLanguageFlagBadge(langName) {
-      let flag = '🌐';
-      let color = '#38bdf8';
-      let bg = 'rgba(56, 189, 248, 0.12)';
-      let border = 'rgba(56, 189, 248, 0.3)';
-
-      if (langName.includes('العربية') || langName.includes('Arabic')) {
-        flag = '🇪🇬';
-        color = '#34d399';
-        bg = 'rgba(52, 211, 153, 0.12)';
-        border = 'rgba(52, 211, 153, 0.35)';
-      } else if (langName.includes('الإنجليزية') || langName.includes('English')) {
-        flag = '🇬🇧';
-        color = '#60a5fa';
-        bg = 'rgba(96, 165, 250, 0.12)';
-        border = 'rgba(96, 165, 250, 0.35)';
-      } else if (langName.includes('الفرنسية') || langName.includes('French')) {
-        flag = '🇫🇷';
-        color = '#c084fc';
-        bg = 'rgba(192, 132, 252, 0.12)';
-        border = 'rgba(192, 132, 252, 0.35)';
-      } else if (langName.includes('الألمانية') || langName.includes('German')) {
-        flag = '🇩🇪';
-        color = '#fbbf24';
-        bg = 'rgba(251, 191, 36, 0.12)';
-        border = 'rgba(251, 191, 36, 0.35)';
-      }
-
-      return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 9999px; font-size: 0.78rem; font-weight: 700; color: ${color}; background: ${bg}; border: 1px solid ${border};">${flag} ${langName}</span>`;
+      return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 9999px; font-size: 0.78rem; font-weight: 700; color: #34d399; background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.35);">🇪🇬 العربية (arz)</span>`;
     }
 
     function renderDiarizeResult(data) {
@@ -2718,8 +2718,8 @@
       box.innerHTML = `
         <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2.2rem; text-align: center;">
           <div class="spinner" style="margin: 0 auto 1.2rem;"></div>
-          <h4 style="font-size: 1.15rem; color: #fff; margin-bottom: 0.4rem;">جارٍ المقارنة بين التسجيلين الصوتين وفحص اللغات...</h4>
-          <p style="font-size: 0.88rem; color: var(--text-muted);">يقوم النظام بتحليل البصمة الصوتية لكل ملف، مطابقته مع قاعدة البيانات، واكتشاف اللغة (عربي / إنجليزي)</p>
+          <h4 style="font-size: 1.15rem; color: #fff; margin-bottom: 0.4rem;">جارٍ المقارنة بين التسجيلين الصوتين وفحص الهويات...</h4>
+          <p style="font-size: 0.88rem; color: var(--text-muted);">يقوم النظام بتحليل البصمة الصوتية ومطابقتها فورياً حتى للمقاطع القصيرة جداً (أقل من ثانية)</p>
         </div>
       `;
       box.scrollIntoView({ behavior: 'smooth' });
@@ -2799,7 +2799,6 @@
               <h4 style="margin: 0; font-size: 1rem; color: #e2e8f0; display: flex; align-items: center; gap: 6px;">
                 <span>🎙️</span> ${title} (${v.audio_seconds}s)
               </h4>
-              ${getLangBadge(v.language)}
             </div>
 
             <div style="margin-bottom: 0.9rem;">
@@ -2847,32 +2846,21 @@
               <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">
                 ${data.comparison_verdict}
               </div>
-              <div style="font-size: 0.85rem; color: #cbd5e1; margin-top: 4px;">
-                🌐 ${data.language_verdict}
-              </div>
             </div>
           </div>
-          <div style="text-align: right; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); padding: 0.75rem 1.25rem; border-radius: var(--radius-sm);">
+          <div style="text-align: right; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); padding: 0.75rem 1.25rem; border-radius: var(--radius-sm); min-width: 145px;">
             <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 2px;">نسبة التطابق بين الصوتين</div>
             <div style="font-size: 1.8rem; font-weight: 900; color: ${bannerBadgeColor}; font-family: monospace;">
-              ${isSame ? matchPct + '%' : sim + '%'}
+              ${isSame ? matchPct + '%' : '0.0%'}
             </div>
-            <div style="font-size: 0.72rem; color: var(--text-muted);">Similarity: ${data.similarity}</div>
+            <div style="font-size: 0.75rem; color: ${isSame ? '#34d399' : '#f87171'}; font-weight: 800; margin-top: 1px;">
+              ${isSame ? '✅ متطابقان' : '❌ غير متطابقين'}
+            </div>
+            <div style="font-size: 0.70rem; color: var(--text-muted); margin-top: 3px;">Similarity: ${data.similarity}</div>
           </div>
         </div>
 
-        <!-- Language Comparison Highlights -->
-        <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.4rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.2rem;">🌐</span>
-            <span style="font-weight: 700; color: #e2e8f0; font-size: 0.92rem;">مقارنة اللغات المنطوقة:</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 14px;">
-            <div><span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 6px;">الصوت الأول:</span>${getLangBadge(v1.language)}</div>
-            <span style="color: var(--text-muted);">⟷</span>
-            <div><span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 6px;">الصوت الثاني:</span>${getLangBadge(v2.language)}</div>
-          </div>
-        </div>
+
 
         <!-- Two Speakers Comparison Grid -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem;">

@@ -56,14 +56,12 @@ async def test_diarization_service_and_endpoint():
         assert payload["success"] is True
         assert payload["total_speakers_count"] == 2
         assert "العربية (Arabic)" in payload["all_detected_languages"]
-        assert "الإنجليزية (English)" in payload["all_detected_languages"]
 
-        # Check multilingual speakers detection: Speaker 1 spoke Arabic in Turn 1 and English in Turn 3
-        multi_list = payload["multilingual_speakers"]
-        assert len(multi_list) >= 1, "Expected at least one multilingual speaker"
-        multi_spk = multi_list[0]
-        assert "العربية (Arabic)" in multi_spk["languages"]
-        assert "الإنجليزية (English)" in multi_spk["languages"]
+        # Verify strict Arabic (arz) language policy
+        for seg in payload["timeline_segments"]:
+            assert seg["language_code"] == "arz"
+            assert "العربية" in seg["language"]
+
         assert len(payload["timeline_segments"]) == 3
 
         # Check presence breakdown (كم شخص بيتكلم، من موجود في السيستم والباقي لا)
