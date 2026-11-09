@@ -198,13 +198,8 @@ async def test_subsecond_voice_identification_and_compare():
 
 
 @pytest.mark.asyncio
-async def test_strict_arabic_arz_language_policy():
-    """Verify that language policy strictly enforces Egyptian Arabic with code 'arz'."""
-    from app.services.voice_verification.speaker_service import detect_spoken_language
-    lang_info = detect_spoken_language()
-    assert lang_info["language_code"] == "arz"
-    assert "العربية" in lang_info["language"]
-
+async def test_pure_speaker_biometrics_no_language_or_transcript():
+    """Verify that speaker identification outputs pure biometric identity without language or transcript fields."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         v1 = generate_tone(150.0, 0.5)
@@ -215,7 +210,16 @@ async def test_strict_arabic_arz_language_policy():
         )
         assert res.status_code == 200
         data = res.json()
-        assert data["voice1"]["language_code"] == "arz"
-        assert data["voice2"]["language_code"] == "arz"
-        assert "العربية" in data["voice1"]["language"]
-        assert "العربية" in data["voice2"]["language"]
+        # Verify language is NOT returned (pure speaker identity)
+        assert "language" not in data["voice1"]
+        assert "language_code" not in data["voice1"]
+        assert "language" not in data["voice2"]
+        assert "language_code" not in data["voice2"]
+        # Verify transcripts are NOT returned
+        assert "transcript" not in data["voice1"]
+        assert "transcript" not in data["voice2"]
+        # Verify pure identity fields are present
+        assert "speaker_name" in data["voice1"]
+        assert "is_enrolled" in data["voice1"]
+        assert "similarity" in data["voice1"]
+        assert "match_percentage" in data["voice1"]
