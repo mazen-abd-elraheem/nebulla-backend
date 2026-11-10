@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../services/avatar_audio_service.dart';
+import '../services/audio_viseme_analyzer.dart';
 
 /// Full interactive animated cybernetic avatar.
 /// - Full-screen edge-to-edge portrait framing for the female & male avatar.
-/// - Natural organic eye blinking (periodic realistic eyelid closure).
-/// - Dynamic lip-sync and mouth movement driven by backend speech & amplitude.
-/// - Living breathing micro-movement and ambient neural energy rings.
-/// - Interactive touch / cursor gaze tracking.
+/// - The base character portrait stays steady and firmly grounded (no sliding/shaking of the photo).
+/// - Natural organic eye blinking on the actual eye sockets.
+/// - Dynamic lip-sync and mouth articulation directly on the character's lips when speaking.
 /// - Tap to speak greeting; double-tap to switch character appearance.
 class InteractiveAnimatedAvatar extends StatefulWidget {
   final String? avatarType; // 'male' or 'female'
@@ -41,17 +41,12 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   AnimationController? _breathingController;
   Animation<double>? _breathingAnimation;
   AnimationController? _auraPulseController;
+  AnimationController? _headMotionController;
   AnimationController? _blinkController;
   Animation<double>? _blinkAnimation;
-  AnimationController? _nodController;
-  Animation<double>? _nodAnimation;
 
   Timer? _blinkTimer;
   final Random _random = Random();
-
-  // Touch gaze parallax
-  double _panX = 0.0;
-  double _panY = 0.0;
 
   @override
   void initState() {
@@ -61,10 +56,10 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   void _initControllers() {
-    // 1. Lively living breathing cycle (3.2 seconds, organic rise and fall)
+    // 1. Ambient living breathing pulse (4 seconds)
     _breathingController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3200),
+      duration: const Duration(milliseconds: 4000),
     )..repeat(reverse: true);
 
     _breathingAnimation ??= Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -74,16 +69,22 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
       ),
     );
 
-    // 2. Smooth ambient neural pulse
+    // 2. Ambient neural glow pulse
     _auraPulseController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
 
-    // 3. Natural Eye Blinking Controller (160ms organic eyelid close & open)
+    // 3. Filter-Style 3D Micro-Head Parallax Sway (5.5 seconds organic cycle)
+    _headMotionController ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 5500),
+    )..repeat(reverse: true);
+
+    // 4. Natural Eye Blinking Controller (140ms organic eyelid close & open)
     _blinkController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 160),
+      duration: const Duration(milliseconds: 140),
     );
 
     _blinkAnimation ??= Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -92,25 +93,12 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
         curve: Curves.easeInOutQuad,
       ),
     );
-
-    // 4. Interactive Tap Nod Gesture Reaction
-    _nodController ??= AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    );
-
-    _nodAnimation ??= Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _nodController!,
-        curve: Curves.easeInOutBack,
-      ),
-    );
   }
 
   void _scheduleNextBlink() {
     _blinkTimer?.cancel();
-    // Blinks naturally every 2.6 to 4.2 seconds
-    final delayMs = 2600 + _random.nextInt(1600);
+    // Blinks naturally every 2.4 to 4.0 seconds
+    final delayMs = 2400 + _random.nextInt(1600);
     _blinkTimer = Timer(Duration(milliseconds: delayMs), () {
       if (!mounted || _blinkController == null) return;
       _blinkController!.forward(from: 0.0).then((_) {
@@ -127,23 +115,9 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     _blinkTimer?.cancel();
     _breathingController?.dispose();
     _auraPulseController?.dispose();
+    _headMotionController?.dispose();
     _blinkController?.dispose();
-    _nodController?.dispose();
     super.dispose();
-  }
-
-  void _handlePanUpdate(DragUpdateDetails details, Size size) {
-    setState(() {
-      _panX = ((details.localPosition.dx / size.width) - 0.5).clamp(-0.5, 0.5);
-      _panY = ((details.localPosition.dy / size.height) - 0.5).clamp(-0.5, 0.5);
-    });
-  }
-
-  void _handlePanEnd(DragEndDetails details) {
-    setState(() {
-      _panX = 0.0;
-      _panY = 0.0;
-    });
   }
 
   @override
@@ -165,15 +139,21 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
             return ValueListenableBuilder<double>(
               valueListenable: _audioService.speechAmplitude,
               builder: (context, amplitude, _) {
-                return ValueListenableBuilder<String>(
-                  valueListenable: _audioService.currentEmotion,
-                  builder: (context, emotion, _) {
-                    return _buildAvatarContent(
-                      assetPath: assetPath,
-                      isFemale: isFemale,
-                      isSpeaking: isSpeaking,
-                      amplitude: amplitude,
-                      emotion: emotion,
+                return ValueListenableBuilder<VisemeFrame>(
+                  valueListenable: _audioService.currentViseme,
+                  builder: (context, viseme, _) {
+                    return ValueListenableBuilder<String>(
+                      valueListenable: _audioService.currentEmotion,
+                      builder: (context, emotion, _) {
+                        return _buildAvatarContent(
+                          assetPath: assetPath,
+                          isFemale: isFemale,
+                          isSpeaking: isSpeaking,
+                          amplitude: amplitude,
+                          viseme: viseme,
+                          emotion: emotion,
+                        );
+                      },
                     );
                   },
                 );
@@ -190,6 +170,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     required bool isFemale,
     required bool isSpeaking,
     required double amplitude,
+    required VisemeFrame viseme,
     required String emotion,
   }) {
     final auraColor = _getEmotionColor(emotion, isSpeaking);
@@ -204,11 +185,12 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
         final portraitH = availableH;
 
         return GestureDetector(
-          onPanUpdate: (d) => _handlePanUpdate(d, Size(portraitW, portraitH)),
-          onPanEnd: _handlePanEnd,
           onTap: () {
-            _triggerTapFeedback();
-            widget.onAvatarTapped?.call();
+            if (widget.onAvatarTapped != null) {
+              widget.onAvatarTapped!();
+            } else {
+              _triggerTapFeedback();
+            }
           },
           onDoubleTap: () {
             final nextType = isFemale ? 'male' : 'female';
@@ -219,35 +201,19 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
             animation: Listenable.merge([
               _breathingAnimation!,
               _auraPulseController!,
+              _headMotionController!,
               _blinkAnimation!,
-              ?_nodAnimation,
             ]),
             builder: (context, child) {
-              // 1. Lively Living Breathing Physics
-              final breathVal = _breathingAnimation!.value;
-              final breathOffset = sin(breathVal * pi * 2) * 8.5;
-              final breathScale = 1.0 + (sin(breathVal * pi * 2) * 0.022);
-              final breathTilt = sin(breathVal * pi) * 0.015;
+              final imgW = isFemale ? 418.0 : 448.0;
+              const imgH = 1024.0;
 
-              // 2. Active Conversational Speech Articulation & Gestures
-              final speakTick = DateTime.now().millisecondsSinceEpoch / 1000.0;
-              final speechBob = isSpeaking ? (sin(speakTick * 7.5) * amplitude * 12.0) : 0.0;
-              final speechTilt = isSpeaking ? (sin(speakTick * 3.8) * amplitude * 0.035) : 0.0;
-              final speechScale = isSpeaking ? (1.0 + (amplitude * 0.028)) : 1.0;
-
-              // 3. Interactive Gaze & Cursor Tracking Parallax
-              final parallaxX = _panX * 22.0;
-              final parallaxY = _panY * 14.0;
-              final gazeTilt = _panX * 0.03;
-
-              // 4. Interactive Touch Reaction Nod
-              final nodVal = _nodAnimation?.value ?? 0.0;
-              final nodOffset = nodVal * 12.0;
-
-              final totalOffsetY = breathOffset + speechBob + parallaxY + nodOffset;
-              final totalOffsetX = parallaxX;
-              final totalScale = breathScale * speechScale;
-              final totalTilt = breathTilt + speechTilt + gazeTilt;
+              // Filter-Style 3D Micro-Head Parallax & Idle Sway
+              final headT = (_headMotionController?.value ?? 0.5) * 2 * pi;
+              final yaw = sin(headT * 0.7) * 0.018; // ±1.0° horizontal sway
+              final pitch = (cos(headT * 0.9) * 0.012) +
+                  (isSpeaking ? sin(headT * 3.5) * 0.006 : 0.0); // subtle speech nod
+              final roll = sin(headT * 0.5) * 0.007; // ±0.4° gentle head tilt
 
               return Center(
                 child: SizedBox(
@@ -260,41 +226,63 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                       // 1. Ambient Cybernetic Energy Glow
                       _buildAmbientGlow(auraColor, isSpeaking, amplitude, portraitW, portraitH),
 
-                      // 2. Character Portrait + Dynamic Movement & Natural Action
-                      Transform.translate(
-                        offset: Offset(totalOffsetX, totalOffsetY),
-                        child: Transform.rotate(
-                          angle: totalTilt,
-                          child: Transform.scale(
-                            scale: totalScale,
-                            child: ClipRRect(
-                              borderRadius: widget.fullScreen
-                                  ? BorderRadius.zero
-                                  : BorderRadius.circular(28),
+                      // 2. Character Portrait: Filter 3D Parallax Perspective + Organic Micro-Breathing
+                      Transform(
+                        alignment: const Alignment(0.0, -0.15),
+                        transform: Matrix4.identity()
+                          ..setEntry(3, 2, 0.001) // 3D depth perspective
+                          ..rotateY(yaw)
+                          ..rotateX(pitch)
+                          ..rotateZ(roll),
+                        child: ClipRRect(
+                          borderRadius: widget.fullScreen
+                              ? BorderRadius.zero
+                              : BorderRadius.circular(28),
+                          child: SizedBox(
+                            width: portraitW,
+                            height: portraitH,
+                            child: FittedBox(
+                              fit: BoxFit.cover,
+                              alignment: isFemale
+                                  ? const Alignment(0.0, -0.06)
+                                  : const Alignment(0.0, -0.16),
                               child: SizedBox(
-                                width: portraitW,
-                                height: portraitH,
+                                width: imgW,
+                                height: imgH,
                                 child: Stack(
                                   alignment: Alignment.center,
                                   children: [
-                                    // Base Character Image (Elevated top alignment so character fills the screen naturally)
-                                    Image.asset(
-                                      assetPath,
-                                      width: portraitW,
-                                      height: portraitH,
-                                      fit: BoxFit.cover,
-                                      alignment: isFemale
-                                          ? const Alignment(0.0, -0.10)
-                                          : const Alignment(0.0, -0.22),
-                                      errorBuilder: (_, _, _) => _buildFallback(isFemale),
+                                    // Base Character Image with subtle organic micro-breathing & speech resonance
+                                    Transform.scale(
+                                      scale: 1.0 +
+                                          (0.012 * (_breathingAnimation?.value ?? 0.0)) +
+                                          (isSpeaking ? amplitude * 0.015 : 0.0),
+                                      alignment: const Alignment(0.0, 0.25),
+                                      child: Image.asset(
+                                        assetPath,
+                                        width: imgW,
+                                        height: imgH,
+                                        fit: BoxFit.fill,
+                                        errorBuilder: (_, _, _) => _buildFallback(isFemale),
+                                      ),
                                     ),
 
-                                    // Natural Eye Blinking Overlay
+                                    // Natural Organic Eye Blinking (Positioned accurately on actual eye sockets)
                                     Positioned.fill(
                                       child: CustomPaint(
-                                        painter: _RealisticEyelidPainter(
+                                        painter: _NaturalEyeBlinkPainter(
                                           isFemale: isFemale,
                                           blinkProgress: _blinkAnimation?.value ?? 0.0,
+                                        ),
+                                      ),
+                                    ),
+
+                                    // Dynamic Audio-Driven Lip-Sync (Viseme based mouth morph directly on lips)
+                                    Positioned.fill(
+                                      child: CustomPaint(
+                                        painter: _RealisticMouthLipSyncPainter(
+                                          isFemale: isFemale,
+                                          viseme: viseme,
                                         ),
                                       ),
                                     ),
@@ -433,9 +421,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   void _triggerTapFeedback() {
-    _nodController?.forward(from: 0.0).then((_) {
-      if (mounted) _nodController?.reverse();
-    });
     final name = _audioService.activePersonaName.value;
     final isFemale = _audioService.activeAvatarType.value == 'female';
     final greeting = isFemale
@@ -461,12 +446,12 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 }
 
-/// Organic, photorealistic eye blinking painter matching the avatar's eye positions
-class _RealisticEyelidPainter extends CustomPainter {
+/// Organic, photorealistic eye blinking painter positioned accurately on actual eye sockets
+class _NaturalEyeBlinkPainter extends CustomPainter {
   final bool isFemale;
   final double blinkProgress; // 0.0 = open, 1.0 = fully closed
 
-  _RealisticEyelidPainter({
+  _NaturalEyeBlinkPainter({
     required this.isFemale,
     required this.blinkProgress,
   });
@@ -475,19 +460,22 @@ class _RealisticEyelidPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (blinkProgress < 0.04) return;
 
-    // Female eye center: y = 0.410, left X = 0.395, right X = 0.610
-    // Male eye center: y = 0.366, left X = 0.357, right X = 0.647
-    final eyeY = size.height * (isFemale ? 0.410 : 0.366);
-    final leftX = size.width * (isFemale ? 0.395 : 0.357);
-    final rightX = size.width * (isFemale ? 0.610 : 0.647);
-    final eyeW = size.width * (isFemale ? 0.092 : 0.108);
-    final eyeH = size.height * (isFemale ? 0.036 : 0.040);
+    // Exact center coordinates in 1:1 image pixel space (1024h)
+    final leftCenter = isFemale
+        ? const Offset(166.0, 416.0)
+        : const Offset(158.0, 370.0);
+    final rightCenter = isFemale
+        ? const Offset(252.0, 416.0)
+        : const Offset(290.0, 370.0);
 
-    final lidColor = isFemale ? const Color(0xFFE8D4C8) : const Color(0xFFD6B5A2);
-    final shadowColor = isFemale ? const Color(0xFFC49F8E) : const Color(0xFFAC8775);
+    final eyeW = isFemale ? 42.0 : 44.0;
+    final eyeH = isFemale ? 18.0 : 18.0;
 
-    _paintSingleEye(canvas, Offset(leftX, eyeY), eyeW, eyeH, lidColor, shadowColor);
-    _paintSingleEye(canvas, Offset(rightX, eyeY), eyeW, eyeH, lidColor, shadowColor);
+    final lidColor = isFemale ? const Color(0xFFE4CEBF) : const Color(0xFFD2B29F);
+    final shadowColor = isFemale ? const Color(0xFF382A26) : const Color(0xFF281E1C);
+
+    _paintSingleEye(canvas, leftCenter, eyeW, eyeH, lidColor, shadowColor);
+    _paintSingleEye(canvas, rightCenter, eyeW, eyeH, lidColor, shadowColor);
   }
 
   void _paintSingleEye(
@@ -518,7 +506,7 @@ class _RealisticEyelidPainter extends CustomPainter {
     path.close();
 
     final paint = Paint()
-      ..color = lid.withValues(alpha: (0.94 * blinkProgress).clamp(0.0, 1.0))
+      ..color = lid.withValues(alpha: (0.95 * blinkProgress).clamp(0.0, 1.0))
       ..style = PaintingStyle.fill;
     canvas.drawPath(path, paint);
 
@@ -531,7 +519,91 @@ class _RealisticEyelidPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _RealisticEyelidPainter old) {
+  bool shouldRepaint(covariant _NaturalEyeBlinkPainter old) {
     return old.blinkProgress != blinkProgress || old.isFemale != isFemale;
+  }
+}
+
+/// Dynamic Audio-Driven Viseme Lip-Sync Painter positioned accurately directly on lips
+class _RealisticMouthLipSyncPainter extends CustomPainter {
+  final bool isFemale;
+  final VisemeFrame viseme;
+
+  _RealisticMouthLipSyncPainter({
+    required this.isFemale,
+    required this.viseme,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (viseme.openness < 0.05 && viseme.type != VisemeType.mbp) return;
+
+    // Exact center coordinates on actual lips
+    final mouthCenter = isFemale
+        ? const Offset(209.0, 554.0)
+        : const Offset(224.0, 562.0);
+
+    final baseW = isFemale ? 56.0 : 68.0;
+    // Viseme pucker narrows width (oo/u), widthRatio expands width (ee/smile)
+    final mouthW = (baseW * viseme.widthRatio * (1.0 - (viseme.pucker * 0.28))).clamp(28.0, 84.0);
+
+    final maxH = isFemale ? 9.5 : 11.0;
+    final openH = (viseme.openness * maxH).clamp(1.2, maxH);
+
+    final mouthRect = Rect.fromCenter(
+      center: Offset(mouthCenter.dx, mouthCenter.dy + (viseme.jawDrop * 2.2)),
+      width: mouthW,
+      height: openH,
+    );
+
+    // 1. Inner mouth cavity (curved based on viseme pucker & openness)
+    final cornerRadius = viseme.pucker > 0.4 ? openH * 0.78 : openH * 0.52;
+    final cavityPaint = Paint()
+      ..color = const Color(0xFF22090C)
+      ..style = PaintingStyle.fill;
+    final cavityRRect = RRect.fromRectAndRadius(mouthRect, Radius.circular(cornerRadius));
+    canvas.drawRRect(cavityRRect, cavityPaint);
+
+    // 2. Upper teeth hint based on viseme.teethVisible
+    if (openH > 2.8 && viseme.teethVisible > 0.15) {
+      final teethAlpha = (viseme.teethVisible * 0.95).clamp(0.0, 1.0);
+      final teethPaint = Paint()
+        ..color = const Color(0xFFFAF7F4).withValues(alpha: teethAlpha)
+        ..style = PaintingStyle.fill;
+      final teethRect = Rect.fromLTWH(
+        mouthRect.left + (mouthRect.width * 0.20),
+        mouthRect.top,
+        mouthRect.width * 0.60,
+        min(2.5, openH * 0.35),
+      );
+      canvas.drawRRect(RRect.fromRectAndRadius(teethRect, const Radius.circular(1.2)), teethPaint);
+    }
+
+    // 3. Lower Lip highlight & shadow
+    final lipColor = isFemale ? const Color(0xFFDC7D7D) : const Color(0xFFBF7568);
+    final lowerLipPaint = Paint()
+      ..color = lipColor.withValues(alpha: 0.92)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round;
+
+    final lowerLipPath = Path();
+    lowerLipPath.moveTo(mouthRect.left, mouthRect.top + (openH * 0.35));
+    lowerLipPath.quadraticBezierTo(
+      mouthCenter.dx,
+      mouthRect.bottom + 1.2,
+      mouthRect.right,
+      mouthRect.top + (openH * 0.35),
+    );
+    canvas.drawPath(lowerLipPath, lowerLipPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RealisticMouthLipSyncPainter old) {
+    return old.viseme.openness != viseme.openness ||
+        old.viseme.type != viseme.type ||
+        old.viseme.widthRatio != viseme.widthRatio ||
+        old.viseme.pucker != viseme.pucker ||
+        old.isFemale != isFemale;
   }
 }

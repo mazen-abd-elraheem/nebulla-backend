@@ -325,6 +325,16 @@ class NebulaSideMenu extends StatelessWidget {
                           child: ListView(
                             padding: EdgeInsets.zero,
                             children: [
+                              // الصفحه الرئيسيه
+                              _InteractiveMenuButton(
+                                icon: Icons.home_rounded,
+                                title: 'الصفحه الرئيسيه',
+                                isActive: activeIndex == 0,
+                                badgeText: activeIndex == 0 ? 'نشط' : null,
+                                onTap: () => _handleItemTap(context, 0), // Dashboard
+                              ),
+                              const SizedBox(height: 9),
+
                               // تسجيل الدخول
                               _InteractiveMenuButton(
                                 icon: Icons.login_rounded,

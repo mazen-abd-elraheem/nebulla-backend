@@ -93,7 +93,7 @@ class _MainShellState extends State<MainShell> {
       const _BottomNavItem(
         icon: Icons.home_outlined,
         activeIcon: Icons.home_rounded,
-        label: 'الصفحة الرئيسية',
+        label: 'الصفحه الرئيسيه',
       ),
       const _BottomNavItem(
         icon: Icons.chat_bubble_outline_rounded,
@@ -114,15 +114,15 @@ class _MainShellState extends State<MainShell> {
 
     return SafeArea(
       child: Directionality(
-        textDirection: TextDirection.ltr, // Matches Image 2 layout: Left=Home -> Right=Profile
+        textDirection: TextDirection.ltr, // Matches Image 3 layout: Left=Home -> Right=Profile
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          height: 66,
+          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          height: 76,
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.88),
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(34),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.9),
+              color: Colors.white.withValues(alpha: 0.95),
               width: 1.5,
             ),
             boxShadow: [
@@ -134,9 +134,9 @@ class _MainShellState extends State<MainShell> {
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(34),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: List.generate(items.length, (i) {
@@ -146,24 +146,44 @@ class _MainShellState extends State<MainShell> {
                   return InkWell(
                     onTap: () => setState(() => _currentIndex = i),
                     borderRadius: BorderRadius.circular(24),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 6),
-                      decoration: selected
-                          ? BoxDecoration(
-                              color: const Color(0xFF0072FF).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(20),
-                            )
-                          : null,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            selected ? item.activeIcon : item.icon,
-                            color: selected
-                                ? const Color(0xFF0072FF)
-                                : const Color(0xFF64748B),
-                            size: 22,
+                          // Circular Icon Container matching Image 3 design
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: selected
+                                  ? const Color(0xFF0284C7).withValues(alpha: 0.12)
+                                  : Colors.white.withValues(alpha: 0.9),
+                              border: Border.all(
+                                color: selected
+                                    ? const Color(0xFF0284C7)
+                                    : const Color(0xFF334155).withValues(alpha: 0.5),
+                                width: selected ? 1.6 : 1.2,
+                              ),
+                              boxShadow: selected
+                                  ? [
+                                      BoxShadow(
+                                        color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: Icon(
+                              selected ? item.activeIcon : item.icon,
+                              color: selected
+                                  ? const Color(0xFF0284C7)
+                                  : const Color(0xFF1E293B),
+                              size: 21,
+                            ),
                           ),
                           const SizedBox(height: 3),
                           Text(
@@ -171,11 +191,10 @@ class _MainShellState extends State<MainShell> {
                             style: TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 10,
-                              fontWeight:
-                                  selected ? FontWeight.bold : FontWeight.w500,
+                              fontWeight: selected ? FontWeight.bold : FontWeight.w600,
                               color: selected
-                                  ? const Color(0xFF0072FF)
-                                  : const Color(0xFF64748B),
+                                  ? const Color(0xFF0284C7)
+                                  : const Color(0xFF334155),
                             ),
                           ),
                         ],
