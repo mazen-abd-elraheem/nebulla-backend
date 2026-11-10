@@ -6,9 +6,13 @@ Architecture: Phone/Desk/ESP32 all connect to THIS backend.
 No device talks to another device directly (design decision from doc §4).
 """
 
-# Pre-initialize torchvision at startup to prevent circular import in concurrent background warmups
+# Pre-initialize torchvision and omnivoice at startup to prevent circular import in concurrent background warmups
 try:
     import torchvision  # noqa: F401
+except Exception:
+    pass
+try:
+    import omnivoice  # noqa: F401
 except Exception:
     pass
 

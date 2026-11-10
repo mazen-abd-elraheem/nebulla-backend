@@ -26,6 +26,7 @@ data/uniface_test_result.jpg
 .ruff_cache/
 htmlcov/
 .coverage
+*.wav
 
 # Flutter root symlinks & build artifacts (workspace root convenience links)
 /.dart_tool/
