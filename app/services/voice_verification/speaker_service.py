@@ -926,7 +926,7 @@ class SpeakerVerificationService:
         is_identified2 = (best_sim2 >= thresh) and (best_name2 is not None)
         pct2 = self._calculate_match_percentage(best_sim2, thresh) if is_identified2 else 0.0
 
-        # 6. Formulate Arabic Comparison Verdict and Enforce Identity Consistency
+        # 6. Formulate Arabic Comparison Verdict and Enforce Strict Identity Consistency
         if is_identified1 and is_identified2:
             if (best_uid1 == best_uid2) or (best_name1 == best_name2):
                 is_same_speaker = True
@@ -934,18 +934,40 @@ class SpeakerVerificationService:
             else:
                 # Two distinct enrolled individuals (e.g. منه vs يوستينا)
                 is_same_speaker = False
+                same_match_pct = 0.0
                 comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
-        elif is_same_speaker:
-            if is_identified1 and not is_identified2:
+
+        elif is_identified1 and not is_identified2:
+            # Voice 1 is enrolled as Person A, Voice 2 is not identified in DB.
+            # Voice 2 can ONLY be Person A if Voice 2 directly matches Person A's registered voiceprint
+            sim_v2_to_1 = float(np.dot(emb2, best_entry1.vector))
+            if is_same_speaker and (sim_v2_to_1 >= thresh):
+                is_same_speaker = True
                 comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name1}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
-            elif is_identified2 and not is_identified1:
+            else:
+                is_same_speaker = False
+                same_match_pct = 0.0
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لشخص غير مسجل بالسيستم (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
+
+        elif is_identified2 and not is_identified1:
+            # Voice 2 is enrolled as Person B, Voice 1 is not identified in DB.
+            sim_v1_to_2 = float(np.dot(emb1, best_entry2.vector))
+            if is_same_speaker and (sim_v1_to_2 >= thresh):
+                is_same_speaker = True
                 comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name2}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
             else:
-                comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص (تطابق بنسبة {same_match_pct:.1f}%)، ولكنه غير مسجل في السيستم (صوت غير معروف)."
+                is_same_speaker = False
+                same_match_pct = 0.0
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لشخص غير مسجل بالسيستم والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
+
+        elif is_same_speaker:
+            # Neither voice is enrolled in DB, but raw acoustic similarity >= thresh
+            comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص (تطابق بنسبة {same_match_pct:.1f}%)، ولكنه غير مسجل في السيستم (صوت غير معروف)."
+
         else:
-            name1_str = f"[{best_name1}]" if is_identified1 else "[شخص غير مسجل]"
-            name2_str = f"[{best_name2}]" if is_identified2 else "[شخص غير مسجل]"
-            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ {name1_str} والصوت الثاني لـ {name2_str} (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
+            # Neither voice is enrolled in DB, and similarity < thresh
+            same_match_pct = 0.0
+            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})، وكلاهما غير مسجل في السيستم."
 
         # 7. Build Human-Readable Arabic Summary
         summary_lines = [
@@ -954,11 +976,11 @@ class SpeakerVerificationService:
             "",
             f"📋 تفاصيل الصوت الأول ({sec1} ثانية):",
             f"   - الهوية: {best_name1 if is_identified1 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct1) + '%' if is_identified1 else 'صوت غير معروف'})",
-            f"   - المعرفات: User #{best_uid1 or '--'} | Face #{getattr(best_entry1, 'face_id', None) or '--'} | Persona #{getattr(best_entry1, 'personality_id', None) or '--'} | Memory #{getattr(best_entry1, 'memory_id', None) or '--'}",
+            f"   - المعرفات: User #{best_uid1 if is_identified1 else '--'} | Face #{(getattr(best_entry1, 'face_id', None) if is_identified1 else None) or '--'} | Persona #{(getattr(best_entry1, 'personality_id', None) if is_identified1 else None) or '--'} | Memory #{(getattr(best_entry1, 'memory_id', None) if is_identified1 else None) or '--'}",
             "",
             f"📋 تفاصيل الصوت الثاني ({sec2} ثانية):",
             f"   - الهوية: {best_name2 if is_identified2 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct2) + '%' if is_identified2 else 'صوت غير معروف'})",
-            f"   - المعرفات: User #{best_uid2 or '--'} | Face #{getattr(best_entry2, 'face_id', None) or '--'} | Persona #{getattr(best_entry2, 'personality_id', None) or '--'} | Memory #{getattr(best_entry2, 'memory_id', None) or '--'}",
+            f"   - المعرفات: User #{best_uid2 if is_identified2 else '--'} | Face #{(getattr(best_entry2, 'face_id', None) if is_identified2 else None) or '--'} | Persona #{(getattr(best_entry2, 'personality_id', None) if is_identified2 else None) or '--'} | Memory #{(getattr(best_entry2, 'memory_id', None) if is_identified2 else None) or '--'}",
         ]
 
         return {
