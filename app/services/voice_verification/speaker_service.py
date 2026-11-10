@@ -305,20 +305,18 @@ class AcousticVoiceprintBackend:
         log_fb_norm = log_fb - np.mean(log_fb, axis=1, keepdims=True)
         b_fb = np.mean(log_fb_norm, axis=0).astype(np.float32)
 
-        # Block 2: 24-D MFCCs (c1..c24 with sinusoidal lifter to emphasize individual timbre)
+        # Block 2: 24-D MFCCs (c1..c24, ignoring c0 loudness)
         mfcc = dct(log_fb, type=2, axis=1, norm="ortho")[:, 1:25]
-        _D_mfcc = 24
-        _lifter = (1.0 + (_D_mfcc / 2.0) * np.sin(np.pi * np.arange(1, _D_mfcc + 1) / _D_mfcc)).astype(np.float32)
-        b_mfcc = (np.mean(mfcc, axis=0) * _lifter).astype(np.float32)
+        b_mfcc = np.mean(mfcc, axis=0).astype(np.float32)
 
         # Block 3: 24-D Delta MFCCs (relative velocity of vocal tract changes)
         if len(mfcc) > 2:
             d1 = np.gradient(mfcc, axis=0)
-            b_d1 = (np.mean(np.abs(d1), axis=0) * _lifter).astype(np.float32)
+            b_d1 = (np.mean(np.abs(d1), axis=0) - np.mean(np.mean(np.abs(d1)))).astype(np.float32)
         else:
             b_d1 = np.zeros(24, dtype=np.float32)
 
-        # Block 4: 24-D LPC Formants & Resonances (Individual vocal tract deviations)
+        # Block 4: 24-D LPC Formants & Resonances (Ultra-Fast 0.2ms Lag Correlation)
         speech_pcm = speech_frames.reshape(-1)
         cut = speech_pcm[: min(len(speech_pcm), sr * 2)]
         order = 16
@@ -339,10 +337,9 @@ class AcousticVoiceprintBackend:
         angles = np.arctan2(np.imag(roots), np.real(roots))
         formants = sorted(angles * (sr / (2 * np.pi)))
 
-        nominal_f = np.array([500.0, 1500.0, 2500.0, 3500.0, 4500.0, 5500.0, 6500.0, 7500.0], dtype=np.float32)
         f_vec = np.zeros(8, dtype=np.float32)
         for i in range(min(8, len(formants))):
-            f_vec[i] = (formants[i] - nominal_f[i]) / 500.0
+            f_vec[i] = formants[i] / 4000.0
         b_lpc = np.concatenate([a[1:17], f_vec]).astype(np.float32)
 
         # Block 5: 24-D Pitch (F0) & Harmonics Histogram (Sampled fast windows)
@@ -414,16 +411,15 @@ class AcousticVoiceprintBackend:
             n = float(np.linalg.norm(xc))
             return (xc / n).astype(np.float32) if n > 1e-9 else np.zeros_like(xc)
 
-        # Weighting: emphasize speaker-discriminative vocal-tract formants, timbre, and pitch
         vec = np.concatenate([
-            u_center(b_fb) * 0.5,        # 40 (channel/room acoustics downweighted)
-            u_center(b_mfcc) * 1.5,      # 24 (fine vocal timbre details amplified)
-            u_center(b_d1) * 1.0,        # 24
-            u_center(b_lpc) * 2.0,       # 24 (formant deviations doubled!)
-            u_center(b_pitch) * 2.5,     # 24 (pitch distribution 2.5x!)
-            u_center(b_contrast) * 0.5,  # 24 (room contrast downweighted)
-            u_center(b_moments) * 0.5,   # 16 (general moments downweighted)
-            u_center(b_cpp) * 1.5,       # 16 (harmonic sharpness)
+            u_center(b_fb),        # 40
+            u_center(b_mfcc),      # 24
+            u_center(b_d1),        # 24
+            u_center(b_lpc),       # 24
+            u_center(b_pitch),     # 24
+            u_center(b_contrast),  # 24
+            u_center(b_moments),   # 16
+            u_center(b_cpp),       # 16
         ])
         # Total: 40 + 24 + 24 + 24 + 24 + 24 + 16 + 16 = 192 dimensions
         n_full = np.linalg.norm(vec)
