@@ -335,7 +335,6 @@ async def test_cross_recorder_verification_same_speaker(speaker_a_pcm):
 
     assert res["is_same_speaker"] is True
     assert res["similarity"] >= 0.85
-    assert res["voice1"]["language_code"] == "arz"
     print(f"\nCross-recorder match passed! Similarity: {res['similarity']:.2%}")
 
 

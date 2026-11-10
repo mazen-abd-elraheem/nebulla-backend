@@ -2365,7 +2365,7 @@
       box.scrollIntoView({ behavior: 'smooth' });
     }
 
-    // ── Two Voices Comparison & Language Detection ───────────────────────────
+    // ── Two Voices Comparison & Speaker Identification ───────────────────────
     let compareFile1 = null;
     let compareFile2 = null;
 
@@ -2460,18 +2460,6 @@
       const bannerIcon = isSame ? '✅' : '👥';
       const bannerTitle = isSame ? 'نفس الشخص (Same Speaker)' : 'شخصان مختلفان (Different Speakers)';
       const bannerBadgeColor = isSame ? '#10b981' : '#f87171';
-
-      // Language flags
-      const getLangBadge = (lang) => {
-        if (!lang) return `<span class="badge" style="background: #334155; color: #cbd5e1;">غير محدد</span>`;
-        if (lang.includes('العربية') || lang.includes('Arabic')) {
-          return `<span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 9999px; font-size: 0.82rem; font-weight: 800; color: #34d399; background: rgba(52, 211, 153, 0.15); border: 1px solid rgba(52, 211, 153, 0.4);">🇪🇬 العربية (Arabic)</span>`;
-        }
-        if (lang.includes('الإنجليزية') || lang.includes('English')) {
-          return `<span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 9999px; font-size: 0.82rem; font-weight: 800; color: #60a5fa; background: rgba(96, 165, 250, 0.15); border: 1px solid rgba(96, 165, 250, 0.4);">🇬🇧 الإنجليزية (English)</span>`;
-        }
-        return `<span style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 9999px; font-size: 0.82rem; font-weight: 800; color: #c084fc; background: rgba(192, 132, 252, 0.15); border: 1px solid rgba(192, 132, 252, 0.4);">🌐 ${lang}</span>`;
-      };
 
       const getSpeakerCardHtml = (title, v, colorAccent) => {
         const isEnrolled = v.is_enrolled;
