@@ -236,7 +236,7 @@ class XTTSProvider(BaseTTSProvider):
         clean_text = clean_llm_output_for_speech(text) or text.strip()
 
         # Primary: VoiceTut-TTS GPU microservice (runs isolated on port 8001)
-        if await self._wait_for_service(timeout=15.0):
+        if await self._wait_for_service(timeout=1.5):
             try:
                 from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
                 svc = VoiceTutMicroserviceProvider()
@@ -256,26 +256,34 @@ class XTTSProvider(BaseTTSProvider):
         # Secondary: In-process fallback
         await self._ensure_in_process_loaded()
 
-        if XTTSProvider._shared_tts is None or isinstance(XTTSProvider._shared_tts, str):
-            raise RuntimeError(
-                "VoiceTut-TTS engine is unavailable. "
-                "Ensure the microservice on http://127.0.0.1:8001 is running or in-process model is installed."
+        if XTTSProvider._shared_tts is not None and not isinstance(XTTSProvider._shared_tts, str):
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None,
+                self._synth_sync,
+                clean_text,
+                speaker,
+                ref_audio,
+                ref_text,
+                num_step,
+                guidance_scale,
+                speed,
+                language,
             )
 
-        loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(
-            None,
-            self._synth_sync,
-            clean_text,
-            speaker,
-            ref_audio,
-            ref_text,
-            num_step,
-            guidance_scale,
-            speed,
-            language,
+        # Tertiary: VoiceTutMicroservice fallback (gTTS / Windows SAPI Arabic voice generator)
+        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
+        svc = VoiceTutMicroserviceProvider()
+        return await svc.synthesize(
+            text=clean_text,
+            speaker=speaker or self._speaker,
+            ref_audio=ref_audio or self._reference_wav,
+            ref_text=ref_text,
+            num_step=num_step,
+            guidance_scale=guidance_scale,
+            speed=speed,
+            language=language or self._language,
         )
-        return res
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
         """Streaming synthesis yielding WAV chunks."""
