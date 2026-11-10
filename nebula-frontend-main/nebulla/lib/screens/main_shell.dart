@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'dashboard_screen.dart';
 import 'chat_screen.dart';
@@ -112,98 +111,97 @@ class _MainShellState extends State<MainShell> {
       ),
     ];
 
-    return SafeArea(
-      child: Directionality(
-        textDirection: TextDirection.ltr, // Matches Image 3 layout: Left=Home -> Right=Profile
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          height: 76,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.88),
-            borderRadius: BorderRadius.circular(34),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.95),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 24,
-                offset: const Offset(0, 6),
-              ),
+    return Directionality(
+      textDirection: TextDirection.ltr, // Matches Mockup layout: Left=Home -> Right=Profile
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.20),
+              Colors.black.withValues(alpha: 0.55),
             ],
+            stops: const [0.0, 0.40, 1.0],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(34),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: List.generate(items.length, (i) {
-                  final selected = _currentIndex == i;
-                  final item = items[i];
+        ),
+        padding: const EdgeInsets.only(top: 14, bottom: 12),
+        child: SafeArea(
+          top: false,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(items.length, (i) {
+              final selected = _currentIndex == i;
+              final item = items[i];
 
-                  return InkWell(
-                    onTap: () => setState(() => _currentIndex = i),
-                    borderRadius: BorderRadius.circular(24),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Circular Icon Container matching Image 3 design
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: selected
-                                  ? const Color(0xFF0284C7).withValues(alpha: 0.12)
-                                  : Colors.white.withValues(alpha: 0.9),
-                              border: Border.all(
-                                color: selected
-                                    ? const Color(0xFF0284C7)
-                                    : const Color(0xFF334155).withValues(alpha: 0.5),
-                                width: selected ? 1.6 : 1.2,
-                              ),
-                              boxShadow: selected
-                                  ? [
-                                      BoxShadow(
-                                        color: const Color(0xFF0284C7).withValues(alpha: 0.25),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            child: Icon(
-                              selected ? item.activeIcon : item.icon,
-                              color: selected
-                                  ? const Color(0xFF0284C7)
-                                  : const Color(0xFF1E293B),
-                              size: 21,
-                            ),
+              return InkWell(
+                onTap: () => setState(() => _currentIndex = i),
+                borderRadius: BorderRadius.circular(30),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Circular Glass Icon Container matching Mockup 100%
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: selected
+                              ? const Color(0xFF00E5FF).withValues(alpha: 0.22)
+                              : Colors.white.withValues(alpha: 0.16),
+                          border: Border.all(
+                            color: selected
+                                ? const Color(0xFF00E5FF)
+                                : Colors.white.withValues(alpha: 0.85),
+                            width: selected ? 1.8 : 1.3,
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            item.label,
-                            style: TextStyle(
-                              fontFamily: 'Cairo',
-                              fontSize: 10,
-                              fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                          boxShadow: [
+                            BoxShadow(
                               color: selected
-                                  ? const Color(0xFF0284C7)
-                                  : const Color(0xFF334155),
+                                  ? const Color(0xFF00E5FF).withValues(alpha: 0.45)
+                                  : Colors.black.withValues(alpha: 0.18),
+                              blurRadius: selected ? 12 : 6,
+                              offset: const Offset(0, 2),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                        child: Icon(
+                          selected ? item.activeIcon : item.icon,
+                          color: selected
+                              ? const Color(0xFF00E5FF)
+                              : Colors.white,
+                          size: 22,
+                        ),
                       ),
-                    ),
-                  );
-                }),
-              ),
-            ),
+                      const SizedBox(height: 5),
+                      Text(
+                        item.label,
+                        style: TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 10.5,
+                          fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                          color: selected
+                              ? const Color(0xFF00E5FF)
+                              : Colors.white,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
           ),
         ),
       ),

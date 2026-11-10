@@ -45,6 +45,14 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   AnimationController? _blinkController;
   Animation<double>? _blinkAnimation;
 
+  // 3D Orbit Interaction & Perspective State
+  double _userRotationX = 0.0;
+  double _userRotationY = 0.0;
+  Offset? _lastPanPos;
+  AnimationController? _recenterController;
+  Animation<double>? _recenterAnimX;
+  Animation<double>? _recenterAnimY;
+
   Timer? _blinkTimer;
   final Random _random = Random();
 
@@ -56,6 +64,18 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   void _initControllers() {
+    // 0. Recenter spring-back controller for 3D orbit
+    _recenterController ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    )..addListener(() {
+        if (_recenterAnimX != null && _recenterAnimY != null) {
+          setState(() {
+            _userRotationX = _recenterAnimX!.value;
+            _userRotationY = _recenterAnimY!.value;
+          });
+        }
+      });
     // 1. Ambient living breathing pulse (4 seconds)
     _breathingController ??= AnimationController(
       vsync: this,
@@ -113,11 +133,39 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   @override
   void dispose() {
     _blinkTimer?.cancel();
+    _recenterController?.dispose();
     _breathingController?.dispose();
     _auraPulseController?.dispose();
     _headMotionController?.dispose();
     _blinkController?.dispose();
     super.dispose();
+  }
+
+  void _onPanStart(DragStartDetails details) {
+    _recenterController?.stop();
+    _lastPanPos = details.localPosition;
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    if (_lastPanPos == null) return;
+    final delta = details.localPosition - _lastPanPos!;
+    _lastPanPos = details.localPosition;
+    setState(() {
+      _userRotationY += delta.dx * 0.007; // Orbit horizontally in 3D
+      _userRotationX = (_userRotationX - delta.dy * 0.005).clamp(-0.35, 0.35); // Orbit vertically in 3D
+    });
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    _lastPanPos = null;
+    if (_recenterController == null) return;
+    _recenterAnimX = Tween<double>(begin: _userRotationX, end: 0.0).animate(
+      CurvedAnimation(parent: _recenterController!, curve: Curves.easeOutCubic),
+    );
+    _recenterAnimY = Tween<double>(begin: _userRotationY, end: 0.0).animate(
+      CurvedAnimation(parent: _recenterController!, curve: Curves.easeOutCubic),
+    );
+    _recenterController!.forward(from: 0.0);
   }
 
   @override
@@ -185,6 +233,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
         final portraitH = availableH;
 
         return GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () {
             if (widget.onAvatarTapped != null) {
               widget.onAvatarTapped!();
@@ -197,6 +246,9 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
             _audioService.switchAvatar(nextType);
             widget.onAvatarDoubleTapped?.call();
           },
+          onPanStart: _onPanStart,
+          onPanUpdate: _onPanUpdate,
+          onPanEnd: _onPanEnd,
           child: AnimatedBuilder(
             animation: Listenable.merge([
               _breathingAnimation!,
@@ -208,12 +260,16 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
               final imgW = isFemale ? 418.0 : 448.0;
               const imgH = 1024.0;
 
-              // Filter-Style 3D Micro-Head Parallax & Idle Sway
+              // Filter-Style 3D Micro-Head Parallax & Idle Sway combined with 3D User Orbit
               final headT = (_headMotionController?.value ?? 0.5) * 2 * pi;
-              final yaw = sin(headT * 0.7) * 0.018; // ±1.0° horizontal sway
-              final pitch = (cos(headT * 0.9) * 0.012) +
-                  (isSpeaking ? sin(headT * 3.5) * 0.006 : 0.0); // subtle speech nod
-              final roll = sin(headT * 0.5) * 0.007; // ±0.4° gentle head tilt
+              final idleYaw = sin(headT * 0.7) * 0.024; // ±1.4° horizontal sway
+              final idlePitch = (cos(headT * 0.9) * 0.016) +
+                  (isSpeaking ? sin(headT * 3.5) * 0.008 : 0.0); // subtle speech nod
+              final idleRoll = sin(headT * 0.5) * 0.010; // ±0.6° gentle head tilt
+
+              final totalYaw = _userRotationY + idleYaw;
+              final totalPitch = _userRotationX + idlePitch;
+              final totalRoll = idleRoll;
 
               return Center(
                 child: SizedBox(
@@ -226,14 +282,14 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                       // 1. Ambient Cybernetic Energy Glow
                       _buildAmbientGlow(auraColor, isSpeaking, amplitude, portraitW, portraitH),
 
-                      // 2. Character Portrait: Filter 3D Parallax Perspective + Organic Micro-Breathing
+                      // 2. Character Portrait: 3D Orbit Perspective + Filter Parallax + Organic Respiration
                       Transform(
                         alignment: const Alignment(0.0, -0.15),
                         transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.001) // 3D depth perspective
-                          ..rotateY(yaw)
-                          ..rotateX(pitch)
-                          ..rotateZ(roll),
+                          ..setEntry(3, 2, 0.0012) // 3D depth perspective
+                          ..rotateY(totalYaw)
+                          ..rotateX(totalPitch)
+                          ..rotateZ(totalRoll),
                         child: ClipRRect(
                           borderRadius: widget.fullScreen
                               ? BorderRadius.zero

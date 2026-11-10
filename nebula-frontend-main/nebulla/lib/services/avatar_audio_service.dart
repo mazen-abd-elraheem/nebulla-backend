@@ -182,7 +182,10 @@ Add-Type -AssemblyName System.Speech
       _lastAudioFile = tempFile;
 
       int durationMs = fallbackDurationMs;
-      if (!isMp3 && audioBytes.length > 44) {
+      if (isMp3) {
+        // Standard TTS MP3 bitrate is 32 kbps (4000 bytes/sec)
+        durationMs = max(1600, ((audioBytes.length / 4000) * 1000).round());
+      } else if (audioBytes.length > 44) {
         try {
           final byteData = ByteData.sublistView(audioBytes);
           final byteRate = byteData.getUint32(28, Endian.little);
@@ -195,20 +198,27 @@ Add-Type -AssemblyName System.Speech
       _startLipSyncPulse(durationMs, audioBytes);
 
       final safePath = tempFile.absolute.path.replaceAll('/', '\\').replaceAll("'", "''");
-      final psScript = isMp3
-          ? """
-\$wmp = New-Object -ComObject WMPlayer.OCX
-\$wmp.settings.volume = 100
-\$wmp.URL = '$safePath'
-\$wmp.controls.play()
-Start-Sleep -Milliseconds 300
-while (\$wmp.playState -eq 3 -or \$wmp.playState -eq 6 -or \$wmp.playState -eq 9) {
-    Start-Sleep -Milliseconds 100
+      // Use Windows Multimedia API (winmm.dll mciSendString) which reliably plays MP3 & WAV
+      final psScript = """
+\$source = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public class WinAudio {
+    [DllImport("winmm.dll")]
+    public static extern long mciSendString(string strCommand, StringBuilder strReturn, int iReturnLength, IntPtr hwndCallback);
+
+    public static void Play(string filePath) {
+        mciSendString("close nebAudio", null, 0, IntPtr.Zero);
+        mciSendString("open \\"" + filePath + "\\" type ${isMp3 ? 'mpegvideo' : 'waveaudio'} alias nebAudio", null, 0, IntPtr.Zero);
+        mciSendString("play nebAudio wait", null, 0, IntPtr.Zero);
+        mciSendString("close nebAudio", null, 0, IntPtr.Zero);
+    }
 }
-"""
-          : """
-\$sp = New-Object System.Media.SoundPlayer '$safePath'
-\$sp.PlaySync()
+"@
+Add-Type -TypeDefinition \$source
+[WinAudio]::Play('$safePath')
 """;
       final scriptFile = File('${tempDir.path}\\play_$timestamp.ps1');
       await scriptFile.writeAsString(psScript);

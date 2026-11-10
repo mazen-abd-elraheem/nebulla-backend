@@ -60,7 +60,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Full-Screen Interactive Animated Character (Cleaned Background, Organic Motion)
+          // 1. Full-Screen Interactive 3D Avatar (Filter Parallax, 3D Orbit, Living Respiration, Eye Blinking, Lip-Sync)
           Positioned.fill(
             child: InteractiveAnimatedAvatar(
               fullScreen: true,
@@ -74,10 +74,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
 
-          // 2. Top Header Bar matching Image 2 100%:
+          // 2. Top Header Bar matching User Mockup 100%:
           // - LEFT: Hamburger Menu Button (opens side menu modal immediately)
-          // - CENTER: Live Green Status Dot
-          // - RIGHT: Notification Bell Button
+          // - CENTER: Glowing Green Online Status Dot
+          // - RIGHT: Circular Notification Bell Button
           SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
@@ -118,18 +118,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
 
-                      // CENTER: Green Online Status Dot with subtle pulse
+                      // CENTER: Glowing Green Online Status Dot matching Mockup
                       Container(
-                        width: 9,
-                        height: 9,
+                        width: 10,
+                        height: 10,
                         decoration: BoxDecoration(
                           color: const Color(0xFF10B981),
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.7),
-                              blurRadius: 8,
-                              spreadRadius: 2,
+                              color: const Color(0xFF10B981).withValues(alpha: 0.8),
+                              blurRadius: 10,
+                              spreadRadius: 3,
                             ),
                           ],
                         ),
