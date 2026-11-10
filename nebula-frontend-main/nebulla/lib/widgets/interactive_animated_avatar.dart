@@ -323,40 +323,47 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                                       ),
                                     ),
 
-                                    // Natural Organic Eye Blinking (Positioned accurately on actual eye sockets)
+                                    // 3D Volumetric Specular Light Reflection (Shifts across 3D curvature)
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            gradient: RadialGradient(
+                                              center: Alignment(
+                                                (-0.20 - totalYaw * 2.4).clamp(-0.85, 0.85),
+                                                (-0.30 - totalPitch * 1.8).clamp(-0.85, 0.85),
+                                              ),
+                                              radius: 0.80,
+                                              colors: [
+                                                Colors.white.withValues(alpha: 0.22),
+                                                Colors.white.withValues(alpha: 0.05),
+                                                Colors.transparent,
+                                              ],
+                                              stops: const [0.0, 0.42, 1.0],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
+                                    // Natural Organic Eye Blinking (Positioned accurately with 3D Depth Parallax)
                                     Positioned.fill(
                                       child: CustomPaint(
                                         painter: _NaturalEyeBlinkPainter(
                                           isFemale: isFemale,
                                           blinkProgress: _blinkAnimation?.value ?? 0.0,
+                                          parallaxOffset: Offset(totalYaw * 12.0, totalPitch * 8.0),
                                         ),
                                       ),
                                     ),
 
-                                    // Dynamic Audio-Driven Lip-Sync (Viseme based mouth morph directly on lips)
+                                    // Dynamic Audio-Driven Lip-Sync (Viseme based mouth morph with 3D Relief Parallax)
                                     Positioned.fill(
                                       child: CustomPaint(
                                         painter: _RealisticMouthLipSyncPainter(
                                           isFemale: isFemale,
                                           viseme: viseme,
-                                        ),
-                                      ),
-                                    ),
-
-                                    // Subtle bottom gradient fade to white
-                                    Positioned.fill(
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topCenter,
-                                            end: Alignment.bottomCenter,
-                                            colors: [
-                                              Colors.transparent,
-                                              Colors.transparent,
-                                              Colors.white.withValues(alpha: 0.85),
-                                            ],
-                                            stops: const [0.0, 0.78, 1.0],
-                                          ),
+                                          parallaxOffset: Offset(totalYaw * 14.0, totalPitch * 9.0),
                                         ),
                                       ),
                                     ),
@@ -502,27 +509,29 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 }
 
-/// Organic, photorealistic eye blinking painter positioned accurately on actual eye sockets
+/// Organic, photorealistic eye blinking painter positioned accurately on actual eye sockets with 3D Parallax
 class _NaturalEyeBlinkPainter extends CustomPainter {
   final bool isFemale;
   final double blinkProgress; // 0.0 = open, 1.0 = fully closed
+  final Offset parallaxOffset;
 
   _NaturalEyeBlinkPainter({
     required this.isFemale,
     required this.blinkProgress,
+    this.parallaxOffset = Offset.zero,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (blinkProgress < 0.04) return;
 
-    // Exact center coordinates in 1:1 image pixel space (1024h)
-    final leftCenter = isFemale
+    // Exact center coordinates in 1:1 image pixel space (1024h) with 3D Depth Parallax
+    final leftCenter = (isFemale
         ? const Offset(166.0, 416.0)
-        : const Offset(158.0, 370.0);
-    final rightCenter = isFemale
+        : const Offset(158.0, 370.0)) + parallaxOffset;
+    final rightCenter = (isFemale
         ? const Offset(252.0, 416.0)
-        : const Offset(290.0, 370.0);
+        : const Offset(290.0, 370.0)) + parallaxOffset;
 
     final eyeW = isFemale ? 42.0 : 44.0;
     final eyeH = isFemale ? 18.0 : 18.0;
@@ -576,28 +585,32 @@ class _NaturalEyeBlinkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _NaturalEyeBlinkPainter old) {
-    return old.blinkProgress != blinkProgress || old.isFemale != isFemale;
+    return old.blinkProgress != blinkProgress ||
+        old.isFemale != isFemale ||
+        old.parallaxOffset != parallaxOffset;
   }
 }
 
-/// Dynamic Audio-Driven Viseme Lip-Sync Painter positioned accurately directly on lips
+/// Dynamic Audio-Driven Viseme Lip-Sync Painter positioned accurately directly on lips with 3D Depth Parallax
 class _RealisticMouthLipSyncPainter extends CustomPainter {
   final bool isFemale;
   final VisemeFrame viseme;
+  final Offset parallaxOffset;
 
   _RealisticMouthLipSyncPainter({
     required this.isFemale,
     required this.viseme,
+    this.parallaxOffset = Offset.zero,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (viseme.openness < 0.05 && viseme.type != VisemeType.mbp) return;
 
-    // Exact center coordinates on actual lips
-    final mouthCenter = isFemale
+    // Exact center coordinates on actual lips with 3D Depth Parallax
+    final mouthCenter = (isFemale
         ? const Offset(209.0, 554.0)
-        : const Offset(224.0, 562.0);
+        : const Offset(224.0, 562.0)) + parallaxOffset;
 
     final baseW = isFemale ? 56.0 : 68.0;
     // Viseme pucker narrows width (oo/u), widthRatio expands width (ee/smile)
@@ -660,6 +673,7 @@ class _RealisticMouthLipSyncPainter extends CustomPainter {
         old.viseme.type != viseme.type ||
         old.viseme.widthRatio != viseme.widthRatio ||
         old.viseme.pucker != viseme.pucker ||
-        old.isFemale != isFemale;
+        old.isFemale != isFemale ||
+        old.parallaxOffset != parallaxOffset;
   }
 }
