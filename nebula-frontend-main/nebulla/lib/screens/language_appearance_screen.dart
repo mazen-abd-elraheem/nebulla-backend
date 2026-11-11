@@ -34,8 +34,11 @@ class _LanguageAppearanceScreenState extends State<LanguageAppearanceScreen> {
           backgroundColor: Colors.white,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_forward_ios_rounded,
-                color: Color(0xFF1E293B), size: 20),
+            icon: Transform.flip(
+              flipX: true,
+              child: const Icon(Icons.arrow_forward_ios_rounded,
+                  color: Color(0xFF1E293B), size: 20),
+            ),
             onPressed: () => Navigator.of(context).pop(),
           ),
           title: const Text(

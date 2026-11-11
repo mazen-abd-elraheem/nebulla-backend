@@ -282,8 +282,11 @@ class _ContactsScreenState extends State<ContactsScreen>
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back_ios,
-                          color: AppColors.textPrimary, size: 20),
+                      icon: Transform.flip(
+                        flipX: true,
+                        child: const Icon(Icons.arrow_back_ios,
+                            color: AppColors.textPrimary, size: 20),
+                      ),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const Expanded(

@@ -359,12 +359,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
               },
               borderRadius: BorderRadius.circular(20),
-              child: const Padding(
-                padding: EdgeInsets.all(4),
-                child: Icon(
-                  Icons.arrow_forward_rounded,
-                  color: Color(0xFF1E293B),
-                  size: 26,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Transform.flip(
+                  flipX: true,
+                  child: const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Color(0xFF1E293B),
+                    size: 26,
+                  ),
                 ),
               ),
             ),

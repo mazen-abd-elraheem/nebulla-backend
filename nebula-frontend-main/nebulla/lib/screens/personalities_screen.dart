@@ -581,8 +581,11 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
                   children: [
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
-                      child: const Icon(Icons.arrow_back_ios,
-                          color: AppColors.teal, size: 20),
+                      child: Transform.flip(
+                        flipX: true,
+                        child: const Icon(Icons.arrow_back_ios,
+                            color: AppColors.teal, size: 20),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Text(
