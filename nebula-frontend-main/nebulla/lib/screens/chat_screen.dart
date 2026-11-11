@@ -1202,6 +1202,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           color: Color(0xFF0F172A),
                         ),
                         textInputAction: TextInputAction.send,
+                        cursorColor: const Color(0xFF0096C7),
                         decoration: const InputDecoration(
                           hintText: '...اكتب رسالتك هنا',
                           hintStyle: TextStyle(
@@ -1210,8 +1211,12 @@ class _ChatScreenState extends State<ChatScreen> {
                             fontWeight: FontWeight.w500,
                             color: Color(0xFF94A3B8),
                           ),
+                          filled: true,
+                          fillColor: Colors.white,
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 10),
                           isDense: true,
                         ),
                         onSubmitted: (_) => _sendMessage(),
