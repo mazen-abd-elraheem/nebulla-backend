@@ -1342,8 +1342,8 @@
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
             <div style="display: flex; align-items: center; gap: 10px;">
               <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">حد التطابق (Threshold):</span>
-              <input type="range" id="compare-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.82" oninput="document.getElementById('compare-thresh-display').innerText = Math.round(this.value * 100) + '%'" style="width: 120px;">
-              <span id="compare-thresh-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">82%</span>
+              <input type="range" id="compare-thresh-slider" min="0.80" max="0.98" step="0.01" value="0.92" oninput="document.getElementById('compare-thresh-display').innerText = Math.round(this.value * 100) + '%'" style="width: 120px;">
+              <span id="compare-thresh-display" style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">92%</span>
             </div>
 
             <button type="button" id="btn-compare-submit" onclick="handleCompareSubmit()" class="btn-submit" style="width: auto; padding: 11px 32px; background: linear-gradient(135deg, #0ea5e9, #8b5cf6); box-shadow: 0 4px 20px rgba(14, 165, 233, 0.45);">
@@ -2414,7 +2414,7 @@
       btn.disabled = true;
 
       try {
-        const threshold = parseFloat(document.getElementById('compare-thresh-slider').value) || 0.82;
+        const threshold = parseFloat(document.getElementById('compare-thresh-slider').value) || 0.92;
         const formData = new FormData();
         formData.append('file1', compareFile1);
         formData.append('file2', compareFile2);

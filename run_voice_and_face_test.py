@@ -63,7 +63,7 @@ async def run_voice_tests():
 
     # اختبار 1: مقارنة نفس المتحدث (تسجيلين مختلفين لنفس الصوت)
     t0 = time.perf_counter()
-    res_same = await svc.compare_two_speakers(sample_a1, sample_a2, threshold=0.82)
+    res_same = await svc.compare_two_speakers(sample_a1, sample_a2, threshold=0.92)
     time_same_ms = (time.perf_counter() - t0) * 1000
 
     print("1. مقارنة تسجيلين لنفس الشخص (Same Speaker):")
@@ -80,7 +80,7 @@ async def run_voice_tests():
 
     # اختبار 2: مقارنة شخصين مختلفين (Different Speakers)
     t0 = time.perf_counter()
-    res_diff = await svc.compare_two_speakers(sample_a1, sample_b, threshold=0.82)
+    res_diff = await svc.compare_two_speakers(sample_a1, sample_b, threshold=0.92)
     time_diff_ms = (time.perf_counter() - t0) * 1000
 
     print("2. مقارنة صوتين لشخصين مختلفين (Different Speakers):")

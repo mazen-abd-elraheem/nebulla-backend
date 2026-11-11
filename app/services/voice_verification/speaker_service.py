@@ -696,20 +696,20 @@ class SpeakerVerificationService:
     def default_threshold(self) -> float:
         """Adaptive similarity threshold for Egyptian Arabic voice verification."""
         if hasattr(self._backend, "_sb") and not self._backend._sb.available():
-            return 0.82
+            return 0.92
         if isinstance(self._backend, AcousticVoiceprintBackend):
-            return 0.82
+            return 0.92
         return settings.SPEAKER_THRESHOLD_L1
 
     @staticmethod
-    def _calculate_match_percentage(sim: float, threshold: float = 0.82) -> float:
+    def _calculate_match_percentage(sim: float, threshold: float = 0.92) -> float:
         """Calibrate raw cosine similarity into an intuitive biometric match percentage [0.0% - 100.0%]."""
         if sim < threshold:
             return 0.0
         if sim >= 1.0:
             return 100.0
         # Confirmed match (85.0% to 99.9%)
-        progress = min(1.0, (sim - threshold) / max(0.01, (0.95 - threshold)))
+        progress = min(1.0, (sim - threshold) / max(0.01, (0.98 - threshold)))
         pct = 85.0 + (progress * 14.9)
         return round(min(99.9, pct), 1)
 
