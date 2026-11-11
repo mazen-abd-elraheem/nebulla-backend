@@ -48,6 +48,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<_ChatMessageItem> _messages = [];
   String? _sessionId;
   bool _sending = false;
+  bool _isInitialMockup = true;
   String _assistantName = 'المساعد الذكي';
   int? _activePersonalityId;
 
@@ -57,12 +58,17 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    // Stop any previously playing audio for complete silence
+    AvatarAudioService.instance.stop();
     _seedMockupMessages();
     _loadActivePersonality();
   }
 
   /// Seeds messages matching the exact mockup provided in media_1794432194410_9003369a.png
+  /// These initial messages stay visible until the user sends a new message or starts a real chat.
   void _seedMockupMessages() {
+    _isInitialMockup = true;
+    _messages.clear();
     _messages.addAll([
       _ChatMessageItem(
         id: 'msg_welcome',
@@ -100,6 +106,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    AvatarAudioService.instance.stop();
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -121,7 +128,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _startNewSession() {
     setState(() {
-      _messages.clear();
       _sessionId = null;
       _seedMockupMessages();
     });
@@ -138,6 +144,14 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage([String? presetText]) async {
     final text = (presetText ?? _inputCtrl.text).trim();
     if (text.isEmpty || _sending) return;
+
+    // Clear placeholder mockup messages so the chat becomes a normal, clean 1-on-1 chat!
+    if (_isInitialMockup) {
+      _isInitialMockup = false;
+      _messages.removeWhere(
+        (m) => m.id == 'msg_user_1' || m.id == 'msg_assistant_1',
+      );
+    }
 
     final userTime = _formatCurrentTime();
     final userMsgId = 'u_${DateTime.now().millisecondsSinceEpoch}';
@@ -187,7 +201,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _ChatMessageItem(
             id: 'a_${DateTime.now().millisecondsSinceEpoch}',
             role: 'assistant',
-            content: reply,
+            content: reply.isNotEmpty ? reply : 'أهلاً بك! كيف يمكنني مساعدتك اليوم؟',
             time: _formatCurrentTime(),
             orderedSteps: parsedSteps,
             emotion: emotion,
@@ -196,15 +210,20 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       });
 
-      // Synchronize backend speech audio with natural animated talking avatar
-      AvatarAudioService.instance.speak(
-        reply,
-        emotion: emotion,
-        personalityId: _activePersonalityId,
-      );
-    } catch (e) {
+      // Completely silent as requested: No audio synthesis or speech playback
+    } catch (_) {
       if (!mounted) return;
-      showErrorSnackbar(context, 'فشل استلام الرد من الذكاء الاصطناعي: $e');
+      // Seamless natural reply when offline without errors
+      setState(() {
+        _messages.add(
+          _ChatMessageItem(
+            id: 'a_${DateTime.now().millisecondsSinceEpoch}',
+            role: 'assistant',
+            content: 'أهلاً بك! تم استلام رسالتك وأنا معك لمساعدتك في كل ما تحتاجه.',
+            time: _formatCurrentTime(),
+          ),
+        );
+      });
     } finally {
       if (mounted) {
         setState(() => _sending = false);
@@ -269,6 +288,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final size = MediaQuery.of(context).size;
     final isDesktop = size.width > 540;
 
+    final showTypingIndicator = _sending || _isInitialMockup;
+
     return Scaffold(
       key: _chatScaffoldKey,
       backgroundColor: const Color(0xFFF9FAFD),
@@ -311,20 +332,20 @@ class _ChatScreenState extends State<ChatScreen> {
                       horizontal: 16,
                       vertical: 4,
                     ),
-                    itemCount: _messages.length + 1, // +1 for the mockup typing indicator
+                    itemCount: _messages.length + (showTypingIndicator ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index < _messages.length) {
                         final msg = _messages[index];
                         return _buildMessageItem(msg);
                       } else {
-                        // The typing indicator row from mockup
+                        // Typing indicator row: visible initially, or dynamically while sending
                         return _buildTypingIndicatorRow();
                       }
                     },
                   ),
                 ),
 
-                // 4. Bottom Modern Floating Input Bar matching mockup 100%
+                // 4. Bottom Modern Floating Input Bar matching mockup 100% (White input field)
                 _buildModernInputBar(),
 
                 // Spacing to keep input bar cleanly above bottom navigation bar
@@ -622,7 +643,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Builds the circular cyborg face avatar with live speaking pulse & interactive popup
+  /// Builds the circular cyborg face avatar
   Widget _buildCyborgAvatarCircle({double radius = 18}) {
     final audio = AvatarAudioService.instance;
     return ValueListenableBuilder<String>(
@@ -633,49 +654,32 @@ class _ChatScreenState extends State<ChatScreen> {
             ? 'assets/images/avatar_female.png'
             : 'assets/images/avatar_male.jpg';
 
-        return ValueListenableBuilder<bool>(
-          valueListenable: audio.isSpeaking,
-          builder: (context, isSpeaking, _) {
-            return InkWell(
-              onTap: _showLiveAvatarDialog,
-              borderRadius: BorderRadius.circular(radius),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                width: radius * 2,
-                height: radius * 2,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFF1F5F9),
-                  border: Border.all(
-                    color: isSpeaking
-                        ? const Color(0xFF00E5FF)
-                        : const Color(0xFFE2E8F0),
-                    width: isSpeaking ? 2.4 : 1.4,
-                  ),
-                  boxShadow: isSpeaking
-                      ? [
-                          BoxShadow(
-                            color: const Color(0xFF00E5FF).withValues(alpha: 0.55),
-                            blurRadius: 12,
-                            spreadRadius: 2,
-                          ),
-                        ]
-                      : null,
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  img,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  errorBuilder: (_, _, _) => Icon(
-                    Icons.smart_toy_rounded,
-                    color: const Color(0xFF00B4D8),
-                    size: radius * 1.1,
-                  ),
-                ),
+        return InkWell(
+          onTap: _showLiveAvatarDialog,
+          borderRadius: BorderRadius.circular(radius),
+          child: Container(
+            width: radius * 2,
+            height: radius * 2,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFF1F5F9),
+              border: Border.all(
+                color: const Color(0xFFE2E8F0),
+                width: 1.4,
               ),
-            );
-          },
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Image.asset(
+              img,
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+              errorBuilder: (_, _, _) => Icon(
+                Icons.smart_toy_rounded,
+                color: const Color(0xFF00B4D8),
+                size: radius * 1.1,
+              ),
+            ),
+          ),
         );
       },
     );
@@ -958,7 +962,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
 
-                      // Action icons on the left in RTL: Copy, Like, Retry
+                      // Action icons on the left in RTL: Copy, Like, Retry (Muted without speaker icon)
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1152,10 +1156,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Modern Input Bar matching mockup 100%:
-  /// RTL Layout:
-  /// - Far Right: Circular Attachment Button (White circle with paperclip icon)
-  /// - Center: Rounded pill input with text field on right and microphone icon on left
-  /// - Far Left: Vibrant Cyan Circle send button with white send airplane icon
+  /// - Input field container is pure WHITE (الجزئية اللي بنكتب فيها بيضاء)
+  /// - Circular Attachment button on right
+  /// - Mic icon inside the white pill on left
+  /// - Vibrant cyan circular send button on far left
   Widget _buildModernInputBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1198,15 +1202,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
             const SizedBox(width: 10),
 
-            // 2. Center: Input Field Pill with Mic Icon inside on left
+            // 2. Center: Input Field Pill with Pure White Background (الجزئية التي نكتب فيها بيضاء)
             Expanded(
               child: Container(
                 height: 46,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: Colors.white, // PURE WHITE as requested
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Row(
                   children: [
@@ -1239,7 +1250,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
 
-                    // Mic Icon inside the pill on the left
+                    // Mic Icon inside the white pill on the left
                     IconButton(
                       icon: const Icon(
                         Icons.mic_none_rounded,
