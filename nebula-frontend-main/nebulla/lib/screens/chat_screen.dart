@@ -48,7 +48,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<_ChatMessageItem> _messages = [];
   String? _sessionId;
   bool _sending = false;
-  bool _isInitialMockup = true;
   String _assistantName = 'المساعد الذكي';
   int? _activePersonalityId;
 
@@ -60,16 +59,15 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     // Stop any previously playing audio for complete silence
     AvatarAudioService.instance.stop();
-    _seedMockupMessages();
+    _seedInitialWelcomeMessage();
     _loadActivePersonality();
   }
 
-  /// Seeds messages matching the exact mockup provided in media_1794432194410_9003369a.png
-  /// These initial messages stay visible until the user sends a new message or starts a real chat.
-  void _seedMockupMessages() {
-    _isInitialMockup = true;
+  /// Initial state: ONLY the welcome greeting message is present at start!
+  /// No fake questions or answers, exactly as requested: "المسج تبقى في الاول بس ولما اعمل حاجه جديده تتغير وتمشي"
+  void _seedInitialWelcomeMessage() {
     _messages.clear();
-    _messages.addAll([
+    _messages.add(
       _ChatMessageItem(
         id: 'msg_welcome',
         role: 'assistant',
@@ -83,25 +81,7 @@ class _ChatScreenState extends State<ChatScreen> {
           'المساعدة في كتابة محتوى',
         ],
       ),
-      _ChatMessageItem(
-        id: 'msg_user_1',
-        role: 'user',
-        content:
-            'هل يمكنك مساعدتي في تنظيم جدول مهامي اليومية بطريقة ذكية وسريعة؟',
-        time: '10:32',
-      ),
-      _ChatMessageItem(
-        id: 'msg_assistant_1',
-        role: 'assistant',
-        content: 'بالتأكيد! إليك خطة ذكية ومثالية لتنظيم يومك وزيادة إنتاجيتك:',
-        time: '10:33',
-        orderedSteps: [
-          'تقسيم المهام حسب الأولوية باستخدام مصفوفة الأهمية وإنجاز المهمة الأكبر صباحاً.',
-          'تطبيق فترات تركيز عميق (تقنية بومودورو: 25 دقيقة عمل متواصل دون مشتتات).',
-          'جدولة فترات راحة منتظمة لتجديد النشاط الذهني والبدني على مدار اليوم.',
-        ],
-      ),
-    ]);
+    );
   }
 
   @override
@@ -129,7 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _startNewSession() {
     setState(() {
       _sessionId = null;
-      _seedMockupMessages();
+      _seedInitialWelcomeMessage();
     });
     showSuccessSnackbar(context, 'تم بدء جلسة محادثة جديدة');
   }
@@ -145,13 +125,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = (presetText ?? _inputCtrl.text).trim();
     if (text.isEmpty || _sending) return;
 
-    // Clear placeholder mockup messages so the chat becomes a normal, clean 1-on-1 chat!
-    if (_isInitialMockup) {
-      _isInitialMockup = false;
-      _messages.removeWhere(
-        (m) => m.id == 'msg_user_1' || m.id == 'msg_assistant_1',
-      );
-    }
+    // As requested: When user starts talking, the initial welcome message goes away ("تتغير وتمشي وما يبقاش في كلام قديم")
+    // and only the real 1-on-1 ongoing conversation is shown!
+    _messages.removeWhere((m) => m.isWelcome);
 
     final userTime = _formatCurrentTime();
     final userMsgId = 'u_${DateTime.now().millisecondsSinceEpoch}';
@@ -201,7 +177,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _ChatMessageItem(
             id: 'a_${DateTime.now().millisecondsSinceEpoch}',
             role: 'assistant',
-            content: reply.isNotEmpty ? reply : 'أهلاً بك! كيف يمكنني مساعدتك اليوم؟',
+            content: reply.isNotEmpty ? reply : 'أهلاً بك! تم استلام رسالتك وأنا معك لمساعدتك.',
             time: _formatCurrentTime(),
             orderedSteps: parsedSteps,
             emotion: emotion,
@@ -210,16 +186,16 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       });
 
-      // Completely silent as requested: No audio synthesis or speech playback
+      // User requested: "وعايزاه برده يبقى من غير صوت" (Muted / Silent chat)
     } catch (_) {
       if (!mounted) return;
-      // Seamless natural reply when offline without errors
+      // Seamless natural reply when backend is offline
       setState(() {
         _messages.add(
           _ChatMessageItem(
             id: 'a_${DateTime.now().millisecondsSinceEpoch}',
             role: 'assistant',
-            content: 'أهلاً بك! تم استلام رسالتك وأنا معك لمساعدتك في كل ما تحتاجه.',
+            content: 'أهلاً بك! أنا معك وسأساعدك في الإجابة على كل استفساراتك وتنظيم مهامك.',
             time: _formatCurrentTime(),
           ),
         );
@@ -288,8 +264,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final size = MediaQuery.of(context).size;
     final isDesktop = size.width > 540;
 
-    final showTypingIndicator = _sending || _isInitialMockup;
-
     return Scaffold(
       key: _chatScaffoldKey,
       backgroundColor: const Color(0xFFF9FAFD),
@@ -332,20 +306,20 @@ class _ChatScreenState extends State<ChatScreen> {
                       horizontal: 16,
                       vertical: 4,
                     ),
-                    itemCount: _messages.length + (showTypingIndicator ? 1 : 0),
+                    itemCount: _messages.length + (_sending ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index < _messages.length) {
                         final msg = _messages[index];
                         return _buildMessageItem(msg);
                       } else {
-                        // Typing indicator row: visible initially, or dynamically while sending
+                        // Dynamic typing indicator: only shown while assistant is preparing reply
                         return _buildTypingIndicatorRow();
                       }
                     },
                   ),
                 ),
 
-                // 4. Bottom Modern Floating Input Bar matching mockup 100% (White input field)
+                // 4. Bottom Modern Floating Input Bar with pure white input field matching mockup 100%
                 _buildModernInputBar(),
 
                 // Spacing to keep input bar cleanly above bottom navigation bar
@@ -962,7 +936,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
 
-                      // Action icons on the left in RTL: Copy, Like, Retry (Muted without speaker icon)
+                      // Action icons on the left in RTL: Copy, Like, Retry (Silent without audio icon)
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1091,9 +1065,8 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Typing indicator row matching mockup:
-  /// Right: Male Cyborg Face avatar
-  /// Left: Pill with 3 cyan dots + "...المساعد يكتب الآن"
+  /// Dynamic typing indicator row:
+  /// Shows only when _sending == true (waiting for reply)
   Widget _buildTypingIndicatorRow() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1156,24 +1129,19 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Modern Input Bar matching mockup 100%:
-  /// - Input field container is pure WHITE (الجزئية اللي بنكتب فيها بيضاء)
-  /// - Circular Attachment button on right
+  /// - Floating pure white input pill with shadow and subtle border
+  /// - Floating pure white circular attachment button on right
   /// - Mic icon inside the white pill on left
   /// - Vibrant cyan circular send button on far left
   Widget _buildModernInputBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Color(0xFFF1F5F9), width: 1.2),
-        ),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.transparent, // Transparent bar background so the white pill floats beautifully
       child: Directionality(
         textDirection: TextDirection.rtl,
         child: Row(
           children: [
-            // 1. Far Right: Circular Attachment Button
+            // 1. Far Right: Circular Attachment Button (White Circle)
             Container(
               width: 46,
               height: 46,
@@ -1213,7 +1181,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.04),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
