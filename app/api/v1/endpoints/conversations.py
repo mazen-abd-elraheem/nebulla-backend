@@ -56,6 +56,7 @@ class ChatRequest(BaseModel):
     broadcast_to_clients: bool = Field(False, description="Whether to broadcast live tokens to connected desks/phones")
     provider: Optional[str] = Field(None, description="Override LLM provider ('local', 'nile', 'huggingface', 'openai', etc.)")
     model: Optional[str] = Field(None, description="Override model name (e.g. 'MBZUAI-Paris/Nile-Chat-3x4B-A6B' or 'nebula-rag')")
+    return_audio: bool = Field(False, description="Whether to synthesize and return cloned voice audio in the response")
 
     @model_validator(mode="before")
     @classmethod
@@ -101,6 +102,10 @@ class ChatResponse(BaseModel):
     memories_used: List[str] = Field(default_factory=list)
     personality_id: Optional[int] = None
     grounding: Optional[GroundingInfo] = None
+    audio_base64: Optional[str] = Field(None, description="Base64-encoded WAV audio synthesized in cloned voice")
+    audio_url: Optional[str] = Field(None, description="Endpoint URL to fetch or stream the synthesized audio")
+    has_voice_sample: bool = Field(True, description="Whether user has a registered voice sample")
+    voice_notice: Optional[str] = Field(None, description="Notice if user needs to upload a voice sample")
 
     # Backward compatibility fields
     response: Optional[str] = None
@@ -129,6 +134,50 @@ async def chat_playground():
     """Interactive visual web playground to chat with the LLM in real-time."""
     html_path = Path(__file__).parents[3] / "templates" / "chat_ui.html"
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
+async def _synthesize_chat_audio(
+    text: str,
+    personality_id: int | None,
+) -> tuple[Optional[str], Optional[str], bool, Optional[str]]:
+    """
+    Synthesizes speech for chat response in cloned voice.
+    Returns (audio_base64, audio_url, has_voice_sample, voice_notice).
+    """
+    from app.services.voice_clone.voice_clone_service import VoiceCloneService
+    import base64
+
+    voice_svc = VoiceCloneService.get_instance()
+    has_sample = voice_svc.has_voice_sample(personality_id)
+    sample_path = voice_svc.get_sample_path(personality_id) if has_sample else None
+
+    if not has_sample or not sample_path:
+        return None, None, False, "يرجى تسجيل عينة صوتك لتفعيل الرد الصوتي"
+
+    to_speak = clean_text_for_tts(text)
+    if not to_speak:
+        return None, None, True, None
+
+    try:
+        wav_bytes = await voice_svc.synthesize(
+            text=to_speak,
+            personality_id=personality_id,
+            reference_wav=sample_path,
+        )
+        if wav_bytes and len(wav_bytes) > 500:
+            audio_b64 = base64.b64encode(wav_bytes).decode("ascii")
+            try:
+                from app.api.v1.endpoints.voice_clone import LATEST_WAV_FILE, _last_synthesized_audio
+                LATEST_WAV_FILE.write_bytes(wav_bytes)
+                _last_synthesized_audio[personality_id or 1] = wav_bytes
+                _last_synthesized_audio["latest"] = wav_bytes
+            except Exception:
+                pass
+            url = f"/api/v1/voice-clone/synthesize?personality_id={personality_id or 1}"
+            return audio_b64, url, True, None
+    except Exception as ex:
+        logger.error(f"Error synthesizing chat audio: {ex}")
+    return None, None, True, None
 
 
 @router.post("/chat", summary="Chat with the LLM via REST API", response_model=ChatResponse)
@@ -243,6 +292,10 @@ async def chat_with_llm(
             )
 
         active_model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or settings.LLM_MODEL
+        audio_b64, audio_url, has_sample, voice_notice = (None, None, True, None)
+        if body.return_audio:
+            audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(reply, active_pid)
+
         return ChatResponse(
             reply=reply,
             cleaned_reply=cleaned_reply,
@@ -258,6 +311,10 @@ async def chat_with_llm(
             memories_used=[],
             personality_id=active_pid,
             grounding=grounding,
+            audio_base64=audio_b64,
+            audio_url=audio_url,
+            has_voice_sample=has_sample,
+            voice_notice=voice_notice,
         )
 
     # If requested by Swagger UI (accept: application/json), always return non-streaming JSON
@@ -351,6 +408,9 @@ async def chat_with_llm(
     await db.commit()
 
     active_model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or settings.LLM_MODEL
+    audio_b64, audio_url, has_sample, voice_notice = (None, None, True, None)
+    if body.return_audio:
+        audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(reply, active_pid)
 
     return ChatResponse(
         reply=reply,
@@ -367,6 +427,10 @@ async def chat_with_llm(
         memories_used=memories,
         personality_id=active_pid,
         grounding=grounding,
+        audio_base64=audio_b64,
+        audio_url=audio_url,
+        has_voice_sample=has_sample,
+        voice_notice=voice_notice,
     )
 
 
