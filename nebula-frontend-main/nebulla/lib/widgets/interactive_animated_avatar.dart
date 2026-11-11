@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/audio_viseme_analyzer.dart';
 
-/// Full interactive animated cybernetic avatar.
-/// - Full-screen edge-to-edge portrait framing for the female & male avatar.
-/// - The base character portrait stays steady and firmly grounded (no sliding/shaking of the photo).
+/// Photorealistic Video-Style Talking 3D Cybernetic Avatar.
+/// - The avatar stays firmly grounded with natural living video presence.
+/// - Organic idle motion: looks gently left and right, subtle breathing, natural speech nods.
+/// - Realistic jaw articulation: her ACTUAL lower lip and chin part and move down with speech
+///   (no painted or artificial mouth overlay on top of the face!).
 /// - Natural organic eye blinking on the actual eye sockets.
-/// - Dynamic lip-sync and mouth articulation directly on the character's lips when speaking.
 /// - Tap to speak greeting; double-tap to switch character appearance.
 class InteractiveAnimatedAvatar extends StatefulWidget {
   final String? avatarType; // 'male' or 'female'
@@ -45,14 +46,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   AnimationController? _blinkController;
   Animation<double>? _blinkAnimation;
 
-  // 3D Orbit Interaction & Perspective State
-  double _userRotationX = 0.0;
-  double _userRotationY = 0.0;
-  Offset? _lastPanPos;
-  AnimationController? _recenterController;
-  Animation<double>? _recenterAnimX;
-  Animation<double>? _recenterAnimY;
-
   Timer? _blinkTimer;
   final Random _random = Random();
 
@@ -64,22 +57,10 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   void _initControllers() {
-    // 0. Recenter spring-back controller for 3D orbit
-    _recenterController ??= AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 650),
-    )..addListener(() {
-        if (_recenterAnimX != null && _recenterAnimY != null) {
-          setState(() {
-            _userRotationX = _recenterAnimX!.value;
-            _userRotationY = _recenterAnimY!.value;
-          });
-        }
-      });
-    // 1. Ambient living breathing pulse (4 seconds)
+    // 1. Ambient living breathing cycle (4.2 seconds)
     _breathingController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 4000),
+      duration: const Duration(milliseconds: 4200),
     )..repeat(reverse: true);
 
     _breathingAnimation ??= Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -92,19 +73,19 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     // 2. Ambient neural glow pulse
     _auraPulseController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 1600),
     )..repeat(reverse: true);
 
-    // 3. Filter-Style 3D Micro-Head Parallax Sway (5.5 seconds organic cycle)
+    // 3. Living Video Head Motion (looks right and left, natural subtle nods)
     _headMotionController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 5500),
+      duration: const Duration(milliseconds: 6000),
     )..repeat(reverse: true);
 
-    // 4. Natural Eye Blinking Controller (140ms organic eyelid close & open)
+    // 4. Natural Eye Blinking Controller (130ms quick natural blink)
     _blinkController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 140),
+      duration: const Duration(milliseconds: 130),
     );
 
     _blinkAnimation ??= Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -117,8 +98,8 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
 
   void _scheduleNextBlink() {
     _blinkTimer?.cancel();
-    // Blinks naturally every 2.4 to 4.0 seconds
-    final delayMs = 2400 + _random.nextInt(1600);
+    // Blinks naturally every 2.5 to 4.2 seconds
+    final delayMs = 2500 + _random.nextInt(1700);
     _blinkTimer = Timer(Duration(milliseconds: delayMs), () {
       if (!mounted || _blinkController == null) return;
       _blinkController!.forward(from: 0.0).then((_) {
@@ -133,39 +114,11 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   @override
   void dispose() {
     _blinkTimer?.cancel();
-    _recenterController?.dispose();
     _breathingController?.dispose();
     _auraPulseController?.dispose();
     _headMotionController?.dispose();
     _blinkController?.dispose();
     super.dispose();
-  }
-
-  void _onPanStart(DragStartDetails details) {
-    _recenterController?.stop();
-    _lastPanPos = details.localPosition;
-  }
-
-  void _onPanUpdate(DragUpdateDetails details) {
-    if (_lastPanPos == null) return;
-    final delta = details.localPosition - _lastPanPos!;
-    _lastPanPos = details.localPosition;
-    setState(() {
-      _userRotationY += delta.dx * 0.007; // Orbit horizontally in 3D
-      _userRotationX = (_userRotationX - delta.dy * 0.005).clamp(-0.35, 0.35); // Orbit vertically in 3D
-    });
-  }
-
-  void _onPanEnd(DragEndDetails details) {
-    _lastPanPos = null;
-    if (_recenterController == null) return;
-    _recenterAnimX = Tween<double>(begin: _userRotationX, end: 0.0).animate(
-      CurvedAnimation(parent: _recenterController!, curve: Curves.easeOutCubic),
-    );
-    _recenterAnimY = Tween<double>(begin: _userRotationY, end: 0.0).animate(
-      CurvedAnimation(parent: _recenterController!, curve: Curves.easeOutCubic),
-    );
-    _recenterController!.forward(from: 0.0);
   }
 
   @override
@@ -228,7 +181,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
         final availableW = widget.width ?? constraints.maxWidth;
         final availableH = widget.height ?? constraints.maxHeight;
 
-        // Take full width & height when fullScreen is active
         final portraitW = widget.fullScreen ? availableW : min(availableW, 420.0);
         final portraitH = availableH;
 
@@ -246,9 +198,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
             _audioService.switchAvatar(nextType);
             widget.onAvatarDoubleTapped?.call();
           },
-          onPanStart: _onPanStart,
-          onPanUpdate: _onPanUpdate,
-          onPanEnd: _onPanEnd,
           child: AnimatedBuilder(
             animation: Listenable.merge([
               _breathingAnimation!,
@@ -260,16 +209,23 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
               final imgW = isFemale ? 418.0 : 448.0;
               const imgH = 1024.0;
 
-              // Filter-Style 3D Micro-Head Parallax & Idle Sway combined with 3D User Orbit
+              // Video-like natural head motion: looks left/right and nods naturally when speaking
               final headT = (_headMotionController?.value ?? 0.5) * 2 * pi;
-              final idleYaw = sin(headT * 0.7) * 0.024; // ±1.4° horizontal sway
-              final idlePitch = (cos(headT * 0.9) * 0.016) +
-                  (isSpeaking ? sin(headT * 3.5) * 0.008 : 0.0); // subtle speech nod
-              final idleRoll = sin(headT * 0.5) * 0.010; // ±0.6° gentle head tilt
+              final yaw = sin(headT * 0.55) * 0.032; // Smoothly looks right and left
+              final pitch = (cos(headT * 0.75) * 0.014) +
+                  (isSpeaking ? sin(headT * 3.8) * 0.010 : 0.0); // Natural speech nod
+              final roll = sin(headT * 0.35) * 0.006; // Subtle natural head cant
 
-              final totalYaw = _userRotationY + idleYaw;
-              final totalPitch = _userRotationX + idlePitch;
-              final totalRoll = idleRoll;
+              // Anatomical Lip Seam coordinates where the real lips meet
+              final splitY = isFemale ? 553.0 : 562.0;
+              final mouthX = isFemale ? 209.0 : 224.0;
+              final baseW = isFemale ? 58.0 : 66.0;
+              final mouthW = (baseW * viseme.widthRatio).clamp(38.0, 74.0);
+
+              // Downward displacement of her ACTUAL lower lip & chin when speaking
+              final jawDrop = isSpeaking
+                  ? ((viseme.openness * 4.6) + (amplitude * 2.4)).clamp(0.0, 6.2)
+                  : 0.0;
 
               return Center(
                 child: SizedBox(
@@ -282,14 +238,14 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                       // 1. Ambient Cybernetic Energy Glow
                       _buildAmbientGlow(auraColor, isSpeaking, amplitude, portraitW, portraitH),
 
-                      // 2. Character Portrait: 3D Orbit Perspective + Filter Parallax + Organic Respiration
+                      // 2. Character Portrait with 3D Head Tilt & Natural Video-Style Articulation
                       Transform(
-                        alignment: const Alignment(0.0, -0.15),
+                        alignment: const Alignment(0.0, -0.12), // Pivot on neck base
                         transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.0012) // 3D depth perspective
-                          ..rotateY(totalYaw)
-                          ..rotateX(totalPitch)
-                          ..rotateZ(totalRoll),
+                          ..setEntry(3, 2, 0.0012)
+                          ..rotateY(yaw)
+                          ..rotateX(pitch)
+                          ..rotateZ(roll),
                         child: ClipRRect(
                           borderRadius: widget.fullScreen
                               ? BorderRadius.zero
@@ -308,62 +264,106 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                                 child: Stack(
                                   alignment: Alignment.center,
                                   children: [
-                                    // Base Character Image with subtle organic micro-breathing & speech resonance
+                                    // 2A. Oral Cavity background (Revealed only when real lips part)
+                                    if (jawDrop > 0.4)
+                                      Positioned(
+                                        left: mouthX - (mouthW / 2),
+                                        top: splitY - 1.2,
+                                        child: Container(
+                                          width: mouthW,
+                                          height: jawDrop + 2.4,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF1E070B),
+                                            borderRadius: BorderRadius.circular(jawDrop * 0.45),
+                                          ),
+                                          child: (viseme.teethVisible > 0.15 && jawDrop > 2.0)
+                                              ? Align(
+                                                  alignment: Alignment.topCenter,
+                                                  child: Container(
+                                                    margin: const EdgeInsets.only(top: 0.6),
+                                                    width: mouthW * 0.62,
+                                                    height: min(2.0, jawDrop * 0.38),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFFFAF7F4).withValues(
+                                                        alpha: (viseme.teethVisible * 0.95)
+                                                            .clamp(0.0, 1.0),
+                                                      ),
+                                                      borderRadius: BorderRadius.circular(1.0),
+                                                    ),
+                                                  ),
+                                                )
+                                              : null,
+                                        ),
+                                      ),
+
+                                    // 2B. Real Upper Face & Lips (From top down to lip seam y=splitY)
+                                    // Her real upper lip stays in place
                                     Transform.scale(
-                                      scale: 1.0 +
-                                          (0.012 * (_breathingAnimation?.value ?? 0.0)) +
-                                          (isSpeaking ? amplitude * 0.015 : 0.0),
+                                      scale: 1.0 + (0.008 * (_breathingAnimation?.value ?? 0.0)),
                                       alignment: const Alignment(0.0, 0.25),
-                                      child: Image.asset(
-                                        assetPath,
-                                        width: imgW,
-                                        height: imgH,
-                                        fit: BoxFit.fill,
-                                        errorBuilder: (_, _, _) => _buildFallback(isFemale),
+                                      child: ClipRect(
+                                        clipper: _UpperFaceClipper(splitY: splitY),
+                                        child: Image.asset(
+                                          assetPath,
+                                          width: imgW,
+                                          height: imgH,
+                                          fit: BoxFit.fill,
+                                          errorBuilder: (_, _, _) => _buildFallback(isFemale),
+                                        ),
                                       ),
                                     ),
 
-                                    // 3D Volumetric Specular Light Reflection (Shifts across 3D curvature)
+                                    // 2C. Real Lower Jaw & Chin (From lip seam y=splitY down to bottom)
+                                    // Displaces downward naturally with speech volume at 50 FPS
+                                    Transform.translate(
+                                      offset: Offset(0, jawDrop),
+                                      child: Transform.scale(
+                                        scale: 1.0 + (0.008 * (_breathingAnimation?.value ?? 0.0)),
+                                        alignment: const Alignment(0.0, 0.25),
+                                        child: ClipRect(
+                                          clipper: _LowerFaceClipper(splitY: splitY),
+                                          child: Image.asset(
+                                            assetPath,
+                                            width: imgW,
+                                            height: imgH,
+                                            fit: BoxFit.fill,
+                                            errorBuilder: (_, _, _) => _buildFallback(isFemale),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
+                                    // 2D. 3D Specular Light Sheen (Shifts across face when looking right/left)
                                     Positioned.fill(
                                       child: IgnorePointer(
                                         child: DecoratedBox(
                                           decoration: BoxDecoration(
                                             gradient: RadialGradient(
                                               center: Alignment(
-                                                (-0.20 - totalYaw * 2.4).clamp(-0.85, 0.85),
-                                                (-0.30 - totalPitch * 1.8).clamp(-0.85, 0.85),
+                                                (-0.18 - yaw * 2.2).clamp(-0.85, 0.85),
+                                                (-0.28 - pitch * 1.6).clamp(-0.85, 0.85),
                                               ),
                                               radius: 0.80,
                                               colors: [
-                                                Colors.white.withValues(alpha: 0.22),
-                                                Colors.white.withValues(alpha: 0.05),
+                                                Colors.white.withValues(alpha: 0.16),
+                                                Colors.white.withValues(alpha: 0.04),
                                                 Colors.transparent,
                                               ],
-                                              stops: const [0.0, 0.42, 1.0],
+                                              stops: const [0.0, 0.38, 1.0],
                                             ),
                                           ),
                                         ),
                                       ),
                                     ),
 
-                                    // Natural Organic Eye Blinking (Positioned accurately with 3D Depth Parallax)
+                                    // 2E. Natural Eye Blinking (Pure eyelid closure on real eyes, no drawn sticker)
                                     Positioned.fill(
                                       child: CustomPaint(
                                         painter: _NaturalEyeBlinkPainter(
                                           isFemale: isFemale,
                                           blinkProgress: _blinkAnimation?.value ?? 0.0,
-                                          parallaxOffset: Offset(totalYaw * 12.0, totalPitch * 8.0),
-                                        ),
-                                      ),
-                                    ),
-
-                                    // Dynamic Audio-Driven Lip-Sync (Viseme based mouth morph with 3D Relief Parallax)
-                                    Positioned.fill(
-                                      child: CustomPaint(
-                                        painter: _RealisticMouthLipSyncPainter(
-                                          isFemale: isFemale,
-                                          viseme: viseme,
-                                          parallaxOffset: Offset(totalYaw * 14.0, totalPitch * 9.0),
+                                          yaw: yaw,
+                                          pitch: pitch,
                                         ),
                                       ),
                                     ),
@@ -509,171 +509,122 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 }
 
-/// Organic, photorealistic eye blinking painter positioned accurately on actual eye sockets with 3D Parallax
+/// Clips the character portrait from top down to the lip seam y=splitY
+class _UpperFaceClipper extends CustomClipper<Rect> {
+  final double splitY;
+  const _UpperFaceClipper({required this.splitY});
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTWH(0, 0, size.width, splitY);
+
+  @override
+  bool shouldReclip(_UpperFaceClipper oldClipper) => oldClipper.splitY != splitY;
+}
+
+/// Clips the character portrait from the lip seam y=splitY down to the bottom
+class _LowerFaceClipper extends CustomClipper<Rect> {
+  final double splitY;
+  const _LowerFaceClipper({required this.splitY});
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTWH(0, splitY, size.width, size.height - splitY);
+
+  @override
+  bool shouldReclip(_LowerFaceClipper oldClipper) => oldClipper.splitY != splitY;
+}
+
+/// Organic, photorealistic eye blinking painter positioned accurately on actual eye sockets
 class _NaturalEyeBlinkPainter extends CustomPainter {
   final bool isFemale;
   final double blinkProgress; // 0.0 = open, 1.0 = fully closed
-  final Offset parallaxOffset;
+  final double yaw;
+  final double pitch;
 
   _NaturalEyeBlinkPainter({
     required this.isFemale,
     required this.blinkProgress,
-    this.parallaxOffset = Offset.zero,
+    this.yaw = 0.0,
+    this.pitch = 0.0,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (blinkProgress < 0.04) return;
 
-    // Exact center coordinates in 1:1 image pixel space (1024h) with 3D Depth Parallax
+    final parallax = Offset(yaw * 10.0, pitch * 6.0);
     final leftCenter = (isFemale
         ? const Offset(166.0, 416.0)
-        : const Offset(158.0, 370.0)) + parallaxOffset;
+        : const Offset(158.0, 370.0)) + parallax;
     final rightCenter = (isFemale
         ? const Offset(252.0, 416.0)
-        : const Offset(290.0, 370.0)) + parallaxOffset;
+        : const Offset(290.0, 370.0)) + parallax;
 
-    final eyeW = isFemale ? 42.0 : 44.0;
-    final eyeH = isFemale ? 18.0 : 18.0;
+    final eyeW = isFemale ? 38.0 : 42.0;
+    final eyeH = isFemale ? 14.0 : 15.0;
 
-    final lidColor = isFemale ? const Color(0xFFE4CEBF) : const Color(0xFFD2B29F);
-    final shadowColor = isFemale ? const Color(0xFF382A26) : const Color(0xFF281E1C);
-
-    _paintSingleEye(canvas, leftCenter, eyeW, eyeH, lidColor, shadowColor);
-    _paintSingleEye(canvas, rightCenter, eyeW, eyeH, lidColor, shadowColor);
+    _paintEyelid(canvas, leftCenter, eyeW, eyeH, blinkProgress, isFemale);
+    _paintEyelid(canvas, rightCenter, eyeW, eyeH, blinkProgress, isFemale);
   }
 
-  void _paintSingleEye(
+  void _paintEyelid(
     Canvas canvas,
     Offset center,
     double w,
     double h,
-    Color lid,
-    Color shadow,
+    double progress,
+    bool female,
   ) {
-    final drop = h * blinkProgress * 1.05;
-    final rect = Rect.fromCenter(center: center, width: w, height: h);
+    final drop = h * progress;
+    final topY = center.dy - (h * 0.45);
+    final bottomY = topY + drop;
+
+    final rect = Rect.fromLTRB(center.dx - (w / 2), topY, center.dx + (w / 2), bottomY);
+
+    // Natural skin-toned eyelid dome matching real eyelid tone
+    final lidPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: female
+            ? [
+                const Color(0xFFE5D1C3).withValues(alpha: (0.96 * progress).clamp(0.0, 1.0)),
+                const Color(0xFFD2B5A5).withValues(alpha: (0.96 * progress).clamp(0.0, 1.0)),
+              ]
+            : [
+                const Color(0xFFD4B8A6).withValues(alpha: (0.96 * progress).clamp(0.0, 1.0)),
+                const Color(0xFFBF9C88).withValues(alpha: (0.96 * progress).clamp(0.0, 1.0)),
+              ],
+      ).createShader(rect)
+      ..style = PaintingStyle.fill;
 
     final path = Path();
-    path.moveTo(rect.left, center.dy - (h * 0.35));
-    path.quadraticBezierTo(
-      center.dx,
-      center.dy - (h * 0.35) + drop,
-      rect.right,
-      center.dy - (h * 0.35),
-    );
-    path.quadraticBezierTo(
-      center.dx,
-      center.dy - (h * 0.35) + (drop * 0.78),
-      rect.left,
-      center.dy - (h * 0.35),
-    );
+    path.moveTo(center.dx - (w * 0.48), topY);
+    path.quadraticBezierTo(center.dx, bottomY, center.dx + (w * 0.48), topY);
     path.close();
 
-    final paint = Paint()
-      ..color = lid.withValues(alpha: (0.95 * blinkProgress).clamp(0.0, 1.0))
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(path, paint);
+    canvas.drawPath(path, lidPaint);
 
-    final linePaint = Paint()
-      ..color = shadow.withValues(alpha: (0.75 * blinkProgress).clamp(0.0, 1.0))
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round;
-    canvas.drawPath(path, linePaint);
+    // Subtle natural eyelash line along the lower edge of the closing eyelid
+    if (progress > 0.35) {
+      final lashPaint = Paint()
+        ..color = (female ? const Color(0xFF382A26) : const Color(0xFF281E1C))
+            .withValues(alpha: (progress * 0.75).clamp(0.0, 1.0))
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..strokeCap = StrokeCap.round;
+
+      final lashPath = Path();
+      lashPath.moveTo(center.dx - (w * 0.46), topY + (drop * 0.85));
+      lashPath.quadraticBezierTo(center.dx, bottomY, center.dx + (w * 0.46), topY + (drop * 0.85));
+      canvas.drawPath(lashPath, lashPaint);
+    }
   }
 
   @override
   bool shouldRepaint(covariant _NaturalEyeBlinkPainter old) {
     return old.blinkProgress != blinkProgress ||
         old.isFemale != isFemale ||
-        old.parallaxOffset != parallaxOffset;
-  }
-}
-
-/// Dynamic Audio-Driven Viseme Lip-Sync Painter positioned accurately directly on lips with 3D Depth Parallax
-class _RealisticMouthLipSyncPainter extends CustomPainter {
-  final bool isFemale;
-  final VisemeFrame viseme;
-  final Offset parallaxOffset;
-
-  _RealisticMouthLipSyncPainter({
-    required this.isFemale,
-    required this.viseme,
-    this.parallaxOffset = Offset.zero,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (viseme.openness < 0.05 && viseme.type != VisemeType.mbp) return;
-
-    // Exact center coordinates on actual lips with 3D Depth Parallax
-    final mouthCenter = (isFemale
-        ? const Offset(209.0, 554.0)
-        : const Offset(224.0, 562.0)) + parallaxOffset;
-
-    final baseW = isFemale ? 56.0 : 68.0;
-    // Viseme pucker narrows width (oo/u), widthRatio expands width (ee/smile)
-    final mouthW = (baseW * viseme.widthRatio * (1.0 - (viseme.pucker * 0.28))).clamp(28.0, 84.0);
-
-    final maxH = isFemale ? 9.5 : 11.0;
-    final openH = (viseme.openness * maxH).clamp(1.2, maxH);
-
-    final mouthRect = Rect.fromCenter(
-      center: Offset(mouthCenter.dx, mouthCenter.dy + (viseme.jawDrop * 2.2)),
-      width: mouthW,
-      height: openH,
-    );
-
-    // 1. Inner mouth cavity (curved based on viseme pucker & openness)
-    final cornerRadius = viseme.pucker > 0.4 ? openH * 0.78 : openH * 0.52;
-    final cavityPaint = Paint()
-      ..color = const Color(0xFF22090C)
-      ..style = PaintingStyle.fill;
-    final cavityRRect = RRect.fromRectAndRadius(mouthRect, Radius.circular(cornerRadius));
-    canvas.drawRRect(cavityRRect, cavityPaint);
-
-    // 2. Upper teeth hint based on viseme.teethVisible
-    if (openH > 2.8 && viseme.teethVisible > 0.15) {
-      final teethAlpha = (viseme.teethVisible * 0.95).clamp(0.0, 1.0);
-      final teethPaint = Paint()
-        ..color = const Color(0xFFFAF7F4).withValues(alpha: teethAlpha)
-        ..style = PaintingStyle.fill;
-      final teethRect = Rect.fromLTWH(
-        mouthRect.left + (mouthRect.width * 0.20),
-        mouthRect.top,
-        mouthRect.width * 0.60,
-        min(2.5, openH * 0.35),
-      );
-      canvas.drawRRect(RRect.fromRectAndRadius(teethRect, const Radius.circular(1.2)), teethPaint);
-    }
-
-    // 3. Lower Lip highlight & shadow
-    final lipColor = isFemale ? const Color(0xFFDC7D7D) : const Color(0xFFBF7568);
-    final lowerLipPaint = Paint()
-      ..color = lipColor.withValues(alpha: 0.92)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
-      ..strokeCap = StrokeCap.round;
-
-    final lowerLipPath = Path();
-    lowerLipPath.moveTo(mouthRect.left, mouthRect.top + (openH * 0.35));
-    lowerLipPath.quadraticBezierTo(
-      mouthCenter.dx,
-      mouthRect.bottom + 1.2,
-      mouthRect.right,
-      mouthRect.top + (openH * 0.35),
-    );
-    canvas.drawPath(lowerLipPath, lowerLipPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _RealisticMouthLipSyncPainter old) {
-    return old.viseme.openness != viseme.openness ||
-        old.viseme.type != viseme.type ||
-        old.viseme.widthRatio != viseme.widthRatio ||
-        old.viseme.pucker != viseme.pucker ||
-        old.isFemale != isFemale ||
-        old.parallaxOffset != parallaxOffset;
+        old.yaw != yaw ||
+        old.pitch != pitch;
   }
 }
