@@ -87,10 +87,13 @@ async def run_voice_tests():
     print(f"   • القرار: {res_diff['comparison_verdict']}")
     print(f"   • هل هما نفس المتحدث؟: {'❌ لا (شخصان مختلفان)' if not res_diff['is_same_speaker'] else 'نعم'}")
     print(f"   • نسبة التطابق المعتمدة: {res_diff['match_percentage']:.1f}%  <-- (0% كما طُلبت تماماً)")
-    print(f"   • معامل التشابه الخام: {res_diff['similarity']} (أقل من حد القبول {res_diff['threshold']})")
+    print(f"   • معامل التشابه (مصفّر): {res_diff['similarity']}")
+    print(f"   • معامل التشابه الخام (raw_similarity): {res_diff.get('raw_similarity')} (أقل من حد القبول {res_diff['threshold']})")
     print(f"   • زمن المعالجة: {time_diff_ms:.2f} مللي ثانية (ms)")
 
     assert res_diff["is_same_speaker"] is False
+    assert res_diff["similarity"] == 0.0
+    assert res_diff["raw_similarity"] > 0.0
     assert res_diff["match_percentage"] == 0.0
 
     print("\n" + "-" * 75)

@@ -760,6 +760,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "threshold": thresh,
                 "status": "no_enrolled_speakers",
@@ -772,6 +773,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "threshold": thresh,
                 "status": "model_unavailable",
@@ -786,6 +788,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "threshold": thresh,
                 "status": "decode_error",
@@ -799,6 +802,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "audio_seconds": round(seconds, 2),
                 "threshold": thresh,
@@ -818,7 +822,9 @@ class SpeakerVerificationService:
                 best_entry = entry
 
         best_sim = max(0.0, float(best_sim))
+        raw_best_sim = round(best_sim, 4)
         is_identified = best_sim >= thresh
+        similarity = raw_best_sim if is_identified else 0.0
         pct = self._calculate_match_percentage(best_sim, thresh)
 
         if is_identified and best_name:
@@ -835,7 +841,8 @@ class SpeakerVerificationService:
             "face_id": getattr(best_entry, "face_id", None) if (is_identified and best_entry) else None,
             "personality_id": getattr(best_entry, "personality_id", None) if (is_identified and best_entry) else None,
             "memory_id": getattr(best_entry, "memory_id", None) if (is_identified and best_entry) else None,
-            "similarity": round(best_sim, 4),
+            "similarity": similarity,
+            "raw_similarity": raw_best_sim,
             "match_percentage": pct if is_identified else 0.0,
             "audio_seconds": round(seconds, 2),
             "threshold": thresh,
@@ -931,7 +938,7 @@ class SpeakerVerificationService:
                 # Two distinct enrolled individuals (e.g. منه vs يوستينا)
                 is_same_speaker = False
                 same_match_pct = 0.0
-                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})."
 
         elif is_identified1 and not is_identified2:
             # Voice 1 is enrolled as Person A, Voice 2 is not identified in DB.
@@ -943,7 +950,7 @@ class SpeakerVerificationService:
             else:
                 is_same_speaker = False
                 same_match_pct = 0.0
-                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لشخص غير مسجل بالسيستم (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لشخص غير مسجل بالسيستم (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})."
 
         elif is_identified2 and not is_identified1:
             # Voice 2 is enrolled as Person B, Voice 1 is not identified in DB.
@@ -954,7 +961,7 @@ class SpeakerVerificationService:
             else:
                 is_same_speaker = False
                 same_match_pct = 0.0
-                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لشخص غير مسجل بالسيستم والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لشخص غير مسجل بالسيستم والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})."
 
         elif is_same_speaker:
             # Neither voice is enrolled in DB, but raw acoustic similarity >= thresh
@@ -963,7 +970,7 @@ class SpeakerVerificationService:
         else:
             # Neither voice is enrolled in DB, and similarity < thresh
             same_match_pct = 0.0
-            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})، وكلاهما غير مسجل في السيستم."
+            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})، وكلاهما غير مسجل في السيستم."
 
         # 7. Build Human-Readable Arabic Summary
         summary_lines = [
@@ -979,10 +986,20 @@ class SpeakerVerificationService:
             f"   - المعرفات: User #{best_uid2 if is_identified2 else '--'} | Face #{(getattr(best_entry2, 'face_id', None) if is_identified2 else None) or '--'} | Persona #{(getattr(best_entry2, 'personality_id', None) if is_identified2 else None) or '--'} | Memory #{(getattr(best_entry2, 'memory_id', None) if is_identified2 else None) or '--'}",
         ]
 
+        raw_sim_12 = round(sim_12, 4)
+        similarity_12 = raw_sim_12 if is_same_speaker else 0.0
+
+        raw_sim1 = round(best_sim1, 4)
+        similarity_1 = raw_sim1 if is_identified1 else 0.0
+
+        raw_sim2 = round(best_sim2, 4)
+        similarity_2 = raw_sim2 if is_identified2 else 0.0
+
         return {
             "success": True,
             "is_same_speaker": is_same_speaker,
-            "similarity": round(sim_12, 4),
+            "similarity": similarity_12,
+            "raw_similarity": raw_sim_12,
             "match_percentage": same_match_pct if is_same_speaker else 0.0,
             "threshold": thresh,
             "comparison_verdict": comp_verdict,
@@ -993,7 +1010,8 @@ class SpeakerVerificationService:
                 "face_id": getattr(best_entry1, "face_id", None) if is_identified1 else None,
                 "personality_id": getattr(best_entry1, "personality_id", None) if is_identified1 else None,
                 "memory_id": getattr(best_entry1, "memory_id", None) if is_identified1 else None,
-                "similarity": round(best_sim1, 4),
+                "similarity": similarity_1,
+                "raw_similarity": raw_sim1,
                 "match_percentage": pct1,
                 "audio_seconds": sec1,
             },
@@ -1004,7 +1022,8 @@ class SpeakerVerificationService:
                 "face_id": getattr(best_entry2, "face_id", None) if is_identified2 else None,
                 "personality_id": getattr(best_entry2, "personality_id", None) if is_identified2 else None,
                 "memory_id": getattr(best_entry2, "memory_id", None) if is_identified2 else None,
-                "similarity": round(best_sim2, 4),
+                "similarity": similarity_2,
+                "raw_similarity": raw_sim2,
                 "match_percentage": pct2,
                 "audio_seconds": sec2,
             },
