@@ -4,15 +4,14 @@ import '../services/avatar_audio_service.dart';
 import '../services/avatar_3d_controller.dart';
 import 'avatar_3d_widget.dart';
 
-/// Photorealistic Interactive 3D Human Avatar.
-/// - Powered by [Avatar3DController] and [Avatar3DWidget].
-/// - Real interactive 3D model with bone kinematics, gaze tracking, breathing, and morph targets.
-/// - 4 Active Behaviors:
-///   1. IDLE: Natural eye blinking, eyes looking right/left, subtle head sway, natural breathing.
-///   2. LISTENING: Focused eyes forward, mouth closed, subtle attentive head movement.
-///   3. TALKING: Realistic mouth opening/closing, facial expressions, and smooth lip synchronization.
-///   4. LOOKING: Look right, left, up, and down with smooth head and eye transitions.
-/// - Supports mock commands and is prepared for future backend signals (idle, listening, talking, look_left, look_right, look_forward).
+/// Photorealistic Real 3D Female Human Virtual Assistant Avatar.
+/// - Renders the rigged 3D human model (`female_avatar.glb`) inside Three.js WebGL canvas.
+/// - Controlled independently by [Avatar3DController].
+/// - All 4 Behaviors implemented with 72 facial morph targets and bone kinematics:
+///   1. IDLE: Continuous organic eye blinking, gaze exploring right/left, subtle head sway, natural breathing.
+///   2. LISTENING: Eyes locked forward, mouth closed, attentive slight nod.
+///   3. TALKING: Realistic mouth cavity and jaw opening synced with speech volume.
+///   4. LOOKING: Smooth gaze transitions (left, right, up, down, forward).
 class InteractiveAnimatedAvatar extends StatefulWidget {
   final String? avatarType; // 'male' or 'female'
   final bool fullScreen;
@@ -73,14 +72,14 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar> {
   void _onAmplitudeChanged() {
     if (_audioService.isSpeaking.value) {
       final amp = _audioService.speechAmplitude.value;
-      _controller.mouthOpenness.value = (_controller.mouthOpenness.value * 0.4 + amp * 0.6).clamp(0.0, 1.0);
+      _controller.mouthOpenness.value = (_controller.mouthOpenness.value * 0.3 + amp * 0.7).clamp(0.0, 1.0);
     }
   }
 
   void _onVisemeChanged() {
     if (_audioService.isSpeaking.value) {
       final viseme = _audioService.currentViseme.value;
-      final targetOpen = (viseme.openness * 0.75 + _audioService.speechAmplitude.value * 0.25).clamp(0.0, 1.0);
+      final targetOpen = (viseme.openness * 0.8 + _audioService.speechAmplitude.value * 0.2).clamp(0.0, 1.0);
       _controller.mouthOpenness.value = targetOpen;
     }
   }

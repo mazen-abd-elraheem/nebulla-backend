@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>3D Avatar Viewer</title>
+  <title>Realistic 3D Female Human Avatar</title>
   <style>
     * {
       margin: 0;
@@ -18,27 +18,33 @@
       overflow: hidden;
       background: transparent;
     }
-    #avatar-canvas {
+    #canvas-container {
       width: 100%;
       height: 100%;
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+    canvas {
+      width: 100% !important;
+      height: 100% !important;
       display: block;
       background: transparent;
     }
   </style>
-  <!-- Three.js (r128) via robust CDN with automatic local fallback -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="three.min.js"></script>
+  <script src="GLTFLoader.js"></script>
 </head>
 <body>
-  <canvas id="avatar-canvas"></canvas>
+  <div id="canvas-container"></div>
 
   <script>
-    // --- Three.js 3D Avatar Engine ---
-    let scene, camera, renderer;
-    let avatarRoot, headGroup, jawMesh, mouthInnerMesh, leftEye, rightEye, leftLid, rightLid, torsoGroup;
-    let clock = new THREE.Clock();
+    let scene, camera, renderer, clock;
+    let avatarModel, headBone, neckBone, spineBone;
+    let morphMeshes = [];
 
-    // Target parameters updated by Flutter Controller
-    const avatarParams = {
+    // Target parameters updated in real-time from Flutter
+    const avatarState = {
       mouth: 0.0,
       blink: 0.0,
       pitch: 0.0,
@@ -46,214 +52,199 @@
       roll: 0.0,
       gazeX: 0.0,
       gazeY: 0.0,
-      breath: 0.0
+      breath: 0.0,
+      smile: 0.15
     };
 
-    function initScene() {
-      const canvas = document.getElementById('avatar-canvas');
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+    function init() {
+      const container = document.getElementById('canvas-container');
+      const width = window.innerWidth || 400;
+      const height = window.innerHeight || 600;
 
-      // 1. Renderer with transparent background and ACES tone mapping
-      renderer = new THREE.WebGLRenderer({
-        canvas: canvas,
-        alpha: true,
-        antialias: true,
-        powerPreference: 'high-performance'
-      });
+      clock = new THREE.Clock();
+
+      // 1. WebGL Renderer with transparency & ACES tone mapping
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(width, height);
       renderer.outputEncoding = THREE.sRGBEncoding;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.15;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
 
       // 2. Scene
       scene = new THREE.Scene();
 
-      // 3. Camera positioned for portrait headshot
-      camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
-      camera.position.set(0, 0.35, 1.85);
+      // 3. Camera focused on portrait headshot (face & shoulders)
+      camera = new THREE.PerspectiveCamera(32, width / height, 0.1, 100);
+      camera.position.set(0, 1.48, 0.72); // Optimal close-up face framing
 
-      // 4. Studio Lighting
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+      // 4. Studio Lighting for realistic human skin
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
       scene.add(ambientLight);
 
-      // Warm Key Light (top right)
-      const keyLight = new THREE.DirectionalLight(0xfff4e6, 1.2);
-      keyLight.position.set(1.5, 2.0, 1.5);
+      // Warm Key Light (Front Right)
+      const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.3);
+      keyLight.position.set(1.2, 2.2, 1.4);
       scene.add(keyLight);
 
-      // Soft Fill Light (front left)
-      const fillLight = new THREE.DirectionalLight(0xdbeafe, 0.6);
-      fillLight.position.set(-1.5, 0.5, 1.2);
+      // Soft Fill Light (Front Left)
+      const fillLight = new THREE.DirectionalLight(0xe0f2fe, 0.7);
+      fillLight.position.set(-1.2, 1.6, 1.2);
       scene.add(fillLight);
 
-      // Cyan Cybernetic Rim Light (behind head)
-      const rimLight = new THREE.DirectionalLight(0x00e5ff, 1.4);
-      rimLight.position.set(0.0, 1.0, -1.8);
+      // Cybernetic Accent Rim Light (Behind & Above)
+      const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.4);
+      rimLight.position.set(0.0, 2.0, -1.2);
       scene.add(rimLight);
 
-      // 5. Build 3D Human Avatar Model with Articulated Rig
-      buildProceduralAvatarRig();
+      // 5. Load the High-Quality Realistic Female GLB Model
+      loadModel();
 
-      // 6. Window resize handler
-      window.addEventListener('resize', onWindowResize, false);
-
-      // Start render loop
+      window.addEventListener('resize', onResize);
       animate();
     }
 
-    function buildProceduralAvatarRig() {
-      avatarRoot = new THREE.Group();
-      scene.add(avatarRoot);
+    function loadModel() {
+      const loader = new THREE.GLTFLoader();
+      const modelUrl = '../models/female_avatar.glb';
 
-      // Materials
-      const skinMaterial = new THREE.MeshStandardMaterial({
-        color: 0xE8D5C8,
-        roughness: 0.55,
-        metalness: 0.05
-      });
+      loader.load(
+        modelUrl,
+        function (gltf) {
+          avatarModel = gltf.scene;
+          avatarModel.position.set(0, 0, 0);
 
-      const cyberSuitMaterial = new THREE.MeshStandardMaterial({
-        color: 0x0F172A,
-        roughness: 0.35,
-        metalness: 0.75
-      });
+          // Find skeletal bones and morph target meshes
+          avatarModel.traverse(function (node) {
+            if (node.isBone) {
+              const name = node.name.toLowerCase();
+              if (name === 'head') headBone = node;
+              if (name === 'neck') neckBone = node;
+              if (name.includes('spine2') || name.includes('spine1')) spineBone = node;
+            }
 
-      const eyeWhiteMat = new THREE.MeshStandardMaterial({
-        color: 0xFFFFFF,
-        roughness: 0.1
-      });
+            if (node.isMesh && node.morphTargetDictionary) {
+              morphMeshes.push(node);
+            }
 
-      const irisMat = new THREE.MeshStandardMaterial({
-        color: 0x0284C7,
-        roughness: 0.2,
-        metalness: 0.1
-      });
+            if (node.isMesh && node.material) {
+              node.castShadow = true;
+              node.receiveShadow = true;
+              // Ensure skin shaders render smoothly with realistic subsurface look
+              if (node.material.roughness !== undefined) {
+                node.material.roughness = Math.max(0.42, node.material.roughness);
+              }
+            }
+          });
 
-      const pupilMat = new THREE.MeshBasicMaterial({
-        color: 0x050B14
-      });
-
-      const lipsMat = new THREE.MeshStandardMaterial({
-        color: 0xC47B74,
-        roughness: 0.4
-      });
-
-      const oralCavityMat = new THREE.MeshBasicMaterial({
-        color: 0x1A0508
-      });
-
-      // --- Torso & Shoulders ---
-      torsoGroup = new THREE.Group();
-      avatarRoot.add(torsoGroup);
-
-      const chestGeo = new THREE.CylinderGeometry(0.38, 0.32, 0.6, 24);
-      const chest = new THREE.Mesh(chestGeo, cyberSuitMaterial);
-      chest.position.set(0, -0.42, 0);
-      torsoGroup.add(chest);
-
-      // Neck
-      const neckGeo = new THREE.CylinderGeometry(0.12, 0.14, 0.25, 20);
-      const neck = new THREE.Mesh(neckGeo, skinMaterial);
-      neck.position.set(0, -0.05, 0);
-      avatarRoot.add(neck);
-
-      // --- Head Group (Rotates with Yaw, Pitch, Roll) ---
-      headGroup = new THREE.Group();
-      headGroup.position.set(0, 0.18, 0);
-      avatarRoot.add(headGroup);
-
-      // Cranium / Upper Face
-      const headGeo = new THREE.SphereGeometry(0.26, 32, 32);
-      headGeo.scale(1.0, 1.15, 1.05);
-      const cranium = new THREE.Mesh(headGeo, skinMaterial);
-      headGroup.add(cranium);
-
-      // Hair / Cyber Headband
-      const hairGeo = new THREE.SphereGeometry(0.27, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.55);
-      hairGeo.scale(1.02, 1.16, 1.06);
-      const hair = new THREE.Mesh(hairGeo, cyberSuitMaterial);
-      hair.position.set(0, 0.02, -0.02);
-      headGroup.add(hair);
-
-      // Nose
-      const noseGeo = new THREE.ConeGeometry(0.042, 0.11, 16);
-      const nose = new THREE.Mesh(noseGeo, skinMaterial);
-      nose.rotation.x = Math.PI * 0.42;
-      nose.position.set(0, -0.01, 0.28);
-      headGroup.add(nose);
-
-      // --- Eyes Rig (Left & Right) ---
-      function createEye(xPos) {
-        const eyeGroup = new THREE.Group();
-        eyeGroup.position.set(xPos, 0.07, 0.23);
-
-        const eyeball = new THREE.Mesh(new THREE.SphereGeometry(0.048, 20, 20), eyeWhiteMat);
-        eyeGroup.add(eyeball);
-
-        const iris = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.015, 16), irisMat);
-        iris.rotation.x = Math.PI * 0.5;
-        iris.position.set(0, 0, 0.044);
-        eyeGroup.add(iris);
-
-        const pupil = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.018, 16), pupilMat);
-        pupil.rotation.x = Math.PI * 0.5;
-        pupil.position.set(0, 0, 0.046);
-        eyeGroup.add(pupil);
-
-        return eyeGroup;
-      }
-
-      leftEye = createEye(-0.092);
-      rightEye = createEye(0.092);
-      headGroup.add(leftEye);
-      headGroup.add(rightEye);
-
-      // Eyelids (Blink mesh curtains)
-      const lidGeo = new THREE.SphereGeometry(0.052, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.5);
-      leftLid = new THREE.Mesh(lidGeo, skinMaterial);
-      leftLid.position.set(-0.092, 0.07, 0.23);
-      leftLid.scale.set(1, 0.01, 1);
-      headGroup.add(leftLid);
-
-      rightLid = new THREE.Mesh(lidGeo, skinMaterial);
-      rightLid.position.set(0.092, 0.07, 0.23);
-      rightLid.scale.set(1, 0.01, 1);
-      headGroup.add(rightLid);
-
-      // --- Jaw & Lip Articulation Rig ---
-      // Upper Lip
-      const upperLipGeo = new THREE.BoxGeometry(0.11, 0.022, 0.03);
-      const upperLip = new THREE.Mesh(upperLipGeo, lipsMat);
-      upperLip.position.set(0, -0.095, 0.26);
-      headGroup.add(upperLip);
-
-      // Oral Cavity (Dark inside mouth)
-      const cavityGeo = new THREE.BoxGeometry(0.12, 0.06, 0.06);
-      mouthInnerMesh = new THREE.Mesh(cavityGeo, oralCavityMat);
-      mouthInnerMesh.position.set(0, -0.12, 0.23);
-      mouthInnerMesh.scale.set(1, 0.01, 1);
-      headGroup.add(mouthInnerMesh);
-
-      // Movable Lower Jaw (Moves down with speech and mouth openness)
-      jawMesh = new THREE.Group();
-      jawMesh.position.set(0, -0.10, 0.22);
-      headGroup.add(jawMesh);
-
-      const lowerLipGeo = new THREE.BoxGeometry(0.10, 0.024, 0.03);
-      const lowerLip = new THREE.Mesh(lowerLipGeo, lipsMat);
-      lowerLip.position.set(0, -0.02, 0.04);
-      jawMesh.add(lowerLip);
-
-      const chinGeo = new THREE.SphereGeometry(0.08, 20, 20);
-      chinGeo.scale(1.0, 0.85, 0.9);
-      const chin = new THREE.Mesh(chinGeo, skinMaterial);
-      chin.position.set(0, -0.07, 0.02);
-      jawMesh.add(chin);
+          scene.add(avatarModel);
+          console.log('3D Female Human Avatar Loaded Successfully.');
+        },
+        undefined,
+        function (error) {
+          console.error('Error loading 3D avatar GLB:', error);
+        }
+      );
     }
 
-    function onWindowResize() {
+    function setMorphTarget(targetName, value) {
+      for (let i = 0; i < morphMeshes.length; i++) {
+        const mesh = morphMeshes[i];
+        const dict = mesh.morphTargetDictionary;
+        if (dict && dict[targetName] !== undefined) {
+          const index = dict[targetName];
+          mesh.morphTargetInfluences[index] = THREE.MathUtils.clamp(value, 0, 1);
+        }
+      }
+    }
+
+    // Called continuously from Flutter Controller
+    window.updateAvatar = function (params) {
+      if (!params) return;
+      if (typeof params.mouth !== 'undefined') avatarState.mouth = params.mouth;
+      if (typeof params.blink !== 'undefined') avatarState.blink = params.blink;
+      if (typeof params.pitch !== 'undefined') avatarState.pitch = params.pitch;
+      if (typeof params.yaw !== 'undefined') avatarState.yaw = params.yaw;
+      if (typeof params.roll !== 'undefined') avatarState.roll = params.roll;
+      if (typeof params.gazeX !== 'undefined') avatarState.gazeX = params.gazeX;
+      if (typeof params.gazeY !== 'undefined') avatarState.gazeY = params.gazeY;
+      if (typeof params.breath !== 'undefined') avatarState.breath = params.breath;
+      if (typeof params.smile !== 'undefined') avatarState.smile = params.smile;
+    };
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // 1. Skeletal Head & Neck Kinematics
+      if (headBone) {
+        headBone.rotation.x = avatarState.pitch;
+        headBone.rotation.y = avatarState.yaw;
+        headBone.rotation.z = avatarState.roll;
+      }
+
+      if (neckBone) {
+        neckBone.rotation.x = avatarState.pitch * 0.35;
+        neckBone.rotation.y = avatarState.yaw * 0.35;
+        neckBone.rotation.z = avatarState.roll * 0.35;
+      }
+
+      // 2. Breathing Motion (Torso / Spine displacement)
+      if (spineBone) {
+        spineBone.position.y = avatarState.breath * 0.003;
+      }
+
+      // 3. Eyelid Morph Targets (Blinking)
+      setMorphTarget('eyeBlinkLeft', avatarState.blink);
+      setMorphTarget('eyeBlinkRight', avatarState.blink);
+      setMorphTarget('eyesClosed', avatarState.blink);
+
+      // 4. Eye Gaze Morph Targets (Looking Left/Right/Up/Down)
+      const gazeX = avatarState.gazeX;
+      const gazeY = avatarState.gazeY;
+
+      if (gazeX > 0) {
+        setMorphTarget('eyeLookOutLeft', gazeX);
+        setMorphTarget('eyeLookInRight', gazeX);
+        setMorphTarget('eyeLookInLeft', 0);
+        setMorphTarget('eyeLookOutRight', 0);
+      } else {
+        const absX = Math.abs(gazeX);
+        setMorphTarget('eyeLookInLeft', absX);
+        setMorphTarget('eyeLookOutRight', absX);
+        setMorphTarget('eyeLookOutLeft', 0);
+        setMorphTarget('eyeLookInRight', 0);
+      }
+
+      if (gazeY > 0) {
+        setMorphTarget('eyeLookUpLeft', gazeY);
+        setMorphTarget('eyeLookUpRight', gazeY);
+        setMorphTarget('eyeLookDownLeft', 0);
+        setMorphTarget('eyeLookDownRight', 0);
+      } else {
+        const absY = Math.abs(gazeY);
+        setMorphTarget('eyeLookDownLeft', absY);
+        setMorphTarget('eyeLookDownRight', absY);
+        setMorphTarget('eyeLookUpLeft', 0);
+        setMorphTarget('eyeLookUpRight', 0);
+      }
+
+      // 5. Realistic Mouth & Jaw Morph Targets (Talking & Lip-sync)
+      const mouthVal = avatarState.mouth;
+      setMorphTarget('mouthOpen', mouthVal);
+      setMorphTarget('jawOpen', mouthVal * 0.85);
+      setMorphTarget('viseme_aa', mouthVal * 0.65);
+      setMorphTarget('viseme_O', mouthVal * 0.40);
+      setMorphTarget('mouthSmile', avatarState.smile);
+      setMorphTarget('mouthSmileLeft', avatarState.smile * 0.8);
+      setMorphTarget('mouthSmileRight', avatarState.smile * 0.8);
+
+      renderer.render(scene, camera);
+    }
+
+    function onResize() {
       const width = window.innerWidth;
       const height = window.innerHeight;
       camera.aspect = width / height;
@@ -261,71 +252,7 @@
       renderer.setSize(width, height);
     }
 
-    // Called from Flutter Controller via JavaScript Channel
-    window.updateAvatar = function(params) {
-      if (!params) return;
-      if (typeof params.mouth !== 'undefined') avatarParams.mouth = params.mouth;
-      if (typeof params.blink !== 'undefined') avatarParams.blink = params.blink;
-      if (typeof params.pitch !== 'undefined') avatarParams.pitch = params.pitch;
-      if (typeof params.yaw !== 'undefined') avatarParams.yaw = params.yaw;
-      if (typeof params.roll !== 'undefined') avatarParams.roll = params.roll;
-      if (typeof params.gazeX !== 'undefined') avatarParams.gazeX = params.gazeX;
-      if (typeof params.gazeY !== 'undefined') avatarParams.gazeY = params.gazeY;
-      if (typeof params.breath !== 'undefined') avatarParams.breath = params.breath;
-    };
-
-    function animate() {
-      requestAnimationFrame(animate);
-
-      // 1. Natural Breathing Motion
-      if (torsoGroup) {
-        torsoGroup.position.y = -0.42 + (avatarParams.breath * 0.018);
-        torsoGroup.scale.set(
-          1.0 + (avatarParams.breath * 0.025),
-          1.0 + (avatarParams.breath * 0.015),
-          1.0 + (avatarParams.breath * 0.03)
-        );
-      }
-
-      // 2. Head Kinematics (Pitch, Yaw, Roll)
-      if (headGroup) {
-        headGroup.rotation.x = avatarParams.pitch;
-        headGroup.rotation.y = avatarParams.yaw;
-        headGroup.rotation.z = avatarParams.roll;
-        headGroup.position.y = 0.18 + (avatarParams.breath * 0.008);
-      }
-
-      // 3. Eye Gaze Tracking
-      if (leftEye && rightEye) {
-        const eyeX = avatarParams.gazeX * 0.012;
-        const eyeY = avatarParams.gazeY * 0.008;
-        leftEye.position.x = -0.092 + eyeX;
-        leftEye.position.y = 0.07 + eyeY;
-        rightEye.position.x = 0.092 + eyeX;
-        rightEye.position.y = 0.07 + eyeY;
-      }
-
-      // 4. Natural Eye Blinking
-      if (leftLid && rightLid) {
-        const lidScale = Math.max(0.01, avatarParams.blink);
-        leftLid.scale.y = lidScale;
-        rightLid.scale.y = lidScale;
-        leftLid.visible = avatarParams.blink > 0.05;
-        rightLid.visible = avatarParams.blink > 0.05;
-      }
-
-      // 5. Realistic Mouth Opening & Lower Jaw Articulation
-      if (jawMesh && mouthInnerMesh) {
-        const jawDrop = avatarParams.mouth * 0.055;
-        jawMesh.position.y = -0.10 - jawDrop;
-        mouthInnerMesh.scale.y = Math.max(0.02, avatarParams.mouth * 1.1);
-      }
-
-      renderer.render(scene, camera);
-    }
-
-    // Initialize when DOM is ready
-    window.addEventListener('DOMContentLoaded', initScene);
+    window.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
 </html>

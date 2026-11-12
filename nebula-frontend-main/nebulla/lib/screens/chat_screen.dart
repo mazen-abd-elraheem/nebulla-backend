@@ -349,7 +349,7 @@ class _ChatScreenState extends State<ChatScreen> {
         textDirection: TextDirection.rtl,
         child: Row(
           children: [
-            // Right: Back arrow pointing right
+            // Right: Back arrow pointing right (Standard Arabic RTL back)
             InkWell(
               onTap: () {
                 if (Navigator.canPop(context)) {
@@ -359,15 +359,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
               },
               borderRadius: BorderRadius.circular(20),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Transform.flip(
-                  flipX: true,
-                  child: const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Color(0xFF1E293B),
-                    size: 26,
-                  ),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Color(0xFF1E293B),
+                  size: 26,
                 ),
               ),
             ),
@@ -1192,37 +1189,49 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 child: Row(
                   children: [
-                    // Text Field (in RTL starts from right)
+                    // Text Field (in RTL starts from right) - Explicit Pure White Theme
                     Expanded(
-                      child: TextField(
-                        controller: _inputCtrl,
-                        textDirection: TextDirection.rtl,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF0F172A),
-                        ),
-                        textInputAction: TextInputAction.send,
-                        cursorColor: const Color(0xFF0096C7),
-                        decoration: const InputDecoration(
-                          hintText: '...اكتب رسالتك هنا',
-                          hintStyle: TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF94A3B8),
+                      child: Theme(
+                        data: ThemeData.light().copyWith(
+                          inputDecorationTheme: const InputDecorationTheme(
+                            fillColor: Colors.white,
+                            filled: true,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
                           ),
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-                          isDense: true,
                         ),
-                        onSubmitted: (_) => _sendMessage(),
+                        child: TextField(
+                          controller: _inputCtrl,
+                          textDirection: TextDirection.rtl,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF0F172A),
+                          ),
+                          textInputAction: TextInputAction.send,
+                          cursorColor: const Color(0xFF0096C7),
+                          decoration: const InputDecoration(
+                            hintText: '...اكتب رسالتك هنا',
+                            hintStyle: TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF94A3B8),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                            isDense: true,
+                          ),
+                          onSubmitted: (_) => _sendMessage(),
+                        ),
                       ),
                     ),
 

@@ -279,3 +279,4 @@ class Avatar3DController {
     visemeWeights.dispose();
   }
 }
+
