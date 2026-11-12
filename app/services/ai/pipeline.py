@@ -316,6 +316,49 @@ class AIPipeline:
                 logger.debug(f"Actuator background dispatch notice: {e}")
         asyncio.create_task(_worker())
 
+    async def _synthesize_and_dispatch_audio(
+        self,
+        text: str,
+        personality_id: int | None,
+        broadcast_to_clients: bool = True,
+    ) -> Optional[bytes]:
+        """
+        Synthesizes text in the cloned voice for the given personality.
+        - If the user/personality has a registered voice sample: synthesizes and sends to phone.
+        - If NOT registered: sends a clear notification to clients without using any fallback model.
+        """
+        voice_svc = VoiceCloneService.get_instance()
+        has_sample = voice_svc.has_voice_sample(personality_id)
+        sample_path = voice_svc.get_sample_path(personality_id) if has_sample else None
+
+        if has_sample and sample_path:
+            cleaned = clean_text_for_tts(text)
+            if cleaned:
+                try:
+                    audio_out = await voice_svc.synthesize(
+                        text=cleaned,
+                        personality_id=personality_id,
+                        reference_wav=sample_path,
+                    )
+                    if audio_out and len(audio_out) > 500:
+                        if broadcast_to_clients:
+                            await manager.send_to_phone(audio_out)
+                        return audio_out
+                except Exception as ex:
+                    logger.error(f"Voice synthesis error in pipeline: {ex}")
+        else:
+            notice_payload = {
+                "t": "voice_clone_notice",
+                "status": "sample_required",
+                "message": "يرجى تسجيل عينة صوتك لتفعيل الرد الصوتي",
+                "has_voice_sample": False,
+                "personality_id": personality_id,
+            }
+            if broadcast_to_clients:
+                await manager.send_to_phone(notice_payload)
+                await manager.broadcast_to_desks(notice_payload)
+        return None
+
     def reload_providers(self) -> None:
         """Reload STT, LLM, and TTS providers dynamically when settings change."""
         self._stt = _load_stt_provider()
@@ -832,6 +875,7 @@ class AIPipeline:
                 })
                 await manager.send_to_phone({"t": "eyes", "mood": fast_emotion})
             self._dispatch_actuator_async(fast_reply)
+            audio_bytes = await self._synthesize_and_dispatch_audio(fast_reply, pid, broadcast_to_clients)
             asyncio.create_task(
                 self._record_turn(
                     session_id=session_id,
@@ -848,6 +892,7 @@ class AIPipeline:
                 "response": fast_reply,
                 "retrieved_memories": [],
                 "personality_id": pid,
+                "audio_bytes": audio_bytes,
             }
 
         # 1. Full Grounding Context & RAG retrieval
@@ -902,6 +947,8 @@ class AIPipeline:
                     "latency": {"llm_ms": 0, "total_ms": round(total_ms)},
                 })
                 await manager.send_to_phone({"t": "eyes", "mood": emotion})
+            self._dispatch_actuator_async(full_response)
+            audio_bytes = await self._synthesize_and_dispatch_audio(full_response, pid, broadcast_to_clients)
             asyncio.create_task(
                 self._record_turn(
                     session_id=session_id,
@@ -918,6 +965,7 @@ class AIPipeline:
                 "response": full_response,
                 "retrieved_memories": [],
                 "personality_id": pid,
+                "audio_bytes": audio_bytes,
             }
 
         # 2. LLM response generation
@@ -954,6 +1002,12 @@ class AIPipeline:
             })
             await manager.send_to_phone({"t": "eyes", "mood": emotion})
 
+        # Physical motion dispatch
+        self._dispatch_actuator_async(full_response)
+
+        # Voice Synthesis & Delivery via VoiceCloneService (No Fallback Model)
+        audio_bytes = await self._synthesize_and_dispatch_audio(full_response, pid, broadcast_to_clients)
+
         # Save turn to DB
         asyncio.create_task(
             self._record_turn(
@@ -973,6 +1027,7 @@ class AIPipeline:
             "retrieved_memories": memories,
             "personality_id": pid,
             "emotion": emotion,
+            "audio_bytes": audio_bytes,
             "latency": {
                 "llm_ms": round(llm_ms, 2),
                 "total_ms": round(total_ms, 2),
