@@ -162,6 +162,28 @@ class QwenCleoProvider(BaseSTTProvider):
 
             import torch
 
+            # 1. Ensure Qwen3-ASR architecture is registered with Transformers
+            try:
+                import qwen_asr  # noqa: F401
+                from qwen_asr.core.transformers_backend import (
+                    Qwen3ASRConfig,
+                    Qwen3ASRForConditionalGeneration,
+                    Qwen3ASRProcessor,
+                )
+                from transformers import (
+                    AutoConfig,
+                    AutoModel,
+                    AutoModelForSpeechSeq2Seq,
+                    AutoProcessor,
+                )
+
+                AutoConfig.register("qwen3_asr", Qwen3ASRConfig)
+                AutoModel.register(Qwen3ASRConfig, Qwen3ASRForConditionalGeneration)
+                AutoModelForSpeechSeq2Seq.register(Qwen3ASRConfig, Qwen3ASRForConditionalGeneration)
+                AutoProcessor.register(Qwen3ASRConfig, Qwen3ASRProcessor)
+            except Exception as reg_err:
+                logger.debug(f"Qwen3ASR auto-registration note: {reg_err}")
+
             model_path = settings.QWENCLEO_MODEL_PATH
             # If local relative path doesn't exist, use Hugging Face repo
             if not Path(model_path).exists():
@@ -175,52 +197,69 @@ class QwenCleoProvider(BaseSTTProvider):
                 else:
                     logger.warning("CUDA requested for QwenCleo but not available. Using CPU.")
 
-            logger.info(f"Loading QwenCleo-ASR from {model_path} (device={device_idx})…")
+            device_str = f"cuda:{device_idx}" if device_idx >= 0 else "cpu"
+            torch_dtype = torch.bfloat16 if (device_idx >= 0 and torch.cuda.is_bf16_supported()) else (torch.float16 if device_idx >= 0 else torch.float32)
 
+            logger.info(f"Loading QwenCleo-ASR from {model_path} ({device_str}, {torch_dtype})…")
+
+            # Try loading via dedicated Qwen3ASRModel first
+            loaded = False
             try:
-                from transformers import pipeline as hf_pipeline  # type: ignore[import]
-                QwenCleoProvider._shared_pipeline = hf_pipeline(
-                    task="automatic-speech-recognition",
-                    model=model_path,
-                    device=device_idx,
-                    chunk_length_s=15,
-                    stride_length_s=2,
-                    batch_size=4,
-                    return_timestamps=False,
-                    trust_remote_code=True,
-                )
-            except Exception as pipe_err:
-                logger.warning(
-                    f"Direct pipeline creation encountered error ({pipe_err}). "
-                    "Loading via AutoModelForSpeechSeq2Seq and AutoProcessor..."
-                )
-                from transformers import (
-                    AutoModelForSpeechSeq2Seq,
-                    AutoProcessor,
-                    pipeline as hf_pipeline,
-                )
-                device_str = f"cuda:{device_idx}" if device_idx >= 0 else "cpu"
-                torch_dtype = torch.float16 if device_idx >= 0 else torch.float32
-                model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                from qwen_asr import Qwen3ASRModel
+                QwenCleoProvider._shared_pipeline = Qwen3ASRModel.from_pretrained(
                     model_path,
-                    torch_dtype=torch_dtype,
-                    low_cpu_mem_usage=True,
-                    trust_remote_code=True,
+                    device_map=device_str,
+                    dtype=torch_dtype,
+                    max_new_tokens=256,
                 )
-                if device_idx >= 0:
-                    model = model.to(device_str)
-                processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-                QwenCleoProvider._shared_pipeline = hf_pipeline(
-                    task="automatic-speech-recognition",
-                    model=model,
-                    tokenizer=processor.tokenizer,
-                    feature_extractor=processor.feature_extractor,
-                    device=device_idx,
-                    chunk_length_s=15,
-                    stride_length_s=2,
-                    batch_size=4,
-                    return_timestamps=False,
-                )
+                loaded = True
+                logger.info("QwenCleo loaded successfully via Qwen3ASRModel [OK]")
+            except Exception as model_err:
+                logger.warning(f"Direct Qwen3ASRModel loading note: {model_err}. Falling back to pipeline...")
+
+            if not loaded:
+                try:
+                    from transformers import pipeline as hf_pipeline  # type: ignore[import]
+                    QwenCleoProvider._shared_pipeline = hf_pipeline(
+                        task="automatic-speech-recognition",
+                        model=model_path,
+                        device=device_idx,
+                        chunk_length_s=15,
+                        stride_length_s=2,
+                        batch_size=4,
+                        return_timestamps=False,
+                        trust_remote_code=True,
+                    )
+                except Exception as pipe_err:
+                    logger.warning(
+                        f"Direct pipeline creation encountered error ({pipe_err}). "
+                        "Loading via AutoModelForSpeechSeq2Seq and AutoProcessor..."
+                    )
+                    from transformers import (
+                        AutoModelForSpeechSeq2Seq,
+                        AutoProcessor,
+                        pipeline as hf_pipeline,
+                    )
+                    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                        model_path,
+                        torch_dtype=torch_dtype,
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=True,
+                    )
+                    if device_idx >= 0:
+                        model = model.to(device_str)
+                    processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+                    QwenCleoProvider._shared_pipeline = hf_pipeline(
+                        task="automatic-speech-recognition",
+                        model=model,
+                        tokenizer=processor.tokenizer,
+                        feature_extractor=processor.feature_extractor,
+                        device=device_idx,
+                        chunk_length_s=15,
+                        stride_length_s=2,
+                        batch_size=4,
+                        return_timestamps=False,
+                    )
 
             QwenCleoProvider._shared_error = None
             logger.info("QwenCleo-ASR ready (multithreaded chunks enabled) ✓")
@@ -241,8 +280,14 @@ class QwenCleoProvider(BaseSTTProvider):
         return await loop.run_in_executor(_stt_executor, self._run, audio_bytes)
 
     def _run_single_chunk(self, chunk: np.ndarray, sample_rate: int) -> str:
-        """Transcribe an individual audio chunk through the pipeline."""
+        """Transcribe an individual audio chunk through the model or pipeline."""
         try:
+            if hasattr(QwenCleoProvider._shared_pipeline, "transcribe"):
+                res = QwenCleoProvider._shared_pipeline.transcribe(
+                    audio=(chunk, sample_rate),
+                    language="Arabic",
+                )
+                return res[0].text.strip() if res else ""
             result = QwenCleoProvider._shared_pipeline(
                 {"raw": chunk, "sampling_rate": sample_rate}
             )
@@ -270,18 +315,12 @@ class QwenCleoProvider(BaseSTTProvider):
 
             # 2. Short audio (< 8s): transcribe in one pass
             if dur_s <= 8.0:
-                result = QwenCleoProvider._shared_pipeline(
-                    {"raw": trimmed_audio, "sampling_rate": sample_rate}
-                )
-                return result.get("text", "").strip()
+                return self._run_single_chunk(trimmed_audio, sample_rate)
 
             # 3. Longer audio (> 8s): multithreaded chunk processing
             chunks = _split_into_chunks(trimmed_audio, sample_rate, chunk_s=8.0, stride_s=1.0)
             if len(chunks) == 1:
-                result = QwenCleoProvider._shared_pipeline(
-                    {"raw": chunks[0], "sampling_rate": sample_rate}
-                )
-                return result.get("text", "").strip()
+                return self._run_single_chunk(chunks[0], sample_rate)
 
             # Process chunks in parallel using multithreading executor
             futures = [

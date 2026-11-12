@@ -18,7 +18,7 @@ class ApiService {
   static ApiService? _instance;
   static ApiService get instance => _instance ??= ApiService._();
 
-  String get _base => StorageService.instance.getBaseUrl();
+  String get _base => StorageService.instance.getBaseUrl().replaceAll('localhost', '127.0.0.1');
   String? get _token => StorageService.instance.getToken();
 
   Map<String, String> get _headers => {
@@ -106,6 +106,9 @@ class ApiService {
       msg = body['detail']?.toString() ?? response.body;
     } catch (_) {
       msg = response.body;
+    }
+    if (response.statusCode == 401) {
+      StorageService.instance.clearToken();
     }
     throw ApiException(response.statusCode, msg);
   }

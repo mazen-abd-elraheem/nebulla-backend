@@ -1,14 +1,28 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
 import 'dashboard_screen.dart';
 import 'chat_screen.dart';
-import 'personalities_screen.dart';
+import 'memory_personas_screen.dart';
+import 'profile_screen.dart';
 import 'diagnostics_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/nebula_side_menu.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key, this.initialIndex = 0});
   final int initialIndex;
+
+  static void navigateTo(BuildContext context, int index) {
+    final state = context.findAncestorStateOfType<_MainShellState>();
+    if (state != null) {
+      state._onNavigate(index);
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => MainShell(initialIndex: index)),
+        (route) => false,
+      );
+    }
+  }
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -17,126 +31,194 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   late int _currentIndex;
 
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    ChatScreen(),
-    PersonalitiesScreen(),
-    DiagnosticsScreen(),
-    SettingsScreen(),
-  ];
-
-  final List<_NavItem> _navItems = const [
-    _NavItem(icon: Icons.dashboard_outlined, label: 'الرئيسية'),
-    _NavItem(icon: Icons.chat_bubble_outline, label: 'الدردشة'),
-    _NavItem(icon: Icons.person_pin_outlined, label: 'الشخصيات'),
-    _NavItem(icon: Icons.developer_board_outlined, label: 'فحص السيستم'),
-    _NavItem(icon: Icons.settings_outlined, label: 'الظبط'),
-  ];
-
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
   }
 
+  void _onNavigate(int index) {
+    if (index >= 0 && index < 6) {
+      setState(() => _currentIndex = index);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screens = [
+      DashboardScreen(onNavigate: _onNavigate),
+      ChatScreen(onNavigate: _onNavigate),
+      MemoryPersonasScreen(onNavigate: _onNavigate),
+      const ProfileScreen(),
+      const DiagnosticsScreen(),
+      const SettingsScreen(),
+    ];
+
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _screens),
-      bottomNavigationBar: _NebulaNavBar(
-        currentIndex: _currentIndex,
-        items: _navItems,
-        onTap: (i) => setState(() => _currentIndex = i),
+      backgroundColor: Colors.white,
+      drawer: Drawer(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: NebulaSideMenu(
+          activeIndex: _currentIndex,
+          onNavigate: (idx) {
+            Navigator.of(context).maybePop();
+            _onNavigate(idx);
+          },
+          onClose: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: Stack(
+        children: [
+          // Current active screen
+          IndexedStack(
+            index: _currentIndex,
+            children: screens,
+          ),
+
+          // Floating Translucent Frosted Glass Bottom Navigation Bar matching Image 2
+          // Automatically hide when keyboard is open so it never obstructs typing
+          if (MediaQuery.of(context).viewInsets.bottom == 0)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: _buildFloatingGlassNavBar(),
+            ),
+        ],
       ),
     );
   }
-}
 
-class _NavItem {
-  final IconData icon;
-  final String label;
-  const _NavItem({required this.icon, required this.label});
-}
-
-class _NebulaNavBar extends StatelessWidget {
-  final int currentIndex;
-  final List<_NavItem> items;
-  final ValueChanged<int> onTap;
-
-  const _NebulaNavBar({
-    required this.currentIndex,
-    required this.items,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: const Border(
-            top: BorderSide(color: AppColors.cardBorder, width: 1)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.teal.withValues(alpha: 0.05),
-            blurRadius: 20,
-            offset: const Offset(0, -5),
-          ),
-        ],
+  Widget _buildFloatingGlassNavBar() {
+    final items = [
+      const _BottomNavItem(
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_rounded,
+        label: 'الصفحه الرئيسيه',
       ),
-      child: SafeArea(
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(items.length, (i) {
-              final selected = i == currentIndex;
-              final item = items[i];
-              return GestureDetector(
-                onTap: () => onTap(i),
-                behavior: HitTestBehavior.opaque,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 8),
-                  decoration: selected
-                      ? BoxDecoration(
-                          color: AppColors.teal.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: AppColors.teal.withValues(alpha: 0.3)),
-                        )
-                      : null,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        item.icon,
-                        color:
-                            selected ? AppColors.teal : AppColors.textMuted,
-                        size: 22,
+      const _BottomNavItem(
+        icon: Icons.chat_bubble_outline_rounded,
+        activeIcon: Icons.chat_bubble_rounded,
+        label: 'الدردشة',
+      ),
+      const _BottomNavItem(
+        icon: Icons.groups_outlined,
+        activeIcon: Icons.groups_rounded,
+        label: 'الشخصيات',
+      ),
+      const _BottomNavItem(
+        icon: Icons.person_outline_rounded,
+        activeIcon: Icons.person_rounded,
+        label: 'الملف الشخصي',
+      ),
+    ];
+
+    return SafeArea(
+      child: Directionality(
+        textDirection: TextDirection.ltr, // Matches Image 3 layout: Left=Home -> Right=Profile
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          height: 76,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.88),
+            borderRadius: BorderRadius.circular(34),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.95),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(34),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: List.generate(items.length, (i) {
+                  final selected = _currentIndex == i;
+                  final item = items[i];
+
+                  return InkWell(
+                    onTap: () => setState(() => _currentIndex = i),
+                    borderRadius: BorderRadius.circular(24),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Circular Icon Container matching Image 3 design
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: selected
+                                  ? const Color(0xFF0284C7).withValues(alpha: 0.12)
+                                  : Colors.white.withValues(alpha: 0.9),
+                              border: Border.all(
+                                color: selected
+                                    ? const Color(0xFF0284C7)
+                                    : const Color(0xFF334155).withValues(alpha: 0.5),
+                                width: selected ? 1.6 : 1.2,
+                              ),
+                              boxShadow: selected
+                                  ? [
+                                      BoxShadow(
+                                        color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: Icon(
+                              selected ? item.activeIcon : item.icon,
+                              color: selected
+                                  ? const Color(0xFF0284C7)
+                                  : const Color(0xFF1E293B),
+                              size: 21,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            item.label,
+                            style: TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 10,
+                              fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                              color: selected
+                                  ? const Color(0xFF0284C7)
+                                  : const Color(0xFF334155),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.label,
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 10,
-                          fontWeight: selected
-                              ? FontWeight.w700
-                              : FontWeight.w400,
-                          color:
-                              selected ? AppColors.teal : AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
+                    ),
+                  );
+                }),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _BottomNavItem {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+
+  const _BottomNavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+  });
 }

@@ -1,11 +1,11 @@
 """Servo calibration endpoints (doc §5.2 calibration screen)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt import get_current_user
+from app.auth.jwt import get_optional_user
 from app.db.session import get_db
 from app.models.calibration import ServoCalibration
 
@@ -20,7 +20,7 @@ class CalibrationUpdate(BaseModel):
 
 
 @router.get("/", summary="List all servo calibrations")
-async def list_calibrations(db: AsyncSession = Depends(get_db), _u=Depends(get_current_user)):
+async def list_calibrations(db: AsyncSession = Depends(get_db), _u=Depends(get_optional_user)):
     r = await db.execute(select(ServoCalibration).order_by(ServoCalibration.servo_id))
     return {"calibrations": [_c(c) for c in r.scalars()]}
 
@@ -30,7 +30,7 @@ async def upsert_calibration(
     servo_id: int,
     body: CalibrationUpdate,
     db: AsyncSession = Depends(get_db),
-    _u=Depends(get_current_user),
+    _u=Depends(get_optional_user),
 ):
     cal = await db.get(ServoCalibration, servo_id)
     if not cal:
@@ -39,20 +39,21 @@ async def upsert_calibration(
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(cal, k, v)
     await db.flush()
+    await db.commit()
     return _c(cal)
 
 
 @router.post("/reset", summary="Reset all servos to home position via ESP32")
-async def reset_to_home(_u=Depends(get_current_user)):
-    """Send every servo to its home angle (requires ESP32 connected)."""
+async def reset_to_home(_u=Depends(get_optional_user)):
+    """Send every servo to its home angle."""
     from app.websocket.manager import manager
     from app.services.motion.motion_guard import MotionGuard
     guard = MotionGuard()
-    # Send home command for each known servo (0-11)
-    for sid in range(12):
-        cmd = {"t": "joint", "id": sid, "deg": 90, "ms": 800}
-        await manager.send_to_esp(cmd)
-    return {"message": "بعتنا أمر الرجوع لوضع السكون (الهوم) لكل مواتير السيرفو"}
+    if manager.esp_connected:
+        for sid in range(12):
+            cmd = {"t": "joint", "id": sid, "deg": 90, "ms": 800}
+            await manager.send_to_esp(cmd)
+    return {"message": "بعتنا أمر الرجوع لوضع السكون (الهوم) لكل مواتير السيرفو", "esp_connected": manager.esp_connected}
 
 
 def _c(c: ServoCalibration) -> dict:
