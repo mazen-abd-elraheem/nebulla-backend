@@ -85,3 +85,4 @@ class Avatar3DServer {
     _port = null;
   }
 }
+
