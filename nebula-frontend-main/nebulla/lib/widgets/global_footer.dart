@@ -143,6 +143,10 @@ class GlobalNebulaFooter extends StatelessWidget {
                       // Section Label with Drop Shadow
                       Text(
                         item.label,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.visible,
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 11,

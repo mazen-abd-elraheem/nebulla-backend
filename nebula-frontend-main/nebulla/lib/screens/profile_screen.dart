@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/storage_service.dart';
 import '../services/locale_service.dart';
+import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
 import 'language_appearance_screen.dart';
 import 'notification_preferences_screen.dart';
@@ -38,6 +39,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (user.email.isNotEmpty) _email = user.email;
       });
     }
+    // Fetch live fresh profile from backend
+    NebulaRepository.instance.getMe().then((remoteUser) {
+      if (mounted) {
+        setState(() {
+          if (remoteUser.fullName.isNotEmpty) _fullName = remoteUser.fullName;
+          if (remoteUser.email.isNotEmpty) _email = remoteUser.email;
+        });
+      }
+    }).catchError((_) {});
   }
 
   void _showEditProfileDialog() {
@@ -225,12 +235,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Expanded(
                           child: Text(
                             LocaleService.instance.translate('nav_profile'),
-                            textAlign:
-                                isArabic ? TextAlign.right : TextAlign.left,
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w900,
                               color: Color(0xFF0F172A),
                             ),
                           ),

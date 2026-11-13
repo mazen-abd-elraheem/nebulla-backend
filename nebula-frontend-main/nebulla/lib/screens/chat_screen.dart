@@ -63,6 +63,76 @@ class _ChatScreenState extends State<ChatScreen> {
     AvatarAudioService.instance.stop();
     _seedInitialWelcomeMessage();
     _loadActivePersonality();
+    _loadChatHistory();
+  }
+
+  /// Syncs and loads previous conversation history from backend database
+  Future<void> _loadChatHistory() async {
+    try {
+      final convList = await _repo.getConversations(5);
+      if (convList.isNotEmpty && mounted) {
+        final latest = convList.first as Map<String, dynamic>;
+        final cid = latest['id'] as int?;
+        if (cid != null) {
+          final msgs = await _repo.getConversationMessages(cid);
+          if (msgs.isNotEmpty && mounted) {
+            final loaded = <_ChatMessageItem>[];
+            for (final m in msgs) {
+              final map = m as Map<String, dynamic>;
+              final role = map['role'] as String? ?? 'assistant';
+              final content = map['content'] as String? ?? '';
+              if (content.isEmpty) continue;
+              final timeStr = map['created_at'] != null
+                  ? _formatIsoTimestamp(map['created_at'].toString())
+                  : _formatCurrentTime();
+              final emotion = map['emotion'] as String?;
+              final latency = (map['llm_ms'] as num?)?.toDouble();
+
+              // Parse ordered steps if present
+              List<String>? parsedSteps;
+              final stepsRegex = RegExp(r'(?:^|\n)\s*(\d+)[\.\-\)]\s*(.+)', multiLine: true);
+              final matches = stepsRegex.allMatches(content).toList();
+              if (matches.length >= 2) {
+                parsedSteps = matches.map((match) => match.group(2)!.trim()).toList();
+              }
+
+              loaded.add(
+                _ChatMessageItem(
+                  id: 'msg_${map['id'] ?? DateTime.now().millisecondsSinceEpoch}',
+                  role: role,
+                  content: content,
+                  time: timeStr,
+                  emotion: emotion,
+                  latencyMs: latency,
+                  orderedSteps: parsedSteps,
+                ),
+              );
+            }
+            if (loaded.isNotEmpty && mounted) {
+              setState(() {
+                _sessionId = latest['session_id'] as String? ?? _sessionId;
+                _messages
+                  ..clear()
+                  ..addAll(loaded);
+              });
+              _scrollToBottom();
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  String _formatIsoTimestamp(String iso) {
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      final period = dt.hour >= 12 ? 'م' : 'ص';
+      final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+      final minute = dt.minute.toString().padLeft(2, '0');
+      return '$hour:$minute $period';
+    } catch (_) {
+      return _formatCurrentTime();
+    }
   }
 
   /// Initial state: ONLY the welcome greeting message is present at start!

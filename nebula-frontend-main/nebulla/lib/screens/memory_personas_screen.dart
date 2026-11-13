@@ -217,7 +217,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                   .where((s) => s.isNotEmpty)
                   .toList();
             }
-          } else if (remote.name != 'Mazen') {
+          } else {
             _personas.add(
               PersonaProfileData(
                 backendId: remote.id,

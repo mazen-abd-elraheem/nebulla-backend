@@ -249,12 +249,20 @@ class NebulaRepository {
 
   Future<List<dynamic>> getConversations([int limit = 20]) async {
     final data = await _api.get(AppConstants.conversations, {'limit': limit});
-    return data as List;
+    if (data is Map && data.containsKey('conversations')) {
+      return (data['conversations'] as List?) ?? [];
+    }
+    if (data is List) return data;
+    return [];
   }
 
   Future<List<dynamic>> getConversationMessages(int cid) async {
     final data = await _api.get('${AppConstants.conversations}$cid/messages');
-    return data as List;
+    if (data is Map && data.containsKey('messages')) {
+      return (data['messages'] as List?) ?? [];
+    }
+    if (data is List) return data;
+    return [];
   }
 
   // ── Signals ───────────────────────────────────────────────────────────────
