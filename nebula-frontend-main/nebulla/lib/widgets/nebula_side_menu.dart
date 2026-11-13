@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/storage_service.dart';
+import '../services/locale_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 import '../screens/main_shell.dart';
@@ -91,9 +92,11 @@ class NebulaSideMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audioService = AvatarAudioService.instance;
+    final locale = LocaleService.instance;
+    final t = locale.translate;
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: locale.textDirection,
       child: Material(
         color: Colors.transparent,
         child: Stack(
@@ -136,7 +139,7 @@ class NebulaSideMenu extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // 1. Top Close Button (X)
+                        // 1. Top Close Button (X) + Language Toggle Pill
                         Row(
                           children: [
                             InkWell(
@@ -158,6 +161,35 @@ class NebulaSideMenu extends StatelessWidget {
                               ),
                             ),
                             const Spacer(),
+                            // Language switcher inside menu
+                            InkWell(
+                              onTap: () => locale.toggleLanguage(),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.language_rounded, size: 14, color: Color(0xFF0284C7)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      locale.isArabic ? 'English' : 'العربية',
+                                      style: const TextStyle(
+                                        fontFamily: 'Cairo',
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -320,80 +352,80 @@ class NebulaSideMenu extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
 
-                        // 3. Navigation Menu Items List - All with uniform color, dynamic touch transition
+                        // 3. Navigation Menu Items List - All localized with uniform color
                         Expanded(
                           child: ListView(
                             padding: EdgeInsets.zero,
                             children: [
-                              // الصفحه الرئيسيه
+                              // Home
                               _InteractiveMenuButton(
                                 icon: Icons.home_rounded,
-                                title: 'الصفحه الرئيسيه',
+                                title: t('nav_home'),
                                 isActive: activeIndex == 0,
-                                badgeText: activeIndex == 0 ? 'نشط' : null,
+                                badgeText: activeIndex == 0 ? t('active_badge') : null,
                                 onTap: () => _handleItemTap(context, 0), // Dashboard
                               ),
                               const SizedBox(height: 9),
 
-                              // تسجيل الدخول
+                              // Sign In
                               _InteractiveMenuButton(
                                 icon: Icons.login_rounded,
-                                title: 'تسجيل الدخول',
+                                title: t('login'),
                                 hasArrow: true,
                                 onTap: () => _handleItemTap(context, -1),
                               ),
                               const SizedBox(height: 9),
 
-                              // إنشاء حساب (جديد)
+                              // Create Account
                               _InteractiveMenuButton(
                                 icon: Icons.person_add_alt_1_rounded,
-                                title: 'إنشاء حساب',
-                                badgeText: 'جديد',
+                                title: t('create_account'),
+                                badgeText: t('new_badge'),
                                 onTap: () => _handleItemTap(context, -2),
                               ),
                               const SizedBox(height: 9),
 
-                              // إضافة شخصية جديدة
+                              // Add New Persona
                               _InteractiveMenuButton(
                                 icon: Icons.add_rounded,
-                                title: 'إضافة شخصية جديدة',
+                                title: t('add_new_persona'),
                                 hasArrow: true,
                                 onTap: () => _handleItemTap(context, 2), // Personas screen
                               ),
                               const SizedBox(height: 9),
 
-                              // الدردشة
+                              // Chat
                               _InteractiveMenuButton(
                                 icon: Icons.chat_bubble_outline_rounded,
-                                title: 'الدردشة',
+                                title: t('nav_chat'),
                                 isActive: activeIndex == 1,
-                                badgeText: activeIndex == 1 ? 'نشط' : null,
+                                badgeText: activeIndex == 1 ? t('active_badge') : null,
                                 onTap: () => _handleItemTap(context, 1), // Chat screen
                               ),
                               const SizedBox(height: 9),
 
-                              // الملف الشخصي
+                              // Profile
                               _InteractiveMenuButton(
                                 icon: Icons.person_outline_rounded,
-                                title: 'الملف الشخصي',
+                                title: t('nav_profile'),
                                 isActive: activeIndex == 3,
                                 onTap: () => _handleItemTap(context, 3), // Profile
                               ),
                               const SizedBox(height: 9),
 
-                              // الأجهزة
+                              // Devices
                               _InteractiveMenuButton(
                                 icon: Icons.desktop_windows_outlined,
-                                title: 'الأجهزة',
+                                title: t('nav_devices'),
                                 isActive: activeIndex == 4,
                                 onTap: () => _handleItemTap(context, 4), // Diagnostics
                               ),
                               const SizedBox(height: 9),
 
-                              // إعداد الذاكرة والشخصيات
+                              // Memory & Personas
                               _InteractiveMenuButton(
                                 icon: Icons.groups_outlined,
-                                title: 'إعداد الذاكرة والشخصيات',
+                                title: t('memory_personas'),
                                 hasArrow: true,
                                 isActive: activeIndex == 2,
                                 onTap: () => _handleItemTap(context, 2), // Personas
@@ -424,7 +456,7 @@ class NebulaSideMenu extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
 
-                        // 5. Logout Button (Dark Navy)
+                        // 5. Logout Button (Black background)
                         InkWell(
                           onTap: () async {
                             await StorageService.instance.clearToken();
@@ -449,18 +481,18 @@ class NebulaSideMenu extends StatelessWidget {
                                 ),
                               ],
                             ),
-                            child: const Row(
+                            child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.logout_rounded,
                                   color: Color(0xFF00E5FF),
                                   size: 20,
                                 ),
-                                SizedBox(width: 10),
+                                const SizedBox(width: 10),
                                 Text(
-                                  'خروج',
-                                  style: TextStyle(
+                                  t('logout'),
+                                  style: const TextStyle(
                                     fontFamily: 'Cairo',
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,

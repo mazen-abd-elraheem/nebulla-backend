@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core/theme.dart';
 import 'services/storage_service.dart';
+import 'services/locale_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell.dart';
 
@@ -23,8 +24,9 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  // Init storage
+  // Init storage & localization
   await StorageService.instance.init();
+  await LocaleService.instance.init();
 
   runApp(const NebulaApp());
 }
@@ -34,30 +36,35 @@ class NebulaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'نيبولا',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark,
-      scrollBehavior: const MaterialScrollBehavior().copyWith(
-        dragDevices: {
-          PointerDeviceKind.mouse,
-          PointerDeviceKind.touch,
-          PointerDeviceKind.stylus,
-          PointerDeviceKind.trackpad,
-          PointerDeviceKind.unknown,
-        },
-      ),
-      // RTL for Arabic
-      locale: const Locale('ar'),
-      builder: (context, child) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: child!,
+    return AnimatedBuilder(
+      animation: LocaleService.instance,
+      builder: (context, _) {
+        final localeService = LocaleService.instance;
+        return MaterialApp(
+          title: localeService.translate('brand_name'),
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.dark,
+          scrollBehavior: const MaterialScrollBehavior().copyWith(
+            dragDevices: {
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.touch,
+              PointerDeviceKind.stylus,
+              PointerDeviceKind.trackpad,
+              PointerDeviceKind.unknown,
+            },
+          ),
+          locale: localeService.currentLocale,
+          builder: (context, child) {
+            return Directionality(
+              textDirection: localeService.textDirection,
+              child: child!,
+            );
+          },
+          home: StorageService.instance.getToken() != null
+              ? const MainShell()
+              : const LoginScreen(),
         );
       },
-      home: StorageService.instance.getToken() != null
-          ? const MainShell()
-          : const LoginScreen(),
     );
   }
 }

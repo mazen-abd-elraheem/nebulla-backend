@@ -9,6 +9,7 @@ import '../models/models.dart';
 import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
 import '../services/avatar_audio_service.dart';
+import '../services/locale_service.dart';
 import '../widgets/nebula_side_menu.dart';
 
 class PersonaProfileData {
@@ -753,6 +754,30 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isArabic = LocaleService.instance.isArabic;
+    final sidebar = Drawer(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: NebulaSideMenu(
+        activeIndex: 2,
+        onNavigate: (idx) {
+          if (isArabic) {
+            _memScaffoldKey.currentState?.closeEndDrawer();
+          } else {
+            _memScaffoldKey.currentState?.closeDrawer();
+          }
+          widget.onNavigate?.call(idx);
+        },
+        onClose: () {
+          if (isArabic) {
+            _memScaffoldKey.currentState?.closeEndDrawer();
+          } else {
+            _memScaffoldKey.currentState?.closeDrawer();
+          }
+        },
+      ),
+    );
+
     return Theme(
       data: ThemeData.light().copyWith(
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
@@ -765,21 +790,11 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
       ),
       child: Scaffold(
         key: _memScaffoldKey,
-        drawer: Drawer(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: NebulaSideMenu(
-            activeIndex: 2,
-            onNavigate: (idx) {
-              _memScaffoldKey.currentState?.closeDrawer();
-              widget.onNavigate?.call(idx);
-            },
-            onClose: () => _memScaffoldKey.currentState?.closeDrawer(),
-          ),
-        ),
+        drawer: isArabic ? null : sidebar,
+        endDrawer: isArabic ? sidebar : null,
         backgroundColor: const Color(0xFFF8FAFC),
         body: Directionality(
-          textDirection: TextDirection.rtl,
+          textDirection: LocaleService.instance.textDirection,
           child: Stack(
             children: [
               // Top subtle cyborg profile background watermark
@@ -850,19 +865,22 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                     children: [
                                       InkWell(
                                         onTap: () {
-                                          _memScaffoldKey.currentState?.openDrawer();
+                                          if (LocaleService.instance.isArabic) {
+                                            _memScaffoldKey.currentState?.openEndDrawer();
+                                          } else {
+                                            _memScaffoldKey.currentState?.openDrawer();
+                                          }
                                         },
                                         borderRadius: BorderRadius.circular(12),
                                         child: Container(
                                           width: 38,
                                           height: 38,
                                           decoration: BoxDecoration(
-                                            color: Colors.white,
+                                            color: const Color(0xFF0F172A), // Black button styling
                                             borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(color: const Color(0xFFE2E8F0)),
                                             boxShadow: [
                                               BoxShadow(
-                                                color: Colors.black.withValues(alpha: 0.03),
+                                                color: Colors.black.withValues(alpha: 0.15),
                                                 blurRadius: 6,
                                                 offset: const Offset(0, 2),
                                               ),
@@ -871,15 +889,15 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                           child: const Icon(
                                             Icons.menu_rounded,
                                             size: 20,
-                                            color: Color(0xFF1E293B),
+                                            color: Colors.white,
                                           ),
                                         ),
                                       ),
                                       const SizedBox(width: 12),
-                                      const Expanded(
+                                      Expanded(
                                         child: Text(
-                                          'إعداد الذاكرة والشخصيات',
-                                          style: TextStyle(
+                                          LocaleService.instance.translate('memory_personas'),
+                                          style: const TextStyle(
                                             fontFamily: 'Cairo',
                                             fontSize: 20,
                                             fontWeight: FontWeight.w900,

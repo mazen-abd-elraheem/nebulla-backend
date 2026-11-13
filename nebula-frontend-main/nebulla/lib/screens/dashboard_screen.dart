@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/avatar_audio_service.dart';
+import '../services/locale_service.dart';
+import '../services/storage_service.dart';
+import '../screens/login_screen.dart';
 import '../widgets/interactive_animated_avatar.dart';
 import '../widgets/nebula_side_menu.dart';
 
@@ -27,6 +30,79 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       },
     );
+  }
+
+  Future<void> _handleLogout() async {
+    final t = LocaleService.instance.translate;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: LocaleService.instance.textDirection,
+        child: AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            t('logout'),
+            style: const TextStyle(
+              fontFamily: 'Cairo',
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          content: Text(
+            LocaleService.instance.isArabic
+                ? 'هل أنت متأكد من تسجيل الخروج من حسابك؟'
+                : 'Are you sure you want to sign out from your account?',
+            style: const TextStyle(
+              fontFamily: 'Cairo',
+              fontSize: 14,
+              color: Color(0xFF475569),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(
+                t('cancel'),
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F172A),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(
+                t('logout'),
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFEF4444),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await StorageService.instance.clearToken();
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+        );
+      }
+    }
   }
 
   void _triggerAvatarGreeting() {
@@ -74,51 +150,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
 
-          // 2. Top Header Bar matching User Mockup 100%:
-          // - LEFT: Hamburger Menu Button (opens side menu modal immediately)
+          // 2. Top Header Bar:
+          // - LEFT: Black Circular Hamburger Menu Button (strictly on the left)
           // - CENTER: Glowing Green Online Status Dot
-          // - RIGHT: Circular Notification Bell Button
+          // - RIGHT: Language Switcher + Black Logout Button (strictly on the right)
           SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Directionality(
-                  textDirection: TextDirection.ltr, // Enforces Left=Menu, Right=Bell
+                  textDirection: TextDirection.ltr, // Enforces Left=Menu, Right=Logout
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // LEFT: Circular Hamburger Menu Button -> Opens Side Menu
+                      // LEFT: Black Circular Hamburger Menu Button
                       GestureDetector(
                         onTap: _openMenu,
                         behavior: HitTestBehavior.opaque,
                         child: Container(
-                          width: 44,
-                          height: 44,
+                          width: 42,
+                          height: 42,
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.95),
+                            color: const Color(0xFF0F172A), // Black background
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFFE2E8F0),
-                              width: 1.2,
-                            ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.08),
-                                blurRadius: 10,
+                                color: Colors.black.withValues(alpha: 0.18),
+                                blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
                             ],
                           ),
                           child: const Icon(
                             Icons.menu_rounded,
-                            color: Color(0xFF1E293B),
-                            size: 24,
+                            color: Colors.white,
+                            size: 22,
                           ),
                         ),
                       ),
 
-                      // CENTER: Glowing Green Online Status Dot matching Mockup
+                      // CENTER: Glowing Green Online Status Dot
                       Container(
                         width: 10,
                         height: 10,
@@ -135,45 +207,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
 
-                      // RIGHT: Circular Notification Bell Button
-                      GestureDetector(
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'النظام متصل وجاهز للعمل • التزامن الصوتي مفعّل 100%',
-                                style: TextStyle(fontFamily: 'Cairo'),
+                      // RIGHT: Language Toggle + Black Logout Button
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Lang Switch Pill
+                          InkWell(
+                            onTap: () => LocaleService.instance.toggleLanguage(),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.95),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
                               ),
-                              behavior: SnackBarBehavior.floating,
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        },
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.95),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFFE2E8F0),
-                              width: 1.2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.08),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.language_rounded, size: 14, color: Color(0xFF0284C7)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    LocaleService.instance.isArabic ? 'EN' : 'عربي',
+                                    style: const TextStyle(
+                                      fontFamily: 'Cairo',
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.notifications_none_rounded,
-                            color: Color(0xFF1E293B),
-                            size: 24,
+                          const SizedBox(width: 8),
+
+                          // Black Logout Button
+                          GestureDetector(
+                            onTap: _handleLogout,
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              height: 38,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A), // Black background
+                                borderRadius: BorderRadius.circular(10),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.15),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.logout_rounded, color: Color(0xFFF87171), size: 16),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    LocaleService.instance.translate('logout'),
+                                    style: const TextStyle(
+                                      fontFamily: 'Cairo',
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/storage_service.dart';
+import '../services/locale_service.dart';
 import '../widgets/common_widgets.dart';
 import 'login_screen.dart';
 import 'language_appearance_screen.dart';
@@ -127,7 +128,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: LocaleService.instance.textDirection,
       child: Scaffold(
         backgroundColor: const Color(0xFFF8FAFC),
         body: SafeArea(
@@ -510,28 +511,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 20),
 
-              // 6. Logout Button
+              // 6. Logout Button (Black background)
               GestureDetector(
                 onTap: _handleLogout,
                 child: Container(
-                  height: 48,
+                  height: 50,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEEF2FF),
+                    color: const Color(0xFF0F172A), // Black background
                     borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.14),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.logout_rounded,
-                          color: Color(0xFFDC2626), size: 18),
-                      SizedBox(width: 8),
+                      const Icon(Icons.logout_rounded,
+                          color: Color(0xFFF87171), size: 19),
+                      const SizedBox(width: 8),
                       Text(
-                        'تسجيل الخروج',
-                        style: TextStyle(
+                        LocaleService.instance.translate('logout'),
+                        style: const TextStyle(
                           fontFamily: 'Cairo',
-                          fontSize: 13.5,
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFFDC2626),
+                          color: Colors.white,
                         ),
                       ),
                     ],
