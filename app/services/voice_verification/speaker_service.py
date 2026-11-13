@@ -305,20 +305,18 @@ class AcousticVoiceprintBackend:
         log_fb_norm = log_fb - np.mean(log_fb, axis=1, keepdims=True)
         b_fb = np.mean(log_fb_norm, axis=0).astype(np.float32)
 
-        # Block 2: 24-D MFCCs (c1..c24 with sinusoidal lifter to emphasize individual timbre)
+        # Block 2: 24-D MFCCs (c1..c24, ignoring c0 loudness)
         mfcc = dct(log_fb, type=2, axis=1, norm="ortho")[:, 1:25]
-        _D_mfcc = 24
-        _lifter = (1.0 + (_D_mfcc / 2.0) * np.sin(np.pi * np.arange(1, _D_mfcc + 1) / _D_mfcc)).astype(np.float32)
-        b_mfcc = (np.mean(mfcc, axis=0) * _lifter).astype(np.float32)
+        b_mfcc = np.mean(mfcc, axis=0).astype(np.float32)
 
         # Block 3: 24-D Delta MFCCs (relative velocity of vocal tract changes)
         if len(mfcc) > 2:
             d1 = np.gradient(mfcc, axis=0)
-            b_d1 = (np.mean(np.abs(d1), axis=0) * _lifter).astype(np.float32)
+            b_d1 = (np.mean(np.abs(d1), axis=0) - np.mean(np.mean(np.abs(d1)))).astype(np.float32)
         else:
             b_d1 = np.zeros(24, dtype=np.float32)
 
-        # Block 4: 24-D LPC Formants & Resonances (Individual vocal tract deviations)
+        # Block 4: 24-D LPC Formants & Resonances (Ultra-Fast 0.2ms Lag Correlation)
         speech_pcm = speech_frames.reshape(-1)
         cut = speech_pcm[: min(len(speech_pcm), sr * 2)]
         order = 16
@@ -339,10 +337,9 @@ class AcousticVoiceprintBackend:
         angles = np.arctan2(np.imag(roots), np.real(roots))
         formants = sorted(angles * (sr / (2 * np.pi)))
 
-        nominal_f = np.array([500.0, 1500.0, 2500.0, 3500.0, 4500.0, 5500.0, 6500.0, 7500.0], dtype=np.float32)
         f_vec = np.zeros(8, dtype=np.float32)
         for i in range(min(8, len(formants))):
-            f_vec[i] = (formants[i] - nominal_f[i]) / 500.0
+            f_vec[i] = formants[i] / 4000.0
         b_lpc = np.concatenate([a[1:17], f_vec]).astype(np.float32)
 
         # Block 5: 24-D Pitch (F0) & Harmonics Histogram (Sampled fast windows)
@@ -414,16 +411,15 @@ class AcousticVoiceprintBackend:
             n = float(np.linalg.norm(xc))
             return (xc / n).astype(np.float32) if n > 1e-9 else np.zeros_like(xc)
 
-        # Weighting: emphasize speaker-discriminative vocal-tract formants, timbre, and pitch
         vec = np.concatenate([
-            u_center(b_fb) * 0.5,        # 40 (channel/room acoustics downweighted)
-            u_center(b_mfcc) * 1.5,      # 24 (fine vocal timbre details amplified)
-            u_center(b_d1) * 1.0,        # 24
-            u_center(b_lpc) * 2.0,       # 24 (formant deviations doubled!)
-            u_center(b_pitch) * 2.5,     # 24 (pitch distribution 2.5x!)
-            u_center(b_contrast) * 0.5,  # 24 (room contrast downweighted)
-            u_center(b_moments) * 0.5,   # 16 (general moments downweighted)
-            u_center(b_cpp) * 1.5,       # 16 (harmonic sharpness)
+            u_center(b_fb),        # 40
+            u_center(b_mfcc),      # 24
+            u_center(b_d1),        # 24
+            u_center(b_lpc),       # 24
+            u_center(b_pitch),     # 24
+            u_center(b_contrast),  # 24
+            u_center(b_moments),   # 16
+            u_center(b_cpp),       # 16
         ])
         # Total: 40 + 24 + 24 + 24 + 24 + 24 + 16 + 16 = 192 dimensions
         n_full = np.linalg.norm(vec)
@@ -764,6 +760,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "threshold": thresh,
                 "status": "no_enrolled_speakers",
@@ -776,6 +773,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "threshold": thresh,
                 "status": "model_unavailable",
@@ -790,6 +788,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "threshold": thresh,
                 "status": "decode_error",
@@ -803,6 +802,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "audio_seconds": round(seconds, 2),
                 "threshold": thresh,
@@ -822,7 +822,9 @@ class SpeakerVerificationService:
                 best_entry = entry
 
         best_sim = max(0.0, float(best_sim))
+        raw_best_sim = round(best_sim, 4)
         is_identified = best_sim >= thresh
+        similarity = raw_best_sim if is_identified else 0.0
         pct = self._calculate_match_percentage(best_sim, thresh)
 
         if is_identified and best_name:
@@ -839,7 +841,8 @@ class SpeakerVerificationService:
             "face_id": getattr(best_entry, "face_id", None) if (is_identified and best_entry) else None,
             "personality_id": getattr(best_entry, "personality_id", None) if (is_identified and best_entry) else None,
             "memory_id": getattr(best_entry, "memory_id", None) if (is_identified and best_entry) else None,
-            "similarity": round(best_sim, 4),
+            "similarity": similarity,
+            "raw_similarity": raw_best_sim,
             "match_percentage": pct if is_identified else 0.0,
             "audio_seconds": round(seconds, 2),
             "threshold": thresh,
@@ -926,7 +929,7 @@ class SpeakerVerificationService:
         is_identified2 = (best_sim2 >= thresh) and (best_name2 is not None)
         pct2 = self._calculate_match_percentage(best_sim2, thresh) if is_identified2 else 0.0
 
-        # 6. Formulate Arabic Comparison Verdict and Enforce Identity Consistency
+        # 6. Formulate Arabic Comparison Verdict and Enforce Strict Identity Consistency
         if is_identified1 and is_identified2:
             if (best_uid1 == best_uid2) or (best_name1 == best_name2):
                 is_same_speaker = True
@@ -934,18 +937,40 @@ class SpeakerVerificationService:
             else:
                 # Two distinct enrolled individuals (e.g. منه vs يوستينا)
                 is_same_speaker = False
-                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
-        elif is_same_speaker:
-            if is_identified1 and not is_identified2:
+                same_match_pct = 0.0
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})."
+
+        elif is_identified1 and not is_identified2:
+            # Voice 1 is enrolled as Person A, Voice 2 is not identified in DB.
+            # Voice 2 can ONLY be Person A if Voice 2 directly matches Person A's registered voiceprint
+            sim_v2_to_1 = float(np.dot(emb2, best_entry1.vector))
+            if is_same_speaker and (sim_v2_to_1 >= thresh):
+                is_same_speaker = True
                 comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name1}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
-            elif is_identified2 and not is_identified1:
+            else:
+                is_same_speaker = False
+                same_match_pct = 0.0
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لشخص غير مسجل بالسيستم (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})."
+
+        elif is_identified2 and not is_identified1:
+            # Voice 2 is enrolled as Person B, Voice 1 is not identified in DB.
+            sim_v1_to_2 = float(np.dot(emb1, best_entry2.vector))
+            if is_same_speaker and (sim_v1_to_2 >= thresh):
+                is_same_speaker = True
                 comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name2}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
             else:
-                comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص (تطابق بنسبة {same_match_pct:.1f}%)، ولكنه غير مسجل في السيستم (صوت غير معروف)."
+                is_same_speaker = False
+                same_match_pct = 0.0
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لشخص غير مسجل بالسيستم والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})."
+
+        elif is_same_speaker:
+            # Neither voice is enrolled in DB, but raw acoustic similarity >= thresh
+            comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص (تطابق بنسبة {same_match_pct:.1f}%)، ولكنه غير مسجل في السيستم (صوت غير معروف)."
+
         else:
-            name1_str = f"[{best_name1}]" if is_identified1 else "[شخص غير مسجل]"
-            name2_str = f"[{best_name2}]" if is_identified2 else "[شخص غير مسجل]"
-            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ {name1_str} والصوت الثاني لـ {name2_str} (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
+            # Neither voice is enrolled in DB, and similarity < thresh
+            same_match_pct = 0.0
+            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})، وكلاهما غير مسجل في السيستم."
 
         # 7. Build Human-Readable Arabic Summary
         summary_lines = [
@@ -954,17 +979,27 @@ class SpeakerVerificationService:
             "",
             f"📋 تفاصيل الصوت الأول ({sec1} ثانية):",
             f"   - الهوية: {best_name1 if is_identified1 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct1) + '%' if is_identified1 else 'صوت غير معروف'})",
-            f"   - المعرفات: User #{best_uid1 or '--'} | Face #{getattr(best_entry1, 'face_id', None) or '--'} | Persona #{getattr(best_entry1, 'personality_id', None) or '--'} | Memory #{getattr(best_entry1, 'memory_id', None) or '--'}",
+            f"   - المعرفات: User #{best_uid1 if is_identified1 else '--'} | Face #{(getattr(best_entry1, 'face_id', None) if is_identified1 else None) or '--'} | Persona #{(getattr(best_entry1, 'personality_id', None) if is_identified1 else None) or '--'} | Memory #{(getattr(best_entry1, 'memory_id', None) if is_identified1 else None) or '--'}",
             "",
             f"📋 تفاصيل الصوت الثاني ({sec2} ثانية):",
             f"   - الهوية: {best_name2 if is_identified2 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct2) + '%' if is_identified2 else 'صوت غير معروف'})",
-            f"   - المعرفات: User #{best_uid2 or '--'} | Face #{getattr(best_entry2, 'face_id', None) or '--'} | Persona #{getattr(best_entry2, 'personality_id', None) or '--'} | Memory #{getattr(best_entry2, 'memory_id', None) or '--'}",
+            f"   - المعرفات: User #{best_uid2 if is_identified2 else '--'} | Face #{(getattr(best_entry2, 'face_id', None) if is_identified2 else None) or '--'} | Persona #{(getattr(best_entry2, 'personality_id', None) if is_identified2 else None) or '--'} | Memory #{(getattr(best_entry2, 'memory_id', None) if is_identified2 else None) or '--'}",
         ]
+
+        raw_sim_12 = round(sim_12, 4)
+        similarity_12 = raw_sim_12 if is_same_speaker else 0.0
+
+        raw_sim1 = round(best_sim1, 4)
+        similarity_1 = raw_sim1 if is_identified1 else 0.0
+
+        raw_sim2 = round(best_sim2, 4)
+        similarity_2 = raw_sim2 if is_identified2 else 0.0
 
         return {
             "success": True,
             "is_same_speaker": is_same_speaker,
-            "similarity": round(sim_12, 4),
+            "similarity": similarity_12,
+            "raw_similarity": raw_sim_12,
             "match_percentage": same_match_pct if is_same_speaker else 0.0,
             "threshold": thresh,
             "comparison_verdict": comp_verdict,
@@ -975,7 +1010,8 @@ class SpeakerVerificationService:
                 "face_id": getattr(best_entry1, "face_id", None) if is_identified1 else None,
                 "personality_id": getattr(best_entry1, "personality_id", None) if is_identified1 else None,
                 "memory_id": getattr(best_entry1, "memory_id", None) if is_identified1 else None,
-                "similarity": round(best_sim1, 4),
+                "similarity": similarity_1,
+                "raw_similarity": raw_sim1,
                 "match_percentage": pct1,
                 "audio_seconds": sec1,
             },
@@ -986,7 +1022,8 @@ class SpeakerVerificationService:
                 "face_id": getattr(best_entry2, "face_id", None) if is_identified2 else None,
                 "personality_id": getattr(best_entry2, "personality_id", None) if is_identified2 else None,
                 "memory_id": getattr(best_entry2, "memory_id", None) if is_identified2 else None,
-                "similarity": round(best_sim2, 4),
+                "similarity": similarity_2,
+                "raw_similarity": raw_sim2,
                 "match_percentage": pct2,
                 "audio_seconds": sec2,
             },
