@@ -309,30 +309,42 @@ class NebulaSideMenu extends StatelessWidget {
                               ),
                               const SizedBox(height: 9),
 
-                              // 4: الملف الشخصي
+                              // 4: الذاكرة
                               _MenuItemCard(
-                                title: isArabic ? 'الملف الشخصي' : 'Profile',
-                                icon: Icons.person_outline_rounded,
-                                iconBoxColor: const Color(0xFFF1F5F9),
-                                iconColor: const Color(0xFF334155),
+                                title: isArabic ? 'الذاكرة' : 'Memory',
+                                icon: Icons.psychology_rounded,
+                                iconBoxColor: const Color(0xFFFEF3C7),
+                                iconColor: const Color(0xFFD97706),
+                                hasArrow: true,
                                 isActive: activeIndex == 3,
                                 onTap: () => _handleItemTap(context, 3),
                               ),
                               const SizedBox(height: 9),
 
-                              // 5: الأجهزة
+                              // 5: الملف الشخصي
                               _MenuItemCard(
-                                title: isArabic ? 'الأجهزة' : 'Devices',
-                                icon: Icons.computer_rounded,
-                                iconBoxColor: const Color(0xFFFEF3C7),
-                                iconColor: const Color(0xFFD97706),
-                                hasPillIndicator: true,
+                                title: isArabic ? 'الملف الشخصي' : 'Profile',
+                                icon: Icons.person_outline_rounded,
+                                iconBoxColor: const Color(0xFFF1F5F9),
+                                iconColor: const Color(0xFF334155),
                                 isActive: activeIndex == 4,
                                 onTap: () => _handleItemTap(context, 4),
                               ),
                               const SizedBox(height: 9),
 
-                              // 6: الشخصيات
+                              // 6: الأجهزة
+                              _MenuItemCard(
+                                title: isArabic ? 'الأجهزة' : 'Devices',
+                                icon: Icons.computer_rounded,
+                                iconBoxColor: const Color(0xFFE0F2FE),
+                                iconColor: const Color(0xFF0284C7),
+                                hasPillIndicator: true,
+                                isActive: activeIndex == 5,
+                                onTap: () => _handleItemTap(context, 5),
+                              ),
+                              const SizedBox(height: 9),
+
+                              // 7: الشخصيات
                               _MenuItemCard(
                                 title: isArabic ? 'الشخصيات' : 'Personas',
                                 icon: Icons.groups_rounded,

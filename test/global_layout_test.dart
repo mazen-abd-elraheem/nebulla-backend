@@ -32,12 +32,13 @@ void main() {
     expect(find.text('الصفحه الرئيسيه'), findsOneWidget);
     expect(find.text('الدردشة'), findsOneWidget);
     expect(find.text('الشخصيات'), findsOneWidget);
+    expect(find.text('الذاكرة'), findsOneWidget);
     expect(find.text('الملف الشخصي'), findsOneWidget);
 
-    // Tap on Personas (index 2)
-    await tester.tap(find.text('الشخصيات'));
+    // Tap on Memory (index 3)
+    await tester.tap(find.text('الذاكرة'));
     await tester.pump();
-    expect(navigatedIndex, 2);
+    expect(navigatedIndex, 3);
   });
 
   testWidgets('GlobalNebulaFooter translates instantly to English',
@@ -61,6 +62,7 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Chat'), findsOneWidget);
     expect(find.text('Personas'), findsOneWidget);
+    expect(find.text('Memory'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
   });
 

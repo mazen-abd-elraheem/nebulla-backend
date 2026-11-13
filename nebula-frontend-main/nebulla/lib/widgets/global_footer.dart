@@ -40,6 +40,12 @@ class GlobalNebulaFooter extends StatelessWidget {
       ),
       _FooterItem(
         index: 3,
+        icon: Icons.psychology_outlined,
+        activeIcon: Icons.psychology_rounded,
+        label: t('nav_memory'),
+      ),
+      _FooterItem(
+        index: 4,
         icon: Icons.person_outline_rounded,
         activeIcon: Icons.person_rounded,
         label: t('nav_profile'),
@@ -76,7 +82,7 @@ class GlobalNebulaFooter extends StatelessWidget {
                 borderRadius: BorderRadius.circular(30),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
+                    horizontal: 5,
                     vertical: 4,
                   ),
                   child: Column(
@@ -85,8 +91,8 @@ class GlobalNebulaFooter extends StatelessWidget {
                       // Circular Frosted Glass Button matching Screenshot exactly
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 48,
-                        height: 48,
+                        width: 44,
+                        height: 44,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           gradient: isSelected
@@ -134,7 +140,7 @@ class GlobalNebulaFooter extends StatelessWidget {
                             color: isSelected
                                 ? const Color(0xFF0096C7)
                                 : const Color(0xFF0F172A),
-                            size: 24,
+                            size: 22,
                           ),
                         ),
                       ),
@@ -149,7 +155,7 @@ class GlobalNebulaFooter extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Cairo',
-                          fontSize: 11,
+                          fontSize: 10.5,
                           fontWeight: isSelected
                               ? FontWeight.w900
                               : FontWeight.w700,

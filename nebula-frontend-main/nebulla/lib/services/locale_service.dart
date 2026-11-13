@@ -51,6 +51,7 @@ class LocaleService extends ChangeNotifier {
       'nav_home': {'ar': 'الصفحه الرئيسيه', 'en': 'Home'},
       'nav_chat': {'ar': 'الدردشة', 'en': 'Chat'},
       'nav_personas': {'ar': 'الشخصيات', 'en': 'Personas'},
+      'nav_memory': {'ar': 'الذاكرة', 'en': 'Memory'},
       'nav_profile': {'ar': 'الملف الشخصي', 'en': 'Profile'},
       'nav_devices': {'ar': 'الأجهزة', 'en': 'Devices'},
       'nav_settings': {'ar': 'الإعدادات', 'en': 'Settings'},

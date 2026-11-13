@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dashboard_screen.dart';
 import 'chat_screen.dart';
+import 'memory_personas_screen.dart';
 import 'persona_memory_specs_screen.dart';
 import 'profile_screen.dart';
 import 'diagnostics_screen.dart';
@@ -44,7 +45,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _onNavigate(int index) {
-    if (index >= 0 && index < 6) {
+    if (index >= 0 && index < 7) {
       setState(() => _currentIndex = index);
     }
   }
@@ -62,6 +63,7 @@ class _MainShellState extends State<MainShell> {
     final screens = [
       DashboardScreen(onNavigate: _onNavigate),
       ChatScreen(onNavigate: _onNavigate),
+      MemoryPersonasScreen(onNavigate: _onNavigate),
       PersonaMemorySpecsScreen(onNavigate: _onNavigate),
       const ProfileScreen(),
       const DiagnosticsScreen(),

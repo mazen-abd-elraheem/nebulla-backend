@@ -117,7 +117,9 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
           textDirection: LocaleService.instance.textDirection,
           child: AlertDialog(
             backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             title: Row(
               children: [
                 const Icon(Icons.psychology_rounded, color: Color(0xFF00B4D8)),
@@ -175,10 +177,12 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                     DropdownButton<int>(
                       value: importance,
                       items: List.generate(10, (i) => i + 1)
-                          .map((val) => DropdownMenuItem(
-                                value: val,
-                                child: Text('$val'),
-                              ))
+                          .map(
+                            (val) => DropdownMenuItem(
+                              value: val,
+                              child: Text('$val'),
+                            ),
+                          )
                           .toList(),
                       onChanged: (val) {
                         if (val != null) {
@@ -193,7 +197,10 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
+                child: const Text(
+                  'إلغاء',
+                  style: TextStyle(fontFamily: 'Cairo'),
+                ),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -210,7 +217,10 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                   try {
                     await _repo.addMemory(text, persona.id, importance);
                     if (mounted) {
-                      showSuccessSnackbar(context, 'تمت إضافة المعلومة للذاكرة');
+                      showSuccessSnackbar(
+                        context,
+                        'تمت إضافة المعلومة للذاكرة',
+                      );
                       _loadMemoriesForSelected();
                     }
                   } catch (e) {
@@ -219,8 +229,13 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                     }
                   }
                 },
-                child: const Text('حفظ في الذاكرة',
-                    style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'حفظ في الذاكرة',
+                  style: TextStyle(
+                    fontFamily: 'Cairo',
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
@@ -234,10 +249,14 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
-        title: const Text('حذف المعلومة',
-            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-        content: const Text('هل أنت متأكد من حذف هذه المعلومة من الذاكرة؟',
-            style: TextStyle(fontFamily: 'Cairo')),
+        title: const Text(
+          'حذف المعلومة',
+          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'هل أنت متأكد من حذف هذه المعلومة من الذاكرة؟',
+          style: TextStyle(fontFamily: 'Cairo'),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -278,7 +297,7 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
       backgroundColor: Colors.transparent,
       elevation: 0,
       child: NebulaSideMenu(
-        activeIndex: 2,
+        activeIndex: 3,
         onNavigate: (idx) {
           if (isArabic) {
             _scaffoldKey.currentState?.closeEndDrawer();
@@ -391,11 +410,7 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                     textDirection: TextDirection.ltr,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        leftSide,
-                        titleWidget,
-                        rightSide,
-                      ],
+                      children: [leftSide, titleWidget, rightSide],
                     ),
                   );
                 },
@@ -406,30 +421,34 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
             Expanded(
               child: _loading
                   ? const Center(
-                      child: CircularProgressIndicator(color: Color(0xFF00B4D8)),
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF00B4D8),
+                      ),
                     )
                   : _error != null
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _error!,
-                                style: const TextStyle(
-                                  fontFamily: 'Cairo',
-                                  color: Color(0xFFEF4444),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              ElevatedButton(
-                                onPressed: _loadData,
-                                child: const Text('إعادة المحاولة',
-                                    style: TextStyle(fontFamily: 'Cairo')),
-                              ),
-                            ],
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _error!,
+                            style: const TextStyle(
+                              fontFamily: 'Cairo',
+                              color: Color(0xFFEF4444),
+                            ),
                           ),
-                        )
-                      : _buildPersonaContent(),
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            onPressed: _loadData,
+                            child: const Text(
+                              'إعادة المحاولة',
+                              style: TextStyle(fontFamily: 'Cairo'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _buildPersonaContent(),
             ),
           ],
         ),
@@ -507,9 +526,12 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                           style: TextStyle(
                             fontFamily: 'Cairo',
                             fontSize: 12.5,
-                            fontWeight:
-                                isSel ? FontWeight.bold : FontWeight.w600,
-                            color: isSel ? Colors.white : const Color(0xFF1E293B),
+                            fontWeight: isSel
+                                ? FontWeight.bold
+                                : FontWeight.w600,
+                            color: isSel
+                                ? Colors.white
+                                : const Color(0xFF1E293B),
                           ),
                         ),
                       ],
@@ -572,7 +594,9 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                     if (persona.isActive)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFDCFCE7),
                           borderRadius: BorderRadius.circular(8),
@@ -581,8 +605,11 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_circle_rounded,
-                                size: 14, color: Color(0xFF16A34A)),
+                            Icon(
+                              Icons.check_circle_rounded,
+                              size: 14,
+                              color: Color(0xFF16A34A),
+                            ),
                             SizedBox(width: 4),
                             Text(
                               'الشخصية النشطة',
@@ -603,7 +630,9 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                           foregroundColor: Colors.white,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -629,7 +658,8 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                     color: Color(0xFF0F172A),
                   ),
                 ),
-                if (persona.description != null && persona.description!.isNotEmpty) ...[
+                if (persona.description != null &&
+                    persona.description!.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
                     persona.description!,
@@ -649,11 +679,13 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                   children: [
                     _buildSpecChip(
                       icon: Icons.language_rounded,
-                      label: 'اللهجة: ${persona.dialect == 'cairo' ? 'قاهرية عامية' : persona.dialect}',
+                      label:
+                          'اللهجة: ${persona.dialect == 'cairo' ? 'قاهرية عامية' : persona.dialect}',
                     ),
                     _buildSpecChip(
                       icon: Icons.translate_rounded,
-                      label: 'اللغات: ${persona.languageMix == 'ar_en' ? 'عربي + مصطلحات إنجليزي' : persona.languageMix}',
+                      label:
+                          'اللغات: ${persona.languageMix == 'ar_en' ? 'عربي + مصطلحات إنجليزي' : persona.languageMix}',
                     ),
                     if (persona.voiceSamplePath != null)
                       _buildSpecChip(
@@ -678,7 +710,11 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.terminal_rounded, size: 14, color: Color(0xFF0284C7)),
+                          Icon(
+                            Icons.terminal_rounded,
+                            size: 14,
+                            color: Color(0xFF0284C7),
+                          ),
                           SizedBox(width: 6),
                           Text(
                             'توجيهات النظام (System Prompt):',
@@ -778,7 +814,9 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                         foregroundColor: Colors.white,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -799,7 +837,9 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                     child: Padding(
                       padding: EdgeInsets.all(20),
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Color(0xFF00B4D8)),
+                        strokeWidth: 2,
+                        color: Color(0xFF00B4D8),
+                      ),
                     ),
                   )
                 else if (_memories.isEmpty)
@@ -816,8 +856,11 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                     ),
                     child: Column(
                       children: [
-                        const Icon(Icons.psychology_outlined,
-                            size: 38, color: Color(0xFF94A3B8)),
+                        const Icon(
+                          Icons.psychology_outlined,
+                          size: 38,
+                          color: Color(0xFF94A3B8),
+                        ),
                         const SizedBox(height: 8),
                         const Text(
                           'لا توجد معلومات محفوظة في ذاكرة هذه الشخصية بعد.',
@@ -835,7 +878,9 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                           label: const Text(
                             'أضف أول معلومة الآن',
                             style: TextStyle(
-                                fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+                              fontFamily: 'Cairo',
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],
