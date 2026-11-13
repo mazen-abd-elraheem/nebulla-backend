@@ -353,10 +353,10 @@ class NebulaSideMenu extends StatelessWidget {
                               ),
                               const SizedBox(height: 9),
 
-                              // إضافة شخصية
+                              // إضافة شخصية جديدة
                               _InteractiveMenuButton(
                                 icon: Icons.add_rounded,
-                                title: 'إضافة شخصية',
+                                title: 'إضافة شخصية جديدة',
                                 hasArrow: true,
                                 onTap: () => _handleItemTap(context, 2), // Personas screen
                               ),
@@ -390,10 +390,10 @@ class NebulaSideMenu extends StatelessWidget {
                               ),
                               const SizedBox(height: 9),
 
-                              // الشخصيات
+                              // إعداد الذاكرة والشخصيات
                               _InteractiveMenuButton(
                                 icon: Icons.groups_outlined,
-                                title: 'الشخصيات',
+                                title: 'إعداد الذاكرة والشخصيات',
                                 hasArrow: true,
                                 isActive: activeIndex == 2,
                                 onTap: () => _handleItemTap(context, 2), // Personas

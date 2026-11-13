@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -124,11 +125,51 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
   int _editingPersonaIndex = 0; // index in _personas, or -1 when creating new
   bool _saving = false;
 
+  Timer? _statusTimer;
+  String _currentTime = '09:41';
+  int _batteryPercent = 98;
+
   @override
   void initState() {
     super.initState();
     _personas = _defaultPersonas();
     _initBackendAndLocalData();
+    _updateLiveTime();
+    _fetchLiveBattery();
+    _statusTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) {
+        _updateLiveTime();
+        _fetchLiveBattery();
+      }
+    });
+  }
+
+  void _updateLiveTime() {
+    final now = DateTime.now();
+    final h = now.hour.toString().padLeft(2, '0');
+    final m = now.minute.toString().padLeft(2, '0');
+    final formatted = '$h:$m';
+    if (_currentTime != formatted && mounted) {
+      setState(() => _currentTime = formatted);
+    }
+  }
+
+  Future<void> _fetchLiveBattery() async {
+    if (!Platform.isWindows) return;
+    try {
+      final res = await Process.run(
+        'powershell',
+        ['-NoProfile', '-Command', '(Get-CimInstance -ClassName Win32_Battery).EstimatedChargeRemaining'],
+      );
+      if (res.exitCode == 0 && res.stdout != null) {
+        final val = int.tryParse(res.stdout.toString().trim());
+        if (val != null && val >= 0 && val <= 100 && mounted) {
+          if (_batteryPercent != val) {
+            setState(() => _batteryPercent = val);
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   List<PersonaProfileData> _defaultPersonas() => [
@@ -270,6 +311,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     _scrollCtrl.dispose();
     _personaNameCtrl.dispose();
     _newTraitCtrl.dispose();
@@ -803,15 +845,14 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                 children: [
                                   const SizedBox(height: 4),
 
-                                  // Top Row with Hamburger Menu & Title
+                                  // Top Row with Hamburger Menu & Title placed side by side
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       InkWell(
                                         onTap: () {
                                           _memScaffoldKey.currentState?.openDrawer();
                                         },
-                                        borderRadius: BorderRadius.circular(14),
+                                        borderRadius: BorderRadius.circular(12),
                                         child: Container(
                                           width: 38,
                                           height: 38,
@@ -819,6 +860,13 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                             color: Colors.white,
                                             borderRadius: BorderRadius.circular(12),
                                             border: Border.all(color: const Color(0xFFE2E8F0)),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: 0.03),
+                                                blurRadius: 6,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
                                           ),
                                           child: const Icon(
                                             Icons.menu_rounded,
@@ -827,17 +875,19 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                           ),
                                         ),
                                       ),
-                                      const Text(
-                                        'إعداد الذاكرة والشخصيات',
-                                        style: TextStyle(
-                                          fontFamily: 'Cairo',
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.w900,
-                                          color: Color(0xFF0F172A),
-                                          letterSpacing: -0.2,
+                                      const SizedBox(width: 12),
+                                      const Expanded(
+                                        child: Text(
+                                          'إعداد الذاكرة والشخصيات',
+                                          style: TextStyle(
+                                            fontFamily: 'Cairo',
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.w900,
+                                            color: Color(0xFF0F172A),
+                                            letterSpacing: -0.2,
+                                          ),
                                         ),
                                       ),
-                                      const SizedBox(width: 38), // balance hamburger
                                     ],
                                   ),
                                   const SizedBox(height: 10),
@@ -886,63 +936,125 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
   // ─── STATUS BAR ────────────────────────────────────────────────────────────
   Widget _buildStatusBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 4, 18, 0),
+      padding: const EdgeInsets.fromLTRB(18, 6, 18, 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Right side in RTL: Time 09:41
-          const Text(
-            '09:41',
-            style: TextStyle(
+          // Right side in RTL: Live device time (e.g. 09:41)
+          Text(
+            _currentTime,
+            style: const TextStyle(
               fontFamily: 'Cairo',
-              fontSize: 12.5,
+              fontSize: 13,
               fontWeight: FontWeight.w800,
               color: Color(0xFF1E293B),
             ),
           ),
 
-          // Left side in RTL: Signal bars + 98% + Cyan battery
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.signal_cellular_alt_rounded,
-                size: 14,
-                color: Color(0xFF06B6D4),
-              ),
-              const SizedBox(width: 4),
-              const Text(
-                '98%',
-                style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF334155),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Container(
-                width: 22,
-                height: 11,
-                padding: const EdgeInsets.all(1.5),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(3),
-                  border: Border.all(
-                    color: const Color(0xFF64748B),
-                    width: 1,
+          // Left side in RTL: Battery icon + exact charge % + cyan cellular signal
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildBatteryIcon(_batteryPercent),
+                const SizedBox(width: 5),
+                Text(
+                  '$_batteryPercent%',
+                  style: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF334155),
                   ),
                 ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF06B6D4),
-                    borderRadius: BorderRadius.circular(1.5),
-                  ),
-                ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                _buildSignalBars(),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBatteryIcon(int percent) {
+    final double fillRatio = (percent / 100.0).clamp(0.08, 1.0);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 23,
+          height: 12,
+          padding: const EdgeInsets.all(1.5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(3.5),
+            border: Border.all(
+              color: const Color(0xFF06B6D4),
+              width: 1.2,
+            ),
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: fillRatio,
+              heightFactor: 1.0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF06B6D4),
+                  borderRadius: BorderRadius.circular(1.5),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Container(
+          width: 1.8,
+          height: 5,
+          decoration: const BoxDecoration(
+            color: Color(0xFF06B6D4),
+            borderRadius: BorderRadius.only(
+              topRight: Radius.circular(1),
+              bottomRight: Radius.circular(1),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSignalBars() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Container(
+          width: 2.5,
+          height: 5,
+          decoration: BoxDecoration(
+            color: const Color(0xFF06B6D4),
+            borderRadius: BorderRadius.circular(1),
+          ),
+        ),
+        const SizedBox(width: 2),
+        Container(
+          width: 2.5,
+          height: 8,
+          decoration: BoxDecoration(
+            color: const Color(0xFF06B6D4),
+            borderRadius: BorderRadius.circular(1),
+          ),
+        ),
+        const SizedBox(width: 2),
+        Container(
+          width: 2.5,
+          height: 11,
+          decoration: BoxDecoration(
+            color: const Color(0xFF06B6D4),
+            borderRadius: BorderRadius.circular(1),
+          ),
+        ),
+      ],
     );
   }
 
