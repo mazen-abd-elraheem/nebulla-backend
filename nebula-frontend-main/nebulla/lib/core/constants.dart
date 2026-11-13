@@ -3,7 +3,7 @@ class AppConstants {
   AppConstants._();
 
   static const String appName = 'نيبولا';
-  static const String defaultBaseUrl = 'http://localhost:8000';
+  static const String defaultBaseUrl = 'http://127.0.0.1:8000';
   static const String prefBaseUrl = 'base_url';
   static const String prefToken = 'auth_token';
   static const String prefDeviceName = 'device_name';

@@ -122,22 +122,32 @@ class XTTSProvider(BaseTTSProvider):
     def _ensure_service_running() -> bool:
         if XTTSProvider._is_service_ready():
             return True
-        tut_dir = Path(r"C:\Users\L0Q\Desktop\tut-voice")
-        python_exe = tut_dir / ".venv" / "Scripts" / "python.exe"
-        uvicorn_exe = tut_dir / ".venv" / "Scripts" / "uvicorn.exe"
+        tut_dirs = [
+            Path(getattr(settings, "TUT_VOICE_DIR", "tut-voice")),
+            Path.home() / "Desktop" / "tut-voice",
+            Path(r"C:\Users\L0Q\Desktop\tut-voice"),
+        ]
         cmd = None
-        if python_exe.exists():
-            cmd = [str(python_exe), "-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8001"]
-        elif uvicorn_exe.exists():
-            cmd = [str(uvicorn_exe), "server:app", "--host", "127.0.0.1", "--port", "8001"]
+        chosen_dir = None
+        for td in tut_dirs:
+            python_exe = td / ".venv" / "Scripts" / "python.exe"
+            uvicorn_exe = td / ".venv" / "Scripts" / "uvicorn.exe"
+            if python_exe.exists():
+                cmd = [str(python_exe), "-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8001"]
+                chosen_dir = td
+                break
+            elif uvicorn_exe.exists():
+                cmd = [str(uvicorn_exe), "server:app", "--host", "127.0.0.1", "--port", "8001"]
+                chosen_dir = td
+                break
 
-        if cmd:
+        if cmd and chosen_dir:
             try:
                 import subprocess
                 logger.info("Auto-starting VoiceTut GPU microservice on http://127.0.0.1:8001 ...")
                 subprocess.Popen(
                     cmd,
-                    cwd=str(tut_dir),
+                    cwd=str(chosen_dir),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -183,6 +193,10 @@ class XTTSProvider(BaseTTSProvider):
             import torch
 
             os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+            try:
+                import omnivoice  # noqa: F401
+            except Exception:
+                pass
             from voicetut_tts import VoiceTutTTS
 
             device = self._device
@@ -196,6 +210,8 @@ class XTTSProvider(BaseTTSProvider):
             candidate_paths = [
                 Path(getattr(settings, "VOICETUT_MODEL_PATH", "models/voicetut-tts")),
                 Path("models/voicetut-tts"),
+                Path.home() / "Desktop" / "tut-voice" / "models" / "voicetut-tts",
+                Path(r"D:\models\voicetut-tts"),
                 Path(r"C:\Users\L0Q\Desktop\tut-voice\models\voicetut-tts"),
             ]
             model_target = "mohammedaly22/VoiceTut-TTS"
@@ -208,11 +224,33 @@ class XTTSProvider(BaseTTSProvider):
             XTTSProvider._shared_tts = VoiceTutTTS.from_pretrained(
                 model_target,
                 device=device,
-                dtype="float32" if device == "cpu" else "float16",
+                dtype="float32" if device == "cpu" else "bfloat16",
             )
+            if device == "cpu" and hasattr(XTTSProvider._shared_tts, "model"):
+                try:
+                    XTTSProvider._shared_tts.model.float()
+                except Exception:
+                    pass
             XTTSProvider._shared_device = device
             logger.info(f"XTTS (VoiceTut-TTS) ready on {device.upper()} [OK]")
         except Exception as e:
+            err_str = str(e).lower()
+            if device != "cpu" and ("out of memory" in err_str or "cuda" in err_str):
+                logger.warning(f"CUDA memory insufficient for VoiceTut ({e}). Falling back to CPU...")
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    XTTSProvider._shared_tts = VoiceTutTTS.from_pretrained(
+                        model_target,
+                        device="cpu",
+                        dtype="float32",
+                    )
+                    XTTSProvider._shared_device = "cpu"
+                    logger.info("XTTS (VoiceTut-TTS) ready on CPU [OK]")
+                    return
+                except Exception as cpu_err:
+                    logger.error(f"Failed to load VoiceTut on CPU fallback: {cpu_err}", exc_info=True)
             logger.error(f"Failed to load in-process XTTS (VoiceTut-TTS): {e}", exc_info=True)
             XTTSProvider._shared_tts = None
 
@@ -236,7 +274,7 @@ class XTTSProvider(BaseTTSProvider):
         clean_text = clean_llm_output_for_speech(text) or text.strip()
 
         # Primary: VoiceTut-TTS GPU microservice (runs isolated on port 8001)
-        if await self._wait_for_service(timeout=15.0):
+        if await self._wait_for_service(timeout=1.5):
             try:
                 from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
                 svc = VoiceTutMicroserviceProvider()
@@ -256,26 +294,34 @@ class XTTSProvider(BaseTTSProvider):
         # Secondary: In-process fallback
         await self._ensure_in_process_loaded()
 
-        if XTTSProvider._shared_tts is None or isinstance(XTTSProvider._shared_tts, str):
-            raise RuntimeError(
-                "VoiceTut-TTS engine is unavailable. "
-                "Ensure the microservice on http://127.0.0.1:8001 is running or in-process model is installed."
+        if XTTSProvider._shared_tts is not None and not isinstance(XTTSProvider._shared_tts, str):
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None,
+                self._synth_sync,
+                clean_text,
+                speaker,
+                ref_audio,
+                ref_text,
+                num_step,
+                guidance_scale,
+                speed,
+                language,
             )
 
-        loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(
-            None,
-            self._synth_sync,
-            clean_text,
-            speaker,
-            ref_audio,
-            ref_text,
-            num_step,
-            guidance_scale,
-            speed,
-            language,
+        # Tertiary: VoiceTutMicroservice fallback (gTTS / Windows SAPI Arabic voice generator)
+        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
+        svc = VoiceTutMicroserviceProvider()
+        return await svc.synthesize(
+            text=clean_text,
+            speaker=speaker or self._speaker,
+            ref_audio=ref_audio or self._reference_wav,
+            ref_text=ref_text,
+            num_step=num_step,
+            guidance_scale=guidance_scale,
+            speed=speed,
+            language=language or self._language,
         )
-        return res
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
         """Streaming synthesis yielding WAV chunks."""
@@ -331,6 +377,10 @@ class XTTSProvider(BaseTTSProvider):
     ) -> bytes:
         try:
             import torch
+            try:
+                import omnivoice  # noqa: F401
+            except Exception:
+                pass
             from voicetut_tts import GenerationParams
 
             if XTTSProvider._shared_tts is None or isinstance(XTTSProvider._shared_tts, str):
@@ -367,6 +417,12 @@ class XTTSProvider(BaseTTSProvider):
                 speed=spd,
                 denoise=True,
             )
+
+            if XTTSProvider._shared_device == "cpu" and hasattr(XTTSProvider._shared_tts, "model"):
+                try:
+                    XTTSProvider._shared_tts.model.float()
+                except Exception:
+                    pass
 
             with torch.inference_mode():
                 if target_ref_audio and os.path.exists(target_ref_audio):

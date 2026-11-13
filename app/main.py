@@ -6,6 +6,7 @@ Architecture: Phone/Desk/ESP32 all connect to THIS backend.
 No device talks to another device directly (design decision from doc §4).
 """
 
+from filelock import asyncio
 import os
 
 # Disable TensorFlow backend in Transformers so unused TF DLLs do not consume pagefile/commit memory
@@ -16,6 +17,10 @@ os.environ.setdefault("USE_TORCH", "1")
 # Pre-initialize torchvision at startup to prevent circular import in concurrent background warmups
 try:
     import torchvision  # noqa: F401
+except Exception:
+    pass
+try:
+    import omnivoice  # noqa: F401
 except Exception:
     pass
 
@@ -46,6 +51,8 @@ async def _warmup_vision():
         svc = _get_face_service()
         await svc._ensure_model()
         logger.info("[OK] UniFace FaceAnalyzer is warm and ready in RAM.")
+    except asyncio.CancelledError:
+        pass
     except Exception as e:
         logger.debug(f"Vision warm-up notice: {e}")
 
@@ -67,6 +74,8 @@ async def _warmup_ollama():
                 },
             )
         logger.info(f"✅ Local model '{target_model}' is warm and ready in RAM.")
+    except asyncio.CancelledError:
+        pass
     except Exception as e:
         logger.debug(f"Ollama warm-up notice: {e}")
 
@@ -79,6 +88,8 @@ async def _warmup_stt():
         if hasattr(stt, '_ensure_loaded'):
             await stt._ensure_loaded()
             logger.info('✅ QwenCleo ASR model is warm and ready in RAM/GPU.')
+    except asyncio.CancelledError:
+        pass
     except Exception as e:
         logger.debug(f'STT warm-up notice: {e}')
 
@@ -90,6 +101,8 @@ async def _warmup_rag():
         rag = RAGService()
         await rag._ensure_embedder()
         logger.info("✅ RAG SentenceTransformer model is warm and ready in RAM.")
+    except asyncio.CancelledError:
+        pass
     except Exception as e:
         logger.debug(f"RAG warm-up notice: {e}")
 
@@ -104,6 +117,8 @@ async def _warmup_cloned_greeting():
             from app.services.voice_clone.voice_clone_service import VoiceCloneService
             await VoiceCloneService.get_instance().generate_and_cache_greeting(1)
             logger.info("✅ Cloned voice greeting is pre-cached and ready.")
+    except asyncio.CancelledError:
+        pass
     except Exception as e:
         logger.debug(f"Cloned greeting warm-up notice: {e}")
 
@@ -114,11 +129,13 @@ async def lifespan(app: FastAPI):
     import asyncio
     logger.info("🚀 Nebula backend starting up…")
     await init_db()
-    asyncio.create_task(_warmup_vision())
-    asyncio.create_task(_warmup_ollama())
-    asyncio.create_task(_warmup_rag())
-    asyncio.create_task(_warmup_stt())
-    asyncio.create_task(_warmup_cloned_greeting())
+    warmup_tasks = [
+        asyncio.create_task(_warmup_vision()),
+        asyncio.create_task(_warmup_ollama()),
+        asyncio.create_task(_warmup_rag()),
+        asyncio.create_task(_warmup_stt()),
+        asyncio.create_task(_warmup_cloned_greeting()),
+    ]
 
     # Chapter 14: reminders (medicine / tasks) with family escalation
     scheduler = None
@@ -135,10 +152,15 @@ async def lifespan(app: FastAPI):
         scheduler = ReminderScheduler(svc)
         await scheduler.start()
 
-    yield
-    if scheduler is not None:
-        await scheduler.stop()
-    logger.info("Nebula backend shutting down...")
+    try:
+        yield
+    finally:
+        for t in warmup_tasks:
+            if not t.done():
+                t.cancel()
+        if scheduler is not None:
+            await scheduler.stop()
+        logger.info("Nebula backend shutting down...")
 
 
 app = FastAPI(

@@ -236,6 +236,22 @@ async def synthesize(
     if target_pid is None and body.personality_id is not None and body.personality_id > 0:
         target_pid = body.personality_id
 
+    if target_pid is None and _user:
+        try:
+            from app.db.session import AsyncSessionLocal
+            from app.models.personality import Personality
+            u_id = int(_user) if str(_user).isdigit() else None
+            if u_id:
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(
+                        select(Personality).where(Personality.user_id == u_id, Personality.is_active == True)
+                    )
+                    up = res.scalar_one_or_none()
+                    if up and svc.has_voice_sample(up.id):
+                        target_pid = up.id
+        except Exception:
+            pass
+
     if target_pid is None:
         target_pid = 1
 

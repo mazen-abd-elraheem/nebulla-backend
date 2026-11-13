@@ -305,20 +305,18 @@ class AcousticVoiceprintBackend:
         log_fb_norm = log_fb - np.mean(log_fb, axis=1, keepdims=True)
         b_fb = np.mean(log_fb_norm, axis=0).astype(np.float32)
 
-        # Block 2: 24-D MFCCs (c1..c24 with sinusoidal lifter to emphasize individual timbre)
+        # Block 2: 24-D MFCCs (c1..c24, ignoring c0 loudness)
         mfcc = dct(log_fb, type=2, axis=1, norm="ortho")[:, 1:25]
-        _D_mfcc = 24
-        _lifter = (1.0 + (_D_mfcc / 2.0) * np.sin(np.pi * np.arange(1, _D_mfcc + 1) / _D_mfcc)).astype(np.float32)
-        b_mfcc = (np.mean(mfcc, axis=0) * _lifter).astype(np.float32)
+        b_mfcc = np.mean(mfcc, axis=0).astype(np.float32)
 
         # Block 3: 24-D Delta MFCCs (relative velocity of vocal tract changes)
         if len(mfcc) > 2:
             d1 = np.gradient(mfcc, axis=0)
-            b_d1 = (np.mean(np.abs(d1), axis=0) * _lifter).astype(np.float32)
+            b_d1 = (np.mean(np.abs(d1), axis=0) - np.mean(np.mean(np.abs(d1)))).astype(np.float32)
         else:
             b_d1 = np.zeros(24, dtype=np.float32)
 
-        # Block 4: 24-D LPC Formants & Resonances (Individual vocal tract deviations)
+        # Block 4: 24-D LPC Formants & Resonances (Ultra-Fast 0.2ms Lag Correlation)
         speech_pcm = speech_frames.reshape(-1)
         cut = speech_pcm[: min(len(speech_pcm), sr * 2)]
         order = 16
@@ -339,10 +337,9 @@ class AcousticVoiceprintBackend:
         angles = np.arctan2(np.imag(roots), np.real(roots))
         formants = sorted(angles * (sr / (2 * np.pi)))
 
-        nominal_f = np.array([500.0, 1500.0, 2500.0, 3500.0, 4500.0, 5500.0, 6500.0, 7500.0], dtype=np.float32)
         f_vec = np.zeros(8, dtype=np.float32)
         for i in range(min(8, len(formants))):
-            f_vec[i] = (formants[i] - nominal_f[i]) / 500.0
+            f_vec[i] = formants[i] / 4000.0
         b_lpc = np.concatenate([a[1:17], f_vec]).astype(np.float32)
 
         # Block 5: 24-D Pitch (F0) & Harmonics Histogram (Sampled fast windows)
@@ -414,16 +411,15 @@ class AcousticVoiceprintBackend:
             n = float(np.linalg.norm(xc))
             return (xc / n).astype(np.float32) if n > 1e-9 else np.zeros_like(xc)
 
-        # Weighting: emphasize speaker-discriminative vocal-tract formants, timbre, and pitch
         vec = np.concatenate([
-            u_center(b_fb) * 0.5,        # 40 (channel/room acoustics downweighted)
-            u_center(b_mfcc) * 1.5,      # 24 (fine vocal timbre details amplified)
-            u_center(b_d1) * 1.0,        # 24
-            u_center(b_lpc) * 2.0,       # 24 (formant deviations doubled!)
-            u_center(b_pitch) * 2.5,     # 24 (pitch distribution 2.5x!)
-            u_center(b_contrast) * 0.5,  # 24 (room contrast downweighted)
-            u_center(b_moments) * 0.5,   # 16 (general moments downweighted)
-            u_center(b_cpp) * 1.5,       # 16 (harmonic sharpness)
+            u_center(b_fb),        # 40
+            u_center(b_mfcc),      # 24
+            u_center(b_d1),        # 24
+            u_center(b_lpc),       # 24
+            u_center(b_pitch),     # 24
+            u_center(b_contrast),  # 24
+            u_center(b_moments),   # 16
+            u_center(b_cpp),       # 16
         ])
         # Total: 40 + 24 + 24 + 24 + 24 + 24 + 16 + 16 = 192 dimensions
         n_full = np.linalg.norm(vec)
@@ -764,6 +760,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "threshold": thresh,
                 "status": "no_enrolled_speakers",
@@ -776,6 +773,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "threshold": thresh,
                 "status": "model_unavailable",
@@ -790,6 +788,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "threshold": thresh,
                 "status": "decode_error",
@@ -803,6 +802,7 @@ class SpeakerVerificationService:
                 "speaker_name": None,
                 "user_id": None,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "audio_seconds": round(seconds, 2),
                 "threshold": thresh,
@@ -822,7 +822,9 @@ class SpeakerVerificationService:
                 best_entry = entry
 
         best_sim = max(0.0, float(best_sim))
+        raw_best_sim = round(best_sim, 4)
         is_identified = best_sim >= thresh
+        similarity = raw_best_sim if is_identified else 0.0
         pct = self._calculate_match_percentage(best_sim, thresh)
 
         if is_identified and best_name:
@@ -839,7 +841,8 @@ class SpeakerVerificationService:
             "face_id": getattr(best_entry, "face_id", None) if (is_identified and best_entry) else None,
             "personality_id": getattr(best_entry, "personality_id", None) if (is_identified and best_entry) else None,
             "memory_id": getattr(best_entry, "memory_id", None) if (is_identified and best_entry) else None,
-            "similarity": round(best_sim, 4),
+            "similarity": similarity,
+            "raw_similarity": raw_best_sim,
             "match_percentage": pct if is_identified else 0.0,
             "audio_seconds": round(seconds, 2),
             "threshold": thresh,
@@ -847,297 +850,7 @@ class SpeakerVerificationService:
             "message": msg,
         }
 
-    # ── Multi-Speaker Diarization & Language Detection ───────────────────
-
-    async def diarize_and_identify(
-        self,
-        audio: bytes,
-        threshold: Optional[float] = None,
-        transcripts: Optional[List[Dict[str, Any]]] = None,
-        *,
-        session_factory=None,
-    ) -> Dict[str, Any]:
-        """
-        Multi-speaker diarization, speaker counting, language identification,
-        and multilingual speaker detection.
-        (كام شخص اتكلم، واللغة اللي اتكلم بيها، ولو واحد اتكلم بكذا لغة يقول مين)
-        """
-        thresh = threshold if threshold is not None else self.default_threshold
-        entries = await self._entries(session_factory)
-
-        try:
-            samples = decode_audio(audio)
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"تعذر فك ترميز الملف الصوتي: {e}",
-            }
-
-        total_duration = round(len(samples) / float(settings.SPEAKER_SAMPLE_RATE), 2)
-        if total_duration < 0.2:
-            return {
-                "success": False,
-                "error": f"التسجيل الصوتي قصير جداً ({total_duration} ثانية). يرجى تقديم تسجيل أطول.",
-            }
-
-        # 1. Segment audio into speech turns
-        turns = segment_audio_turns(samples, sr=settings.SPEAKER_SAMPLE_RATE)
-
-        # 2. Process each turn for speaker identity and language
-        timeline_segments: List[Dict[str, Any]] = []
-        unknown_clusters: List[Tuple[str, np.ndarray]] = []
-
-        for idx, (st, en, chunk) in enumerate(turns):
-            seg_dur = round(en - st, 2)
-            if len(chunk) < int(settings.SPEAKER_SAMPLE_RATE * 0.15):
-                continue
-
-            try:
-                emb = _unit(await asyncio.to_thread(self._backend.embed, chunk))
-            except Exception:
-                continue
-
-            # A. Match against enrolled voiceprints in DB
-            best_name = None
-            best_sim = -1.0
-            best_uid = None
-            best_face_id = None
-            best_personality_id = None
-            best_memory_id = None
-            is_enrolled = False
-
-            for uid, entry in entries.items():
-                s = float(np.dot(emb, entry.vector))
-                if s > best_sim:
-                    best_sim = s
-                    best_uid = uid
-                    best_name = entry.speaker_name
-                    best_face_id = getattr(entry, "face_id", None)
-                    best_personality_id = getattr(entry, "personality_id", None)
-                    best_memory_id = getattr(entry, "memory_id", None)
-
-            if best_sim >= thresh and best_name:
-                is_enrolled = True
-                speaker_id = best_name
-                sim_score = best_sim
-            else:
-                # B. Cluster among un-enrolled / unknown speakers in this recording
-                best_cluster_name = None
-                best_cluster_sim = -1.0
-                for c_name, c_vec in unknown_clusters:
-                    c_sim = float(np.dot(emb, c_vec))
-                    if c_sim > best_cluster_sim:
-                        best_cluster_sim = c_sim
-                        best_cluster_name = c_name
-
-                if best_cluster_sim >= thresh and best_cluster_name:
-                    speaker_id = best_cluster_name
-                    sim_score = best_cluster_sim
-                else:
-                    new_idx = len(unknown_clusters) + 1
-                    speaker_id = f"متحدث غير معروف {new_idx}"
-                    unknown_clusters.append((speaker_id, emb))
-                    sim_score = max(0.0, best_sim)
-
-            # C. Detect language for this turn
-            turn_transcript = None
-            if transcripts:
-                # 1. Match by turn_index
-                for t in transcripts:
-                    if isinstance(t, dict) and t.get("turn_index") == (idx + 1):
-                        turn_transcript = t.get("text", "")
-                        break
-                # 2. Match by timestamp overlap
-                if turn_transcript is None:
-                    for t in transcripts:
-                        if isinstance(t, dict) and ("start" in t or "end" in t):
-                            t_st = t.get("start", 0.0)
-                            t_en = t.get("end", 9999.0)
-                            if (st >= t_st and st <= t_en) or (en >= t_st and en <= t_en) or (t_st >= st and t_en <= en):
-                                turn_transcript = t.get("text", "")
-                                break
-                # 3. Match by sequence index if simple list
-                if turn_transcript is None and idx < len(transcripts):
-                    entry_val = transcripts[idx]
-                    if isinstance(entry_val, str):
-                        turn_transcript = entry_val
-                    elif isinstance(entry_val, dict):
-                        turn_transcript = entry_val.get("text", "")
-
-            lang_info = detect_spoken_language(chunk, sr=settings.SPEAKER_SAMPLE_RATE, transcript=turn_transcript)
-            match_pct = self._calculate_match_percentage(sim_score, thresh) if is_enrolled else 0.0
-
-            timeline_segments.append({
-                "segment_index": idx + 1,
-                "start_time": st,
-                "end_time": en,
-                "duration": seg_dur,
-                "speaker": speaker_id,
-                "is_enrolled": is_enrolled,
-                "user_id": best_uid if is_enrolled else None,
-                "face_id": best_face_id if is_enrolled else None,
-                "personality_id": best_personality_id if is_enrolled else None,
-                "memory_id": best_memory_id if is_enrolled else None,
-                "similarity": round(sim_score, 4),
-                "match_percentage": match_pct,
-                "language": lang_info["language"],
-                "language_code": lang_info["language_code"],
-                "transcript": turn_transcript,
-            })
-
-        # 3. Aggregate per-speaker statistics
-        speaker_stats: Dict[str, Dict[str, Any]] = {}
-        all_detected_languages: set = set()
-
-        for seg in timeline_segments:
-            name = seg["speaker"]
-            lang = seg["language"]
-            all_detected_languages.add(lang)
-
-            if name not in speaker_stats:
-                speaker_stats[name] = {
-                    "name": name,
-                    "is_enrolled": seg["is_enrolled"],
-                    "user_id": seg.get("user_id"),
-                    "face_id": seg.get("face_id"),
-                    "personality_id": seg.get("personality_id"),
-                    "memory_id": seg.get("memory_id"),
-                    "turns_count": 0,
-                    "total_speaking_seconds": 0.0,
-                    "languages_set": set(),
-                    "best_similarity": 0.0,
-                }
-            speaker_stats[name]["turns_count"] += 1
-            speaker_stats[name]["total_speaking_seconds"] = round(speaker_stats[name]["total_speaking_seconds"] + seg["duration"], 2)
-            speaker_stats[name]["languages_set"].add(lang)
-            if seg["similarity"] > speaker_stats[name]["best_similarity"]:
-                speaker_stats[name]["best_similarity"] = seg["similarity"]
-
-        # 4. Check for multilingual speakers ("لو واحد اتكلم بكذا لغة يقولي مين")
-        speakers_list = []
-        multilingual_speakers = []
-
-        for name, stat in speaker_stats.items():
-            langs = sorted(list(stat["languages_set"]))
-            is_multi = len(langs) > 1
-            spk_obj = {
-                "name": name,
-                "is_enrolled": stat["is_enrolled"],
-                "user_id": stat["user_id"],
-                "face_id": stat.get("face_id"),
-                "personality_id": stat.get("personality_id"),
-                "memory_id": stat.get("memory_id"),
-                "turns_count": stat["turns_count"],
-                "total_speaking_seconds": stat["total_speaking_seconds"],
-                "languages": langs,
-                "is_multilingual": is_multi,
-                "best_similarity": round(stat["best_similarity"], 4),
-            }
-            speakers_list.append(spk_obj)
-
-            if is_multi:
-                langs_str = " و ".join(langs)
-                multilingual_speakers.append({
-                    "speaker_name": name,
-                    "is_enrolled": stat["is_enrolled"],
-                    "languages_count": len(langs),
-                    "languages": langs,
-                    "message": f"المتحدث '{name}' تحدث بعدة لغات في هذا التسجيل: {langs_str}",
-                })
-
-        total_speakers_count = len(speakers_list)
-
-        # 5. Group Presence & Enrolled Recognition Breakdown
-        known_speakers = [
-            {
-                "name": spk["name"],
-                "user_id": spk["user_id"],
-                "face_id": spk.get("face_id"),
-                "personality_id": spk.get("personality_id"),
-                "memory_id": spk.get("memory_id"),
-                "best_similarity": spk["best_similarity"],
-                "match_percentage": self._calculate_match_percentage(spk["best_similarity"], thresh),
-                "total_speaking_seconds": spk["total_speaking_seconds"],
-                "languages": spk["languages"],
-                "status": "موجود ومسجل في السيستم (نعم)",
-            }
-            for spk in speakers_list
-            if spk["is_enrolled"]
-        ]
-
-        unknown_speakers = [
-            {
-                "name": spk["name"],
-                "total_speaking_seconds": spk["total_speaking_seconds"],
-                "languages": spk["languages"],
-                "status": "غير مسجل في السيستم (لا)",
-                "message": f"الشخص '{spk['name']}' صوته غير مسجل في قاعدة البيانات (لا).",
-            }
-            for spk in speakers_list
-            if not spk["is_enrolled"]
-        ]
-
-        if known_speakers and unknown_speakers:
-            known_names = "، ".join([k["name"] for k in known_speakers])
-            presence_verdict = (
-                f"تم العثور على ({len(known_speakers)}) شخص مسجل في السيستم وهو: [{known_names}]، "
-                f"بينما باقي المتحدثين وعددهم ({len(unknown_speakers)}) غير مسجلين في السيستم (لا)."
-            )
-        elif known_speakers and not unknown_speakers:
-            known_names = "، ".join([k["name"] for k in known_speakers])
-            presence_verdict = f"جميع المتحدثين في المجموعة ({len(known_speakers)}) مسجلون في السيستم: [{known_names}]."
-        else:
-            presence_verdict = f"لم يتم العثور على أي شخص مسجل في السيستم؛ جميع المتحدثين وعددهم ({len(unknown_speakers)}) غير مسجلين (لا)."
-
-        # 6. Build human-readable Arabic summary
-        summary_lines = [
-            f"📊 تحليل المجموعة: تم رصد {total_speakers_count} شخص يتكلم في هذا التسجيل الصوتي (المدة الإجمالية: {total_duration} ثانية).",
-            f"🔍 نتيجة التحقق: {presence_verdict}",
-        ]
-
-        if known_speakers:
-            summary_lines.append("\n✅ الأشخاص المسجلون والموجودون في المجموعة (نعم):")
-            for k in known_speakers:
-                langs_str = "، ".join(k["languages"])
-                summary_lines.append(
-                    f" • {k['name']}: موجود في السيستم بنسبة تطابق {k['match_percentage']:.1f}% "
-                    f"(تحدث: {langs_str} لمدة {k['total_speaking_seconds']} ثانية)"
-                )
-
-        if unknown_speakers:
-            summary_lines.append("\n❌ باقي المتحدثين غير المسجلين (لا):")
-            for u in unknown_speakers:
-                langs_str = "، ".join(u["languages"])
-                summary_lines.append(
-                    f" • {u['name']}: غير مسجل في السيستم (لا) "
-                    f"(تحدث: {langs_str} لمدة {u['total_speaking_seconds']} ثانية)"
-                )
-
-        if multilingual_speakers:
-            summary_lines.append("\n⚠️ تنبيه تعدد اللغات للمتحدث الواحد:")
-            for m in multilingual_speakers:
-                summary_lines.append(f" • {m['message']}")
-        else:
-            summary_lines.append("\nلم يتم رصد أي متحدث غير لغته؛ كل شخص تحدث بلغة واحدة.")
-
-        return {
-            "success": True,
-            "total_speakers_count": total_speakers_count,
-            "known_speakers_count": len(known_speakers),
-            "unknown_speakers_count": len(unknown_speakers),
-            "has_known_speaker": len(known_speakers) > 0,
-            "known_speakers": known_speakers,
-            "unknown_speakers": unknown_speakers,
-            "presence_verdict": presence_verdict,
-            "audio_duration_seconds": total_duration,
-            "speakers": speakers_list,
-            "multilingual_speakers": multilingual_speakers,
-            "all_detected_languages": sorted(list(all_detected_languages)),
-            "timeline_segments": timeline_segments,
-            "arabic_summary": "\n".join(summary_lines),
-        }
-
-    # ── Compare Two Speakers (1:1 Comparison & Language Detection) ──────
+    # ── Compare Two Speakers (1:1 Biometric Voiceprint Verification) ──────
 
     async def compare_two_speakers(
         self,
@@ -1152,7 +865,6 @@ class SpeakerVerificationService:
         1. Compares them against each other (same person or different people).
         2. Identifies who Voice 1 belongs to (from enrolled DB voiceprints + Face ID, Personality ID, Memory ID).
         3. Identifies who Voice 2 belongs to.
-        4. Detects the spoken language of each voice (Arabic vs English).
         """
         thresh = threshold if threshold is not None else self.default_threshold
         entries = await self._entries(session_factory)
@@ -1217,7 +929,7 @@ class SpeakerVerificationService:
         is_identified2 = (best_sim2 >= thresh) and (best_name2 is not None)
         pct2 = self._calculate_match_percentage(best_sim2, thresh) if is_identified2 else 0.0
 
-        # 6. Formulate Arabic Comparison Verdict and Enforce Identity Consistency
+        # 6. Formulate Arabic Comparison Verdict and Enforce Strict Identity Consistency
         if is_identified1 and is_identified2:
             if (best_uid1 == best_uid2) or (best_name1 == best_name2):
                 is_same_speaker = True
@@ -1225,18 +937,40 @@ class SpeakerVerificationService:
             else:
                 # Two distinct enrolled individuals (e.g. منه vs يوستينا)
                 is_same_speaker = False
-                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
-        elif is_same_speaker:
-            if is_identified1 and not is_identified2:
+                same_match_pct = 0.0
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})."
+
+        elif is_identified1 and not is_identified2:
+            # Voice 1 is enrolled as Person A, Voice 2 is not identified in DB.
+            # Voice 2 can ONLY be Person A if Voice 2 directly matches Person A's registered voiceprint
+            sim_v2_to_1 = float(np.dot(emb2, best_entry1.vector))
+            if is_same_speaker and (sim_v2_to_1 >= thresh):
+                is_same_speaker = True
                 comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name1}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
-            elif is_identified2 and not is_identified1:
+            else:
+                is_same_speaker = False
+                same_match_pct = 0.0
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لشخص غير مسجل بالسيستم (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})."
+
+        elif is_identified2 and not is_identified1:
+            # Voice 2 is enrolled as Person B, Voice 1 is not identified in DB.
+            sim_v1_to_2 = float(np.dot(emb1, best_entry2.vector))
+            if is_same_speaker and (sim_v1_to_2 >= thresh):
+                is_same_speaker = True
                 comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name2}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
             else:
-                comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص (تطابق بنسبة {same_match_pct:.1f}%)، ولكنه غير مسجل في السيستم (صوت غير معروف)."
+                is_same_speaker = False
+                same_match_pct = 0.0
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لشخص غير مسجل بالسيستم والصوت الثاني لـ [{best_name2}] (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})."
+
+        elif is_same_speaker:
+            # Neither voice is enrolled in DB, but raw acoustic similarity >= thresh
+            comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص (تطابق بنسبة {same_match_pct:.1f}%)، ولكنه غير مسجل في السيستم (صوت غير معروف)."
+
         else:
-            name1_str = f"[{best_name1}]" if is_identified1 else "[شخص غير مسجل]"
-            name2_str = f"[{best_name2}]" if is_identified2 else "[شخص غير مسجل]"
-            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ {name1_str} والصوت الثاني لـ {name2_str} (نسبة التطابق: 0.0% | معامل التشابه بينهما: {sim_12:.3f})."
+            # Neither voice is enrolled in DB, and similarity < thresh
+            same_match_pct = 0.0
+            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين (نسبة التطابق: 0.0% | معامل التشابه الخام بينهما: {sim_12:.3f} أقل من حد القبول {thresh})، وكلاهما غير مسجل في السيستم."
 
         # 7. Build Human-Readable Arabic Summary
         summary_lines = [
@@ -1245,17 +979,27 @@ class SpeakerVerificationService:
             "",
             f"📋 تفاصيل الصوت الأول ({sec1} ثانية):",
             f"   - الهوية: {best_name1 if is_identified1 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct1) + '%' if is_identified1 else 'صوت غير معروف'})",
-            f"   - المعرفات: User #{best_uid1 or '--'} | Face #{getattr(best_entry1, 'face_id', None) or '--'} | Persona #{getattr(best_entry1, 'personality_id', None) or '--'} | Memory #{getattr(best_entry1, 'memory_id', None) or '--'}",
+            f"   - المعرفات: User #{best_uid1 if is_identified1 else '--'} | Face #{(getattr(best_entry1, 'face_id', None) if is_identified1 else None) or '--'} | Persona #{(getattr(best_entry1, 'personality_id', None) if is_identified1 else None) or '--'} | Memory #{(getattr(best_entry1, 'memory_id', None) if is_identified1 else None) or '--'}",
             "",
             f"📋 تفاصيل الصوت الثاني ({sec2} ثانية):",
             f"   - الهوية: {best_name2 if is_identified2 else 'شخص غير مسجل (لا)'} ({'مسجل بنسبة ' + str(pct2) + '%' if is_identified2 else 'صوت غير معروف'})",
-            f"   - المعرفات: User #{best_uid2 or '--'} | Face #{getattr(best_entry2, 'face_id', None) or '--'} | Persona #{getattr(best_entry2, 'personality_id', None) or '--'} | Memory #{getattr(best_entry2, 'memory_id', None) or '--'}",
+            f"   - المعرفات: User #{best_uid2 if is_identified2 else '--'} | Face #{(getattr(best_entry2, 'face_id', None) if is_identified2 else None) or '--'} | Persona #{(getattr(best_entry2, 'personality_id', None) if is_identified2 else None) or '--'} | Memory #{(getattr(best_entry2, 'memory_id', None) if is_identified2 else None) or '--'}",
         ]
+
+        raw_sim_12 = round(sim_12, 4)
+        similarity_12 = raw_sim_12 if is_same_speaker else 0.0
+
+        raw_sim1 = round(best_sim1, 4)
+        similarity_1 = raw_sim1 if is_identified1 else 0.0
+
+        raw_sim2 = round(best_sim2, 4)
+        similarity_2 = raw_sim2 if is_identified2 else 0.0
 
         return {
             "success": True,
             "is_same_speaker": is_same_speaker,
-            "similarity": round(sim_12, 4),
+            "similarity": similarity_12,
+            "raw_similarity": raw_sim_12,
             "match_percentage": same_match_pct if is_same_speaker else 0.0,
             "threshold": thresh,
             "comparison_verdict": comp_verdict,
@@ -1266,11 +1010,10 @@ class SpeakerVerificationService:
                 "face_id": getattr(best_entry1, "face_id", None) if is_identified1 else None,
                 "personality_id": getattr(best_entry1, "personality_id", None) if is_identified1 else None,
                 "memory_id": getattr(best_entry1, "memory_id", None) if is_identified1 else None,
-                "similarity": round(best_sim1, 4),
+                "similarity": similarity_1,
+                "raw_similarity": raw_sim1,
                 "match_percentage": pct1,
                 "audio_seconds": sec1,
-                "language": "العربية (Arabic)",
-                "language_code": "arz",
             },
             "voice2": {
                 "speaker_name": best_name2 if is_identified2 else "شخص غير مسجل (لا)",
@@ -1279,11 +1022,10 @@ class SpeakerVerificationService:
                 "face_id": getattr(best_entry2, "face_id", None) if is_identified2 else None,
                 "personality_id": getattr(best_entry2, "personality_id", None) if is_identified2 else None,
                 "memory_id": getattr(best_entry2, "memory_id", None) if is_identified2 else None,
-                "similarity": round(best_sim2, 4),
+                "similarity": similarity_2,
+                "raw_similarity": raw_sim2,
                 "match_percentage": pct2,
                 "audio_seconds": sec2,
-                "language": "العربية (Arabic)",
-                "language_code": "arz",
             },
             "arabic_summary": "\n".join(summary_lines),
         }
