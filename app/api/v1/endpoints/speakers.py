@@ -86,7 +86,7 @@ async def identify_speaker(
 async def compare_speakers(
     file1: UploadFile = File(..., description="First audio file (Voice 1)"),
     file2: UploadFile = File(..., description="Second audio file (Voice 2)"),
-    threshold: Optional[float] = Query(None, description="Cosine similarity threshold override (default: 0.82)"),
+    threshold: Optional[float] = Query(None, description="Cosine similarity threshold override (default: 0.85)"),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Compare two voice recordings and identify speakers."""
