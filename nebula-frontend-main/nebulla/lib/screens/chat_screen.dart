@@ -73,7 +73,7 @@ class _ChatScreenState extends State<ChatScreen> {
         role: 'assistant',
         content:
             'مرحباً بك! أنا مساعدك الذكي. كيف يمكنني مساعدتك اليوم؟ يمكنك سؤالي عن كتابة النصوص، تنظيم المهام، أو توليد أفكار إبداعية.',
-        time: 'اليوم، 10:30 ص',
+        time: 'اليوم، ${_formatCurrentTime()}',
         isWelcome: true,
         quickActions: [
           'تلخيص نص طويل',
@@ -115,11 +115,12 @@ class _ChatScreenState extends State<ChatScreen> {
     showSuccessSnackbar(context, 'تم بدء جلسة محادثة جديدة');
   }
 
-  String _formatCurrentTime() {
+  String _formatCurrentTime({bool includePeriod = true}) {
     final now = DateTime.now();
+    final period = now.hour >= 12 ? 'م' : 'ص';
     final hour = now.hour % 12 == 0 ? 12 : now.hour % 12;
     final minute = now.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    return includePeriod ? '$hour:$minute $period' : '$hour:$minute';
   }
 
   Future<void> _sendMessage([String? presetText]) async {
@@ -944,7 +945,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   children: [
                     if (isUser) ...[
                       Text(
-                        '${msg.time} س',
+                        msg.time,
                         style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 11,
@@ -961,7 +962,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ] else ...[
                       // Timestamp on the right in RTL
                       Text(
-                        '${msg.time} س',
+                        msg.time,
                         style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 11,
