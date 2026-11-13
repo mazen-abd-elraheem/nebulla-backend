@@ -207,43 +207,28 @@ class FaceService:
             return float(np.dot(v1_arr, v2_arr) / (norm1 * norm2))
 
     @staticmethod
-    def _calculate_match_percentage(sim: float, threshold: float = 0.40) -> float:
+    def _calculate_match_percentage(sim: float, threshold: float = 0.55) -> float:
         """
         Calibrate raw cosine similarity into an intuitive biometric match percentage [0.0% - 100.0%].
-        In 512-D deep face recognition, genuine matches between distinct photos of the same person
-        typically have cosine similarities between 0.45 and 0.65 (where 0.50+ is >99.9% statistically certain).
-
-        Calibration Curve:
-        - sim <= 0.0 -> 0.0%
-        - sim < threshold (stranger) -> scaled [0.0% - 49.0%]
-        - sim == threshold -> 93.0% (positive match confirmation)
-        - sim = 0.497 (Ahmed) -> 99.11%
-        - sim >= 0.55 -> 100.0%
+        - sim < threshold: strictly 0.0% (different person / stranger).
+        - sim == threshold: 75.0% (positive threshold reached).
+        - sim smoothly scales to 99.0% at sim = 0.85.
+        - sim >= 0.85: 100.0%.
         """
-        if sim <= 0.0:
+        if sim is None or sim <= 0.0 or sim < threshold:
             return 0.0
 
         if sim >= 1.0:
             return 100.0
 
-        if sim < threshold:
-            pct = (sim / threshold) * 49.0
-            return round(max(0.0, pct), 2)
-
         # Confirmed match: sim >= threshold
-        high_anchor = max(threshold + 0.06, 0.46)
-        full_anchor = max(high_anchor + 0.09, 0.55)
-
-        if sim < high_anchor:
-            progress = (sim - threshold) / (high_anchor - threshold)
-            pct = 93.0 + (progress * 5.5)
-            return round(min(98.5, pct), 2)
-        elif sim < full_anchor:
-            progress = (sim - high_anchor) / (full_anchor - high_anchor)
-            pct = 98.5 + (progress * 1.49)
-            return round(min(99.99, pct), 2)
-        else:
+        top_anchor = max(threshold + 0.25, 0.85)
+        if sim >= top_anchor:
             return 100.0
+
+        progress = (sim - threshold) / (top_anchor - threshold)
+        pct = 75.0 + (progress * 24.9)
+        return round(min(99.9, pct), 2)
 
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -390,7 +375,7 @@ class FaceService:
     # Person Identification / Recognition (تعريف الأشخاص)
     # ──────────────────────────────────────────────────────────────────────────
 
-    async def recognize_faces(self, image_bytes: bytes, threshold: float = 0.45) -> List[Dict[str, Any]]:
+    async def recognize_faces(self, image_bytes: bytes, threshold: float = 0.55) -> List[Dict[str, Any]]:
         """
         Detect all faces in the image and identify each person against registered profiles.
         Returns detailed list of identified faces, bounding boxes, and similarity scores.
@@ -444,7 +429,7 @@ class FaceService:
     # Face-to-Face Comparison (1:1 Verification) (المقارنة بالصور)
     # ──────────────────────────────────────────────────────────────────────────
 
-    async def compare_faces(self, img1_bytes: bytes, img2_bytes: bytes, threshold: float = 0.40) -> Dict[str, Any]:
+    async def compare_faces(self, img1_bytes: bytes, img2_bytes: bytes, threshold: float = 0.55) -> Dict[str, Any]:
         """
         Compare faces in two images and compute cosine similarity.
         Compares all detected face pairs to find the best match.
@@ -510,8 +495,8 @@ class FaceService:
         best_sim, best_i1, face1, best_i2, face2 = valid_pairs[0]
 
         best_sim = float(best_sim)
-        is_match = best_sim >= threshold
-        match_percentage = self._calculate_match_percentage(best_sim, threshold)
+        is_match = bool(best_sim >= threshold)
+        match_percentage = self._calculate_match_percentage(best_sim, threshold) if is_match else 0.0
 
         return {
             "is_match": is_match,
@@ -590,17 +575,21 @@ class FaceService:
                 # Detect faces on frame
                 faces = self._detect_faces_raw(frame)
                 for f in faces:
-                    if f.confidence < min_confidence:
+                    if f.confidence < min_confidence or f.embedding is None:
                         continue
 
                     bbox = [int(v) for v in f.bbox]
-                    area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
-                    if area < 400:  # Ignore tiny faces
+                    w = bbox[2] - bbox[0]
+                    h = bbox[3] - bbox[1]
+                    area = w * h
+                    if area < 900 or w < 28 or h < 28:  # Ignore tiny unresolvable faces (<28px)
                         continue
 
                     # Crop face
                     crop = self._crop_face(frame, bbox, margin_pct=0.2)
                     sharpness = self._compute_laplacian_sharpness(crop)
+                    if sharpness < 15.0:  # Ignore severely motion-blurred crops
+                        continue
 
                     # Quality composite score: confidence * log(area) * sharpness
                     quality_score = float(f.confidence) * math.log(max(area, 10)) * min(sharpness, 500.0)
@@ -652,7 +641,7 @@ class FaceService:
     async def recognize_faces_from_video(
         self,
         video_bytes: bytes,
-        threshold: float = 0.40,
+        threshold: float = 0.55,
         sample_interval_sec: float = 0.5,
         min_confidence: float = 0.60,
         max_faces: int = 30,
@@ -776,7 +765,7 @@ class FaceService:
         self,
         video_bytes: bytes,
         image_bytes: bytes,
-        threshold: float = 0.40,
+        threshold: float = 0.55,
         sample_interval_sec: float = 0.5,
     ) -> Dict[str, Any]:
         """
@@ -809,10 +798,22 @@ class FaceService:
         if not target_faces:
             return {"is_match": False, "match_percentage": 0.0, "error": "No face detected in reference image."}
 
+        # Filter out noisy or tiny reference faces
+        valid_targets = []
+        for f in target_faces:
+            bbox = [int(v) for v in f.bbox]
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+            if f.confidence >= 0.45 and w >= 25 and h >= 25 and f.embedding is not None:
+                valid_targets.append(f)
+
+        if not valid_targets:
+            valid_targets = [f for f in target_faces if f.embedding is not None]
+
         candidates = self._extract_faces_from_video_sync(
             video_bytes=video_bytes,
             sample_interval_sec=sample_interval_sec,
-            min_confidence=0.5,
+            min_confidence=0.55,
             max_faces=60,
             include_raw=True,
         )
@@ -831,7 +832,7 @@ class FaceService:
         overall_best_cand = None
         overall_best_ref_crop = None
 
-        for idx, target_face in enumerate(target_faces):
+        for idx, target_face in enumerate(valid_targets):
             target_emb = target_face.embedding
             if target_emb is None:
                 continue
@@ -852,8 +853,8 @@ class FaceService:
                         face_best_cand = cand
 
             face_best_sim = max(0.0, float(face_best_sim))
-            is_match = face_best_sim >= threshold
-            match_pct = self._calculate_match_percentage(face_best_sim, threshold)
+            is_match = bool(face_best_sim >= threshold)
+            match_pct = self._calculate_match_percentage(face_best_sim, threshold) if is_match else 0.0
 
             item = {
                 "face_index": idx + 1,
@@ -882,20 +883,20 @@ class FaceService:
 
         matched_count = sum(1 for r in ref_faces_results if r["is_match"])
         unmatched_count = len(ref_faces_results) - matched_count
-        overall_is_match = matched_count > 0
+        overall_is_match = bool(matched_count > 0)
         overall_best_sim = max(0.0, float(overall_best_sim))
         overall_match_pct = self._calculate_match_percentage(overall_best_sim, threshold) if overall_is_match else 0.0
 
         if len(ref_faces_results) > 1:
-            if matched_count > 0:
+            if overall_is_match:
                 summary = f"تم العثور على شخص من الصورة داخل مقطع الفيديو بنسبة {overall_match_pct:.1f}%. وباقي الأشخاص في الصورة ({unmatched_count} شخص) لم يظهروا في الفيديو."
             else:
-                summary = f"لم يظهر أي شخص من الأشخاص الموجودين بالصورة ({len(ref_faces_results)} أشخاص) في مقطع الفيديو."
+                summary = f"لم يظهر أي شخص من الأشخاص الموجودين بالصورة ({len(ref_faces_results)} أشخاص) في مقطع الفيديو (نسبة التطابق: 0.0%)."
         else:
             if overall_is_match:
                 summary = f"تم التطابق بنجاح بنسبة {overall_match_pct:.1f}% عند الدقيقة {overall_best_cand.get('formatted_time', '00:00')}."
             else:
-                summary = f"الشخص الموجود بالصورة لم يتطابق مع أي وجه في الفيديو."
+                summary = f"الشخص الموجود بالصورة لم يتطابق مع أي وجه في الفيديو (نسبة التطابق: 0.0% | أعلى معامل تشابه: {overall_best_sim:.4f} أقل من حد القبول {threshold})."
 
         res = {
             "is_match": overall_is_match,
@@ -1264,7 +1265,7 @@ class FaceService:
     async def annotate_video_file(
         self,
         video_bytes: bytes,
-        threshold: float = 0.40,
+        threshold: float = 0.55,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Process an uploaded video file, annotate every frame with comprehensive HUD,
@@ -1282,7 +1283,7 @@ class FaceService:
     def _annotate_video_file_sync(
         self,
         video_bytes: bytes,
-        threshold: float = 0.40,
+        threshold: float = 0.55,
     ) -> Tuple[str, Dict[str, Any]]:
         """Synchronously render HUD onto every video frame and encode to H.264 MP4."""
         temp_in = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
@@ -1384,4 +1385,14 @@ class FaceService:
         }
 
         return output_file, summary
+
+
+_face_service_singleton: Optional["FaceService"] = None
+
+
+def get_face_service() -> "FaceService":
+    global _face_service_singleton
+    if _face_service_singleton is None:
+        _face_service_singleton = FaceService()
+    return _face_service_singleton
 

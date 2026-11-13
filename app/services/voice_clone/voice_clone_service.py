@@ -159,16 +159,66 @@ class VoiceCloneService:
             # Check in-memory map first
             if personality_id in self._personality_voice_map:
                 p = Path(self._personality_voice_map[personality_id])
-                if p.exists():
+                if p.exists() and p.stat().st_size > 1000:
                     return str(p)
             # Fall back to disk
             p = _SAMPLES_DIR / f"personality_{personality_id}.wav"
-            if p.exists():
+            if p.exists() and p.stat().st_size > 1000:
                 self._personality_voice_map[personality_id] = str(p)
                 return str(p)
             return None
         # If personality_id is None, use the latest uploaded sample
         return self.get_latest_sample_path()
+
+    def has_voice_sample(self, personality_id: int | None = None) -> bool:
+        """Check whether a specific personality has an existing voice sample."""
+        if personality_id is None:
+            return False
+        if personality_id in self._personality_voice_map:
+            p = Path(self._personality_voice_map[personality_id])
+            if p.exists() and p.stat().st_size > 1000:
+                return True
+        p = _SAMPLES_DIR / f"personality_{personality_id}.wav"
+        if p.exists() and p.stat().st_size > 1000:
+            self._personality_voice_map[personality_id] = str(p)
+            return True
+        return False
+
+    async def get_user_voice_sample(self, user_id: int) -> tuple[int | None, str | None]:
+        """
+        Lookup the user's active personality and its voice sample path.
+        Returns (personality_id, voice_sample_path) or (None, None).
+        """
+        try:
+            from app.db.session import AsyncSessionLocal
+            from sqlalchemy import select
+            from app.models.personality import Personality
+            async with AsyncSessionLocal() as session:
+                res = await session.execute(
+                    select(Personality)
+                    .where(Personality.user_id == user_id, Personality.is_active == True)
+                    .limit(1)
+                )
+                p = res.scalar_one_or_none()
+                if not p:
+                    res = await session.execute(
+                        select(Personality)
+                        .where(Personality.user_id == user_id)
+                        .order_by(Personality.id.asc())
+                        .limit(1)
+                    )
+                    p = res.scalar_one_or_none()
+
+                if p:
+                    disk_sample = self.get_sample_path(p.id)
+                    if disk_sample:
+                        return p.id, disk_sample
+                    if p.voice_sample_path and os.path.exists(p.voice_sample_path):
+                        return p.id, p.voice_sample_path
+                    return p.id, None
+        except Exception as err:
+            logger.warning(f"Error fetching voice sample for user {user_id}: {err}")
+        return None, None
 
     def list_samples(self) -> list[dict]:
         """List all stored voice samples."""
@@ -285,14 +335,21 @@ class VoiceCloneService:
           3. Default provider synthesis
         """
         clean_text = clean_llm_output_for_speech(text)
-        if not clean_text:
-            clean_text = text.strip()
+        if not clean_text or not clean_text.strip():
+            logger.debug("clean_llm_output_for_speech resulted in empty text, returning empty audio bytes.")
+            return b""
 
-        wav_path = reference_wav or self.get_sample_path(personality_id)
+        wav_path = reference_wav
+        if not wav_path and personality_id is not None:
+            wav_path = self.get_sample_path(personality_id)
+        elif not wav_path:
+            wav_path = self.get_latest_sample_path()
+
         if not wav_path or not os.path.exists(wav_path):
-            def_path = Path(getattr(settings, "DEFAULT_VOICE_SAMPLE", "data/voice_samples/personality_1.wav"))
-            if def_path.exists():
-                wav_path = str(def_path.resolve())
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="يرجى تسجيل عينة صوتك لتفعيل الرد الصوتي المستنسخ.",
+            )
 
         if not ref_text and wav_path:
             txt_path = Path(wav_path).with_suffix(".txt")
