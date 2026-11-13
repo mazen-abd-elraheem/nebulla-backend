@@ -828,20 +828,17 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                               width: 38,
                                               height: 38,
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF0F172A),
+                                                color: Colors.transparent,
                                                 borderRadius: BorderRadius.circular(12),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Colors.black.withValues(alpha: 0.15),
-                                                    blurRadius: 6,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ],
+                                                border: Border.all(
+                                                  color: const Color(0xFFCBD5E1),
+                                                  width: 1.4,
+                                                ),
                                               ),
                                               child: const Icon(
                                                 Icons.menu_rounded,
                                                 size: 20,
-                                                color: Colors.white,
+                                                color: Color(0xFF0F172A),
                                               ),
                                             ),
                                           )
@@ -859,20 +856,17 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                               width: 38,
                                               height: 38,
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF0F172A),
+                                                color: Colors.transparent,
                                                 borderRadius: BorderRadius.circular(12),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Colors.black.withValues(alpha: 0.15),
-                                                    blurRadius: 6,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ],
+                                                border: Border.all(
+                                                  color: const Color(0xFFCBD5E1),
+                                                  width: 1.4,
+                                                ),
                                               ),
                                               child: const Icon(
                                                 Icons.arrow_back_rounded,
                                                 size: 20,
-                                                color: Colors.white,
+                                                color: Color(0xFF0F172A),
                                               ),
                                             ),
                                           ),
@@ -909,20 +903,17 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                               width: 38,
                                               height: 38,
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF0F172A),
+                                                color: Colors.transparent,
                                                 borderRadius: BorderRadius.circular(12),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Colors.black.withValues(alpha: 0.15),
-                                                    blurRadius: 6,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ],
+                                                border: Border.all(
+                                                  color: const Color(0xFFCBD5E1),
+                                                  width: 1.4,
+                                                ),
                                               ),
                                               child: const Icon(
                                                 Icons.arrow_forward_rounded,
                                                 size: 20,
-                                                color: Colors.white,
+                                                color: Color(0xFF0F172A),
                                               ),
                                             ),
                                           )
@@ -934,20 +925,17 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                               width: 38,
                                               height: 38,
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF0F172A),
+                                                color: Colors.transparent,
                                                 borderRadius: BorderRadius.circular(12),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Colors.black.withValues(alpha: 0.15),
-                                                    blurRadius: 6,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ],
+                                                border: Border.all(
+                                                  color: const Color(0xFFCBD5E1),
+                                                  width: 1.4,
+                                                ),
                                               ),
                                               child: const Icon(
                                                 Icons.menu_rounded,
                                                 size: 20,
-                                                color: Colors.white,
+                                                color: Color(0xFF0F172A),
                                               ),
                                             ),
                                           ),

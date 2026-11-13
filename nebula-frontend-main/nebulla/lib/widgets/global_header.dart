@@ -105,7 +105,7 @@ class GlobalNebulaHeader extends StatelessWidget {
     final isArabic = locale.isArabic;
     final t = locale.translate;
 
-    // Menu Widget (Black button background)
+    // Menu Widget (Transparent background)
     final menuBtn = InkWell(
       onTap: onOpenMenu,
       borderRadius: BorderRadius.circular(12),
@@ -113,53 +113,52 @@ class GlobalNebulaHeader extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: const Color(0xFF0F172A), // Black background
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.16),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          border: Border.all(
+            color: const Color(0xFFCBD5E1),
+            width: 1.4,
+          ),
         ),
         child: const Icon(
           Icons.menu_rounded,
           size: 20,
-          color: Colors.white,
+          color: Color(0xFF0F172A),
         ),
       ),
     );
 
-    // Logout / Exit Arrow Widget + Lang Switcher
-    final logoutSection = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (showLangSwitch) ...[
-          InkWell(
-            onTap: () => locale.toggleLanguage(),
-            borderRadius: BorderRadius.circular(10),
+    // Logout / Exit Arrow Widget (Transparent background; EN switch removed per user request)
+    final logoutSection = showLogout
+        ? InkWell(
+            onTap: () => _handleLogout(context),
+            borderRadius: BorderRadius.circular(12),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              height: 38,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFFCBD5E1),
+                  width: 1.4,
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
-                    Icons.language_rounded,
-                    size: 14,
-                    color: Color(0xFF0284C7),
+                    Icons.logout_rounded,
+                    size: 16,
+                    color: Color(0xFFEF4444),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 5),
                   Text(
-                    isArabic ? 'EN' : 'عربي',
+                    t('logout'),
                     style: const TextStyle(
                       fontFamily: 'Cairo',
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF0F172A),
                     ),
@@ -167,52 +166,8 @@ class GlobalNebulaHeader extends StatelessWidget {
                 ],
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-        ],
-        if (showLogout)
-          InkWell(
-            onTap: () => _handleLogout(context),
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              height: 38,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A), // Black background
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.14),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.logout_rounded,
-                    size: 15,
-                    color: Color(0xFFF87171),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    t('logout'),
-                    style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
+          )
+        : const SizedBox.shrink();
 
     // Swap Menu and Logout between Arabic (Menu=LEFT, Logout=RIGHT) and English (Menu=RIGHT, Logout=LEFT)
     final leftSide = isArabic ? menuBtn : logoutSection;

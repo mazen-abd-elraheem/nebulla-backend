@@ -75,8 +75,10 @@ class GlobalNebulaFooter extends StatelessWidget {
                 onTap: () => onNavigate(item.index),
                 borderRadius: BorderRadius.circular(30),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -92,8 +94,12 @@ class GlobalNebulaFooter extends StatelessWidget {
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                   colors: [
-                                    const Color(0xFF00E5FF).withValues(alpha: 0.38),
-                                    const Color(0xFF0072FF).withValues(alpha: 0.25),
+                                    const Color(
+                                      0xFF00E5FF,
+                                    ).withValues(alpha: 0.38),
+                                    const Color(
+                                      0xFF0072FF,
+                                    ).withValues(alpha: 0.25),
                                   ],
                                 )
                               : LinearGradient(
@@ -113,7 +119,9 @@ class GlobalNebulaFooter extends StatelessWidget {
                           boxShadow: [
                             BoxShadow(
                               color: isSelected
-                                  ? const Color(0xFF00E5FF).withValues(alpha: 0.55)
+                                  ? const Color(
+                                      0xFF00E5FF,
+                                    ).withValues(alpha: 0.55)
                                   : Colors.black.withValues(alpha: 0.22),
                               blurRadius: isSelected ? 14 : 7,
                               offset: const Offset(0, 3),
@@ -138,8 +146,9 @@ class GlobalNebulaFooter extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 11,
-                          fontWeight:
-                              isSelected ? FontWeight.w900 : FontWeight.w700,
+                          fontWeight: isSelected
+                              ? FontWeight.w900
+                              : FontWeight.w700,
                           color: isSelected
                               ? const Color(0xFF00E5FF)
                               : Colors.white,
@@ -177,4 +186,3 @@ class _FooterItem {
     required this.label,
   });
 }
-

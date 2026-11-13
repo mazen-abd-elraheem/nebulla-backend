@@ -27,7 +27,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   final String _remainingTime = '18h 40m';
   final int _batteryHealth = 100;
   bool _isCharging = true;
-  bool _networkConnected = true;
 
   // Vision unit
   final String _visionResolution = '4K HDR';
@@ -105,16 +104,12 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         _repo.getVoiceSamples().catchError((_) => <dynamic>[]),
       ]);
 
-      final diagStatus = results[0] as Map<String, dynamic>;
       final cals = results[1] as List<CalibrationEntry>;
       final distData = results[2] as Map<String, dynamic>;
       final voiceSamples = results[3] as List<dynamic>;
 
       if (!mounted) return;
       setState(() {
-        _networkConnected =
-            diagStatus['backend'] == 'ok' || diagStatus.isNotEmpty;
-
         // Update Pitch & Yaw from backend calibrations if present
         final pitchCal = cals.where((c) => c.servoId == 1).firstOrNull;
         final yawCal = cals.where((c) => c.servoId == 2).firstOrNull;
@@ -728,7 +723,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 bottom: false,
                 child: Column(
                   children: [
-                    _buildStatusBar(),
                     Expanded(
                       child: Scrollbar(
                         controller: _scrollController,
@@ -806,81 +800,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     );
   }
 
-  /// Status Bar: 09:41 on right (RTL start), NEURAL_5G + 96% + battery on left (RTL end)
-  Widget _buildStatusBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 6, 18, 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Right side in RTL: Time 09:41
-          const Text(
-            '09:41',
-            style: TextStyle(
-              fontFamily: 'Cairo',
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-
-          // Left side in RTL: Signal + NEURAL_5G + 96% + Battery icon
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.signal_cellular_alt_rounded,
-                size: 15,
-                color: Color(0xFF00B4D8),
-              ),
-              const SizedBox(width: 5),
-              const Text(
-                'NEURAL_5G',
-                style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF64748B),
-                  letterSpacing: 0.3,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '$_batteryPercent%',
-                style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Container(
-                width: 22,
-                height: 11,
-                padding: const EdgeInsets.all(1.5),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(3.5),
-                  border: Border.all(
-                    color: const Color(0xFF475569),
-                    width: 1.2,
-                  ),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981),
-                    borderRadius: BorderRadius.circular(1.5),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Header Row: Menu on LEFT, Exit & Status on RIGHT in Arabic; swapped in English
+  /// Header Row: Menu on LEFT, Exit on RIGHT in Arabic; swapped in English
   Widget _buildPageHeader() {
     final locale = LocaleService.instance;
     final isArabic = locale.isArabic;
@@ -894,99 +814,49 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         width: 38,
         height: 38,
         decoration: BoxDecoration(
-          color: const Color(0xFF0F172A), // Black background
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          border: Border.all(
+            color: const Color(0xFFCBD5E1),
+            width: 1.4,
+          ),
         ),
         child: const Icon(
           Icons.menu_rounded,
           size: 20,
-          color: Colors.white,
+          color: Color(0xFF0F172A),
         ),
       ),
     );
 
-    final statusAndExitSection = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE0F7FA),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: const Color(0xFF7DD3FC),
-              width: 1.1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 6.5,
-                height: 6.5,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _networkConnected
-                      ? const Color(0xFF00B4D8)
-                      : const Color(0xFFF59E0B),
-                ),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                _networkConnected
-                    ? (isArabic ? 'متصل بالشبكة' : 'Online')
-                    : (isArabic ? 'وضع محلي' : 'Offline'),
-                style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0369A1),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        InkWell(
-          onTap: () {
-            if (Navigator.canPop(context)) {
-              Navigator.pop(context);
-            }
-          },
+    final exitBtn = InkWell(
+      onTap: () {
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F172A), // Black background
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Icon(
-              isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
-              size: 20,
-              color: Colors.white,
-            ),
+          border: Border.all(
+            color: const Color(0xFFCBD5E1),
+            width: 1.4,
           ),
         ),
-      ],
+        child: Icon(
+          isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
+          size: 20,
+          color: const Color(0xFF0F172A),
+        ),
+      ),
     );
 
-    final leftSide = isArabic ? menuBtn : statusAndExitSection;
-    final rightSide = isArabic ? statusAndExitSection : menuBtn;
+    final leftSide = isArabic ? menuBtn : exitBtn;
+    final rightSide = isArabic ? exitBtn : menuBtn;
 
     return Directionality(
       textDirection: TextDirection.ltr,
@@ -996,7 +866,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              isArabic ? 'تحليل حالة hardware' : 'Hardware Diagnostics',
+              isArabic ? 'تحليل الحالة' : 'Diagnostics',
               textAlign: isArabic ? TextAlign.right : TextAlign.left,
               style: const TextStyle(
                 fontFamily: 'Cairo',

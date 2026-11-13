@@ -162,6 +162,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   builder: (context) {
                     final isArabic = LocaleService.instance.isArabic;
 
+                    // Transparent Menu Button
                     final menuBtn = GestureDetector(
                       onTap: _openMenu,
                       behavior: HitTestBehavior.opaque,
@@ -169,99 +170,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         width: 42,
                         height: 42,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF0F172A), // Black background
+                          color: Colors.transparent,
                           shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.18),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                          border: Border.all(
+                            color: const Color(0xFFCBD5E1),
+                            width: 1.4,
+                          ),
                         ),
                         child: const Icon(
                           Icons.menu_rounded,
-                          color: Colors.white,
+                          color: Color(0xFF0F172A),
                           size: 22,
                         ),
                       ),
                     );
 
-                    final logoutSection = Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Lang Switch Pill
-                        InkWell(
-                          onTap: () => LocaleService.instance.toggleLanguage(),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.95),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.language_rounded,
-                                    size: 14, color: Color(0xFF0284C7)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  isArabic ? 'EN' : 'عربي',
-                                  style: const TextStyle(
-                                    fontFamily: 'Cairo',
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF0F172A),
-                                  ),
-                                ),
-                              ],
-                            ),
+                    // Transparent Exit / Logout Button (EN switch removed per user request)
+                    final logoutSection = GestureDetector(
+                      onTap: _handleLogout,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFCBD5E1),
+                            width: 1.4,
                           ),
                         ),
-                        const SizedBox(width: 8),
-
-                        // Black Logout Button
-                        GestureDetector(
-                          onTap: _handleLogout,
-                          behavior: HitTestBehavior.opaque,
-                          child: Container(
-                            height: 38,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0F172A), // Black background
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.15),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.logout_rounded,
+                                color: Color(0xFFEF4444), size: 17),
+                            const SizedBox(width: 5),
+                            Text(
+                              LocaleService.instance.translate('logout'),
+                              style: const TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F172A),
+                              ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.logout_rounded,
-                                    color: Color(0xFFF87171), size: 16),
-                                const SizedBox(width: 5),
-                                Text(
-                                  LocaleService.instance.translate('logout'),
-                                  style: const TextStyle(
-                                    fontFamily: 'Cairo',
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     );
 
                     final leftSide = isArabic ? menuBtn : logoutSection;
