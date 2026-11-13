@@ -79,7 +79,7 @@ void main() {
     );
 
     expect(find.byIcon(Icons.menu_rounded), findsOneWidget);
-    expect(find.text('تسجيل الخروج'), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_forward_rounded), findsOneWidget);
 
     // Verify tap menu
     await tester.tap(find.byIcon(Icons.menu_rounded));

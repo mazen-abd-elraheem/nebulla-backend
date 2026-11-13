@@ -50,8 +50,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<_ChatMessageItem> _messages = [];
   String? _sessionId;
   bool _sending = false;
-  String _assistantName = 'المساعد الذكي';
-  int? _activePersonalityId;
+  String _assistantName = 'مازن (Mazen) - التوأم الرقمي';
+  int? _activePersonalityId = 1;
 
   // Liked/disliked message state for the thumb icons
   final Set<String> _likedMessages = {};
@@ -144,13 +144,13 @@ class _ChatScreenState extends State<ChatScreen> {
         id: 'msg_welcome',
         role: 'assistant',
         content:
-            'مرحباً بك! أنا مساعدك الذكي. كيف يمكنني مساعدتك اليوم؟ يمكنك سؤالي عن كتابة النصوص، تنظيم المهام، أو توليد أفكار إبداعية.',
+            'أهلاً بك! أنا مازن، توأمك الرقمي ومساعدك الذكي لنظام نيبولا. اسألني عن مشروع التخرج، الروبوت، الذاكرة، أو أي استفسار تريده!',
         time: 'اليوم، ${_formatCurrentTime()}',
         isWelcome: true,
         quickActions: [
-          'تلخيص نص طويل',
-          'اقتراح أفكار إبداعية',
-          'المساعدة في كتابة محتوى',
+          'مين هو مازن؟',
+          'مشروع تخرج روبوت نيبولا',
+          'أين جواز السفر والمفاتيح؟',
         ],
       ),
     );

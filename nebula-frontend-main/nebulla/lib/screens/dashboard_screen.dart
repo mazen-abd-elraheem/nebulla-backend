@@ -185,7 +185,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     );
 
-                    // Transparent Exit / Logout Button (Icon only - text 'تسجيل الخروج' completely removed per user request)
+                    // Transparent Exit / Back Arrow Button (Matching the exact arrow on other screens)
                     final logoutSection = GestureDetector(
                       onTap: _handleLogout,
                       behavior: HitTestBehavior.opaque,
@@ -200,9 +200,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             width: 1.4,
                           ),
                         ),
-                        child: const Icon(
-                          Icons.logout_rounded,
-                          color: Color(0xFFEF4444),
+                        child: Icon(
+                          isArabic
+                              ? Icons.arrow_forward_rounded
+                              : Icons.arrow_back_rounded,
+                          color: const Color(0xFF0F172A),
                           size: 20,
                         ),
                       ),
@@ -217,23 +219,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           leftSide,
-                          // CENTER: Glowing Green Online Status Dot
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF10B981),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF10B981)
-                                      .withValues(alpha: 0.8),
-                                  blurRadius: 10,
-                                  spreadRadius: 3,
-                                ),
-                              ],
-                            ),
-                          ),
                           rightSide,
                         ],
                       ),

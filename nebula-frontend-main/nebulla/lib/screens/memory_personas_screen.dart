@@ -135,6 +135,30 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
 
   List<PersonaProfileData> _defaultPersonas() => [
         PersonaProfileData(
+          backendId: 1,
+          name: 'مازن (Mazen) - التوأم الرقمي',
+          traits: [
+            'التوأم الرقمي الرسمي لفريق نيبولا',
+            'صوت مازن الطبيعي',
+            'لهجة قاهرية عفوية',
+            'تفكير تحليلي تقني',
+          ],
+          rules: [
+            {
+              'tag': 'نبرة التخاطب',
+              'text': 'عفوية، ذكية، بالمصري العامي مع مصطلحات تقنية',
+            },
+            {
+              'tag': 'قاعدة المعرفة',
+              'text':
+                  'مشروع تخرج نيبولا للذكاء الاصطناعي، الروبوت نيبولا ذو الـ 12 محرك، والذاكرة الشخصية',
+            },
+          ],
+          subTags: const ['توأم رقمي', 'لهجة قاهرية', 'نشط حالياً'],
+          isAcademicAvatar: false,
+          isActive: true,
+        ),
+        PersonaProfileData(
           name: 'المساعد البحثي الأكاديمي',
           traits: [
             'تفكير منطقي تحليلي',
@@ -155,7 +179,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
           ],
           subTags: const ['تحليل أكاديمي', 'موضوعية صارمة'],
           isAcademicAvatar: true,
-          isActive: true,
+          isActive: false,
         ),
         PersonaProfileData(
           name: 'الرفيق الودي التفاعلي',

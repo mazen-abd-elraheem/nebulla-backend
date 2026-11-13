@@ -128,15 +128,14 @@ class GlobalNebulaHeader extends StatelessWidget {
       ),
     );
 
-    // Logout / Exit Arrow Widget (Transparent background; EN switch removed per user request)
+    // Exit Arrow Widget (Transparent background matching other screens)
     final logoutSection = showLogout
         ? InkWell(
             onTap: () => _handleLogout(context),
             borderRadius: BorderRadius.circular(12),
             child: Container(
+              width: 38,
               height: 38,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: Colors.transparent,
                 borderRadius: BorderRadius.circular(12),
@@ -145,25 +144,12 @@ class GlobalNebulaHeader extends StatelessWidget {
                   width: 1.4,
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.logout_rounded,
-                    size: 16,
-                    color: Color(0xFFEF4444),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    t('logout'),
-                    style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                ],
+              child: Icon(
+                isArabic
+                    ? Icons.arrow_forward_rounded
+                    : Icons.arrow_back_rounded,
+                size: 20,
+                color: const Color(0xFF0F172A),
               ),
             ),
           )
