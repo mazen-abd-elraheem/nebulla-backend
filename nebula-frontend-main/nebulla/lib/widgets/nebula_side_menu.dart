@@ -266,36 +266,23 @@ class NebulaSideMenu extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
 
-                        // 3. Navigation Menu Items List matching Image 2 exactly
+                        // 3. Navigation Menu Items List
                         Expanded(
                           child: ListView(
                             padding: EdgeInsets.zero,
                             children: [
-                              // 1: تسجيل الدخول
+                              // 1: الصفحه الرئيسيه
                               _MenuItemCard(
-                                title: isArabic ? 'تسجيل الدخول' : 'Sign In',
-                                icon: Icons.login_rounded,
+                                title: isArabic ? 'الصفحه الرئيسيه' : 'Home',
+                                icon: Icons.home_rounded,
                                 iconBoxColor: const Color(0xFFE0F2FE),
                                 iconColor: const Color(0xFF0284C7),
-                                hasArrow: true,
-                                onTap: () => _handleItemTap(context, -1),
+                                isActive: activeIndex == 0,
+                                onTap: () => _handleItemTap(context, 0),
                               ),
                               const SizedBox(height: 9),
 
-                              // 2: إنشاء حساب (جديد)
-                              _MenuItemCard(
-                                title: isArabic ? 'إنشاء حساب' : 'Create Account',
-                                icon: Icons.person_add_alt_1_rounded,
-                                iconBoxColor: const Color(0xFFDCFCE7),
-                                iconColor: const Color(0xFF16A34A),
-                                badgeText: isArabic ? 'جديد' : 'New',
-                                badgeColor: const Color(0xFF10B981),
-                                badgeTextColor: Colors.white,
-                                onTap: () => _handleItemTap(context, -2),
-                              ),
-                              const SizedBox(height: 9),
-
-                              // 3: إضافة شخصية
+                              // 2: إضافة شخصية
                               _MenuItemCard(
                                 title: isArabic ? 'إضافة شخصية' : 'Add Persona',
                                 icon: Icons.add_rounded,
@@ -306,7 +293,7 @@ class NebulaSideMenu extends StatelessWidget {
                               ),
                               const SizedBox(height: 9),
 
-                              // 4: الدردشة (ACTIVE Highlight matching Image 2)
+                              // 3: الدردشة (ACTIVE Highlight matching Image 2)
                               _MenuItemCard(
                                 title: isArabic ? 'الدردشة' : 'Chat',
                                 icon: Icons.chat_bubble_outline_rounded,
@@ -319,6 +306,17 @@ class NebulaSideMenu extends StatelessWidget {
                                 badgeColor: Colors.white,
                                 badgeTextColor: const Color(0xFF1E88E5),
                                 onTap: () => _handleItemTap(context, 1),
+                              ),
+                              const SizedBox(height: 9),
+
+                              // 4: الملف الشخصي
+                              _MenuItemCard(
+                                title: isArabic ? 'الملف الشخصي' : 'Profile',
+                                icon: Icons.person_outline_rounded,
+                                iconBoxColor: const Color(0xFFF1F5F9),
+                                iconColor: const Color(0xFF334155),
+                                isActive: activeIndex == 3,
+                                onTap: () => _handleItemTap(context, 3),
                               ),
                               const SizedBox(height: 9),
 
