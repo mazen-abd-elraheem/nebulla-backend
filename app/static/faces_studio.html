@@ -996,9 +996,9 @@
             <div class="setting-item">
               <div class="setting-label">
                 <span>حد قبول التطابق (Threshold)</span>
-                <span class="setting-val" id="thresh-val">55%</span>
+                <span class="setting-val" id="thresh-val">60%</span>
               </div>
-              <input type="range" id="threshold-slider" min="0.10" max="0.90" step="0.05" value="0.55"
+              <input type="range" id="threshold-slider" min="0.10" max="0.90" step="0.05" value="0.60"
                 oninput="document.getElementById('thresh-val').innerText = Math.round(this.value * 100) + '%'">
             </div>
 
@@ -1129,9 +1129,9 @@
             <div class="setting-item">
               <div class="setting-label">
                 <span>حد التطابق (Threshold)</span>
-                <span class="setting-val" id="cmp-thresh-val">55%</span>
+                <span class="setting-val" id="cmp-thresh-val">60%</span>
               </div>
-              <input type="range" id="cmp-threshold" min="0.10" max="0.90" step="0.05" value="0.55"
+              <input type="range" id="cmp-threshold" min="0.10" max="0.90" step="0.05" value="0.60"
                 oninput="document.getElementById('cmp-thresh-val').innerText = Math.round(this.value * 100) + '%'">
             </div>
             <div class="setting-item">
@@ -1863,7 +1863,7 @@
         banner.className = 'comparison-banner no-match';
         gauge.className = 'match-gauge-box low-match';
         title.innerText = '❌ الوش مش متطابق خالص';
-        sub.innerText = data.summary || `الوشين لشخصين مختلفين (نسبة التطابق 0.0% | معامل التشابه الخام ${data.raw_similarity !== undefined ? data.raw_similarity : (data.similarity || 0)} أقل من حد القبول ${Math.round(data.threshold * 100)}%).`;
+        sub.innerText = data.summary || `الوشين لشخصين مختلفين (نسبة التطابق 0.0% | معامل التشابه ${data.similarity || 0} أقل من حد القبول ${Math.round(data.threshold * 100)}%).`;
       }
 
       // Render Ref Image
@@ -2523,7 +2523,7 @@
             </div>
 
             <div style="display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0, 0, 0, 0.25); padding: 12px 18px; border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.2); margin-bottom: 1rem;">
-              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>معامل التشابه:</strong> ${data.similarity} ${data.raw_similarity !== undefined && data.raw_similarity !== data.similarity ? `<span style="color:#94a3b8; font-size:0.75rem;">(الخام: ${data.raw_similarity})</span>` : ''}</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>أعلى معامل تشابه:</strong> ${data.similarity}</span>
               <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
               <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>حد القبول المطلوب:</strong> ${data.threshold}</span>
               <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
@@ -2666,7 +2666,7 @@
               <div>
                 <span style="font-size: 0.75rem; color: var(--text-muted);">التشابه الكوزيني:</span>
                 <div style="font-size: 1rem; font-weight: 800; color: #93c5fd; font-family: monospace;">
-                  ${v.similarity} ${v.raw_similarity !== undefined && v.raw_similarity !== v.similarity ? `<span style="font-size:0.75rem; color:#94a3b8;">(خام: ${v.raw_similarity})</span>` : ''}
+                  ${v.similarity}
                 </div>
               </div>
             </div>
@@ -2706,7 +2706,7 @@
             <div style="font-size: 0.75rem; color: ${isSame ? '#34d399' : '#f87171'}; font-weight: 800; margin-top: 1px;">
               ${isSame ? '✅ متطابقان' : '❌ غير متطابقين'}
             </div>
-            <div style="font-size: 0.70rem; color: var(--text-muted); margin-top: 3px;">Similarity: ${data.similarity} ${data.raw_similarity !== undefined && data.raw_similarity !== data.similarity ? `(خام: ${data.raw_similarity})` : ''}</div>
+            <div style="font-size: 0.70rem; color: var(--text-muted); margin-top: 3px;">Similarity: ${data.similarity}</div>
           </div>
         </div>
 

@@ -95,8 +95,6 @@ async def test_compare_two_speakers_different_people_and_identities():
         assert data["success"] is True
         # Different people
         assert data["is_same_speaker"] is False
-        assert data["similarity"] == 0.0
-        assert data["raw_similarity"] > 0.0
         assert "شخصين مختلفين" in data["comparison_verdict"]
 
         # Voice 1 should be recognized as Ahmed
@@ -276,8 +274,6 @@ async def test_compare_two_different_enrolled_speakers_never_matches():
         # MUST be different speakers with strictly 0.0% match percentage
         assert data["success"] is True
         assert data["is_same_speaker"] is False
-        assert data["similarity"] == 0.0
-        assert data["raw_similarity"] > 0.0
         assert data["match_percentage"] == 0.0
         assert f"الصوت الأول لـ [{spk_a_name}]" in data["comparison_verdict"]
         assert f"الصوت الثاني لـ [{spk_b_name}]" in data["comparison_verdict"]

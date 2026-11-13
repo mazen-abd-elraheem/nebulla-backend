@@ -100,20 +100,20 @@ def test_calculate_match_percentage():
     assert FaceService._calculate_match_percentage(1.2) == 100.0
 
     # Below threshold -> strictly 0.0% (Zero match percentage for non-matching faces)
-    pct_low = FaceService._calculate_match_percentage(0.2, threshold=0.55)
+    pct_low = FaceService._calculate_match_percentage(0.2, threshold=0.60)
     assert pct_low == 0.0
 
-    # At threshold (0.55) -> 75.0%
-    pct_thresh = FaceService._calculate_match_percentage(0.55, threshold=0.55)
-    assert pytest.approx(pct_thresh, 0.1) == 75.0
+    # At threshold (0.60) -> 70.0%
+    pct_thresh = FaceService._calculate_match_percentage(0.60, threshold=0.60)
+    assert pytest.approx(pct_thresh, 0.1) == 70.0
 
-    # Genuine match around 0.70 -> ~87.45%
-    pct_mid = FaceService._calculate_match_percentage(0.70, threshold=0.55)
-    assert 85.0 <= pct_mid <= 90.0
+    # Genuine match around 0.75 -> ~82.5%
+    pct_mid = FaceService._calculate_match_percentage(0.75, threshold=0.60)
+    assert 80.0 <= pct_mid <= 85.0
 
-    # High match (0.85+) -> 100.0%
-    pct_high = FaceService._calculate_match_percentage(0.85, threshold=0.55)
-    assert pct_high == 100.0
+    # High match around 0.90 -> 95.0%
+    pct_high = FaceService._calculate_match_percentage(0.90, threshold=0.60)
+    assert pytest.approx(pct_high, 0.1) == 95.0
 
 
 def test_get_current_face_info():
