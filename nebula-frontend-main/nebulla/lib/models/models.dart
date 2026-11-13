@@ -122,12 +122,14 @@ class Memory {
   });
 
   factory Memory.fromJson(Map<String, dynamic> json) => Memory(
-        id: json['id'] as int,
-        content: json['content'] as String,
-        personalityId: json['personality_id'] as int,
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        content: json['content']?.toString() ?? json['text']?.toString() ?? '',
+        personalityId: (json['personality_id'] as num?)?.toInt() ??
+            (json['personalityId'] as num?)?.toInt() ??
+            1,
         source: json['source'] as String? ?? 'manual',
-        importance: json['importance'] as int? ?? 5,
-        createdAt: json['created_at'] as String?,
+        importance: (json['importance'] as num?)?.toInt() ?? 5,
+        createdAt: json['created_at']?.toString(),
       );
 }
 
