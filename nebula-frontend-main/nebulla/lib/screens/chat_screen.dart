@@ -674,48 +674,56 @@ class _ChatScreenState extends State<ChatScreen> {
       },
       pageBuilder: (context, anim1, anim2) {
         return Center(
-          child: Container(
-            width: 360,
-            height: 520,
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 32,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: InteractiveAnimatedAvatar(
-                    onAvatarTapped: () {},
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 360,
+              height: 520,
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 32,
+                    offset: const Offset(0, 10),
                   ),
-                ),
-                Positioned(
-                  top: 14,
-                  left: 14,
-                  child: InkWell(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: const Icon(Icons.close_rounded,
-                          size: 20, color: Color(0xFF475569)),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: InteractiveAnimatedAvatar(
+                      onAvatarTapped: () {},
                     ),
                   ),
-                ),
-              ],
+                  Positioned(
+                    top: 14,
+                    left: 14,
+                    child: Material(
+                      color: Colors.transparent,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        onTap: () => Navigator.of(context).pop(),
+                        customBorder: const CircleBorder(),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: const Icon(Icons.close_rounded,
+                              size: 20, color: Color(0xFF475569)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
