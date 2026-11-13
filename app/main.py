@@ -6,6 +6,13 @@ Architecture: Phone/Desk/ESP32 all connect to THIS backend.
 No device talks to another device directly (design decision from doc §4).
 """
 
+import os
+
+# Disable TensorFlow backend in Transformers so unused TF DLLs do not consume pagefile/commit memory
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("USE_TORCH", "1")
+
 # Pre-initialize torchvision at startup to prevent circular import in concurrent background warmups
 try:
     import torchvision  # noqa: F401

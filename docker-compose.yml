@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  nebula-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nebula-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PROJECT_NAME=Nebula Backend
+      - STT_PROVIDER=qwencleo
+      - TTS_PROVIDER=xtts
+      - LLM_PROVIDER=local
+      - LLM_MODEL=nebula-masri
+      - LLM_BASE_URL=http://host.docker.internal:11434
+      - VOICETUT_SERVICE_URL=http://host.docker.internal:8001
+      - QWENCLEO_DEVICE=cuda
+      - VOICETUT_DEVICE=cuda
+      - EMBEDDING_DEVICE=cpu
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./nebula.db:/app/nebula.db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/diagnostics/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+

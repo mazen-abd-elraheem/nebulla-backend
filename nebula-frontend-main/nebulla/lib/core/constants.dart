@@ -34,8 +34,13 @@ class AppConstants {
   static const String calibration = '/api/v1/calibration/';
   static const String calibrationReset = '/api/v1/calibration/reset';
   static const String voiceCloneSamples = '/api/v1/voice-clone/samples';
+  static const String voiceCloneUpload = '/api/v1/voice-clone/upload';
   static const String voiceCloneSynthesize = '/api/v1/voice-clone/synthesize';
   static const String voiceCloneTest = '/api/v1/voice-clone/test';
+  static const String audioTranscribe = '/api/v1/audio/transcribe';
+  static const String speakersIdentify = '/api/v1/speakers/identify';
+  static const String speakersEnroll = '/api/v1/speakers/enroll';
+  static const String speakersList = '/api/v1/speakers';
   static const String settings = '/api/v1/settings/';
   static const String settingsProviders = '/api/v1/settings/providers';
   static const String diagnosticsStatus = '/api/v1/diagnostics/status';
