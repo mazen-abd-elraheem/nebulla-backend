@@ -1410,15 +1410,15 @@
           <div>
             <span style="font-size: 0.88rem; font-weight: 700; color: #e2e8f0;">حد قبول التطابق المخصص
               (Threshold):</span>
-            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 82% للتعرف الفائق
+            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 85% للتعرف الفائق
               الدقة وعزل الأصوات الغريبة)</span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="range" id="voice-threshold-slider" min="0.60" max="0.96" step="0.01" value="0.82"
+            <input type="range" id="voice-threshold-slider" min="0.60" max="0.96" step="0.01" value="0.85"
               oninput="document.getElementById('voice-thresh-val-display').innerText = Math.round(this.value * 100) + '%'"
               style="width: 140px;">
             <span id="voice-thresh-val-display"
-              style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">82%</span>
+              style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">85%</span>
           </div>
         </div>
 
@@ -1498,11 +1498,11 @@
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
             <div style="display: flex; align-items: center; gap: 10px;">
               <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">حد التطابق (Threshold):</span>
-              <input type="range" id="compare-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.82"
+              <input type="range" id="compare-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.85"
                 oninput="document.getElementById('compare-thresh-display').innerText = Math.round(this.value * 100) + '%'"
                 style="width: 120px;">
               <span id="compare-thresh-display"
-                style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">82%</span>
+                style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">85%</span>
             </div>
 
             <button type="button" id="btn-compare-submit" onclick="handleCompareSubmit()" class="btn-submit"
@@ -2427,7 +2427,7 @@
       `;
       box.scrollIntoView({ behavior: 'smooth' });
 
-      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.82;
+      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.85;
       const formData = new FormData();
       formData.append('file', wavBlob, 'recording.wav');
 
@@ -2590,7 +2590,7 @@
       btn.disabled = true;
 
       try {
-        const threshold = parseFloat(document.getElementById('compare-thresh-slider').value) || 0.82;
+        const threshold = parseFloat(document.getElementById('compare-thresh-slider').value) || 0.85;
         const formData = new FormData();
         formData.append('file1', compareFile1);
         formData.append('file2', compareFile2);
