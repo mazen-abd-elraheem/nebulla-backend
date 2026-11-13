@@ -185,38 +185,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     );
 
-                    // Transparent Exit / Logout Button (EN switch removed per user request)
+                    // Transparent Exit / Logout Button (Icon only - text 'تسجيل الخروج' completely removed per user request)
                     final logoutSection = GestureDetector(
                       onTap: _handleLogout,
                       behavior: HitTestBehavior.opaque,
                       child: Container(
-                        height: 38,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                        width: 42,
+                        height: 42,
                         decoration: BoxDecoration(
                           color: Colors.transparent,
-                          borderRadius: BorderRadius.circular(12),
+                          shape: BoxShape.circle,
                           border: Border.all(
                             color: const Color(0xFFCBD5E1),
                             width: 1.4,
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.logout_rounded,
-                                color: Color(0xFFEF4444), size: 17),
-                            const SizedBox(width: 5),
-                            Text(
-                              LocaleService.instance.translate('logout'),
-                              style: const TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF0F172A),
-                              ),
-                            ),
-                          ],
+                        child: const Icon(
+                          Icons.logout_rounded,
+                          color: Color(0xFFEF4444),
+                          size: 20,
                         ),
                       ),
                     );
