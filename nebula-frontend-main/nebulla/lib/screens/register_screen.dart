@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
 import 'main_shell.dart';
@@ -18,10 +20,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmPasswordCtrl = TextEditingController();
+  final _securityAnswerCtrl = TextEditingController();
+
+  File? _profileImage;
+  final ImagePicker _picker = ImagePicker();
 
   bool _loading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _showQuestions = false;
+
+  String _selectedInteractionStyle = 'نصي وصوتي';
+  String _selectedInterestDomain = 'البرمجة والتقنية';
 
   @override
   void dispose() {
@@ -29,7 +39,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmPasswordCtrl.dispose();
+    _securityAnswerCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickProfileImage() async {
+    try {
+      final picked = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 600,
+        maxHeight: 600,
+        imageQuality: 85,
+      );
+      if (picked != null && mounted) {
+        setState(() => _profileImage = File(picked.path));
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorSnackbar(context, 'تعذر اختيار الصورة: $e');
+      }
+    }
   }
 
   Future<void> _submitRegister() async {
@@ -189,6 +218,85 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    // Profile Picture Picker
+                                    Center(
+                                      child: GestureDetector(
+                                        onTap: _pickProfileImage,
+                                        child: Stack(
+                                          children: [
+                                            Container(
+                                              width: 84,
+                                              height: 84,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: const Color(0xFFF1F5F9),
+                                                border: Border.all(
+                                                  color: const Color(0xFF00B4D8),
+                                                  width: 2.2,
+                                                ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: const Color(0xFF00B4D8)
+                                                        .withValues(alpha: 0.2),
+                                                    blurRadius: 10,
+                                                    offset: const Offset(0, 4),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: ClipOval(
+                                                child: _profileImage != null
+                                                    ? Image.file(
+                                                        _profileImage!,
+                                                        fit: BoxFit.cover,
+                                                      )
+                                                    : const Icon(
+                                                        Icons.person_rounded,
+                                                        size: 46,
+                                                        color: Color(0xFF94A3B8),
+                                                      ),
+                                              ),
+                                            ),
+                                            Positioned(
+                                              bottom: 0,
+                                              right: 0,
+                                              child: Container(
+                                                width: 28,
+                                                height: 28,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: const Color(0xFF00B4D8),
+                                                  border: Border.all(
+                                                    color: Colors.white,
+                                                    width: 2,
+                                                  ),
+                                                ),
+                                                child: const Icon(
+                                                  Icons.camera_alt_rounded,
+                                                  size: 14,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Center(
+                                      child: Text(
+                                        _profileImage != null
+                                            ? 'تم اختيار الصورة الشخصية'
+                                            : 'إضافة صورة شخصية',
+                                        style: const TextStyle(
+                                          fontFamily: 'Cairo',
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF0284C7),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 18),
+
                                     // 1. Full Name (الاسم الكامل)
                                     _buildFieldLabel(
                                       title: 'الاسم الكامل',
@@ -305,6 +413,264 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         }
                                         return null;
                                       },
+                                    ),
+                                    const SizedBox(height: 16),
+
+                                    // 5. Expandable Onboarding Questionnaire (أسئلة التخصيص والذكاء الاصطناعي)
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF8FAFC),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: _showQuestions
+                                              ? const Color(0xFF00B4D8)
+                                              : const Color(0xFFE2E8F0),
+                                          width: 1.4,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          InkWell(
+                                            onTap: () {
+                                              setState(() => _showQuestions = !_showQuestions);
+                                            },
+                                            borderRadius: BorderRadius.circular(16),
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 14,
+                                                vertical: 12,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Container(
+                                                    width: 34,
+                                                    height: 34,
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFFE0F2FE),
+                                                      borderRadius: BorderRadius.circular(10),
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.psychology_rounded,
+                                                      color: Color(0xFF0284C7),
+                                                      size: 20,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 10),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        const Text(
+                                                          'أسئلة تخصيص الذكاء الاصطناعي',
+                                                          style: TextStyle(
+                                                            fontFamily: 'Cairo',
+                                                            fontSize: 13,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Color(0xFF0F172A),
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          _showQuestions
+                                                              ? 'اضغط للإغلاق'
+                                                              : 'اضغط للإجابة عن أسئلة التخصيص',
+                                                          style: const TextStyle(
+                                                            fontFamily: 'Cairo',
+                                                            fontSize: 11,
+                                                            color: Color(0xFF64748B),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  Icon(
+                                                    _showQuestions
+                                                        ? Icons.keyboard_arrow_up_rounded
+                                                        : Icons.keyboard_arrow_down_rounded,
+                                                    color: const Color(0xFF0284C7),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          if (_showQuestions) ...[
+                                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                                            Padding(
+                                              padding: const EdgeInsets.all(14),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  // Q1: أسلوب التفاعل
+                                                  const Text(
+                                                    '1. ما هو أسلوب التفاعل المفضل لديك؟',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Cairo',
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Color(0xFF1E293B),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Wrap(
+                                                    spacing: 8,
+                                                    runSpacing: 6,
+                                                    children: [
+                                                      'نصي وصوتي',
+                                                      'صوتي تفاعلي',
+                                                      'نصي فقط',
+                                                      'موجز وسريع',
+                                                    ].map((opt) {
+                                                      final sel = _selectedInteractionStyle == opt;
+                                                      return ChoiceChip(
+                                                        label: Text(
+                                                          opt,
+                                                          style: TextStyle(
+                                                            fontFamily: 'Cairo',
+                                                            fontSize: 11.5,
+                                                            fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                                                            color: sel ? Colors.white : const Color(0xFF334155),
+                                                          ),
+                                                        ),
+                                                        selected: sel,
+                                                        selectedColor: const Color(0xFF00B4D8),
+                                                        backgroundColor: Colors.white,
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius: BorderRadius.circular(10),
+                                                          side: BorderSide(
+                                                            color: sel ? const Color(0xFF00B4D8) : const Color(0xFFCBD5E1),
+                                                          ),
+                                                        ),
+                                                        onSelected: (_) {
+                                                          setState(() => _selectedInteractionStyle = opt);
+                                                        },
+                                                      );
+                                                    }).toList(),
+                                                  ),
+                                                  const SizedBox(height: 14),
+
+                                                  // Q2: مجال الاهتمام
+                                                  const Text(
+                                                    '2. ما هو مجال اهتمامك الأساسي؟',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Cairo',
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Color(0xFF1E293B),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Wrap(
+                                                    spacing: 8,
+                                                    runSpacing: 6,
+                                                    children: [
+                                                      'البرمجة والتقنية',
+                                                      'الأكاديميا والبحث',
+                                                      'الأعمال والإدارة',
+                                                      'مساعد شخصي عام',
+                                                    ].map((opt) {
+                                                      final sel = _selectedInterestDomain == opt;
+                                                      return ChoiceChip(
+                                                        label: Text(
+                                                          opt,
+                                                          style: TextStyle(
+                                                            fontFamily: 'Cairo',
+                                                            fontSize: 11.5,
+                                                            fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                                                            color: sel ? Colors.white : const Color(0xFF334155),
+                                                          ),
+                                                        ),
+                                                        selected: sel,
+                                                        selectedColor: const Color(0xFF00B4D8),
+                                                        backgroundColor: Colors.white,
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius: BorderRadius.circular(10),
+                                                          side: BorderSide(
+                                                            color: sel ? const Color(0xFF00B4D8) : const Color(0xFFCBD5E1),
+                                                          ),
+                                                        ),
+                                                        onSelected: (_) {
+                                                          setState(() => _selectedInterestDomain = opt);
+                                                        },
+                                                      );
+                                                    }).toList(),
+                                                  ),
+                                                  const SizedBox(height: 14),
+
+                                                  // Q3: معلومة أو سؤال للذاكرة
+                                                  const Text(
+                                                    '3. معلومة شخصية تريد من المساعد حفظها بذاكرته:',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Cairo',
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Color(0xFF1E293B),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  TextFormField(
+                                                    controller: _securityAnswerCtrl,
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Cairo',
+                                                      fontSize: 12,
+                                                      color: Color(0xFF1E293B),
+                                                    ),
+                                                    decoration: InputDecoration(
+                                                      hintText: 'مثال: مشروعي الأساسي هو تخرج روبوت نيبولا',
+                                                      hintStyle: const TextStyle(
+                                                        fontFamily: 'Cairo',
+                                                        fontSize: 11,
+                                                        color: Color(0xFF94A3B8),
+                                                      ),
+                                                      filled: true,
+                                                      fillColor: Colors.white,
+                                                      contentPadding: const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 10,
+                                                      ),
+                                                      border: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(10),
+                                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                                      ),
+                                                      enabledBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(10),
+                                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                                      ),
+                                                      focusedBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(10),
+                                                        borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 10),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFFEFF6FF),
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                    child: const Row(
+                                                      children: [
+                                                        Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF2563EB)),
+                                                        SizedBox(width: 6),
+                                                        Expanded(
+                                                          child: Text(
+                                                            'سيتم ربط ومزامنة هذه الإجابات تلقائياً مع نموذج الباك إند والذاكرة الدائمة.',
+                                                            style: TextStyle(
+                                                              fontFamily: 'Cairo',
+                                                              fontSize: 10.5,
+                                                              color: Color(0xFF1E40AF),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
                                     ),
                                     const SizedBox(height: 24),
 

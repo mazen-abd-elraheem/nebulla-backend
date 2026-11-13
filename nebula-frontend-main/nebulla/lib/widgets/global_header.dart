@@ -208,15 +208,6 @@ class GlobalNebulaHeader extends StatelessWidget {
                               letterSpacing: -0.2,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Container(
-                            width: 7,
-                            height: 7,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF10B981), // Online dot
-                              shape: BoxShape.circle,
-                            ),
-                          ),
                         ],
                       ),
                       Text(
