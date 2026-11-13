@@ -3,11 +3,11 @@ import 'package:flutter/services.dart';
 import '../services/storage_service.dart';
 import '../services/locale_service.dart';
 import '../widgets/common_widgets.dart';
-import 'login_screen.dart';
 import 'language_appearance_screen.dart';
 import 'notification_preferences_screen.dart';
 import 'security_2fa_screen.dart';
 import 'data_privacy_screen.dart';
+import 'main_shell.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -115,16 +115,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _handleLogout() async {
-    await StorageService.instance.clearToken();
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -135,20 +125,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             children: [
-              // 1. Top Header Bar matching Image 1
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'الملف الشخصي',
-                    style: TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF0F172A),
+              // 1. Top Header Bar:
+              // Arabic: Menu on LEFT, Exit & Actions on RIGHT.
+              // English: Swaps between Menu (RIGHT) and Exit & Actions (LEFT).
+              Builder(
+                builder: (context) {
+                  final isArabic = LocaleService.instance.isArabic;
+
+                  final menuBtn = InkWell(
+                    onTap: () => MainShell.openSideMenu(context),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A), // Black background
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.15),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.menu_rounded,
+                        size: 20,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  Row(
+                  );
+
+                  final actionsSection = Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       _buildTopIconButton(
                         icon: Icons.notifications_none_rounded,
@@ -173,15 +183,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         },
                       ),
                       const SizedBox(width: 8),
-                      _buildTopIconButton(
-                        icon: Icons.person_rounded,
-                        color: const Color(0xFF006677),
-                        bgColor: const Color(0xFFE0F7FA),
-                        onTap: _showEditProfileDialog,
+                      // Exit / Back button with arrow
+                      InkWell(
+                        onTap: () {
+                          if (Navigator.canPop(context)) {
+                            Navigator.pop(context);
+                          } else {
+                            MainShell.navigateTo(context, 0);
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.15),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            isArabic
+                                ? Icons.arrow_forward_rounded
+                                : Icons.arrow_back_rounded,
+                            size: 20,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ],
-                  ),
-                ],
+                  );
+
+                  final leftSide = isArabic ? menuBtn : actionsSection;
+                  final rightSide = isArabic ? actionsSection : menuBtn;
+
+                  return Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Row(
+                      children: [
+                        leftSide,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            LocaleService.instance.translate('nav_profile'),
+                            textAlign:
+                                isArabic ? TextAlign.right : TextAlign.left,
+                            style: const TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        rightSide,
+                      ],
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 18),
 
@@ -511,41 +576,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 20),
 
-              // 6. Logout Button (Black background)
-              GestureDetector(
-                onTap: _handleLogout,
-                child: Container(
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A), // Black background
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.14),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.logout_rounded,
-                          color: Color(0xFFF87171), size: 19),
-                      const SizedBox(width: 8),
-                      Text(
-                        LocaleService.instance.translate('logout'),
-                        style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
               const SizedBox(height: 100), // padding for bottom nav
             ],
           ),

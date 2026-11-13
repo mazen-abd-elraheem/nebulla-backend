@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/nebula_side_menu.dart';
+import '../services/locale_service.dart';
 import 'face_registration_screen.dart';
 import 'signals_screen.dart';
 
@@ -879,109 +880,137 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     );
   }
 
-  /// Header Row: "تحليل حالة hardware" on the right, "متصل بالشبكة / LIVE" badge on the left
+  /// Header Row: Menu on LEFT, Exit & Status on RIGHT in Arabic; swapped in English
   Widget _buildPageHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
+    final locale = LocaleService.instance;
+    final isArabic = locale.isArabic;
+
+    final menuBtn = InkWell(
+      onTap: () {
+        NebulaSideMenu.show(context, activeIndex: 4);
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A), // Black background
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Icon(
+          Icons.menu_rounded,
+          size: 20,
+          color: Colors.white,
+        ),
+      ),
+    );
+
+    final statusAndExitSection = Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // Side Menu Hamburger Button
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE0F7FA),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFF7DD3FC),
+              width: 1.1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 6.5,
+                height: 6.5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _networkConnected
+                      ? const Color(0xFF00B4D8)
+                      : const Color(0xFFF59E0B),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                _networkConnected
+                    ? (isArabic ? 'متصل بالشبكة' : 'Online')
+                    : (isArabic ? 'وضع محلي' : 'Offline'),
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0369A1),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
         InkWell(
           onTap: () {
-            NebulaSideMenu.show(context, activeIndex: 4);
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            }
           },
           borderRadius: BorderRadius.circular(12),
           child: Container(
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFF0F172A), // Black background
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            child: const Icon(
-              Icons.menu_rounded,
+            child: Icon(
+              isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
               size: 20,
-              color: Color(0xFF1E293B),
+              color: Colors.white,
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-
-        // Right (RTL): Title "تحليل حالة hardware"
-        const Flexible(
-          child: Text(
-            'تحليل حالة hardware',
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontFamily: 'Cairo',
-              fontSize: 23,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF0F172A),
-              height: 1.2,
-            ),
-          ),
-        ),
-
-        const SizedBox(width: 8),
-
-        // Left (RTL): Network status pill ("متصل بالشبكة" + "LIVE") with readable contrast
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE0F7FA),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: const Color(0xFF7DD3FC),
-                  width: 1.1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 6.5,
-                    height: 6.5,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _networkConnected
-                          ? const Color(0xFF00B4D8)
-                          : const Color(0xFFF59E0B),
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    _networkConnected ? 'متصل بالشبكة' : 'وضع محلي',
-                    style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0369A1),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 2),
-            const Padding(
-              padding: EdgeInsets.only(left: 6),
-              child: Text(
-                'LIVE',
-                style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0284C7),
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ),
-          ],
         ),
       ],
+    );
+
+    final leftSide = isArabic ? menuBtn : statusAndExitSection;
+    final rightSide = isArabic ? statusAndExitSection : menuBtn;
+
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Row(
+        children: [
+          leftSide,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              isArabic ? 'تحليل حالة hardware' : 'Hardware Diagnostics',
+              textAlign: isArabic ? TextAlign.right : TextAlign.left,
+              style: const TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF0F172A),
+                height: 1.2,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          rightSide,
+        ],
+      ),
     );
   }
 

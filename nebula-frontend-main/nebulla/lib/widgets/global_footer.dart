@@ -80,30 +80,43 @@ class GlobalNebulaFooter extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Circular Frosted Glass Button matching Screenshot
+                      // Circular Frosted Glass Button matching Screenshot exactly
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 46,
-                        height: 46,
+                        width: 48,
+                        height: 48,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: isSelected
-                              ? const Color(0xFF00E5FF).withValues(alpha: 0.24)
-                              : Colors.white.withValues(alpha: 0.18),
+                          gradient: isSelected
+                              ? LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    const Color(0xFF00E5FF).withValues(alpha: 0.38),
+                                    const Color(0xFF0072FF).withValues(alpha: 0.25),
+                                  ],
+                                )
+                              : LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Colors.white.withValues(alpha: 0.85),
+                                    Colors.white.withValues(alpha: 0.55),
+                                  ],
+                                ),
                           border: Border.all(
                             color: isSelected
                                 ? const Color(0xFF00E5FF)
-                                : Colors.white.withValues(alpha: 0.85),
-                            width: isSelected ? 2.0 : 1.4,
+                                : Colors.white.withValues(alpha: 0.95),
+                            width: isSelected ? 2.2 : 1.5,
                           ),
                           boxShadow: [
                             BoxShadow(
                               color: isSelected
-                                  ? const Color(0xFF00E5FF)
-                                      .withValues(alpha: 0.50)
-                                  : Colors.black.withValues(alpha: 0.20),
-                              blurRadius: isSelected ? 14 : 6,
-                              offset: const Offset(0, 2),
+                                  ? const Color(0xFF00E5FF).withValues(alpha: 0.55)
+                                  : Colors.black.withValues(alpha: 0.22),
+                              blurRadius: isSelected ? 14 : 7,
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
@@ -111,9 +124,9 @@ class GlobalNebulaFooter extends StatelessWidget {
                           child: Icon(
                             isSelected ? item.activeIcon : item.icon,
                             color: isSelected
-                                ? const Color(0xFF00E5FF)
-                                : Colors.white,
-                            size: 23,
+                                ? const Color(0xFF0096C7)
+                                : const Color(0xFF0F172A),
+                            size: 24,
                           ),
                         ),
                       ),
@@ -132,9 +145,9 @@ class GlobalNebulaFooter extends StatelessWidget {
                               : Colors.white,
                           shadows: [
                             Shadow(
-                              color: Colors.black.withValues(alpha: 0.75),
-                              blurRadius: 4,
-                              offset: const Offset(0, 1),
+                              color: Colors.black.withValues(alpha: 0.85),
+                              blurRadius: 5,
+                              offset: const Offset(0, 1.5),
                             ),
                           ],
                         ),

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../lib/services/locale_service.dart';
-import '../lib/widgets/global_footer.dart';
-import '../lib/widgets/global_header.dart';
+import 'package:nebulla/services/locale_service.dart';
+import 'package:nebulla/widgets/global_footer.dart';
+import 'package:nebulla/widgets/global_header.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

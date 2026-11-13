@@ -7,7 +7,6 @@ import 'diagnostics_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/nebula_side_menu.dart';
 import '../widgets/global_footer.dart';
-import '../services/locale_service.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key, this.initialIndex = 0});
@@ -51,27 +50,15 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _openDrawer() {
-    final isArabic = LocaleService.instance.isArabic;
-    if (isArabic) {
-      _shellScaffoldKey.currentState?.openEndDrawer();
-    } else {
-      _shellScaffoldKey.currentState?.openDrawer();
-    }
+    _shellScaffoldKey.currentState?.openEndDrawer();
   }
 
   void _closeDrawer() {
-    final isArabic = LocaleService.instance.isArabic;
-    if (isArabic) {
-      _shellScaffoldKey.currentState?.closeEndDrawer();
-    } else {
-      _shellScaffoldKey.currentState?.closeDrawer();
-    }
+    _shellScaffoldKey.currentState?.closeEndDrawer();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isArabic = LocaleService.instance.isArabic;
-
     final screens = [
       DashboardScreen(onNavigate: _onNavigate),
       ChatScreen(onNavigate: _onNavigate),
@@ -81,9 +68,8 @@ class _MainShellState extends State<MainShell> {
       const SettingsScreen(),
     ];
 
-    // Reusable Sidebar guaranteed to be on the LEFT side:
-    // In RTL (Arabic), endDrawer opens from LEFT.
-    // In LTR (English), drawer opens from LEFT.
+    // Sidebar: In RTL (Arabic) endDrawer opens from LEFT.
+    // In LTR (English) endDrawer opens from RIGHT.
     final sidebarDrawer = Drawer(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -100,8 +86,7 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       key: _shellScaffoldKey,
       backgroundColor: Colors.white,
-      drawer: isArabic ? null : sidebarDrawer,
-      endDrawer: isArabic ? sidebarDrawer : null,
+      endDrawer: sidebarDrawer,
       body: Stack(
         children: [
           // Current active screen

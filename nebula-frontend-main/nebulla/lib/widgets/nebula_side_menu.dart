@@ -34,8 +34,9 @@ class NebulaSideMenu extends StatelessWidget {
       barrierColor: Colors.black.withValues(alpha: 0.4),
       transitionDuration: const Duration(milliseconds: 260),
       transitionBuilder: (context, anim1, anim2, child) {
+        final isArabic = LocaleService.instance.isArabic;
         final slide = Tween<Offset>(
-          begin: const Offset(-1.0, 0.0),
+          begin: Offset(isArabic ? -1.0 : 1.0, 0.0),
           end: Offset.zero,
         ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic));
 
@@ -46,7 +47,7 @@ class NebulaSideMenu extends StatelessWidget {
       },
       pageBuilder: (context, anim1, anim2) {
         return Directionality(
-          textDirection: TextDirection.rtl,
+          textDirection: LocaleService.instance.textDirection,
           child: Material(
             color: Colors.transparent,
             child: NebulaSideMenu(
@@ -115,9 +116,11 @@ class NebulaSideMenu extends StatelessWidget {
               ),
             ),
 
-            // Left-aligned Side Menu Card (matching mockup Image 3)
+            // Side Menu Card: Left in Arabic, Right in English
             Align(
-              alignment: Alignment.centerLeft,
+              alignment: locale.isArabic
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
               child: Container(
                 width: 310,
                 height: double.infinity,
@@ -364,24 +367,6 @@ class NebulaSideMenu extends StatelessWidget {
                                 isActive: activeIndex == 0,
                                 badgeText: activeIndex == 0 ? t('active_badge') : null,
                                 onTap: () => _handleItemTap(context, 0), // Dashboard
-                              ),
-                              const SizedBox(height: 9),
-
-                              // Sign In
-                              _InteractiveMenuButton(
-                                icon: Icons.login_rounded,
-                                title: t('login'),
-                                hasArrow: true,
-                                onTap: () => _handleItemTap(context, -1),
-                              ),
-                              const SizedBox(height: 9),
-
-                              // Create Account
-                              _InteractiveMenuButton(
-                                icon: Icons.person_add_alt_1_rounded,
-                                title: t('create_account'),
-                                badgeText: t('new_badge'),
-                                onTap: () => _handleItemTap(context, -2),
                               ),
                               const SizedBox(height: 9),
 

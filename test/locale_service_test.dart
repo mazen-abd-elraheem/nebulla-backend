@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../lib/services/locale_service.dart';
+import 'package:nebulla/services/locale_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

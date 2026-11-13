@@ -6,6 +6,8 @@ import '../services/nebula_repository.dart';
 import '../services/avatar_audio_service.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/interactive_animated_avatar.dart';
+import '../services/locale_service.dart';
+import 'main_shell.dart';
 
 class ChatScreen extends StatefulWidget {
   final ValueChanged<int>? onNavigate;
@@ -341,11 +343,76 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Top App Bar matching mockup 100%:
-  /// Right: Arrow pointing right `→` (Back in RTL), Center: Logo Avatar with cyan ring + Title + متصل الآن, Left: 3 vertical dots
+  /// Top App Bar:
+  /// - Arabic: Menu on the LEFT, Exit Arrow on the RIGHT.
+  /// - English: Swaps between Menu (RIGHT) and Exit Arrow (LEFT).
+  /// - 'المساعد الذكي' completely removed as requested.
   Widget _buildTopAppBar() {
+    final locale = LocaleService.instance;
+    final isArabic = locale.isArabic;
+    final t = locale.translate;
+
+    final menuBtn = InkWell(
+      onTap: () => MainShell.openSideMenu(context),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A), // Black background
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Icon(
+          Icons.menu_rounded,
+          size: 20,
+          color: Colors.white,
+        ),
+      ),
+    );
+
+    final exitBtn = InkWell(
+      onTap: () {
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        } else {
+          widget.onNavigate?.call(0); // return to dashboard
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A), // Black background
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Icon(
+          isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
+          size: 20,
+          color: Colors.white,
+        ),
+      ),
+    );
+
+    final leftSide = isArabic ? menuBtn : exitBtn;
+    final rightSide = isArabic ? exitBtn : menuBtn;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -353,165 +420,92 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
       child: Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: TextDirection.ltr,
         child: Row(
           children: [
-            // Right: Back arrow pointing right (Strictly points RIGHT → towards edge of screen)
-            InkWell(
-              onTap: () {
-                if (Navigator.canPop(context)) {
-                  Navigator.pop(context);
-                } else {
-                  widget.onNavigate?.call(0); // return to dashboard
-                }
-              },
-              borderRadius: BorderRadius.circular(20),
-              child: const Padding(
-                padding: EdgeInsets.all(4),
-                child: Icon(
-                  Icons.arrow_forward_rounded,
-                  textDirection: TextDirection.ltr, // Prevents RTL auto-flip, guarantees pointing RIGHT → (لبرة)
-                  color: Color(0xFF1E293B),
-                  size: 26,
-                ),
-              ),
-            ),
+            // Visual Left
+            leftSide,
             const SizedBox(width: 12),
 
-            // Assistant Avatar with cyan glowing ring
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFF0FDFE),
-                border: Border.all(color: const Color(0xFF00E5FF), width: 2.0),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF00E5FF).withValues(alpha: 0.35),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: const Center(
-                child: Icon(
-                  Icons.smart_toy_rounded,
-                  color: Color(0xFF0096C7),
-                  size: 22,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-
-            // Title + "متصل الآن" with vibrant cyan dot
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _assistantName,
-                  style: const TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF0F172A),
-                    height: 1.2,
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+            // Center Branding ('المساعد الذكي' removed)
+            Expanded(
+              child: Directionality(
+                textDirection: locale.textDirection,
+                child: Row(
                   children: [
+                    // Robot Avatar with cyan glowing ring
                     Container(
-                      width: 7,
-                      height: 7,
-                      decoration: const BoxDecoration(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Color(0xFF00C7E5),
+                        color: const Color(0xFFF0FDFE),
+                        border: Border.all(
+                            color: const Color(0xFF00E5FF), width: 1.8),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.smart_toy_rounded,
+                          color: Color(0xFF0096C7),
+                          size: 20,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 5),
-                    const Text(
-                      'متصل الآن',
-                      style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0096C7),
-                      ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          t('brand_name'),
+                          style: const TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF0F172A),
+                            height: 1.2,
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color(0xFF10B981),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              t('online_now'),
+                              style: const TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0096C7),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
 
-            const Spacer(),
-
-            // Left: Three vertical dots menu
-            PopupMenuButton<String>(
-              icon: const Icon(
-                Icons.more_vert_rounded,
-                color: Color(0xFF334155),
-                size: 24,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              onSelected: (val) {
-                if (val == 'new') _startNewSession();
-                if (val == 'clear') setState(() => _messages.clear());
-              },
-              itemBuilder: (ctx) => [
-                const PopupMenuItem(
-                  value: 'new',
-                  child: Directionality(
-                    textDirection: TextDirection.rtl,
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.refresh_rounded,
-                          size: 18,
-                          color: Color(0xFF0096C7),
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'جلسة جديدة',
-                          style: TextStyle(fontFamily: 'Cairo'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'clear',
-                  child: Directionality(
-                    textDirection: TextDirection.rtl,
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.delete_outline_rounded,
-                          size: 18,
-                          color: Color(0xFFEF4444),
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'مسح الرسائل',
-                          style: TextStyle(fontFamily: 'Cairo'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            // Visual Right
+            rightSide,
           ],
         ),
       ),
     );
   }
 
-  /// Sub-Header Card matching mockup 100%:
-  /// Right: Male Cyborg Face avatar + Title "المساعد الذكي" + "متصل الآن - استجابة فورية"
-  /// Left: Filter/Tune icon button + "جلسة جديدة" pill button
+  /// Sub-Header Card:
+  /// Session tags & quick actions with the 3 vertical dots menu placed right beside "جلسة جديدة"
   Widget _buildAssistantSubHeader() {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 6),
@@ -529,57 +523,62 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
       child: Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: LocaleService.instance.textDirection,
         child: Row(
           children: [
-            // Right: Cyborg Face Avatar
+            // Cyborg Face Avatar
             _buildCyborgAvatarCircle(radius: 22),
             const SizedBox(width: 10),
 
-            // Assistant Name and Status
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _assistantName,
-                  style: const TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF0F172A),
-                    height: 1.2,
+            // Dynamic User-Chosen Persona Name & Live Status
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _assistantName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                      height: 1.2,
+                    ),
                   ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color(0xFF00C7E5),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFF00C7E5),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Text(
-                      'متصل الآن - استجابة فورية',
-                      style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0096C7),
+                      const SizedBox(width: 4),
+                      Text(
+                        LocaleService.instance.isArabic
+                            ? 'متصل الآن - استجابة فورية'
+                            : 'Online - Instant Response',
+                        style: const TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0096C7),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 8),
 
-            const Spacer(),
-
-            // Left: "جلسة جديدة" pill button + Filter/Tune icon button
+            // Left side in RTL: "جلسة جديدة" + 3-dots popup menu right beside it!
             InkWell(
               onTap: _startNewSession,
               borderRadius: BorderRadius.circular(18),
@@ -593,18 +592,20 @@ class _ChatScreenState extends State<ChatScreen> {
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.restart_alt_rounded,
                       size: 15,
                       color: Color(0xFF0F172A),
                     ),
-                    SizedBox(width: 4),
+                    const SizedBox(width: 4),
                     Text(
-                      'جلسة جديدة',
-                      style: TextStyle(
+                      LocaleService.instance.isArabic
+                          ? 'جلسة جديدة'
+                          : 'New Session',
+                      style: const TextStyle(
                         fontFamily: 'Cairo',
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -617,7 +618,80 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(width: 6),
 
-            // Filter button
+            // 3-dots Menu placed directly beside the session button as requested
+            PopupMenuButton<String>(
+              icon: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: const Icon(
+                  Icons.more_vert_rounded,
+                  size: 18,
+                  color: Color(0xFF475569),
+                ),
+              ),
+              padding: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              onSelected: (val) {
+                if (val == 'new') _startNewSession();
+                if (val == 'clear') setState(() => _messages.clear());
+              },
+              itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'new',
+                  child: Directionality(
+                    textDirection: LocaleService.instance.textDirection,
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.refresh_rounded,
+                          size: 18,
+                          color: Color(0xFF0096C7),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          LocaleService.instance.isArabic
+                              ? 'جلسة جديدة'
+                              : 'New Session',
+                          style: const TextStyle(fontFamily: 'Cairo'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'clear',
+                  child: Directionality(
+                    textDirection: LocaleService.instance.textDirection,
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                          color: Color(0xFFEF4444),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          LocaleService.instance.isArabic
+                              ? 'مسح الرسائل'
+                              : 'Clear Messages',
+                          style: const TextStyle(fontFamily: 'Cairo'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 6),
+
+            // Filter icon button
             Container(
               width: 32,
               height: 32,

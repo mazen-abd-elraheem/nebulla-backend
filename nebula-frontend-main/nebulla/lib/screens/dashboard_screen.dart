@@ -151,137 +151,150 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
 
           // 2. Top Header Bar:
-          // - LEFT: Black Circular Hamburger Menu Button (strictly on the left)
-          // - CENTER: Glowing Green Online Status Dot
-          // - RIGHT: Language Switcher + Black Logout Button (strictly on the right)
+          // - Arabic: Menu on LEFT, Logout on RIGHT.
+          // - English: Swaps between Menu (RIGHT) and Logout (LEFT).
           SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Directionality(
-                  textDirection: TextDirection.ltr, // Enforces Left=Menu, Right=Logout
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // LEFT: Black Circular Hamburger Menu Button
-                      GestureDetector(
-                        onTap: _openMenu,
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0F172A), // Black background
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.18),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.menu_rounded,
-                            color: Colors.white,
-                            size: 22,
-                          ),
-                        ),
-                      ),
+                child: Builder(
+                  builder: (context) {
+                    final isArabic = LocaleService.instance.isArabic;
 
-                      // CENTER: Glowing Green Online Status Dot
-                      Container(
-                        width: 10,
-                        height: 10,
+                    final menuBtn = GestureDetector(
+                      onTap: _openMenu,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        width: 42,
+                        height: 42,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF10B981),
+                          color: const Color(0xFF0F172A), // Black background
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.8),
-                              blurRadius: 10,
-                              spreadRadius: 3,
+                              color: Colors.black.withValues(alpha: 0.18),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),
+                        child: const Icon(
+                          Icons.menu_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                       ),
+                    );
 
-                      // RIGHT: Language Toggle + Black Logout Button
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                    final logoutSection = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Lang Switch Pill
+                        InkWell(
+                          onTap: () => LocaleService.instance.toggleLanguage(),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.95),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.language_rounded,
+                                    size: 14, color: Color(0xFF0284C7)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  isArabic ? 'EN' : 'عربي',
+                                  style: const TextStyle(
+                                    fontFamily: 'Cairo',
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Black Logout Button
+                        GestureDetector(
+                          onTap: _handleLogout,
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            height: 38,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F172A), // Black background
+                              borderRadius: BorderRadius.circular(10),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.15),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.logout_rounded,
+                                    color: Color(0xFFF87171), size: 16),
+                                const SizedBox(width: 5),
+                                Text(
+                                  LocaleService.instance.translate('logout'),
+                                  style: const TextStyle(
+                                    fontFamily: 'Cairo',
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+
+                    final leftSide = isArabic ? menuBtn : logoutSection;
+                    final rightSide = isArabic ? logoutSection : menuBtn;
+
+                    return Directionality(
+                      textDirection: TextDirection.ltr,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Lang Switch Pill
-                          InkWell(
-                            onTap: () => LocaleService.instance.toggleLanguage(),
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.95),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.language_rounded, size: 14, color: Color(0xFF0284C7)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    LocaleService.instance.isArabic ? 'EN' : 'عربي',
-                                    style: const TextStyle(
-                                      fontFamily: 'Cairo',
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF0F172A),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          leftSide,
+                          // CENTER: Glowing Green Online Status Dot
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF10B981)
+                                      .withValues(alpha: 0.8),
+                                  blurRadius: 10,
+                                  spreadRadius: 3,
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 8),
-
-                          // Black Logout Button
-                          GestureDetector(
-                            onTap: _handleLogout,
-                            behavior: HitTestBehavior.opaque,
-                            child: Container(
-                              height: 38,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0F172A), // Black background
-                                borderRadius: BorderRadius.circular(10),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.15),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.logout_rounded, color: Color(0xFFF87171), size: 16),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    LocaleService.instance.translate('logout'),
-                                    style: const TextStyle(
-                                      fontFamily: 'Cairo',
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                          rightSide,
                         ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
             ),
