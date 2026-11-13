@@ -87,6 +87,7 @@ class _DataPrivacyScreenState extends State<DataPrivacyScreen> {
           leading: IconButton(
             icon: const Icon(
               Icons.arrow_forward_ios_rounded,
+              textDirection: TextDirection.ltr,
               color: Color(0xFF1E293B),
               size: 20,
             ),

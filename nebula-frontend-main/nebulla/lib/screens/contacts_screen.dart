@@ -300,6 +300,7 @@ class _ContactsScreenState extends State<ContactsScreen>
                     IconButton(
                       icon: const Icon(
                         Icons.arrow_forward_ios_rounded,
+                        textDirection: TextDirection.ltr,
                         color: AppColors.textPrimary,
                         size: 20,
                       ),

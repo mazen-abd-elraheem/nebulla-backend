@@ -583,6 +583,7 @@ class _PersonalityFormScreenState extends State<PersonalityFormScreen> {
                       onTap: () => Navigator.pop(context),
                       child: const Icon(
                         Icons.arrow_forward_ios_rounded,
+                        textDirection: TextDirection.ltr,
                         color: AppColors.teal,
                         size: 20,
                       ),

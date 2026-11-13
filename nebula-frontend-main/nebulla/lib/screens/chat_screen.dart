@@ -95,7 +95,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _loadActivePersonality() async {
     try {
       final personalities = await _repo.getPersonalities();
-      final active = personalities.where((p) => p.isActive).firstOrNull ??
+      final active =
+          personalities.where((p) => p.isActive).firstOrNull ??
           personalities.firstOrNull;
       if (active != null && mounted) {
         setState(() {
@@ -156,16 +157,18 @@ class _ChatScreenState extends State<ChatScreen> {
         personalityId: _activePersonalityId,
       );
 
-      final reply = data['reply'] as String? ??
-          data['response'] as String? ??
-          '';
+      final reply =
+          data['reply'] as String? ?? data['response'] as String? ?? '';
       _sessionId = data['session_id'] as String? ?? _sessionId;
       final emotion = data['emotion'] as String?;
       final latency = (data['llm_latency_ms'] as num?)?.toDouble();
 
       // Check if the reply contains numbered points (1, 2, 3...)
       List<String>? parsedSteps;
-      final stepsRegex = RegExp(r'(?:^|\n)\s*(\d+)[\.\-\)]\s*(.+)', multiLine: true);
+      final stepsRegex = RegExp(
+        r'(?:^|\n)\s*(\d+)[\.\-\)]\s*(.+)',
+        multiLine: true,
+      );
       final matches = stepsRegex.allMatches(reply).toList();
       if (matches.length >= 2) {
         parsedSteps = matches.map((m) => m.group(2)!.trim()).toList();
@@ -177,7 +180,9 @@ class _ChatScreenState extends State<ChatScreen> {
           _ChatMessageItem(
             id: 'a_${DateTime.now().millisecondsSinceEpoch}',
             role: 'assistant',
-            content: reply.isNotEmpty ? reply : 'أهلاً بك! تم استلام رسالتك وأنا معك لمساعدتك.',
+            content: reply.isNotEmpty
+                ? reply
+                : 'أهلاً بك! تم استلام رسالتك وأنا معك لمساعدتك.',
             time: _formatCurrentTime(),
             orderedSteps: parsedSteps,
             emotion: emotion,
@@ -195,7 +200,8 @@ class _ChatScreenState extends State<ChatScreen> {
           _ChatMessageItem(
             id: 'a_${DateTime.now().millisecondsSinceEpoch}',
             role: 'assistant',
-            content: 'أهلاً بك! أنا معك وسأساعدك في الإجابة على كل استفساراتك وتنظيم مهامك.',
+            content:
+                'أهلاً بك! أنا معك وسأساعدك في الإجابة على كل استفساراتك وتنظيم مهامك.',
             time: _formatCurrentTime(),
           ),
         );
@@ -349,7 +355,7 @@ class _ChatScreenState extends State<ChatScreen> {
         textDirection: TextDirection.rtl,
         child: Row(
           children: [
-            // Right: Back arrow pointing right (Standard Arabic RTL back)
+            // Right: Back arrow pointing right (Strictly points RIGHT → towards edge of screen)
             InkWell(
               onTap: () {
                 if (Navigator.canPop(context)) {
@@ -363,6 +369,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 padding: EdgeInsets.all(4),
                 child: Icon(
                   Icons.arrow_forward_rounded,
+                  textDirection: TextDirection.ltr, // Prevents RTL auto-flip, guarantees pointing RIGHT → (لبرة)
                   color: Color(0xFF1E293B),
                   size: 26,
                 ),
@@ -377,10 +384,7 @@ class _ChatScreenState extends State<ChatScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: const Color(0xFFF0FDFE),
-                border: Border.all(
-                  color: const Color(0xFF00E5FF),
-                  width: 2.0,
-                ),
+                border: Border.all(color: const Color(0xFF00E5FF), width: 2.0),
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFF00E5FF).withValues(alpha: 0.35),
@@ -462,9 +466,16 @@ class _ChatScreenState extends State<ChatScreen> {
                     textDirection: TextDirection.rtl,
                     child: Row(
                       children: [
-                        Icon(Icons.refresh_rounded, size: 18, color: Color(0xFF0096C7)),
+                        Icon(
+                          Icons.refresh_rounded,
+                          size: 18,
+                          color: Color(0xFF0096C7),
+                        ),
                         SizedBox(width: 8),
-                        Text('جلسة جديدة', style: TextStyle(fontFamily: 'Cairo')),
+                        Text(
+                          'جلسة جديدة',
+                          style: TextStyle(fontFamily: 'Cairo'),
+                        ),
                       ],
                     ),
                   ),
@@ -475,10 +486,16 @@ class _ChatScreenState extends State<ChatScreen> {
                     textDirection: TextDirection.rtl,
                     child: Row(
                       children: [
-                        Icon(Icons.delete_outline_rounded,
-                            size: 18, color: Color(0xFFEF4444)),
+                        Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                          color: Color(0xFFEF4444),
+                        ),
                         SizedBox(width: 8),
-                        Text('مسح الرسائل', style: TextStyle(fontFamily: 'Cairo')),
+                        Text(
+                          'مسح الرسائل',
+                          style: TextStyle(fontFamily: 'Cairo'),
+                        ),
                       ],
                     ),
                   ),
@@ -566,7 +583,10 @@ class _ChatScreenState extends State<ChatScreen> {
               onTap: _startNewSession,
               borderRadius: BorderRadius.circular(18),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(18),
@@ -637,10 +657,7 @@ class _ChatScreenState extends State<ChatScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: const Color(0xFFF1F5F9),
-              border: Border.all(
-                color: const Color(0xFFE2E8F0),
-                width: 1.4,
-              ),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.4),
             ),
             clipBehavior: Clip.antiAlias,
             child: Image.asset(
@@ -695,9 +712,7 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: InteractiveAnimatedAvatar(
-                      onAvatarTapped: () {},
-                    ),
+                    child: InteractiveAnimatedAvatar(onAvatarTapped: () {}),
                   ),
                   Positioned(
                     top: 14,
@@ -716,8 +731,11 @@ class _ChatScreenState extends State<ChatScreen> {
                             shape: BoxShape.circle,
                             border: Border.all(color: const Color(0xFFE2E8F0)),
                           ),
-                          child: const Icon(Icons.close_rounded,
-                              size: 20, color: Color(0xFF475569)),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 20,
+                            color: Color(0xFF475569),
+                          ),
                         ),
                       ),
                     ),
@@ -737,16 +755,19 @@ class _ChatScreenState extends State<ChatScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
-        crossAxisAlignment:
-            isUser ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+        crossAxisAlignment: isUser
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.end,
         children: [
           // Date / Time badge for welcome message: "اليوم، 10:30 ص"
           if (msg.isWelcome)
             Center(
               child: Container(
                 margin: const EdgeInsets.only(top: 4, bottom: 12),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFECEFF8),
                   borderRadius: BorderRadius.circular(16),
@@ -767,8 +788,9 @@ class _ChatScreenState extends State<ChatScreen> {
           Directionality(
             textDirection: TextDirection.rtl,
             child: Row(
-              mainAxisAlignment:
-                  isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+              mainAxisAlignment: isUser
+                  ? MainAxisAlignment.end
+                  : MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Assistant Avatar on the Right in RTL
@@ -786,7 +808,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     decoration: BoxDecoration(
                       color: isUser
-                          ? const Color(0xFF0D52FE) // Royal electric blue in mockup
+                          ? const Color(
+                              0xFF0D52FE,
+                            ) // Royal electric blue in mockup
                           : Colors.white,
                       borderRadius: BorderRadius.circular(20),
                       border: isUser
@@ -815,7 +839,9 @@ class _ChatScreenState extends State<ChatScreen> {
                             fontFamily: 'Cairo',
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
-                            color: isUser ? Colors.white : const Color(0xFF0F172A),
+                            color: isUser
+                                ? Colors.white
+                                : const Color(0xFF0F172A),
                             height: 1.55,
                           ),
                         ),
@@ -876,8 +902,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               action.contains('أفكار')
                                   ? Icons.lightbulb_outline_rounded
                                   : action.contains('كتابة')
-                                      ? Icons.edit_note_rounded
-                                      : Icons.article_outlined,
+                                  ? Icons.edit_note_rounded
+                                  : Icons.article_outlined,
                               size: 15,
                               color: const Color(0xFF0284C7),
                             ),
@@ -951,8 +977,13 @@ class _ChatScreenState extends State<ChatScreen> {
                           // Copy text icon
                           InkWell(
                             onTap: () {
-                              Clipboard.setData(ClipboardData(text: msg.content));
-                              showSuccessSnackbar(context, 'تم نسخ الرسالة إلى الحافظة');
+                              Clipboard.setData(
+                                ClipboardData(text: msg.content),
+                              );
+                              showSuccessSnackbar(
+                                context,
+                                'تم نسخ الرسالة إلى الحافظة',
+                              );
                             },
                             borderRadius: BorderRadius.circular(16),
                             child: const Padding(
@@ -1144,7 +1175,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildModernInputBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.transparent, // Transparent bar background so the white pill floats beautifully
+      color: Colors
+          .transparent, // Transparent bar background so the white pill floats beautifully
       child: Directionality(
         textDirection: TextDirection.rtl,
         child: Row(
@@ -1235,7 +1267,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 10,
+                            ),
                             isDense: true,
                           ),
                           onSubmitted: (_) => _sendMessage(),
