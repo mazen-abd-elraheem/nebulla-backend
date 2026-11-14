@@ -93,6 +93,22 @@ async def upload_voice_sample(
         personality.voice_sample_path = path
         await db.commit()
 
+    # Automatically enroll speaker voiceprint for continuous voice verification
+    try:
+        from app.services.voice_verification.speaker_service import get_speaker_service
+        spk_svc = get_speaker_service()
+        raw_audio = Path(path).read_bytes()
+        speaker_label = getattr(personality, "name", "المالك الأصلي") if personality else "المالك الأصلي"
+        await spk_svc.enroll(
+            db,
+            user_id=personality.user_id if personality else 1,
+            speaker_name=speaker_label,
+            audio_data=raw_audio,
+        )
+        logger.info(f"Auto-enrolled voiceprint for {speaker_label} (personality {personality_id})")
+    except Exception as spk_err:
+        logger.warning(f"Note on auto-enrolling speaker voiceprint: {spk_err}")
+
     return {"message": "تم حفظ عينة الصوت واستنساخها بنجاح", "path": path, "personality_id": personality_id}
 
 

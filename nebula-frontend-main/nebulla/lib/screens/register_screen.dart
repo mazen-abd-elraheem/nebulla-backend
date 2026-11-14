@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
-import 'main_shell.dart';
 import 'login_screen.dart';
+import 'onboarding_wizard_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -91,7 +91,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const MainShell()),
+        MaterialPageRoute(builder: (_) => const OnboardingWizardScreen()),
         (route) => false,
       );
     } catch (e) {

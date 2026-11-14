@@ -27,6 +27,8 @@ class _ChatMessageItem {
   final String? emotion;
   final double? latencyMs;
   final bool isWelcome;
+  final String? verifiedSpeaker;
+  final bool isVoiceMessage;
 
   _ChatMessageItem({
     required this.id,
@@ -38,6 +40,8 @@ class _ChatMessageItem {
     this.emotion,
     this.latencyMs,
     this.isWelcome = false,
+    this.verifiedSpeaker,
+    this.isVoiceMessage = false,
   });
 }
 
@@ -195,7 +199,11 @@ class _ChatScreenState extends State<ChatScreen> {
     return includePeriod ? '$hour:$minute $period' : '$hour:$minute';
   }
 
-  Future<void> _sendMessage([String? presetText]) async {
+  Future<void> _sendMessage([
+    String? presetText,
+    String? verifiedSpeaker,
+    bool isVoiceMessage = false,
+  ]) async {
     final text = (presetText ?? _inputCtrl.text).trim();
     if (text.isEmpty || _sending) return;
 
@@ -213,6 +221,8 @@ class _ChatScreenState extends State<ChatScreen> {
           role: 'user',
           content: text,
           time: userTime,
+          verifiedSpeaker: verifiedSpeaker,
+          isVoiceMessage: isVoiceMessage,
         ),
       );
       _sending = true;
@@ -316,13 +326,39 @@ class _ChatScreenState extends State<ChatScreen> {
       final fileName = result.first.name;
 
       if (!mounted) return;
-      showSuccessSnackbar(context, 'جاري معالجة الصوت: $fileName');
+      showSuccessSnackbar(context, 'جاري معالجة وبصمة الصوت: $fileName...');
+
+      // 1. Identify Speaker via Biometrics
+      String? verifiedSpeaker;
+      try {
+        final idRes = await _repo.identifySpeaker(file);
+        final speaker = idRes['speaker'] as String? ?? idRes['name'] as String?;
+        final confidence = (idRes['confidence'] as num?)?.toDouble() ?? 0.0;
+        if (speaker != null && speaker != 'unknown' && speaker != 'مجهول') {
+          final pct = (confidence * 100).toInt();
+          verifiedSpeaker = '$speaker ($pct%)';
+        }
+      } catch (_) {}
+
+      // 2. Transcribe Audio via STT
+      String? transcript;
+      try {
+        transcript = await _repo.transcribeAudio(file);
+      } catch (_) {}
+
+      final messageText = (transcript != null && transcript.trim().isNotEmpty)
+          ? transcript.trim()
+          : '🎙️ [رسالة صوتية مُسجّلة]';
 
       await _repo.uploadVoiceSampleDefault(file);
       if (!mounted) return;
-      _sendMessage('مرحباً نيبولا! تم استلام رسالتي الصوتية بنجاح.');
+      _sendMessage(
+        messageText,
+        verifiedSpeaker,
+        true,
+      );
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'تعذر التقاط الصوت: $e');
+      if (mounted) showErrorSnackbar(context, 'تعذر معالجة الصوت: $e');
     }
   }
 
@@ -923,20 +959,47 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
 
-          // Message Row
-          Directionality(
-            textDirection: TextDirection.rtl,
-            child: Row(
-              mainAxisAlignment: isUser
-                  ? MainAxisAlignment.end
-                  : MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Assistant Avatar on the Right in RTL
-                if (!isUser) ...[
-                  _buildCyborgAvatarCircle(radius: 19),
-                  const SizedBox(width: 10),
-                ],
+          // Biometric voice verification badge for verified user voice
+          if (isUser && msg.verifiedSpeaker != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6, right: 4),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF86EFAC), width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.verified_user_rounded, size: 13, color: Color(0xFF16A34A)),
+                    const SizedBox(width: 5),
+                    Text(
+                      'تم التحقق من نبرة الصوت: ${msg.verifiedSpeaker} ✓',
+                      style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF15803D),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Message Bubble Row
+          Row(
+            mainAxisAlignment:
+                isUser ? MainAxisAlignment.start : MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Assistant Avatar on the Left (RTL side)
+              if (!isUser) ...[
+                _buildCyborgAvatarCircle(radius: 19),
+                const SizedBox(width: 10),
+              ],
 
                 // Bubble container
                 Flexible(

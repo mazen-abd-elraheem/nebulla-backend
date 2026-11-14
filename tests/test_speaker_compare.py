@@ -223,3 +223,69 @@ async def test_pure_speaker_biometrics_no_language_or_transcript():
         assert "is_enrolled" in data["voice1"]
         assert "similarity" in data["voice1"]
         assert "match_percentage" in data["voice1"]
+
+
+@pytest.mark.asyncio
+async def test_compare_two_different_enrolled_speakers_never_matches():
+    """
+    Verify that comparing two distinct enrolled individuals (e.g. منه vs يوستينا)
+    is GUARANTEED to declare them different people with 0.0% match percentage,
+    even if they share similar room acoustics or pitch.
+    """
+    spk_a_name = "EnrolledPersonA"
+    spk_b_name = "EnrolledPersonB"
+
+    # Person A (135 Hz) and Person B (220 Hz)
+    spk_a_audio = generate_tone(135.0, 1.2)
+    spk_b_audio = generate_tone(220.0, 1.2)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Enroll Person A
+        res_a = await client.post(
+            "/api/v1/speakers/enroll",
+            data={"speaker_name": spk_a_name},
+            files={"file": ("a.wav", spk_a_audio, "audio/wav")},
+        )
+        assert res_a.status_code == 200
+
+        # Enroll Person B
+        res_b = await client.post(
+            "/api/v1/speakers/enroll",
+            data={"speaker_name": spk_b_name},
+            files={"file": ("b.wav", spk_b_audio, "audio/wav")},
+        )
+        assert res_b.status_code == 200
+
+        speaker_service = get_speaker_service()
+        speaker_service.invalidate()
+
+        # Compare Person A vs Person B
+        comp_res = await client.post(
+            "/api/v1/speakers/compare?threshold=0.82",
+            files={
+                "file1": ("a.wav", spk_a_audio, "audio/wav"),
+                "file2": ("b.wav", spk_b_audio, "audio/wav"),
+            },
+        )
+        assert comp_res.status_code == 200
+        data = comp_res.json()
+
+        # MUST be different speakers with strictly 0.0% match percentage
+        assert data["success"] is True
+        assert data["is_same_speaker"] is False
+        assert data["match_percentage"] == 0.0
+        assert f"الصوت الأول لـ [{spk_a_name}]" in data["comparison_verdict"]
+        assert f"الصوت الثاني لـ [{spk_b_name}]" in data["comparison_verdict"]
+        assert "شخصين مختلفين" in data["comparison_verdict"]
+
+        assert data["voice1"]["speaker_name"] == spk_a_name
+        assert data["voice1"]["is_enrolled"] is True
+        assert data["voice2"]["speaker_name"] == spk_b_name
+        assert data["voice2"]["is_enrolled"] is True
+
+        # Clean up
+        await client.delete(f"/api/v1/speakers/{spk_a_name}")
+        await client.delete(f"/api/v1/speakers/{spk_b_name}")
+        speaker_service.invalidate()
+

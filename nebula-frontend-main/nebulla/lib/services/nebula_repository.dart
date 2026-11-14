@@ -446,4 +446,113 @@ class NebulaRepository {
     }
     return [];
   }
+
+  // ── Speaker Identification & Voiceprint ───────────────────────────────────
+
+  Future<Map<String, dynamic>> enrollSpeaker({
+    required String speakerName,
+    required File audioFile,
+    int? userId,
+  }) async {
+    final fields = <String, String>{'speaker_name': speakerName};
+    if (userId != null) fields['user_id'] = userId.toString();
+    final data = await _api.postMultipart(
+      AppConstants.speakersEnroll,
+      fields,
+      audioFile,
+      'file',
+    );
+    return data is Map<String, dynamic> ? data : {'status': 'success'};
+  }
+
+  Future<Map<String, dynamic>> identifySpeaker(File audioFile) async {
+    try {
+      final data = await _api.postMultipart(
+        AppConstants.speakersIdentify,
+        {},
+        audioFile,
+        'file',
+      );
+      return data is Map<String, dynamic> ? data : {};
+    } catch (e) {
+      return {'status': 'unrecognized', 'speaker': 'مجهول', 'error': e.toString()};
+    }
+  }
+
+  Future<String?> transcribeAudio(File audioFile) async {
+    try {
+      final data = await _api.postMultipart(
+        AppConstants.audioTranscribe,
+        {},
+        audioFile,
+        'file',
+      );
+      if (data is Map<String, dynamic>) {
+        return data['transcription'] as String? ?? data['transcript'] as String?;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> hasClonedVoice({int personalityId = 1}) async {
+    try {
+      final samples = await getVoiceSamples();
+      for (final s in samples) {
+        if (s is Map && (s['personality_id'] == personalityId || s['path'] != null)) {
+          return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> saveKnowledgePerson({
+    required String name,
+    required String relationship,
+    required String tone,
+    String? notes,
+    File? photo,
+    File? voiceSample,
+  }) async {
+    // 1. Create rich structured memory for RAG context
+    final content = StringBuffer();
+    content.writeln('المعارف والعلاقات: الشخصية: $name ($relationship)');
+    content.writeln('أسلوب ونبرة الحديث المتبعة معاه: $tone');
+    if (notes != null && notes.trim().isNotEmpty) {
+      content.writeln('ذكريات وتفاصيل مهمة: ${notes.trim()}');
+    }
+    await addMemory(
+      content.toString(),
+      1,
+      5,
+    );
+
+    // 2. Register in Contacts
+    try {
+      await createContact({
+        'name': name,
+        'relationship': relationship,
+        'notes': 'نبرة الحديث: $tone. ${notes ?? ""}',
+        'aliases': [name, relationship],
+      });
+    } catch (_) {}
+
+    // 3. Register face if photo provided
+    if (photo != null) {
+      try {
+        await registerFace(name, photo);
+      } catch (_) {}
+    }
+
+    // 4. Enroll speaker if voice sample provided
+    if (voiceSample != null) {
+      try {
+        await enrollSpeaker(speakerName: name, audioFile: voiceSample);
+      } catch (_) {}
+    }
+  }
 }
