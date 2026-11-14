@@ -240,20 +240,6 @@ def _build_mel_fbank() -> np.ndarray:
 
 _MEL_FBANK_40 = _build_mel_fbank()
 
-# 192-D Biometric Discriminative Weights:
-# Strongly emphasizes individualized anatomical features (Pitch F0 & LPC Formants)
-# while dampening shared microphone frequency bias (Mel FB, Moments, Contrast).
-_BIOMETRIC_BLOCK_WEIGHTS = np.concatenate([
-    np.full(40, 0.4, dtype=np.float32),  # Mel FB (suppress mic tilt bias)
-    np.full(24, 0.9, dtype=np.float32),  # MFCC
-    np.full(24, 0.7, dtype=np.float32),  # Delta MFCC
-    np.full(24, 2.2, dtype=np.float32),  # LPC Formants (vocal tract anatomy)
-    np.full(24, 2.5, dtype=np.float32),  # Pitch F0 (fundamental vocal folds frequency)
-    np.full(24, 0.4, dtype=np.float32),  # Spectral Contrast (suppress room noise)
-    np.full(16, 0.4, dtype=np.float32),  # Spectral Moments
-    np.full(16, 1.5, dtype=np.float32),  # Quefrency Harmonic Profile
-]).astype(np.float32)
-
 class AcousticVoiceprintBackend:
     """
     High-accuracy, lightweight 192-D acoustic voiceprint encoder using NumPy and SciPy.
@@ -435,8 +421,6 @@ class AcousticVoiceprintBackend:
             u_center(b_moments),   # 16
             u_center(b_cpp),       # 16
         ])
-        # Apply biometric weighting to maximize speaker discrimination and eliminate mic bias
-        vec = vec * _BIOMETRIC_BLOCK_WEIGHTS
         # Total: 40 + 24 + 24 + 24 + 24 + 24 + 16 + 16 = 192 dimensions
         n_full = np.linalg.norm(vec)
         return (vec / n_full).astype(np.float32)
@@ -712,33 +696,22 @@ class SpeakerVerificationService:
     def default_threshold(self) -> float:
         """Adaptive similarity threshold for Egyptian Arabic voice verification."""
         if hasattr(self._backend, "_sb") and not self._backend._sb.available():
-            return 0.85
+            return 0.82
         if isinstance(self._backend, AcousticVoiceprintBackend):
-            return 0.85
+            return 0.82
         return settings.SPEAKER_THRESHOLD_L1
 
     @staticmethod
-    def _calculate_match_percentage(sim: float, threshold: float = 0.85) -> float:
-        """
-        Calibrate raw cosine similarity into an intuitive biometric match percentage [0.0% - 100.0%].
-        - sim < threshold: strictly 0.0% (different person / stranger).
-        - sim == threshold: 70.0% (positive threshold reached).
-        - sim smoothly scales to 95.0% at sim = 0.95.
-        - sim >= 0.98: 98.0% - 99.9% (near-identical high-fidelity recording).
-        """
-        if sim is None or sim <= 0.0 or sim < threshold:
+    def _calculate_match_percentage(sim: float, threshold: float = 0.82) -> float:
+        """Calibrate raw cosine similarity into an intuitive biometric match percentage [0.0% - 100.0%]."""
+        if sim < threshold:
             return 0.0
         if sim >= 1.0:
             return 100.0
-
-        if sim < 0.95:
-            progress = (sim - threshold) / max(0.01, (0.95 - threshold))
-            pct = 70.0 + (progress * 25.0)
-            return round(min(95.0, pct), 1)
-        else:
-            progress = (sim - 0.95) / 0.05
-            pct = 95.0 + (progress * 4.9)
-            return round(min(99.9, pct), 1)
+        # Confirmed match (85.0% to 99.9%)
+        progress = min(1.0, (sim - threshold) / max(0.01, (0.95 - threshold)))
+        pct = 85.0 + (progress * 14.9)
+        return round(min(99.9, pct), 1)
 
     def _compute_fused_score(self, emb: np.ndarray, samples: np.ndarray, entry: _Entry) -> float:
         """Dual-Score Fusion: 80% ECAPA Biometric + 20% VoiceTuT Timbre Alignment."""
