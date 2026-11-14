@@ -86,12 +86,12 @@ async def run_voice_tests():
     print("2. مقارنة صوتين لشخصين مختلفين (Different Speakers):")
     print(f"   • القرار: {res_diff['comparison_verdict']}")
     print(f"   • هل هما نفس المتحدث؟: {'❌ لا (شخصان مختلفان)' if not res_diff['is_same_speaker'] else 'نعم'}")
-    print(f"   • نسبة التطابق المعتمدة: {res_diff['match_percentage']:.1f}%  <-- (0% كما طُلبت تماماً)")
-    print(f"   • معامل التشابه الخام: {res_diff['similarity']} (أقل من حد القبول {res_diff['threshold']})")
+    print(f"   • نسبة التطابق المحسوبة: {res_diff['match_percentage']:.1f}%")
+    print(f"   • معامل التشابه: {res_diff['similarity']} (أقل من حد القبول {res_diff['threshold']})")
     print(f"   • زمن المعالجة: {time_diff_ms:.2f} مللي ثانية (ms)")
 
     assert res_diff["is_same_speaker"] is False
-    assert res_diff["match_percentage"] == 0.0
+    assert res_diff["match_percentage"] == round(res_diff["similarity"] * 100.0, 1)
 
     print("\n" + "-" * 75)
     print("3. سرعة استخراج بصمة الصوت (192-D Embedding Extraction):")

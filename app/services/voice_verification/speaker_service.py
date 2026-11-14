@@ -979,9 +979,9 @@ class SpeakerVerificationService:
             else:
                 # Two distinct enrolled individuals (e.g. منه vs يوستينا)
                 is_same_speaker = False
-                same_match_pct = 0.0
                 sim_12 = min(sim_12, 0.488)
-                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لـ [{best_name2}] (معامل التشابه بينهما: {sim_12:.3f} | نسبة التطابق: 0.0%)."
+                same_match_pct = round(max(0.0, min(100.0, sim_12 * 100.0)), 1)
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لـ [{best_name2}] (معامل التشابه بينهما: {sim_12:.3f} | نسبة التطابق: {same_match_pct:.1f}%)."
 
         elif is_identified1 and not is_identified2:
             # Voice 1 is enrolled as Person A, Voice 2 is not identified in DB.
@@ -991,9 +991,9 @@ class SpeakerVerificationService:
                 comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name1}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
             else:
                 is_same_speaker = False
-                same_match_pct = 0.0
                 sim_12 = min(sim_12, 0.488)
-                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لشخص غير مسجل بالسيستم (معامل التشابه بينهما: {sim_12:.3f} | نسبة التطابق: 0.0%)."
+                same_match_pct = round(max(0.0, min(100.0, sim_12 * 100.0)), 1)
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لـ [{best_name1}] والصوت الثاني لشخص غير مسجل بالسيستم (معامل التشابه بينهما: {sim_12:.3f} | نسبة التطابق: {same_match_pct:.1f}%)."
 
         elif is_identified2 and not is_identified1:
             # Voice 2 is enrolled as Person B, Voice 1 is not identified in DB.
@@ -1003,9 +1003,9 @@ class SpeakerVerificationService:
                 comp_verdict = f"كلا الصوتين ينتميان لنفس الشخص وهو: [{best_name2}] (مسجل في السيستم بنسبة تطابق {same_match_pct:.1f}%)."
             else:
                 is_same_speaker = False
-                same_match_pct = 0.0
                 sim_12 = min(sim_12, 0.488)
-                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لشخص غير مسجل بالسيستم والصوت الثاني لـ [{best_name2}] (معامل التشابه بينهما: {sim_12:.3f} | نسبة التطابق: 0.0%)."
+                same_match_pct = round(max(0.0, min(100.0, sim_12 * 100.0)), 1)
+                comp_verdict = f"الصوتان ينتميان لشخصين مختلفين: الصوت الأول لشخص غير مسجل بالسيستم والصوت الثاني لـ [{best_name2}] (معامل التشابه بينهما: {sim_12:.3f} | نسبة التطابق: {same_match_pct:.1f}%)."
 
         elif is_same_speaker:
             # Neither voice is enrolled in DB, but calibrated acoustic similarity >= thresh
@@ -1013,9 +1013,10 @@ class SpeakerVerificationService:
 
         else:
             # Neither voice is enrolled in DB, and similarity < thresh
-            same_match_pct = 0.0
+            is_same_speaker = False
             sim_12 = min(sim_12, 0.488)
-            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين (معامل التشابه بينهما: {sim_12:.3f} | نسبة التطابق: 0.0%)، وكلاهما غير مسجل في السيستم."
+            same_match_pct = round(max(0.0, min(100.0, sim_12 * 100.0)), 1)
+            comp_verdict = f"الصوتان ينتميان لشخصين مختلفين (معامل التشابه بينهما: {sim_12:.3f} | نسبة التطابق: {same_match_pct:.1f}%)، وكلاهما غير مسجل في السيستم."
 
         # 7. Build Human-Readable Arabic Summary
         summary_lines = [
@@ -1035,7 +1036,7 @@ class SpeakerVerificationService:
             "success": True,
             "is_same_speaker": is_same_speaker,
             "similarity": round(sim_12, 4),
-            "match_percentage": same_match_pct if is_same_speaker else 0.0,
+            "match_percentage": same_match_pct,
             "threshold": thresh,
             "comparison_verdict": comp_verdict,
             "voice1": {

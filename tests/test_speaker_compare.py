@@ -271,10 +271,11 @@ async def test_compare_two_different_enrolled_speakers_never_matches():
         assert comp_res.status_code == 200
         data = comp_res.json()
 
-        # MUST be different speakers with strictly 0.0% match percentage
+        # MUST be different speakers with proportional match percentage from similarity
         assert data["success"] is True
         assert data["is_same_speaker"] is False
-        assert data["match_percentage"] == 0.0
+        assert data["match_percentage"] == round(data["similarity"] * 100.0, 1)
+        assert data["match_percentage"] > 0.0
         assert f"الصوت الأول لـ [{spk_a_name}]" in data["comparison_verdict"]
         assert f"الصوت الثاني لـ [{spk_b_name}]" in data["comparison_verdict"]
         assert "شخصين مختلفين" in data["comparison_verdict"]
