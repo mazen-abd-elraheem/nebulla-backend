@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/nebula_side_menu.dart';
+import '../services/locale_service.dart';
 import 'face_registration_screen.dart';
 import 'signals_screen.dart';
 
@@ -26,7 +27,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   final String _remainingTime = '18h 40m';
   final int _batteryHealth = 100;
   bool _isCharging = true;
-  bool _networkConnected = true;
 
   // Vision unit
   final String _visionResolution = '4K HDR';
@@ -104,16 +104,12 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         _repo.getVoiceSamples().catchError((_) => <dynamic>[]),
       ]);
 
-      final diagStatus = results[0] as Map<String, dynamic>;
       final cals = results[1] as List<CalibrationEntry>;
       final distData = results[2] as Map<String, dynamic>;
       final voiceSamples = results[3] as List<dynamic>;
 
       if (!mounted) return;
       setState(() {
-        _networkConnected =
-            diagStatus['backend'] == 'ok' || diagStatus.isNotEmpty;
-
         // Update Pitch & Yaw from backend calibrations if present
         final pitchCal = cals.where((c) => c.servoId == 1).firstOrNull;
         final yawCal = cals.where((c) => c.servoId == 2).firstOrNull;
@@ -727,7 +723,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 bottom: false,
                 child: Column(
                   children: [
-                    _buildStatusBar(),
                     Expanded(
                       child: Scrollbar(
                         controller: _scrollController,
@@ -805,183 +800,87 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     );
   }
 
-  /// Status Bar: 09:41 on right (RTL start), NEURAL_5G + 96% + battery on left (RTL end)
-  Widget _buildStatusBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 6, 18, 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Right side in RTL: Time 09:41
-          const Text(
-            '09:41',
-            style: TextStyle(
-              fontFamily: 'Cairo',
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
-            ),
-          ),
+  /// Header Row: Menu on LEFT, Exit on RIGHT in Arabic; swapped in English
+  Widget _buildPageHeader() {
+    final locale = LocaleService.instance;
+    final isArabic = locale.isArabic;
 
-          // Left side in RTL: Signal + NEURAL_5G + 96% + Battery icon
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.signal_cellular_alt_rounded,
-                size: 15,
-                color: Color(0xFF00B4D8),
-              ),
-              const SizedBox(width: 5),
-              const Text(
-                'NEURAL_5G',
-                style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF64748B),
-                  letterSpacing: 0.3,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '$_batteryPercent%',
-                style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Container(
-                width: 22,
-                height: 11,
-                padding: const EdgeInsets.all(1.5),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(3.5),
-                  border: Border.all(
-                    color: const Color(0xFF475569),
-                    width: 1.2,
-                  ),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981),
-                    borderRadius: BorderRadius.circular(1.5),
-                  ),
-                ),
-              ),
-            ],
+    final menuBtn = InkWell(
+      onTap: () {
+        NebulaSideMenu.show(context, activeIndex: 4);
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFCBD5E1),
+            width: 1.4,
           ),
-        ],
+        ),
+        child: const Icon(
+          Icons.menu_rounded,
+          size: 20,
+          color: Color(0xFF0F172A),
+        ),
       ),
     );
-  }
 
-  /// Header Row: "تحليل حالة hardware" on the right, "متصل بالشبكة / LIVE" badge on the left
-  Widget _buildPageHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Side Menu Hamburger Button
-        InkWell(
-          onTap: () {
-            NebulaSideMenu.show(context, activeIndex: 4);
-          },
+    final exitBtn = InkWell(
+      onTap: () {
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: const Icon(
-              Icons.menu_rounded,
-              size: 20,
-              color: Color(0xFF1E293B),
-            ),
+          border: Border.all(
+            color: const Color(0xFFCBD5E1),
+            width: 1.4,
           ),
         ),
-        const SizedBox(width: 8),
+        child: Icon(
+          isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
+          size: 20,
+          color: const Color(0xFF0F172A),
+        ),
+      ),
+    );
 
-        // Right (RTL): Title "تحليل حالة hardware"
-        const Flexible(
-          child: Text(
-            'تحليل حالة hardware',
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontFamily: 'Cairo',
-              fontSize: 23,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF0F172A),
-              height: 1.2,
+    final leftSide = isArabic ? menuBtn : exitBtn;
+    final rightSide = isArabic ? exitBtn : menuBtn;
+
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Row(
+        children: [
+          leftSide,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              isArabic ? 'تحليل الحالة' : 'Diagnostics',
+              textAlign: isArabic ? TextAlign.right : TextAlign.left,
+              style: const TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF0F172A),
+                height: 1.2,
+              ),
             ),
           ),
-        ),
-
-        const SizedBox(width: 8),
-
-        // Left (RTL): Network status pill ("متصل بالشبكة" + "LIVE") with readable contrast
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE0F7FA),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: const Color(0xFF7DD3FC),
-                  width: 1.1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 6.5,
-                    height: 6.5,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _networkConnected
-                          ? const Color(0xFF00B4D8)
-                          : const Color(0xFFF59E0B),
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    _networkConnected ? 'متصل بالشبكة' : 'وضع محلي',
-                    style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0369A1),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 2),
-            const Padding(
-              padding: EdgeInsets.only(left: 6),
-              child: Text(
-                'LIVE',
-                style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0284C7),
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
+          const SizedBox(width: 10),
+          rightSide,
+        ],
+      ),
     );
   }
 

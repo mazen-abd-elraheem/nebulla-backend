@@ -18,7 +18,16 @@ class ApiService {
   static ApiService? _instance;
   static ApiService get instance => _instance ??= ApiService._();
 
-  String get _base => StorageService.instance.getBaseUrl().replaceAll('localhost', '127.0.0.1');
+  String get _base {
+    final raw = StorageService.instance.getBaseUrl();
+    if (Platform.isAndroid &&
+        (raw.contains('localhost') || raw.contains('127.0.0.1'))) {
+      return raw
+          .replaceAll('localhost', '10.0.2.2')
+          .replaceAll('127.0.0.1', '10.0.2.2');
+    }
+    return raw.replaceAll('localhost', '127.0.0.1');
+  }
   String? get _token => StorageService.instance.getToken();
 
   Map<String, String> get _headers => {

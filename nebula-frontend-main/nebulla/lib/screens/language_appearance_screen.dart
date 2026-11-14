@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/locale_service.dart';
 
 class LanguageAppearanceScreen extends StatefulWidget {
   const LanguageAppearanceScreen({super.key});
@@ -16,9 +17,8 @@ class _LanguageAppearanceScreenState extends State<LanguageAppearanceScreen> {
   // Font size: 0 = Small, 1 = Default, 2 = Large, 3 = Extra Large
   int _fontSizeIndex = 1;
 
-  // Language: 'ar' or 'en'
+  // Language preferences
   bool _autoMatchPhoneLang = false;
-  String _selectedLang = 'ar';
 
   // Regional Preferences
   int _calendarType = 0; // 0 = Gregorian (G), 1 = Hijri (H)
@@ -27,15 +27,19 @@ class _LanguageAppearanceScreenState extends State<LanguageAppearanceScreen> {
   @override
   Widget build(BuildContext context) {
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: LocaleService.instance.textDirection,
       child: Scaffold(
         backgroundColor: const Color(0xFFF8FAFC),
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_forward_ios_rounded,
-                color: Color(0xFF1E293B), size: 20),
+            icon: const Icon(
+              Icons.arrow_forward_ios_rounded,
+              textDirection: TextDirection.ltr,
+              color: Color(0xFF1E293B),
+              size: 20,
+            ),
             onPressed: () => Navigator.of(context).pop(),
           ),
           title: const Text(
@@ -319,8 +323,10 @@ class _LanguageAppearanceScreenState extends State<LanguageAppearanceScreen> {
             _buildLanguageCard(
               title: 'العربية',
               badge: 'ض',
-              isSelected: _selectedLang == 'ar',
-              onTap: () => setState(() => _selectedLang = 'ar'),
+              isSelected: LocaleService.instance.isArabic,
+              onTap: () {
+                LocaleService.instance.setLocale('ar');
+              },
             ),
             const SizedBox(height: 8),
 
@@ -329,8 +335,10 @@ class _LanguageAppearanceScreenState extends State<LanguageAppearanceScreen> {
               title: 'English',
               subtitle: 'United States (LTR)',
               badge: 'EN',
-              isSelected: _selectedLang == 'en',
-              onTap: () => setState(() => _selectedLang = 'en'),
+              isSelected: !LocaleService.instance.isArabic,
+              onTap: () {
+                LocaleService.instance.setLocale('en');
+              },
             ),
             const SizedBox(height: 20),
 
