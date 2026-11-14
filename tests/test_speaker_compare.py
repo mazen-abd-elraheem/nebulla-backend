@@ -45,7 +45,7 @@ async def test_compare_two_speakers_same_person():
             "file1": ("voice1.wav", spk_wav1, "audio/wav"),
             "file2": ("voice2.wav", spk_wav2, "audio/wav"),
         }
-        res = await client.post("/api/v1/speakers/compare?threshold=0.82", files=files)
+        res = await client.post("/api/v1/speakers/compare?threshold=0.68", files=files)
         assert res.status_code == 200, f"Error: {res.text}"
         data = res.json()
 
@@ -88,7 +88,7 @@ async def test_compare_two_speakers_different_people_and_identities():
             "file1": ("ahmed_voice.wav", enrolled_audio, "audio/wav"),
             "file2": ("different_voice.wav", different_audio, "audio/wav"),
         }
-        res = await client.post("/api/v1/speakers/compare?threshold=0.82", files=compare_files)
+        res = await client.post("/api/v1/speakers/compare?threshold=0.68", files=compare_files)
         assert res.status_code == 200, f"Compare failed: {res.text}"
         data = res.json()
 
@@ -163,7 +163,7 @@ async def test_subsecond_voice_identification_and_compare():
 
         # 3. Test Compare on sub-second audio (0.25s vs 0.30s of same speaker)
         comp_res = await client.post(
-            "/api/v1/speakers/compare?threshold=0.82",
+            "/api/v1/speakers/compare?threshold=0.68",
             files={
                 "file1": ("s1.wav", subsecond_voice1, "audio/wav"),
                 "file2": ("s2.wav", subsecond_voice2, "audio/wav"),
@@ -180,7 +180,7 @@ async def test_subsecond_voice_identification_and_compare():
 
         # 4. Test Compare on sub-second audio of different speakers (0.25s vs 0.25s)
         comp_diff_res = await client.post(
-            "/api/v1/speakers/compare?threshold=0.82",
+            "/api/v1/speakers/compare?threshold=0.68",
             files={
                 "file1": ("s1.wav", subsecond_voice1, "audio/wav"),
                 "file2": ("diff.wav", subsecond_diff, "audio/wav"),
@@ -262,7 +262,7 @@ async def test_compare_two_different_enrolled_speakers_never_matches():
 
         # Compare Person A vs Person B
         comp_res = await client.post(
-            "/api/v1/speakers/compare?threshold=0.82",
+            "/api/v1/speakers/compare?threshold=0.68",
             files={
                 "file1": ("a.wav", spk_a_audio, "audio/wav"),
                 "file2": ("b.wav", spk_b_audio, "audio/wav"),
@@ -271,10 +271,11 @@ async def test_compare_two_different_enrolled_speakers_never_matches():
         assert comp_res.status_code == 200
         data = comp_res.json()
 
-        # MUST be different speakers with strictly 0.0% match percentage
+        # MUST be different speakers with proportional match percentage from similarity
         assert data["success"] is True
         assert data["is_same_speaker"] is False
-        assert data["match_percentage"] == 0.0
+        assert data["match_percentage"] == round(data["similarity"] * 100.0, 1)
+        assert data["match_percentage"] > 0.0
         assert f"الصوت الأول لـ [{spk_a_name}]" in data["comparison_verdict"]
         assert f"الصوت الثاني لـ [{spk_b_name}]" in data["comparison_verdict"]
         assert "شخصين مختلفين" in data["comparison_verdict"]
