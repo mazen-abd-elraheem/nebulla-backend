@@ -401,22 +401,27 @@ class FaceService:
 
             match_name = "Unknown"
             similarity = 0.0
+            raw_similarity = 0.0
             is_known = False
 
             if face.embedding is not None and len(self._known_embeddings) > 0:
                 best_name, best_sim = self._match_embedding(face.embedding)
-                similarity = round(float(best_sim), 4)
+                raw_similarity = round(float(best_sim), 4)
                 if best_name and best_sim >= threshold:
                     match_name = best_name
                     is_known = True
+                    similarity = raw_similarity
+                else:
+                    similarity = 0.0
 
-            match_pct = self._calculate_match_percentage(similarity, threshold) if is_known else 0.0
+            match_pct = self._calculate_match_percentage(raw_similarity, threshold) if is_known else 0.0
 
             results.append({
                 "face_index": idx,
                 "name": match_name,
                 "is_known": is_known,
                 "similarity": similarity,
+                "raw_similarity": raw_similarity,
                 "match_percentage": match_pct,
                 "confidence": round(confidence, 4),
                 "bbox": bbox,
@@ -449,6 +454,7 @@ class FaceService:
             return {
                 "is_match": False,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "error": "Could not decode one or both images."
             }
@@ -460,6 +466,7 @@ class FaceService:
             return {
                 "is_match": False,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "error": "No face detected in Image 1."
             }
@@ -467,6 +474,7 @@ class FaceService:
             return {
                 "is_match": False,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "error": "No face detected in Image 2."
             }
@@ -486,6 +494,7 @@ class FaceService:
             return {
                 "is_match": False,
                 "similarity": 0.0,
+                "raw_similarity": 0.0,
                 "match_percentage": 0.0,
                 "error": "Could not extract embeddings for comparison."
             }
@@ -495,12 +504,15 @@ class FaceService:
         best_sim, best_i1, face1, best_i2, face2 = valid_pairs[0]
 
         best_sim = float(best_sim)
+        raw_sim = round(best_sim, 4)
         is_match = bool(best_sim >= threshold)
+        similarity = raw_sim if is_match else 0.0
         match_percentage = self._calculate_match_percentage(best_sim, threshold) if is_match else 0.0
 
         return {
             "is_match": is_match,
-            "similarity": round(best_sim, 4),
+            "similarity": similarity,
+            "raw_similarity": raw_sim,
             "match_percentage": match_percentage,
             "threshold": threshold,
             "face1_confidence": round(float(face1.confidence), 4),
@@ -687,15 +699,19 @@ class FaceService:
             is_known = False
             match_name = "Unknown"
             similarity = 0.0
+            raw_similarity = 0.0
             match_pct = 0.0
 
             if emb is not None and len(self._known_embeddings) > 0:
                 best_name, best_sim = self._match_embedding(emb)
-                similarity = round(float(best_sim), 4)
+                raw_similarity = round(float(best_sim), 4)
                 if best_name and best_sim >= threshold:
                     match_name = best_name
                     is_known = True
-                    match_pct = self._calculate_match_percentage(similarity, threshold)
+                    similarity = raw_similarity
+                    match_pct = self._calculate_match_percentage(raw_similarity, threshold)
+                else:
+                    similarity = 0.0
 
             if is_known:
                 if match_name not in person_stats:
@@ -703,6 +719,7 @@ class FaceService:
                         "name": match_name,
                         "highest_match_percentage": match_pct,
                         "highest_similarity": similarity,
+                        "highest_raw_similarity": raw_similarity,
                         "occurrences": 1,
                         "first_seen": cand["formatted_time"],
                         "last_seen": cand["formatted_time"],
@@ -716,6 +733,7 @@ class FaceService:
                     if match_pct > st["highest_match_percentage"]:
                         st["highest_match_percentage"] = match_pct
                         st["highest_similarity"] = similarity
+                        st["highest_raw_similarity"] = raw_similarity
                     if cand["quality_score"] > st["best_quality_score"]:
                         st["best_quality_score"] = cand["quality_score"]
                         st["best_crop_base64"] = cand["crop_base64"]
@@ -729,6 +747,7 @@ class FaceService:
                 "is_known": is_known,
                 "match_percentage": match_pct,
                 "similarity": similarity,
+                "raw_similarity": raw_similarity,
                 "confidence": cand["confidence"],
                 "sharpness": cand["sharpness"],
                 "bbox": cand["bbox"],
@@ -853,7 +872,9 @@ class FaceService:
                         face_best_cand = cand
 
             face_best_sim = max(0.0, float(face_best_sim))
+            raw_face_sim = round(face_best_sim, 4)
             is_match = bool(face_best_sim >= threshold)
+            face_similarity = raw_face_sim if is_match else 0.0
             match_pct = self._calculate_match_percentage(face_best_sim, threshold) if is_match else 0.0
 
             item = {
@@ -862,7 +883,8 @@ class FaceService:
                 "confidence": round(float(target_face.confidence), 4),
                 "crop_base64": f"data:image/jpeg;base64,{b64_crop}",
                 "is_match": is_match,
-                "similarity": round(face_best_sim, 4),
+                "similarity": face_similarity,
+                "raw_similarity": raw_face_sim,
                 "match_percentage": match_pct,
                 "best_match_timestamp": face_best_cand["formatted_time"] if is_match and face_best_cand else None,
                 "best_match_timestamp_sec": face_best_cand["timestamp_sec"] if is_match and face_best_cand else None,
@@ -876,7 +898,7 @@ class FaceService:
                 overall_best_ref_crop = f"data:image/jpeg;base64,{b64_crop}"
 
         if not ref_faces_results:
-            return {"is_match": False, "match_percentage": 0.0, "error": "Could not extract face embeddings from reference image."}
+            return {"is_match": False, "similarity": 0.0, "raw_similarity": 0.0, "match_percentage": 0.0, "error": "Could not extract face embeddings from reference image."}
 
         # Sort: matched faces first, then by match percentage
         ref_faces_results.sort(key=lambda x: (x["is_match"], x["match_percentage"]), reverse=True)
@@ -885,22 +907,25 @@ class FaceService:
         unmatched_count = len(ref_faces_results) - matched_count
         overall_is_match = bool(matched_count > 0)
         overall_best_sim = max(0.0, float(overall_best_sim))
+        raw_overall_sim = round(overall_best_sim, 4)
+        overall_similarity = raw_overall_sim if overall_is_match else 0.0
         overall_match_pct = self._calculate_match_percentage(overall_best_sim, threshold) if overall_is_match else 0.0
 
         if len(ref_faces_results) > 1:
             if overall_is_match:
                 summary = f"تم العثور على شخص من الصورة داخل مقطع الفيديو بنسبة {overall_match_pct:.1f}%. وباقي الأشخاص في الصورة ({unmatched_count} شخص) لم يظهروا في الفيديو."
             else:
-                summary = f"لم يظهر أي شخص من الأشخاص الموجودين بالصورة ({len(ref_faces_results)} أشخاص) في مقطع الفيديو (نسبة التطابق: 0.0%)."
+                summary = f"لم يظهر أي شخص من الأشخاص الموجودين بالصورة ({len(ref_faces_results)} أشخاص) في مقطع الفيديو (نسبة التطابق: 0.0% | أعلى معامل تشابه خام: {raw_overall_sim:.4f} أقل من حد القبول {threshold})."
         else:
             if overall_is_match:
                 summary = f"تم التطابق بنجاح بنسبة {overall_match_pct:.1f}% عند الدقيقة {overall_best_cand.get('formatted_time', '00:00')}."
             else:
-                summary = f"الشخص الموجود بالصورة لم يتطابق مع أي وجه في الفيديو (نسبة التطابق: 0.0% | أعلى معامل تشابه: {overall_best_sim:.4f} أقل من حد القبول {threshold})."
+                summary = f"الشخص الموجود بالصورة لم يتطابق مع أي وجه في الفيديو (نسبة التطابق: 0.0% | أعلى معامل تشابه خام: {raw_overall_sim:.4f} أقل من حد القبول {threshold})."
 
         res = {
             "is_match": overall_is_match,
-            "similarity": round(overall_best_sim, 4),
+            "similarity": overall_similarity,
+            "raw_similarity": raw_overall_sim,
             "match_percentage": overall_match_pct,
             "threshold": threshold,
             "total_video_faces_checked": len(candidates),

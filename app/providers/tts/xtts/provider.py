@@ -122,22 +122,32 @@ class XTTSProvider(BaseTTSProvider):
     def _ensure_service_running() -> bool:
         if XTTSProvider._is_service_ready():
             return True
-        tut_dir = Path(r"C:\Users\L0Q\Desktop\tut-voice")
-        python_exe = tut_dir / ".venv" / "Scripts" / "python.exe"
-        uvicorn_exe = tut_dir / ".venv" / "Scripts" / "uvicorn.exe"
+        tut_dirs = [
+            Path(getattr(settings, "TUT_VOICE_DIR", "tut-voice")),
+            Path.home() / "Desktop" / "tut-voice",
+            Path(r"C:\Users\L0Q\Desktop\tut-voice"),
+        ]
         cmd = None
-        if python_exe.exists():
-            cmd = [str(python_exe), "-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8001"]
-        elif uvicorn_exe.exists():
-            cmd = [str(uvicorn_exe), "server:app", "--host", "127.0.0.1", "--port", "8001"]
+        chosen_dir = None
+        for td in tut_dirs:
+            python_exe = td / ".venv" / "Scripts" / "python.exe"
+            uvicorn_exe = td / ".venv" / "Scripts" / "uvicorn.exe"
+            if python_exe.exists():
+                cmd = [str(python_exe), "-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8001"]
+                chosen_dir = td
+                break
+            elif uvicorn_exe.exists():
+                cmd = [str(uvicorn_exe), "server:app", "--host", "127.0.0.1", "--port", "8001"]
+                chosen_dir = td
+                break
 
-        if cmd:
+        if cmd and chosen_dir:
             try:
                 import subprocess
                 logger.info("Auto-starting VoiceTut GPU microservice on http://127.0.0.1:8001 ...")
                 subprocess.Popen(
                     cmd,
-                    cwd=str(tut_dir),
+                    cwd=str(chosen_dir),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -200,6 +210,7 @@ class XTTSProvider(BaseTTSProvider):
             candidate_paths = [
                 Path(getattr(settings, "VOICETUT_MODEL_PATH", "models/voicetut-tts")),
                 Path("models/voicetut-tts"),
+                Path.home() / "Desktop" / "tut-voice" / "models" / "voicetut-tts",
                 Path(r"D:\models\voicetut-tts"),
                 Path(r"C:\Users\L0Q\Desktop\tut-voice\models\voicetut-tts"),
             ]

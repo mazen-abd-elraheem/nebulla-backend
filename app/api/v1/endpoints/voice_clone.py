@@ -93,6 +93,22 @@ async def upload_voice_sample(
         personality.voice_sample_path = path
         await db.commit()
 
+    # Automatically enroll speaker voiceprint for continuous voice verification
+    try:
+        from app.services.voice_verification.speaker_service import get_speaker_service
+        spk_svc = get_speaker_service()
+        raw_audio = Path(path).read_bytes()
+        speaker_label = getattr(personality, "name", "المالك الأصلي") if personality else "المالك الأصلي"
+        await spk_svc.enroll(
+            db,
+            user_id=personality.user_id if personality else 1,
+            speaker_name=speaker_label,
+            audio_data=raw_audio,
+        )
+        logger.info(f"Auto-enrolled voiceprint for {speaker_label} (personality {personality_id})")
+    except Exception as spk_err:
+        logger.warning(f"Note on auto-enrolling speaker voiceprint: {spk_err}")
+
     return {"message": "تم حفظ عينة الصوت واستنساخها بنجاح", "path": path, "personality_id": personality_id}
 
 
@@ -219,6 +235,22 @@ async def synthesize(
 
     if target_pid is None and body.personality_id is not None and body.personality_id > 0:
         target_pid = body.personality_id
+
+    if target_pid is None and _user:
+        try:
+            from app.db.session import AsyncSessionLocal
+            from app.models.personality import Personality
+            u_id = int(_user) if str(_user).isdigit() else None
+            if u_id:
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(
+                        select(Personality).where(Personality.user_id == u_id, Personality.is_active == True)
+                    )
+                    up = res.scalar_one_or_none()
+                    if up and svc.has_voice_sample(up.id):
+                        target_pid = up.id
+        except Exception:
+            pass
 
     if target_pid is None:
         target_pid = 1
