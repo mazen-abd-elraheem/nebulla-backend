@@ -8,7 +8,7 @@ Optimizes Database Vectors & Retrieval Performance with Full Thread Safety:
 - Non-blocking search_async offloading vector operations to worker threads.
 - Metadata filtering (by personality_id, person_name, source).
 - Automatically backfills missing embeddings in SQLite on startup.
-- Strictly deterministic vector operations (NO fallback models).
+- Strictly deterministic vector operations.
 """
 
 import asyncio

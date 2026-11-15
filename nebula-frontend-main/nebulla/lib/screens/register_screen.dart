@@ -44,6 +44,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final ImagePicker _picker = ImagePicker();
 
   // Step 2: Onboarding Questionnaire
+
   final _securityAnswerCtrl = TextEditingController();
   String _selectedInteractionStyle = 'نصي وصوتي';
   String _selectedInterestDomain = 'البرمجة والتقنية';
@@ -1138,10 +1139,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           decoration: BoxDecoration(
             color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: const Color(0xFF00B4D8),
-              width: 1.4,
-            ),
+            border: Border.all(color: const Color(0xFF00B4D8), width: 1.4),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1187,207 +1185,205 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                      // Q1: أسلوب التفاعل
-                      const Text(
-                        '1. ما هو أسلوب التفاعل المفضل لديك؟',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
-                        ),
+                    // Q1: أسلوب التفاعل
+                    const Text(
+                      '1. ما هو أسلوب التفاعل المفضل لديك؟',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children:
-                            [
-                              'نصي وصوتي',
-                              'صوتي تفاعلي',
-                              'نصي فقط',
-                              'موجز وسريع',
-                            ].map((opt) {
-                              final sel = _selectedInteractionStyle == opt;
-                              return ChoiceChip(
-                                label: Text(
-                                  opt,
-                                  style: TextStyle(
-                                    fontFamily: 'Cairo',
-                                    fontSize: 11.5,
-                                    fontWeight: sel
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: sel
-                                        ? Colors.white
-                                        : const Color(0xFF334155),
-                                  ),
-                                ),
-                                selected: sel,
-                                selectedColor: const Color(0xFF00B4D8),
-                                backgroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  side: BorderSide(
-                                    color: sel
-                                        ? const Color(0xFF00B4D8)
-                                        : const Color(0xFFCBD5E1),
-                                  ),
-                                ),
-                                onSelected: (_) {
-                                  setState(
-                                    () => _selectedInteractionStyle = opt,
-                                  );
-                                },
-                              );
-                            }).toList(),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Q2: مجال الاهتمام
-                      const Text(
-                        '2. ما هو مجال اهتمامك الأساسي؟',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children:
-                            [
-                              'البرمجة والتقنية',
-                              'الأكاديميا والبحث',
-                              'الأعمال والإدارة',
-                              'مساعد شخصي عام',
-                            ].map((opt) {
-                              final sel = _selectedInterestDomain == opt;
-                              return ChoiceChip(
-                                label: Text(
-                                  opt,
-                                  style: TextStyle(
-                                    fontFamily: 'Cairo',
-                                    fontSize: 11.5,
-                                    fontWeight: sel
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: sel
-                                        ? Colors.white
-                                        : const Color(0xFF334155),
-                                  ),
-                                ),
-                                selected: sel,
-                                selectedColor: const Color(0xFF00B4D8),
-                                backgroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  side: BorderSide(
-                                    color: sel
-                                        ? const Color(0xFF00B4D8)
-                                        : const Color(0xFFCBD5E1),
-                                  ),
-                                ),
-                                onSelected: (_) {
-                                  setState(() => _selectedInterestDomain = opt);
-                                },
-                              );
-                            }).toList(),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Q3: معلومة أو سؤال للذاكرة
-                      const Text(
-                        '3. معلومة شخصية تريد من المساعد حفظها بذاكرته:',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _securityAnswerCtrl,
-                        style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          color: Color(0xFF1E293B),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'مثال: مشروعي الأساسي هو تخرج روبوت نيبولا',
-                          hintStyle: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 11,
-                            color: Color(0xFF94A3B8),
-                          ),
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(
-                              color: Color(0xFFCBD5E1),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(
-                              color: Color(0xFFCBD5E1),
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF00B4D8),
-                              width: 1.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline_rounded,
-                              size: 14,
-                              color: Color(0xFF2563EB),
-                            ),
-                            SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'سيتم حفظ هذه الإجابات ومزامنتها تلقائياً مع ذاكرة RAG الدائمة.',
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children:
+                          [
+                            'نصي وصوتي',
+                            'صوتي تفاعلي',
+                            'نصي فقط',
+                            'موجز وسريع',
+                          ].map((opt) {
+                            final sel = _selectedInteractionStyle == opt;
+                            return ChoiceChip(
+                              label: Text(
+                                opt,
                                 style: TextStyle(
                                   fontFamily: 'Cairo',
-                                  fontSize: 10.5,
-                                  color: Color(0xFF1E40AF),
+                                  fontSize: 11.5,
+                                  fontWeight: sel
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: sel
+                                      ? Colors.white
+                                      : const Color(0xFF334155),
                                 ),
                               ),
-                            ),
-                          ],
+                              selected: sel,
+                              selectedColor: const Color(0xFF00B4D8),
+                              backgroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: BorderSide(
+                                  color: sel
+                                      ? const Color(0xFF00B4D8)
+                                      : const Color(0xFFCBD5E1),
+                                ),
+                              ),
+                              onSelected: (_) {
+                                setState(() => _selectedInteractionStyle = opt);
+                              },
+                            );
+                          }).toList(),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Q2: مجال الاهتمام
+                    const Text(
+                      '2. ما هو مجال اهتمامك الأساسي؟',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children:
+                          [
+                            'البرمجة والتقنية',
+                            'الأكاديميا والبحث',
+                            'الأعمال والإدارة',
+                            'مساعد شخصي عام',
+                          ].map((opt) {
+                            final sel = _selectedInterestDomain == opt;
+                            return ChoiceChip(
+                              label: Text(
+                                opt,
+                                style: TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontSize: 11.5,
+                                  fontWeight: sel
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: sel
+                                      ? Colors.white
+                                      : const Color(0xFF334155),
+                                ),
+                              ),
+                              selected: sel,
+                              selectedColor: const Color(0xFF00B4D8),
+                              backgroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: BorderSide(
+                                  color: sel
+                                      ? const Color(0xFF00B4D8)
+                                      : const Color(0xFFCBD5E1),
+                                ),
+                              ),
+                              onSelected: (_) {
+                                setState(() => _selectedInterestDomain = opt);
+                              },
+                            );
+                          }).toList(),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Q3: معلومة أو سؤال للذاكرة
+                    const Text(
+                      '3. معلومة شخصية تريد من المساعد حفظها بذاكرته:',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _securityAnswerCtrl,
+                      style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 12,
+                        color: Color(0xFF1E293B),
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'مثال: مشروعي الأساسي هو تخرج روبوت نيبولا',
+                        hintStyle: const TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 11,
+                          color: Color(0xFF94A3B8),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF00B4D8),
+                            width: 1.5,
+                          ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            size: 14,
+                            color: Color(0xFF2563EB),
+                          ),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'سيتم حفظ هذه الإجابات ومزامنتها تلقائياً مع ذاكرة RAG الدائمة.',
+                              style: TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 10.5,
+                                color: Color(0xFF1E40AF),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+        ),
         const SizedBox(height: 24),
 
         // Submit and Proceed Button

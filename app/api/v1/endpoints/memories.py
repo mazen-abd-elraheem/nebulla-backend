@@ -47,9 +47,9 @@ class MemoryCreate(BaseModel):
 
             # Sanitize personality_id
             pid = data.get("personality_id")
-            if pid in ("", "string", "null", 0, "0", None):
+            if pid in ("", "string", "null", "none", None):
                 data["personality_id"] = None
-            elif isinstance(pid, str):
+            elif isinstance(pid, (int, str)):
                 try:
                     data["personality_id"] = int(pid)
                 except ValueError:
@@ -57,13 +57,53 @@ class MemoryCreate(BaseModel):
 
             # Sanitize importance
             imp = data.get("importance")
-            if imp in ("", "string", "null", None):
+            if imp in ("", "string", "null", "none", None):
                 data["importance"] = 5
-            elif isinstance(imp, str):
+            elif isinstance(imp, (int, str)):
                 try:
                     data["importance"] = int(imp)
                 except ValueError:
                     data["importance"] = 5
+        return data
+
+
+class MemoryUpdate(BaseModel):
+    content: Optional[str] = Field(default=None, description="Updated factual text")
+    text: Optional[str] = Field(default=None, description="Alias for content")
+    memory: Optional[str] = Field(default=None, description="Alias for content")
+    personality_id: int | str | None = Field(default=None, description="Personality ID")
+    source: Optional[str] = Field(default=None, description="Source of memory")
+    importance: int | str | None = Field(default=None, description="Importance score 1-10")
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            return {"content": data}
+        if isinstance(data, dict):
+            content = data.get("content")
+            if content is None:
+                content = data.get("text") or data.get("memory") or data.get("fact")
+            if content is not None:
+                data["content"] = str(content).strip()
+
+            pid = data.get("personality_id")
+            if pid in ("", "string", "null", "none", None):
+                data["personality_id"] = None
+            elif isinstance(pid, (int, str)):
+                try:
+                    data["personality_id"] = int(pid)
+                except ValueError:
+                    data["personality_id"] = None
+
+            imp = data.get("importance")
+            if imp in ("", "string", "null", "none", None):
+                data["importance"] = None
+            elif isinstance(imp, (int, str)):
+                try:
+                    data["importance"] = int(imp)
+                except ValueError:
+                    data["importance"] = None
         return data
 
 
@@ -79,18 +119,18 @@ class RAGPromptRequest(BaseModel):
     def sanitize(cls, data: Any) -> Any:
         if isinstance(data, dict):
             pid = data.get("personality_id")
-            if pid in ("", "string", "null", 0, "0", None):
+            if pid in ("", "string", "null", "none", None):
                 data["personality_id"] = None
-            elif isinstance(pid, str):
+            elif isinstance(pid, (int, str)):
                 try:
                     data["personality_id"] = int(pid)
                 except ValueError:
                     data["personality_id"] = None
 
             top_k = data.get("top_k")
-            if top_k in ("", "string", "null", None):
+            if top_k in ("", "string", "null", "none", None):
                 data["top_k"] = 5
-            elif isinstance(top_k, str):
+            elif isinstance(top_k, (int, str)):
                 try:
                     data["top_k"] = int(top_k)
                 except ValueError:
@@ -113,7 +153,7 @@ async def list_memories(
         # Unauthenticated: Return global/unassigned memories only
         stmt = stmt.where(Memory.user_id.is_(None))
 
-    if personality_id:
+    if personality_id is not None:
         stmt = stmt.where(Memory.personality_id == personality_id)
     r = await db.execute(stmt)
     return {"memories": [_m(m) for m in r.scalars()]}
@@ -125,6 +165,7 @@ async def add_memory(
     body: Optional[MemoryCreate] = None,
     content: Optional[str] = Query(None, description="Content if provided as query param"),
     personality_id: Optional[int] = Query(None, description="Personality ID query param"),
+    person_name: Optional[str] = Query(None, description="Optional personality/person name to bind memory to"),
     importance: Optional[int] = Query(None, description="Importance query param"),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user_model),
@@ -142,10 +183,10 @@ async def add_memory(
 
     if not actual_content and content:
         actual_content = content.strip()
-        if personality_id is not None:
-            pid = personality_id
-        if importance is not None:
-            imp = importance
+    if pid is None and personality_id is not None:
+        pid = personality_id
+    if importance is not None:
+        imp = importance
 
     if not actual_content:
         raise HTTPException(
@@ -153,10 +194,20 @@ async def add_memory(
             detail="نص المعلومة مينفعش يكون فاضي، اكتب المعلومة اللي عايز تحفظها.",
         )
 
-    if not pid:
+    # Dynamic Personality resolution: if pid is None, check person_name first, else active personality
+    if pid is None and person_name and person_name.strip():
+        clean_p = person_name.strip()
+        p_res = await db.execute(
+            select(Personality.id).where(Personality.name.ilike(f"%{clean_p}%")).limit(1)
+        )
+        matched_id = p_res.scalar_one_or_none()
+        if matched_id is not None:
+            pid = matched_id
+
+    if pid is None:
         res = await db.execute(select(Personality.id).where(Personality.is_active == True).limit(1))  # noqa: E712
         active_id = res.scalar_one_or_none()
-        pid = active_id or 1
+        pid = active_id if active_id is not None else 1
 
     uid = current_user.id if current_user else None
 
@@ -199,7 +250,89 @@ async def add_memory(
     }
 
 
-@router.delete("/{mid}", status_code=204, summary="Delete a memory")
+@router.put("/{mid}", summary="Update a memory")
+@router.patch("/{mid}", summary="Partially update a memory")
+async def update_memory_endpoint(
+    mid: int,
+    body: Optional[MemoryUpdate] = None,
+    content: Optional[str] = Query(None, description="Updated content if provided as query param"),
+    personality_id: Optional[int] = Query(None, description="Personality ID query param"),
+    importance: Optional[int] = Query(None, description="Importance query param"),
+    source: Optional[str] = Query(None, description="Source query param"),
+    db: AsyncSession = Depends(get_db),
+    _u: str | None = Depends(get_optional_user),
+):
+    """
+    Update / Replace an existing memory in both SQLite and In-Memory VectorStore.
+    Re-generates vector embedding if content changed, discarding obsolete knowledge.
+    """
+    mem = await db.get(Memory, mid)
+    if not mem:
+        raise HTTPException(status_code=404, detail="المعلومة دي مش موجودة في الذاكرة.")
+
+    actual_content = None
+    pid = None
+    src = None
+    imp = None
+
+    if body:
+        actual_content = body.content
+        pid = body.personality_id
+        src = body.source
+        imp = body.importance
+
+    if actual_content is None and content:
+        actual_content = content.strip()
+    if pid is None and personality_id is not None:
+        pid = personality_id
+    if src is None and source is not None:
+        src = source
+    if imp is None and importance is not None:
+        imp = importance
+
+    updated_mem = await _rag.update_memory(
+        memory_id=mid,
+        content=actual_content,
+        personality_id=pid,
+        source=src,
+        importance=imp,
+        db=db,
+    )
+    if not updated_mem:
+        raise HTTPException(status_code=404, detail="فشل تحديث المعلومة في الذاكرة.")
+
+    return {
+        "id": updated_mem.id,
+        "content": updated_mem.content,
+        "personality_id": updated_mem.personality_id,
+        "source": updated_mem.source,
+        "importance": updated_mem.importance,
+        "message": "تم تحديث المعلومة واستبدال التضمين القديم في الذاكرة بنجاح.",
+    }
+
+
+class MemoryForgetRequest(BaseModel):
+    query: str = Field(..., description="Query or fact keywords of the memory to forget/delete")
+    personality_id: int | str | None = Field(default=None, description="Optional personality ID filter")
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            return {"query": data}
+        if isinstance(data, dict):
+            pid = data.get("personality_id")
+            if pid in ("", "string", "null", "none", None):
+                data["personality_id"] = None
+            elif isinstance(pid, (int, str)):
+                try:
+                    data["personality_id"] = int(pid)
+                except ValueError:
+                    data["personality_id"] = None
+        return data
+
+
+@router.delete("/{mid}", summary="Delete a memory by ID")
 async def delete_memory(
     mid: int,
     db: AsyncSession = Depends(get_db),
@@ -210,8 +343,56 @@ async def delete_memory(
         raise HTTPException(status_code=404, detail="المعلومة دي مش موجودة في الذاكرة.")
     if current_user and m.user_id and m.user_id != current_user.id and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="مش مسموح لك بحذف ذاكرة مستخدم تاني.")
+    deleted_content = m.content
+    deleted_pid = m.personality_id
     await db.delete(m)
     await db.commit()
+    await _rag.delete_memory(mid, db=db)
+    return {
+        "status": "success",
+        "deleted_id": mid,
+        "personality_id": deleted_pid,
+        "content": deleted_content,
+        "message": f"تم مسح المعلومة رقم {mid} ('{deleted_content}') بنجاح من الذاكرة وقاعدة البيانات.",
+    }
+
+
+@router.post("/forget", summary="Forget/delete memories matching a keyword or phrase")
+async def forget_memory_endpoint(
+    body: MemoryForgetRequest,
+    db: AsyncSession = Depends(get_db),
+    _u: str | None = Depends(get_optional_user),
+):
+    """
+    Search and delete memories matching a fact or query (e.g. 'الكتاب في الصالة').
+    Clears from SQLite and In-Memory VectorStore.
+    """
+    stmt = select(Memory)
+    if body.personality_id is not None:
+        stmt = stmt.where((Memory.personality_id == body.personality_id) | (Memory.personality_id.is_(None)))
+    res = await db.execute(stmt)
+    all_mems = res.scalars().all()
+
+    clean_q = body.query.strip()
+    deleted_items = []
+    for m in all_mems:
+        if _rag._is_conflicting_fact(clean_q, m.content) or clean_q.lower() in m.content.lower():
+            deleted_items.append({"id": m.id, "content": m.content, "personality_id": m.personality_id})
+            await db.delete(m)
+            _rag._vstore.delete(m.id)
+
+    if deleted_items:
+        await db.commit()
+        with RAGService._cache_lock:
+            RAGService._shared_cache.clear()
+
+    return {
+        "status": "success",
+        "query": clean_q,
+        "deleted_count": len(deleted_items),
+        "deleted_memories": deleted_items,
+        "message": f"تم نسيان ومسح {len(deleted_items)} معلومة من الذاكرة بنجاح." if deleted_items else "لم يتم العثور على معلومات تطابق هذا النص لمسحها.",
+    }
 
 
 
@@ -294,8 +475,8 @@ async def build_rag_prompt_endpoint(
 def _m(m: Memory) -> dict:
     return {
         "id": m.id,
-        "content": m.content,
         "personality_id": m.personality_id,
+        "content": m.content,
         "source": m.source,
         "importance": m.importance,
         "created_at": m.created_at.isoformat() if m.created_at else None,

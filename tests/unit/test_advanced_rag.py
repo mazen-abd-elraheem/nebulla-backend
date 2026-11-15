@@ -1,12 +1,12 @@
 """
 Comprehensive Test Suite for Advanced Production-Grade RAG Pipeline.
 
-Tests solutions for all RAG failure modes without Fallback Models:
+Tests solutions for all RAG failure modes:
 1. Lexical BM25 Search with Arabic/Egyptian Normalization
 2. Cross-Encoder & Deep Alignment Re-ranking
 3. Multi-Hop Query Decomposition
 4. Hierarchical Parent-Child Chunking & Table Preservation
-5. Deterministic Fact Verification & Anti-Hallucination Guard (Zero Fallback Model)
+5. Deterministic Fact Verification & Anti-Hallucination Guard
 6. Context Reordering (Lost in the Middle Mitigation)
 7. End-to-End RAG Retrieval with Citation Grounding
 """
@@ -112,7 +112,7 @@ def test_chunker_parent_child_and_table_preservation():
     assert "| ميكروفون |" in table_parents[0].content
 
 
-# ── 5. Fact Verifier & Anti-Hallucination Tests (Zero Fallback) ───────────────
+# ── 5. Fact Verifier & Anti-Hallucination Tests ───────────────────────────────
 
 def test_fact_verifier_refusal_when_context_empty():
     query = "ما هو رقم هاتف مازن؟"
@@ -169,3 +169,35 @@ def test_format_rag_prompt_citations():
     assert "[المصدر 1]" in prompt
     assert "[المصدر 2]" in prompt
     assert "المصادر المعتمدة" in prompt
+
+
+# ── 8. Delete Memory Sync & Selective Person Augmentation Tests ──────────────
+
+@pytest.mark.asyncio
+async def test_rag_delete_memory_syncs_with_vstore():
+    rag = RAGService()
+    vstore = rag._vstore
+    mem = Memory(id=9999, content="معلومة مؤقتة للتجربة")
+    vstore.add_or_update(mem)
+    assert 9999 in vstore._memory_cache
+
+    await rag.delete_memory(9999)
+    assert 9999 not in vstore._memory_cache
+
+
+def test_fact_verifier_sensitive_inquiry_detection():
+    assert FactVerifier.is_sensitive_or_private_inquiry("ما هو رقم هاتف مازن؟") is True
+    assert FactVerifier.is_sensitive_or_private_inquiry("الباسورد السري إيه؟") is True
+    assert FactVerifier.is_sensitive_or_private_inquiry("ما هي عاصمة فرنسا؟") is False
+    assert FactVerifier.is_sensitive_or_private_inquiry("احسب 5 + 5") is False
+
+
+def test_selective_person_augmentation():
+    rag = RAGService()
+    # Query about the robot should NOT be augmented with person name
+    assert rag._should_augment_with_person("كم عدد محركات نيبولا؟", "مازن") is False
+    assert rag._should_augment_with_person("إيه مواصفات كاميرا الروبوت؟", "مازن") is False
+    # Personal query should be augmented
+    assert rag._should_augment_with_person("بيحب يأكل إيه؟", "مازن") is True
+    assert rag._should_augment_with_person("شغال في إيه؟", "مازن") is True
+
