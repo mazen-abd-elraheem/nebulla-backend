@@ -9,8 +9,8 @@ import 'package:file_picker/file_picker.dart';
 import '../services/nebula_repository.dart';
 import '../services/storage_service.dart';
 import '../widgets/common_widgets.dart';
-import 'main_shell.dart';
 import 'login_screen.dart';
+import 'main_shell.dart';
 
 /// 4-Step Multi-Step Registration Wizard
 /// Step 0: البيانات الأساسية (Credentials: الاسم، البريد، كلمة المرور، تأكيد كلمة المرور)

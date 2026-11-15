@@ -103,7 +103,7 @@ async def register_face_from_video(
 )
 async def recognize_people(
     file: UploadFile = File(..., description="Image file containing one or more people"),
-    threshold: float = Query(0.55, ge=0.0, le=1.0, description="Similarity threshold for positive identification (default: 0.55)"),
+    threshold: float = Query(0.60, ge=0.0, le=1.0, description="Similarity threshold for positive identification (default: 0.60)"),
     db: AsyncSession = Depends(get_db),
 ):
     image_bytes = await file.read()
@@ -133,7 +133,7 @@ async def recognize_people(
 async def compare_two_faces(
     image1: UploadFile = File(..., description="First image file"),
     image2: UploadFile = File(..., description="Second image file"),
-    threshold: float = Query(0.55, ge=0.0, le=1.0, description="Match decision threshold (default: 0.55)"),
+    threshold: float = Query(0.60, ge=0.0, le=1.0, description="Match decision threshold (default: 0.60)"),
 ):
     img1_bytes = await image1.read()
     img2_bytes = await image2.read()
@@ -194,7 +194,7 @@ async def extract_faces_from_video(
 )
 async def recognize_people_from_video(
     file: UploadFile = File(..., description="Video file (MP4, MOV, AVI, etc.)"),
-    threshold: float = Query(0.55, ge=0.0, le=1.0, description="Similarity threshold for positive identification (default: 0.55)"),
+    threshold: float = Query(0.60, ge=0.0, le=1.0, description="Similarity threshold for positive identification (default: 0.60)"),
     sample_interval_sec: float = Query(0.5, ge=0.1, le=5.0, description="Interval in seconds between analyzed frames"),
     min_confidence: float = Query(0.60, ge=0.1, le=1.0, description="Minimum face detection confidence score"),
     max_faces: int = Query(30, ge=1, le=100, description="Maximum number of face detections to analyze"),
@@ -228,7 +228,7 @@ async def recognize_people_from_video(
 async def compare_video_to_image(
     video: UploadFile = File(..., description="Video file to search inside"),
     image: UploadFile = File(..., description="Reference photo of the person to find"),
-    threshold: float = Query(0.55, ge=0.0, le=1.0, description="Match decision threshold (default: 0.55)"),
+    threshold: float = Query(0.60, ge=0.0, le=1.0, description="Match decision threshold (default: 0.60)"),
     sample_interval_sec: float = Query(0.5, ge=0.1, le=5.0, description="Sampling interval in seconds"),
 ):
     video_bytes = await video.read()

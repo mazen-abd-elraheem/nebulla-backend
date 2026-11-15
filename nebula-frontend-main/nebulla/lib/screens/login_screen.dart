@@ -1,11 +1,13 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import '../services/nebula_repository.dart';
 import '../services/storage_service.dart';
 import '../widgets/common_widgets.dart';
 import 'main_shell.dart';
+import 'onboarding_wizard_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -68,9 +70,17 @@ class _LoginScreenState extends State<LoginScreen> {
         'نورت يا ${user.fullName}! دخلت على حسابك تمام.',
       );
 
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainShell()),
-      );
+      final hasCloned = await NebulaRepository.instance.hasClonedVoice();
+      if (!mounted) return;
+      if (!hasCloned) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const OnboardingWizardScreen()),
+        );
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const MainShell()),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       showErrorSnackbar(context, 'مش عارفين ندخلك: $e');
@@ -123,9 +133,17 @@ class _LoginScreenState extends State<LoginScreen> {
         'تم التحقق عبر بصمة الوجه بنجاح! مرحباً بك يا ${user.fullName}',
       );
 
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainShell()),
-      );
+      final hasCloned = await NebulaRepository.instance.hasClonedVoice();
+      if (!mounted) return;
+      if (!hasCloned) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const OnboardingWizardScreen()),
+        );
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const MainShell()),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
@@ -258,6 +276,170 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  void _showServerSettingsDialog() {
+    final currentUrl = StorageService.instance.getBaseUrl();
+    final urlCtrl = TextEditingController(text: currentUrl);
+    bool testing = false;
+    String? statusMsg;
+    bool statusOk = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: const Row(
+              children: [
+                Icon(Icons.dns_rounded, color: Color(0xFF0284C7)),
+                SizedBox(width: 8),
+                Text(
+                  'إعدادات السيرفر',
+                  style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'اختر أو الصق رابط السيرفر (سواء كان محلي أو على Railway):',
+                    style: TextStyle(fontFamily: 'Cairo', fontSize: 12.5, color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _serverPresetChip('محلي (PC)', 'http://localhost:8000', urlCtrl, setDialogState),
+                      _serverPresetChip('محاكي أندرويد', 'http://10.0.2.2:8000', urlCtrl, setDialogState),
+                      _serverPresetChip('شبكة محلية (LAN)', 'http://192.168.1.10:8000', urlCtrl, setDialogState),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: urlCtrl,
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.left,
+                    style: const TextStyle(fontFamily: 'Courier', fontSize: 13),
+                    decoration: InputDecoration(
+                      labelText: 'Server Base URL',
+                      hintText: 'https://xxx.up.railway.app',
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (statusMsg != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: statusOk ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: statusOk ? const Color(0xFF86EFAC) : const Color(0xFFFECACA)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(statusOk ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                              size: 16, color: statusOk ? const Color(0xFF16A34A) : const Color(0xFFDC2626)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              statusMsg!,
+                              style: TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 11.5,
+                                color: statusOk ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: testing
+                        ? null
+                        : () async {
+                            setDialogState(() {
+                              testing = true;
+                              statusMsg = null;
+                            });
+                            try {
+                              final testUrl = urlCtrl.text.trim().replaceAll(RegExp(r'/+$'), '');
+                              final res = await http.get(Uri.parse('$testUrl/health')).timeout(const Duration(seconds: 4));
+                              setDialogState(() {
+                                testing = false;
+                                statusOk = res.statusCode >= 200 && res.statusCode < 400;
+                                statusMsg = statusOk ? 'الاتصال بالسيرفر شغال تمام!' : 'رد السيرفر بكود ${res.statusCode}';
+                              });
+                            } catch (e) {
+                              setDialogState(() {
+                                testing = false;
+                                statusOk = false;
+                                statusMsg = 'فشل الاتصال: $e';
+                              });
+                            }
+                          },
+                    icon: testing
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.network_check_rounded, size: 18),
+                    label: const Text('فحص الاتصال بالسيرفر', style: TextStyle(fontFamily: 'Cairo', fontSize: 12)),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final newUrl = urlCtrl.text.trim().replaceAll(RegExp(r'/+$'), '');
+                  if (newUrl.isNotEmpty) {
+                    await StorageService.instance.setBaseUrl(newUrl);
+                  }
+                  if (ctx.mounted) Navigator.of(ctx).pop();
+                  if (mounted && context.mounted) {
+                    showSuccessSnackbar(context, 'تم ضبط عنوان السيرفر إلى: $newUrl');
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F172A),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('حفظ', style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _serverPresetChip(String label, String url, TextEditingController ctrl, StateSetter setDialogState) {
+    return ActionChip(
+      label: Text(label, style: const TextStyle(fontFamily: 'Cairo', fontSize: 11)),
+      onPressed: () {
+        setDialogState(() {
+          ctrl.text = url;
+        });
+      },
+      backgroundColor: const Color(0xFFF1F5F9),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -317,6 +499,51 @@ class _LoginScreenState extends State<LoginScreen> {
                           spreadRadius: 2,
                         ),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Server URL Switcher / Settings (Top Left)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 10, left: 18),
+                  child: InkWell(
+                    onTap: _showServerSettingsDialog,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.dns_rounded, size: 15, color: Color(0xFF0284C7)),
+                          SizedBox(width: 5),
+                          Text(
+                            'السيرفر',
+                            style: TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF334155),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

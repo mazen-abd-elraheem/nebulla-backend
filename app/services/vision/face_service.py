@@ -207,13 +207,13 @@ class FaceService:
             return float(np.dot(v1_arr, v2_arr) / (norm1 * norm2))
 
     @staticmethod
-    def _calculate_match_percentage(sim: float, threshold: float = 0.55) -> float:
+    def _calculate_match_percentage(sim: float, threshold: float = 0.60) -> float:
         """
         Calibrate raw cosine similarity into an intuitive biometric match percentage [0.0% - 100.0%].
         - sim < threshold: strictly 0.0% (different person / stranger).
-        - sim == threshold: 75.0% (positive threshold reached).
-        - sim smoothly scales to 99.0% at sim = 0.85.
-        - sim >= 0.85: 100.0%.
+        - sim == threshold: 70.0% (positive threshold reached).
+        - sim smoothly scales to 95.0% at sim = 0.90.
+        - sim >= 0.95: 98.0% - 99.9% (high-precision match).
         """
         if sim is None or sim <= 0.0 or sim < threshold:
             return 0.0
@@ -221,14 +221,20 @@ class FaceService:
         if sim >= 1.0:
             return 100.0
 
-        # Confirmed match: sim >= threshold
-        top_anchor = max(threshold + 0.25, 0.85)
-        if sim >= top_anchor:
-            return 100.0
-
-        progress = (sim - threshold) / (top_anchor - threshold)
-        pct = 75.0 + (progress * 24.9)
-        return round(min(99.9, pct), 2)
+        # Confirmed match: sim >= threshold (0.60)
+        # Scaled smoothly:
+        # At threshold (e.g. 0.60) -> 70.0%
+        # At 0.75 -> ~82.5%
+        # At 0.90 -> 95.0%
+        # Above 0.95 -> 98.0% - 99.9%
+        if sim < 0.90:
+            progress = (sim - threshold) / max(0.01, (0.90 - threshold))
+            pct = 70.0 + (progress * 25.0)
+            return round(min(95.0, pct), 1)
+        else:
+            progress = (sim - 0.90) / 0.10
+            pct = 95.0 + (progress * 4.9)
+            return round(min(99.9, pct), 1)
 
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -375,7 +381,7 @@ class FaceService:
     # Person Identification / Recognition (تعريف الأشخاص)
     # ──────────────────────────────────────────────────────────────────────────
 
-    async def recognize_faces(self, image_bytes: bytes, threshold: float = 0.55) -> List[Dict[str, Any]]:
+    async def recognize_faces(self, image_bytes: bytes, threshold: float = 0.60) -> List[Dict[str, Any]]:
         """
         Detect all faces in the image and identify each person against registered profiles.
         Returns detailed list of identified faces, bounding boxes, and similarity scores.
@@ -429,7 +435,7 @@ class FaceService:
     # Face-to-Face Comparison (1:1 Verification) (المقارنة بالصور)
     # ──────────────────────────────────────────────────────────────────────────
 
-    async def compare_faces(self, img1_bytes: bytes, img2_bytes: bytes, threshold: float = 0.55) -> Dict[str, Any]:
+    async def compare_faces(self, img1_bytes: bytes, img2_bytes: bytes, threshold: float = 0.60) -> Dict[str, Any]:
         """
         Compare faces in two images and compute cosine similarity.
         Compares all detected face pairs to find the best match.
@@ -641,7 +647,7 @@ class FaceService:
     async def recognize_faces_from_video(
         self,
         video_bytes: bytes,
-        threshold: float = 0.55,
+        threshold: float = 0.60,
         sample_interval_sec: float = 0.5,
         min_confidence: float = 0.60,
         max_faces: int = 30,
@@ -765,7 +771,7 @@ class FaceService:
         self,
         video_bytes: bytes,
         image_bytes: bytes,
-        threshold: float = 0.55,
+        threshold: float = 0.60,
         sample_interval_sec: float = 0.5,
     ) -> Dict[str, Any]:
         """
@@ -1265,7 +1271,7 @@ class FaceService:
     async def annotate_video_file(
         self,
         video_bytes: bytes,
-        threshold: float = 0.55,
+        threshold: float = 0.60,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Process an uploaded video file, annotate every frame with comprehensive HUD,
@@ -1283,7 +1289,7 @@ class FaceService:
     def _annotate_video_file_sync(
         self,
         video_bytes: bytes,
-        threshold: float = 0.55,
+        threshold: float = 0.60,
     ) -> Tuple[str, Dict[str, Any]]:
         """Synchronously render HUD onto every video frame and encode to H.264 MP4."""
         temp_in = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
