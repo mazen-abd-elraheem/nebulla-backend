@@ -133,12 +133,47 @@ async def list_available_voices(
     Returns all cloned voice samples available in the system.
     """
     samples = svc.list_samples()
+    speakers = []
     try:
-        from app.providers.tts.voicetut import VoiceTutProvider
-        speakers = VoiceTutProvider.list_speakers() if hasattr(VoiceTutProvider, "list_speakers") else svc.list_speakers()
+        if hasattr(svc, "list_speakers"):
+            speakers = svc.list_speakers()
+        else:
+            from app.providers.tts.xtts.provider import XTTSProvider
+            speakers = XTTSProvider.list_speakers() if hasattr(XTTSProvider, "list_speakers") else []
     except Exception as exc:
         logger.warning(f"Error fetching voicetut speakers: {exc}")
-        speakers = []
+
+    if not speakers:
+        speakers = [
+            {
+                "id": "mazen",
+                "name": "مازن (Mazen)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": True,
+                "description": "الصوت الافتراضي المصري لموديل VoiceTut",
+            },
+            {
+                "id": "tut",
+                "name": "توت (Tut)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت نيبولا المصري الكلاسيكي",
+            },
+            {
+                "id": "nebula",
+                "name": "نيبولا (Nebula)",
+                "gender": "female",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت الذكاء الاصطناعي لنيبولا",
+            },
+        ]
+
     return {
         "active_provider": settings.TTS_PROVIDER,
         "cloned_samples": samples,
