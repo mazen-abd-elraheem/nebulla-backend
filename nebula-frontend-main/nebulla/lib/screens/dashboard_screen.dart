@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../models/avatar_profile.dart';
 import '../services/avatar_audio_service.dart';
+import '../services/locale_service.dart';
 import '../services/nebula_repository.dart';
+import '../services/storage_service.dart';
+import '../screens/login_screen.dart';
 import '../utils/avatar_photo_picker.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/interactive_animated_avatar.dart';
@@ -52,13 +55,86 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _openMenu() {
     NebulaSideMenu.show(
       context,
-      activeIndex: 0,
+      activeIndex: 2,
       onNavigate: (idx) {
         if (widget.onNavigate != null && idx >= 0) {
           widget.onNavigate!(idx);
         }
       },
     );
+  }
+
+  Future<void> _handleLogout() async {
+    final t = LocaleService.instance.translate;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: LocaleService.instance.textDirection,
+        child: AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            t('logout'),
+            style: const TextStyle(
+              fontFamily: 'Cairo',
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          content: Text(
+            LocaleService.instance.isArabic
+                ? 'هل أنت متأكد من تسجيل الخروج من حسابك؟'
+                : 'Are you sure you want to sign out from your account?',
+            style: const TextStyle(
+              fontFamily: 'Cairo',
+              fontSize: 14,
+              color: Color(0xFF475569),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(
+                t('cancel'),
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F172A),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(
+                t('logout'),
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFEF4444),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await StorageService.instance.clearToken();
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+        );
+      }
+    }
   }
 
   void _triggerAvatarGreeting() {
@@ -182,7 +258,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         backgroundColor: Colors.transparent,
         elevation: 0,
         child: NebulaSideMenu(
-          activeIndex: 0,
+          activeIndex: 2,
           onNavigate: (idx) {
             _scaffoldKey.currentState?.closeDrawer();
             if (widget.onNavigate != null && idx >= 0) {
@@ -306,6 +382,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 },
                                 tooltip: 'الحالة',
                               ),
+                              const SizedBox(width: 8),
+                              _topIconBtn(
+                                icon: Icons.logout_rounded,
+                                onTap: _handleLogout,
+                                tooltip: 'تسجيل الخروج',
+                              ),
                             ],
                           ),
                         ],
@@ -315,12 +397,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
 
-              // 4. Bottom GAGAvatar Studio / Review / Expression Dock
+              // 4. Bottom GAGAvatar Studio / Review / Expression Dock (clears GlobalNebulaFooter)
               SafeArea(
                 child: Align(
                   alignment: Alignment.bottomCenter,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 540),
                       child: _buildBottomDock(

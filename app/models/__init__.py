@@ -18,6 +18,7 @@ from app.models import (
     face_profile,
     user,
     voiceprint,
+    speaker,
 )
 from app.models.action_log import ActionLog
 from app.models.avatar_profile import AvatarProfile
@@ -34,6 +35,7 @@ from app.models.signal import Signal
 from app.models.tracking import TrackingRecord
 from app.models.user import User
 from app.models.voiceprint import Voiceprint
+from app.models.speaker import Speaker
 
 __all__ = [
     "action_log",
@@ -46,6 +48,13 @@ __all__ = [
     "log",
     "memory",
     "personality",
+    "reminder",
+    "signal",
+    "tracking",
+    "user",
+    "voiceprint",
+    "speaker",
+    "Speaker",
     "reminder",
     "signal",
     "tracking",

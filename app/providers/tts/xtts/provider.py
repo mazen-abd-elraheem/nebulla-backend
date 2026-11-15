@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.logger import get_logger
 from app.providers.tts.base import BaseTTSProvider
 from app.utils.masri_normalizer import clean_llm_output_for_speech
+from app.utils.audio_utils import ensure_wav_bytes
 
 logger = get_logger(__name__)
 
@@ -62,6 +63,64 @@ class XTTSProvider(BaseTTSProvider):
         self._device = device or getattr(settings, "VOICETUT_DEVICE", "cuda")
         self._speaker = speaker or getattr(settings, "VOICETUT_SPEAKER", "mazen")
 
+    # ── Speakers Management ───────────────────────────────────────────────────
+
+    @classmethod
+    def list_speakers(cls) -> list[dict]:
+        """
+        List available speaker characters and voices for VoiceTut / XTTS engine.
+        Returns a list of speaker dictionaries with name, id, language, and description.
+        """
+        speakers = [
+            {
+                "id": "mazen",
+                "name": "مازن (Mazen)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": True,
+                "description": "الصوت الافتراضي المصري لموديل VoiceTut",
+            },
+            {
+                "id": "tut",
+                "name": "توت (Tut)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت نيبولا المصري الكلاسيكي",
+            },
+            {
+                "id": "nebula",
+                "name": "نيبولا (Nebula)",
+                "gender": "female",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت الذكاء الاصطناعي لنيبولا",
+            },
+        ]
+
+        # Also discover any custom characters/samples saved in data/voice_samples
+        samples_dir = Path("data/voice_samples")
+        if samples_dir.exists():
+            for p in sorted(samples_dir.glob("personality_*.wav")):
+                pid_str = p.stem.replace("personality_", "")
+                if pid_str.isdigit():
+                    pid = int(pid_str)
+                    speakers.append({
+                        "id": f"personality_{pid}",
+                        "name": f"صوت الشخصية {pid} المستنسخ",
+                        "gender": "custom",
+                        "language": "arz",
+                        "dialect": "Egyptian Arabic (Cloned)",
+                        "is_default": False,
+                        "personality_id": pid,
+                        "sample_path": str(p),
+                    })
+
+        return speakers
+
     # ── Greeting Cache Management ─────────────────────────────────────────────
 
     @staticmethod
@@ -97,6 +156,7 @@ class XTTSProvider(BaseTTSProvider):
             speaker=self._speaker,
             language=self._language,
         )
+        wav_bytes = ensure_wav_bytes(wav_bytes)
         try:
             cache_file = self.get_greeting_cache_path(personality_id)
             cache_file.parent.mkdir(parents=True, exist_ok=True)
@@ -188,6 +248,7 @@ class XTTSProvider(BaseTTSProvider):
 
     def _load_sync(self) -> None:
         """Load VoiceTut-TTS model in background executor thread."""
+        device = getattr(self, "_device", "cpu") or "cpu"
         try:
             import os
             import torch
@@ -197,15 +258,15 @@ class XTTSProvider(BaseTTSProvider):
                 import omnivoice  # noqa: F401
             except Exception:
                 pass
-            from voicetut_tts import VoiceTutTTS
 
-            device = self._device
             if device == "cuda" and not torch.cuda.is_available():
                 logger.warning("CUDA requested for XTTS/VoiceTut but unavailable. Using CPU.")
                 device = "cpu"
 
             if device == "cuda":
                 torch.cuda.empty_cache()
+
+            from voicetut_tts import VoiceTutTTS
 
             candidate_paths = [
                 Path(getattr(settings, "VOICETUT_MODEL_PATH", "models/voicetut-tts")),
@@ -241,6 +302,7 @@ class XTTSProvider(BaseTTSProvider):
                     import torch
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
+                    from voicetut_tts import VoiceTutTTS
                     XTTSProvider._shared_tts = VoiceTutTTS.from_pretrained(
                         model_target,
                         device="cpu",
@@ -251,7 +313,7 @@ class XTTSProvider(BaseTTSProvider):
                     return
                 except Exception as cpu_err:
                     logger.error(f"Failed to load VoiceTut on CPU fallback: {cpu_err}", exc_info=True)
-            logger.error(f"Failed to load in-process XTTS (VoiceTut-TTS): {e}", exc_info=True)
+            logger.warning(f"In-process VoiceTut-TTS unavailable ({e}), using system voice generator fallback.")
             XTTSProvider._shared_tts = None
 
     # ── BaseTTSProvider Interface ─────────────────────────────────────────────
@@ -309,19 +371,15 @@ class XTTSProvider(BaseTTSProvider):
                 language,
             )
 
-        # Tertiary: VoiceTutMicroservice fallback (gTTS / Windows SAPI Arabic voice generator)
-        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
-        svc = VoiceTutMicroserviceProvider()
-        return await svc.synthesize(
-            text=clean_text,
-            speaker=speaker or self._speaker,
-            ref_audio=ref_audio or self._reference_wav,
-            ref_text=ref_text,
-            num_step=num_step,
-            guidance_scale=guidance_scale,
-            speed=speed,
-            language=language or self._language,
+        # Zero Fallback Enforcement: strictly VoiceTut-TTS only, no gTTS or SAPI
+        logger.error(
+            "VoiceTut-TTS model is not loaded or unreachable. Strictly NO fallback models allowed (Zero Fallback)."
         )
+        raise RuntimeError(
+            "فشل استنساخ الصوت: موديل VoiceTut-TTS الأساسي غير متوفر حالياً ولا يوجد أي نموذج بديل (Strict Zero Fallback). "
+            "يرجى التأكد من تحميل أوزان الموديل في models/voicetut-tts أو تشغيل سيرفر VoiceTuT."
+        )
+        return ensure_wav_bytes(res)
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
         """Streaming synthesis yielding WAV chunks."""
@@ -396,8 +454,40 @@ class XTTSProvider(BaseTTSProvider):
                 if default_ref.exists():
                     target_ref_audio = str(default_ref.resolve())
 
+            # Validate reference audio format using soundfile to prevent LibsndfileError
+            import soundfile as sf
+            valid_ref = False
+            if target_ref_audio and os.path.exists(target_ref_audio):
+                try:
+                    with sf.SoundFile(target_ref_audio) as sf_test:
+                        if sf_test.frames > 0:
+                            valid_ref = True
+                except Exception as sf_err:
+                    logger.warning(
+                        f"Reference audio '{target_ref_audio}' is invalid or corrupted ({sf_err}). "
+                        "Falling back to built-in studio speaker reference."
+                    )
+                    valid_ref = False
+
+            if not valid_ref:
+                built_in_candidates = [
+                    Path("models/voicetut-tts/reference_speakers/ahmed.wav"),
+                    Path("models/voicetut-tts/reference_speakers/mohammed.wav"),
+                    Path("models/voicetut-tts/reference_speakers/ali.wav"),
+                ]
+                for bic in built_in_candidates:
+                    if bic.exists():
+                        target_ref_audio = str(bic.resolve())
+                        txt_cand = bic.with_suffix(".txt")
+                        if txt_cand.exists():
+                            actual_ref_text = txt_cand.read_text(encoding="utf-8").strip()
+                        else:
+                            actual_ref_text = "يعني كل ما تيجي تفكر ان الدنيا بايظة و ان الحياة مش قد كدة، اِفتكر ان ربنا موجود و انه قادر على كل شئ."
+                        valid_ref = True
+                        break
+
             # Attempt to read transcript for reference audio if available
-            actual_ref_text = ref_text
+            actual_ref_text = ref_text or locals().get("actual_ref_text")
             if not actual_ref_text and target_ref_audio:
                 txt_file = Path(target_ref_audio).with_suffix(".txt")
                 if txt_file.exists():

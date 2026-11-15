@@ -6,7 +6,7 @@ Architecture: Phone/Desk/ESP32 all connect to THIS backend.
 No device talks to another device directly (design decision from doc §4).
 """
 
-from filelock import asyncio
+import asyncio
 import os
 
 # Disable TensorFlow backend in Transformers so unused TF DLLs do not consume pagefile/commit memory
@@ -24,6 +24,7 @@ try:
 except Exception:
     pass
 
+import asyncio
 import json
 import re
 from contextlib import asynccontextmanager
@@ -215,6 +216,16 @@ def repair_malformed_json(raw_text: str) -> str:
         except Exception:
             pass
 
+    # Fix inner single-value set/dict missing colon like: "key": { "some string" } -> "key": "some string"
+    fixed = re.sub(r':\s*\{\s*("(?:\\.|[^"\\])*")\s*\}', r': \1', fixed)
+    fixed = re.sub(r':\s*\{\s*(\'(?:\\.|[^\'\\])*\')\s*\}', r': \1', fixed)
+
+    try:
+        json.loads(fixed)
+        return fixed
+    except Exception:
+        pass
+
     # Fix unbracketed list of strings inside { "content": "str1", "str2" }
     if fixed.startswith('{') and fixed.endswith('}'):
         inner = fixed[1:-1].strip()
@@ -289,7 +300,7 @@ class JSONRepairMiddleware:
                 if not body_sent:
                     body_sent = True
                     return {"type": "http.request", "body": body_bytes, "more_body": False}
-                return {"type": "http.request", "body": b"", "more_body": False}
+                return await receive()
 
             await self.app(scope, custom_receive, send)
             return
@@ -361,6 +372,8 @@ STUDIO_HTML_PATH = Path(__file__).parent / "static" / "faces_studio.html"
 
 
 @app.get("/faces-ui", response_class=HTMLResponse, tags=["vision-studio"], summary="Interactive Vision Testing Studio")
+@app.get("/static/faces_studio.html", include_in_schema=False)
+@app.get("/faces_studio.html", include_in_schema=False)
 async def vision_studio():
     """Interactive visual testing interface for video face recognition and match percentage."""
     if STUDIO_HTML_PATH.exists():

@@ -1,5 +1,6 @@
 """Conversations + messages endpoints with interactive LLM chat and full system grounding."""
 
+import asyncio
 import json
 import time
 import re
@@ -8,8 +9,8 @@ import urllib.parse
 from typing import Optional, List, Dict, Any, Tuple, AsyncIterator, Union
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Header, Request
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Header, Request, Body
+from fastapi.responses import StreamingResponse, HTMLResponse, Response, JSONResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,9 +26,11 @@ from app.providers.llm.factory import get_llm_provider
 from app.services.ai.pipeline import clean_text_for_tts, _extract_emotion
 from app.services.avatar.emoji_actions import extract_emoji_and_emotion
 from app.services.memory.rag_service import RAGService
+from app.services.memory.fact_verifier import FactVerifier
 from app.websocket.manager import manager
 from app.websocket.handlers import get_face_service, get_ai_pipeline as _get_ai_pipeline
 from app.services.ai.context_builder import build_grounding_context, GroundingInfo, is_greeting_or_persona_inquiry
+from app.api.v1.endpoints.voice_clone import LLMVoiceCloneRequest
 
 logger = get_logger(__name__)
 
@@ -126,6 +129,69 @@ async def _get_auth_user(
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────
+
+@router.post(
+    "/llm_voice_clone",
+    summary="تحويل ردود LLM Chat إلى صوت مستنسخ فعلي عبر VoiceTut بدون Fallback (Alias)",
+    tags=["conversations"],
+    responses={
+        200: {
+            "content": {
+                "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+                "application/json": {"schema": {"$ref": "#/components/schemas/LLMVoiceCloneResponse"}},
+            },
+            "description": "WAV audio file or JSON with base64 audio",
+        }
+    },
+)
+async def conversations_llm_voice_clone_post(
+    body: LLMVoiceCloneRequest,
+    _user: str | None = Depends(get_optional_user),
+):
+    """
+    Alias under conversations router:
+    تستقبل رد الـ LLM وتقوم بتحويله لصوت مستنسخ فعلياً عبر الموديل الأساسي VoiceTut-TTS بدون أي Fallback.
+    """
+    from app.api.v1.endpoints.voice_clone import handle_llm_voice_clone
+    return await handle_llm_voice_clone(
+        text=body.text,
+        personality_id=body.personality_id,
+        return_json=body.return_json,
+        speed=body.speed,
+        guidance_scale=body.guidance_scale,
+        num_steps=body.num_steps,
+        user=_user,
+    )
+
+
+@router.get(
+    "/llm_voice_clone",
+    summary="سماع أو تشغيل الصوت المستنسخ لردود الـ LLM مباشرة (Alias)",
+    tags=["conversations"],
+)
+async def conversations_llm_voice_clone_get(
+    text: str | None = Query(None, description="نص رد الـ LLM"),
+    personality_id: int | None = Query(None, description="معرف الشخصية"),
+    return_json: bool = Query(False, description="إرجاع كائن JSON"),
+    speed: float | None = Query(1.15, description="سرعة النطق"),
+    guidance_scale: float | None = Query(2.6, description="مطابقة نبرة الصوت المرجعي"),
+    num_steps: int | None = Query(48, description="عدد خطوات التوليد"),
+    _user: str | None = Depends(get_optional_user),
+):
+    """
+    Alias under conversations router to stream or test llm_voice_clone in browser.
+    """
+    from app.api.v1.endpoints.voice_clone import llm_voice_clone_get
+    return await llm_voice_clone_get(
+        text=text,
+        personality_id=personality_id,
+        return_json=return_json,
+        speed=speed,
+        guidance_scale=guidance_scale,
+        num_steps=num_steps,
+        _user=_user,
+    )
+
 
 @router.get("/playground", response_class=HTMLResponse, summary="Interactive Web Chat Playground")
 async def chat_playground():
@@ -294,10 +360,11 @@ async def chat_with_llm(
     # ── Strict Zero-Hallucination & Sub-10ms Speed Optimization ───────────────
     refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
     has_memories = bool(memories)
-    is_secret_trap = _is_unrecorded_secret_trap(body.message)
+    is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+    is_sensitive = FactVerifier.is_sensitive_or_private_inquiry(body.message) or _is_unrecorded_secret_trap(body.message)
 
-    # Strict zero-hallucination only for unrecorded private secrets (phones, passwords, etc.)
-    if not has_memories and is_secret_trap:
+    # Fast refusal only when context is empty for sensitive/private/credential inquiries
+    if not has_memories and not is_greeting_persona and is_sensitive:
         reply = refusal_reply
         cleaned_reply = clean_text_for_tts(reply)
         emotion = "wave"
@@ -367,6 +434,31 @@ async def chat_with_llm(
         # Streaming response
         async def event_generator():
             full_content = []
+
+            async def _persist_streamed(content_list):
+                try:
+                    async with AsyncSessionLocal() as session:
+                        full_str = "".join(content_list)
+                        llm_ms = (time.perf_counter() - t_start) * 1000
+                        emotion = _extract_emotion(full_str)
+                        user_msg = Message(
+                            conversation_id=conv_id,
+                            role="user",
+                            content=body.message,
+                        )
+                        robot_msg = Message(
+                            conversation_id=conv_id,
+                            role="robot",
+                            content=full_str,
+                            llm_latency_ms=round(llm_ms, 2),
+                            total_latency_ms=round(llm_ms, 2),
+                            emotion=emotion,
+                        )
+                        session.add_all([user_msg, robot_msg])
+                        await session.commit()
+                except Exception as e:
+                    logger.error(f"Failed to persist streamed chat messages: {e}")
+
             try:
                 async for token in llm.generate_stream(
                     body.message,
@@ -387,30 +479,9 @@ async def chat_with_llm(
                 if "ResponseNotRead" in type(e).__name__ or "streaming response content" in err_msg:
                     err_msg = "خطأ في قراءة استجابة الموديل المباشرة"
                 yield f"\n[خطأ أثناء التوليد: {err_msg}]"
-
-            # Save to DB safely using a fresh session
-            try:
-                async with AsyncSessionLocal() as session:
-                    full_str = "".join(full_content)
-                    llm_ms = (time.perf_counter() - t_start) * 1000
-                    emotion = _extract_emotion(full_str)
-                    user_msg = Message(
-                        conversation_id=conv_id,
-                        role="user",
-                        content=body.message,
-                    )
-                    robot_msg = Message(
-                        conversation_id=conv_id,
-                        role="robot",
-                        content=full_str,
-                        llm_latency_ms=round(llm_ms, 2),
-                        total_latency_ms=round(llm_ms, 2),
-                        emotion=emotion,
-                    )
-                    session.add_all([user_msg, robot_msg])
-                    await session.commit()
-            except Exception as e:
-                logger.error(f"Failed to persist streamed chat messages: {e}")
+            finally:
+                if full_content:
+                    asyncio.create_task(_persist_streamed(list(full_content)))
 
         encoded_mems = urllib.parse.quote(json.dumps(memories, ensure_ascii=False))
         return StreamingResponse(
@@ -534,9 +605,10 @@ async def chat_stream(
     # ── Strict Zero-Hallucination & Speed Optimization (SSE Stream) ───────────
     refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
     has_memories = bool(memories)
-    is_secret_trap = _is_unrecorded_secret_trap(body.message)
+    is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
+    is_sensitive = FactVerifier.is_sensitive_or_private_inquiry(body.message) or _is_unrecorded_secret_trap(body.message)
 
-    if not has_memories and is_secret_trap:
+    if not has_memories and not is_greeting_persona and is_sensitive:
         async def fast_refusal_sse():
             import json
             yield f"data: {json.dumps({'type': 'context', 'memories': []}, ensure_ascii=False)}\n\n"
@@ -578,6 +650,32 @@ async def chat_stream(
         import json
         yield f"data: {json.dumps({'type': 'context', 'memories': memories}, ensure_ascii=False)}\n\n"
         full_content = []
+
+        # Save to DB asynchronously in background to prevent SQLite stream deadlocks
+        async def _persist_sse(content_list):
+            try:
+                async with AsyncSessionLocal() as session:
+                    full_str = "".join(content_list)
+                    llm_ms = (time.perf_counter() - t_start) * 1000
+                    emotion = _extract_emotion(full_str)
+                    user_msg = Message(
+                        conversation_id=conv_id,
+                        role="user",
+                        content=body.message,
+                    )
+                    robot_msg = Message(
+                        conversation_id=conv_id,
+                        role="robot",
+                        content=full_str,
+                        llm_latency_ms=round(llm_ms, 2),
+                        total_latency_ms=round(llm_ms, 2),
+                        emotion=emotion,
+                    )
+                    session.add_all([user_msg, robot_msg])
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to persist SSE streamed chat messages: {e}")
+
         try:
             async for token in llm.generate_stream(
                 body.message,
@@ -619,31 +717,8 @@ async def chat_stream(
                 )
                 + "\n\n"
             )
-
-        # Save to DB safely using a fresh session
-        if full_content:
-            try:
-                async with AsyncSessionLocal() as session:
-                    full_str = "".join(full_content)
-                    llm_ms = (time.perf_counter() - t_start) * 1000
-                    emotion = _extract_emotion(full_str)
-                    user_msg = Message(
-                        conversation_id=conv_id,
-                        role="user",
-                        content=body.message,
-                    )
-                    robot_msg = Message(
-                        conversation_id=conv_id,
-                        role="robot",
-                        content=full_str,
-                        llm_latency_ms=round(llm_ms, 2),
-                        total_latency_ms=round(llm_ms, 2),
-                        emotion=emotion,
-                    )
-                    session.add_all([user_msg, robot_msg])
-                    await session.commit()
-            except Exception as e:
-                logger.error(f"Failed to persist SSE streamed chat messages: {e}")
+            if full_content:
+                asyncio.create_task(_persist_sse(list(full_content)))
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

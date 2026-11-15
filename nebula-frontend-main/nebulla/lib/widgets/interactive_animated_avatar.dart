@@ -63,7 +63,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   void _initControllers() {
     _breathingController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 4000),
+      duration: const Duration(milliseconds: 4200),
     )..repeat(reverse: true);
 
     _breathingAnimation ??= Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -75,17 +75,17 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
 
     _auraPulseController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 1600),
     )..repeat(reverse: true);
 
     _headMotionController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 5500),
+      duration: const Duration(milliseconds: 6000),
     )..repeat(reverse: true);
 
     _blinkController ??= AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 140),
+      duration: const Duration(milliseconds: 130),
     );
 
     _blinkAnimation ??= Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -226,6 +226,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
         final portraitH = availableH;
 
         return GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () {
             if (widget.onAvatarTapped != null) {
               widget.onAvatarTapped!();
@@ -258,7 +259,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                     children: [
                       _buildAmbientGlow(auraColor, isSpeaking, amplitude, portraitW, portraitH),
                       Transform(
-                        alignment: const Alignment(0.0, -0.15),
+                        alignment: const Alignment(0.0, -0.12), // Pivot on neck base
                         transform: Matrix4.identity()
                           ..setEntry(3, 2, 0.001)
                           ..rotateY(yaw)

@@ -71,7 +71,7 @@ async def test_transcribe_audio_endpoint(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_transcribe_audio_endpoint_strict_failure(monkeypatch):
-    """Verify STT endpoint strictly returns HTTP 500 on model failure (no fallback)."""
+    """Verify STT endpoint strictly returns HTTP 500 on model failure."""
     wav_bytes = _create_dummy_wav(duration_s=2.0)
     files = {"file": ("test_input.wav", wav_bytes, "audio/wav")}
 
