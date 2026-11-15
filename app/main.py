@@ -16,6 +16,7 @@ try:
 except Exception:
     pass
 
+import asyncio
 import json
 import re
 from contextlib import asynccontextmanager

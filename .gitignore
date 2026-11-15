@@ -19,6 +19,7 @@ logs/
 data/voice_samples/
 data/embeddings/
 data/faces/
+data/avatars/
 data/*.jpg
 data/uniface_test_result.jpg
 .pytest_cache/
