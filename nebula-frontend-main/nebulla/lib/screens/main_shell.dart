@@ -6,6 +6,7 @@ import 'persona_memory_specs_screen.dart';
 import 'profile_screen.dart';
 import 'diagnostics_screen.dart';
 import 'settings_screen.dart';
+import 'contacts_screen.dart';
 import '../widgets/nebula_side_menu.dart';
 import '../widgets/global_footer.dart';
 
@@ -45,7 +46,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _onNavigate(int index) {
-    if (index >= 0 && index < 7) {
+    if (index >= 0 && index < 8) {
       setState(() => _currentIndex = index);
     }
   }
@@ -68,6 +69,7 @@ class _MainShellState extends State<MainShell> {
       const ProfileScreen(),
       const DiagnosticsScreen(),
       const SettingsScreen(),
+      ContactsScreen(onNavigate: _onNavigate),
     ];
 
     // Sidebar: In RTL (Arabic) endDrawer opens from LEFT.

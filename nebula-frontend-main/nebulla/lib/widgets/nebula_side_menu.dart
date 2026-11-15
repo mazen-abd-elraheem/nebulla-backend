@@ -373,6 +373,18 @@ class NebulaSideMenu extends StatelessWidget {
                                 isActive: activeIndex == 5,
                                 onTap: () => _handleItemTap(context, 5),
                               ),
+                              const SizedBox(height: 9),
+
+                              // 7: جهات الاتصال (Contacts - Index 7)
+                              _MenuItemCard(
+                                title: isArabic ? 'جهات الاتصال' : 'Contacts',
+                                icon: Icons.contact_phone_rounded,
+                                iconBoxColor: const Color(0xFFDCFCE7),
+                                iconColor: const Color(0xFF16A34A),
+                                hasArrow: true,
+                                isActive: activeIndex == 7,
+                                onTap: () => _handleItemTap(context, 7),
+                              ),
                             ],
                           ),
                         ),
