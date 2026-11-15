@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/storage_service.dart';
@@ -48,6 +49,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
     }).catchError((_) {});
+  }
+
+  Widget _buildProfileAvatar() {
+    final avatarPath = StorageService.instance.getUserAvatarPath();
+    final avatarUrl = StorageService.instance.getUserAvatarUrl();
+
+    if (avatarPath != null && File(avatarPath).existsSync()) {
+      return Image.file(
+        File(avatarPath),
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+      );
+    } else if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      final base = StorageService.instance.getBaseUrl();
+      final fullUrl = avatarUrl.startsWith('http') ? avatarUrl : '$base$avatarUrl';
+      return Image.network(
+        fullUrl,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+        errorBuilder: (context, error, stackTrace) => _profileInitialFallback(),
+      );
+    } else {
+      return _profileInitialFallback();
+    }
+  }
+
+  Widget _profileInitialFallback() {
+    final initial = _fullName.trim().isNotEmpty ? _fullName.trim()[0].toUpperCase() : 'U';
+    return Container(
+      color: const Color(0xFFE0F2FE),
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(
+            fontFamily: 'Cairo',
+            fontSize: 34,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF006677),
+          ),
+        ),
+      ),
+    );
   }
 
   void _showEditProfileDialog() {
@@ -278,10 +321,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ],
                           ),
                           child: ClipOval(
-                            child: Image.asset(
-                              'assets/images/cyborg_bg.jpg',
-                              fit: BoxFit.cover,
-                            ),
+                            child: _buildProfileAvatar(),
                           ),
                         ),
                         // Online green dot

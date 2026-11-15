@@ -186,7 +186,9 @@ class UserResponse(BaseModel):
     is_active: bool
     has_biometric: bool = False
     personalities_count: int = 0
+    avatar_url: Optional[str] = None
     created_at: datetime
+
 
 
 class AuthTokenResponse(BaseModel):

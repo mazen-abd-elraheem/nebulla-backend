@@ -81,4 +81,10 @@ class StorageService {
   }
 
   String? getUserAvatarPath() => _prefs?.getString('pref_user_avatar_path');
+
+  Future<void> setUserAvatarUrl(String url) async {
+    await _prefs?.setString('pref_user_avatar_url', url);
+  }
+
+  String? getUserAvatarUrl() => _prefs?.getString('pref_user_avatar_url');
 }

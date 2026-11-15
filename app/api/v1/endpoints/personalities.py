@@ -36,6 +36,7 @@ class PersonalityUpdate(BaseModel):
     is_active: bool | None = None
 
 
+@router.get("", include_in_schema=False)
 @router.get("/", summary="List all accessible personalities (user-owned + shared defaults)")
 async def list_personalities(
     db: AsyncSession = Depends(get_db),
@@ -62,6 +63,7 @@ async def list_personalities(
     return {"personalities": [_p(p) for p in r.scalars()]}
 
 
+@router.post("", status_code=status.HTTP_201_CREATED, include_in_schema=False)
 @router.post("/", status_code=status.HTTP_201_CREATED, summary="Create a user-owned personality")
 async def create_personality(
     body: PersonalityCreate,

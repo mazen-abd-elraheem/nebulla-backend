@@ -59,6 +59,7 @@ def _user_to_response(user: User, personalities_count: int = 0) -> UserResponse:
         is_active=user.is_active,
         has_biometric=user.face_profile_id is not None,
         personalities_count=personalities_count,
+        avatar_url=getattr(user, "avatar_url", None),
         created_at=user.created_at,
     )
 
@@ -647,9 +648,11 @@ async def save_onboarding_answers(
 
     saved_count = 0
     target_pid = 1  # Default primary persona
+    uid = current_user.id if current_user else None
     for mem_text in memories_to_add:
         try:
             m = Memory(
+                user_id=uid,
                 personality_id=target_pid,
                 content=mem_text,
                 source="onboarding",
@@ -658,7 +661,7 @@ async def save_onboarding_answers(
             db.add(m)
             saved_count += 1
             try:
-                await rag.add_memory(personality_id=target_pid, text=mem_text)
+                await rag.add_memory(content=mem_text, personality_id=target_pid, user_id=uid)
             except Exception as rag_err:
                 logger.debug(f"RAG vector index notice: {rag_err}")
         except Exception as e:
@@ -729,6 +732,15 @@ async def generate_user_avatar(
         logger.debug(f"Face biometric auto-enroll notice: {e}")
 
     avatar_url = f"/api/v1/auth/avatar/file/{filename}"
+    if current_user:
+        try:
+            current_user.avatar_url = avatar_url
+            db.add(current_user)
+            await db.commit()
+            await db.refresh(current_user)
+        except Exception as e:
+            logger.debug(f"Could not persist avatar_url to user entity: {e}")
+
     return {
         "success": True,
         "avatar_url": avatar_url,

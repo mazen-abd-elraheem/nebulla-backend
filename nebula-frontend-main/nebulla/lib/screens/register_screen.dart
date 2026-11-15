@@ -44,7 +44,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final ImagePicker _picker = ImagePicker();
 
   // Step 2: Onboarding Questionnaire
-  bool _showQuestions = true;
   final _securityAnswerCtrl = TextEditingController();
   String _selectedInteractionStyle = 'نصي وصوتي';
   String _selectedInterestDomain = 'البرمجة والتقنية';
@@ -173,6 +172,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (_profileImage == null && !_avatarGenerated) {
       showErrorSnackbar(context, 'يرجى التقاط صورة أو اختيارها من الاستوديو أولاً.');
       return;
+    }
+    if (_profileImage != null) {
+      StorageService.instance.setUserAvatarPath(_profileImage!.path);
     }
     setState(() => _currentStep = 2);
   }
@@ -1037,83 +1039,52 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         const SizedBox(height: 18),
 
-        // Exact Expandable Questionnaire Card matching Image 2
+        // Exact Questionnaire Card matching mockup
         Container(
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: _showQuestions ? const Color(0xFF00B4D8) : const Color(0xFFE2E8F0),
+              color: const Color(0xFF00B4D8),
               width: 1.4,
             ),
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              InkWell(
-                onTap: () {
-                  setState(() => _showQuestions = !_showQuestions);
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE0F2FE),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.psychology_rounded,
-                          color: Color(0xFF0284C7),
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'أسئلة تخصيص الذكاء الاصطناعي',
-                              style: TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF0F172A),
-                              ),
-                            ),
-                            Text(
-                              _showQuestions ? 'اضغط للإغلاق' : 'اضغط للإجابة عن أسئلة التخصيص',
-                              style: const TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 11,
-                                color: Color(0xFF64748B),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        _showQuestions
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        color: const Color(0xFF0284C7),
-                      ),
-                    ],
+              Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2FE),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.psychology_rounded,
+                      color: Color(0xFF0284C7),
+                      size: 20,
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'أسئلة تخصيص الذكاء الاصطناعي',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              if (_showQuestions) ...[
-                const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              const SizedBox(height: 14),
                       // Q1: أسلوب التفاعل
                       const Text(
                         '1. ما هو أسلوب التفاعل المفضل لديك؟',
@@ -1282,11 +1253,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ],
                   ),
                 ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
         // Submit and Proceed Button
         ElevatedButton(
@@ -1431,7 +1398,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 _isRecording
                     ? 'جاري التسجيل... 00:${_recordDuration.toString().padLeft(2, '0')} (اضغط للإيقاف)'
                     : (_recordedAudioFile != null
-                        ? 'تم تسجيل العينة الصوتية جاهزة للرفع'
+                        ? 'تم تسجيل الصوت جاهز للرفع'
                         : 'اضغط على الميكروفون لبدء التسجيل'),
                 style: TextStyle(
                   fontFamily: 'Cairo',
@@ -1470,7 +1437,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   )
                 : const Icon(Icons.cloud_upload_rounded, size: 18),
             label: Text(
-              _isUploadingVoice ? 'جاري استنساخ الصوت عبر XTTS...' : 'رفع العينة وتدريب XTTS',
+              _isUploadingVoice ? 'جاري استنساخ الصوت عبر XTTS...' : 'رفع الصوت وتدريب XTTS',
               style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(

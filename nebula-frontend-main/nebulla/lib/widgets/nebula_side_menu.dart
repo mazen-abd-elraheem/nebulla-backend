@@ -178,8 +178,27 @@ class NebulaSideMenu extends StatelessWidget {
                             final user = StorageService.instance.getUser();
                             final userName = (user != null && user.fullName.trim().isNotEmpty)
                                 ? user.fullName.trim()
-                                : (isArabic ? 'مازن عبد الرحيم' : 'Mazen Abdelraheem');
+                                : (isArabic ? 'المستخدم' : 'User');
                             final userAvatarPath = StorageService.instance.getUserAvatarPath();
+                            final userAvatarUrl = StorageService.instance.getUserAvatarUrl();
+
+                            Widget menuInitialWidget(String name) {
+                              final initial = name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : 'U';
+                              return Container(
+                                color: const Color(0xFFE0F2FE),
+                                child: Center(
+                                  child: Text(
+                                    initial,
+                                    style: const TextStyle(
+                                      fontFamily: 'Cairo',
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF0284C7),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
 
                             Widget avatarImageWidget;
                             if (userAvatarPath != null && File(userAvatarPath).existsSync()) {
@@ -188,12 +207,17 @@ class NebulaSideMenu extends StatelessWidget {
                                 fit: BoxFit.cover,
                                 alignment: Alignment.topCenter,
                               );
-                            } else {
-                              avatarImageWidget = Image.asset(
-                                'assets/images/cyborg_bg.jpg',
+                            } else if (userAvatarUrl != null && userAvatarUrl.isNotEmpty) {
+                              final base = StorageService.instance.getBaseUrl();
+                              final fullUrl = userAvatarUrl.startsWith('http') ? userAvatarUrl : '$base$userAvatarUrl';
+                              avatarImageWidget = Image.network(
+                                fullUrl,
                                 fit: BoxFit.cover,
                                 alignment: Alignment.topCenter,
+                                errorBuilder: (context, error, stackTrace) => menuInitialWidget(userName),
                               );
+                            } else {
+                              avatarImageWidget = menuInitialWidget(userName);
                             }
 
                             return Container(

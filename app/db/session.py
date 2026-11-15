@@ -132,6 +132,13 @@ async def init_db() -> None:
                     connection.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
                 if "updated_at" not in cols:
                     connection.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME"))
+                if "avatar_url" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(256)"))
+
+            if "memories" in tables:
+                cols = [c["name"] for c in inspector.get_columns("memories")]
+                if "user_id" not in cols:
+                    connection.execute(text("ALTER TABLE memories ADD COLUMN user_id INTEGER REFERENCES users(id)"))
 
             if "contacts" in tables:
                 cols = [c["name"] for c in inspector.get_columns("contacts")]

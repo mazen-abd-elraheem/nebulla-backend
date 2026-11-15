@@ -1286,7 +1286,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'ذاكرة الروبوت (RAG Backend)',
+                        'الذاكرة الشخصية (RAG)',
                         style: TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 14,
@@ -1295,7 +1295,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                         ),
                       ),
                       Text(
-                        '${_backendMemories.length} حقائق مسجلة بالباك إند',
+                        '${_backendMemories.length} حقائق مسجلة في ذاكرتك الشخصية',
                         style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 11,

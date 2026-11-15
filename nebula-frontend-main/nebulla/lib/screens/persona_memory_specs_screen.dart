@@ -896,7 +896,7 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'ذاكرة الشخصية (RAG)',
+                              'الذاكرة الشخصية (RAG)',
                               style: TextStyle(
                                 fontFamily: 'Cairo',
                                 fontSize: 15,
@@ -905,7 +905,7 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                               ),
                             ),
                             Text(
-                              '${_memories.length} حقائق مسجلة بالباك إند',
+                              '${_memories.length} حقائق مسجلة في ذاكرتك الخاصة',
                               style: const TextStyle(
                                 fontFamily: 'Cairo',
                                 fontSize: 11,
@@ -971,7 +971,7 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'لا توجد معلومات محفوظة في ذاكرة هذه الشخصية بعد.',
+                          'لا توجد معلومات محفوظة في ذاكرتك الشخصية بعد.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'Cairo',
