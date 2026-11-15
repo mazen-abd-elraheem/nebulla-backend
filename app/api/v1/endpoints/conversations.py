@@ -83,7 +83,8 @@ class ChatRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "message": "مشروع تخرج مازن إيه؟",
+                "message": "احمد شغال ايه؟",
+                "personality_id": 2,
                 "model": "nebula-rag",
                 "stream": False,
             }
@@ -289,6 +290,7 @@ async def _build_and_broadcast_avatar_action(
 async def chat_with_llm(
     request: Request,
     body: ChatRequest,
+    personality_id: Optional[int] = Query(None, description="Optional personality ID (e.g. 1 or 2) - overrides or sets personality"),
     db: AsyncSession = Depends(get_db),
     _user: str = Depends(_get_auth_user),
 ):
@@ -307,6 +309,8 @@ async def chat_with_llm(
     # Clean Swagger UI default placeholder values
     if body.personality_id == 0:
         body.personality_id = None
+    if personality_id is not None and personality_id > 0 and body.personality_id is None:
+        body.personality_id = personality_id
     if body.session_id == "string" or not body.session_id:
         body.session_id = str(uuid.uuid4())
 
@@ -555,9 +559,12 @@ async def chat_with_llm(
 @router.post("/chat/stream", summary="Stream chat tokens from LLM with RAG grounding (SSE)")
 async def chat_stream(
     body: ChatRequest,
+    personality_id: Optional[int] = Query(None, description="Optional personality ID (e.g. 1 or 2) - overrides or sets personality"),
     db: AsyncSession = Depends(get_db),
     _user: str = Depends(_get_auth_user),
 ):
+    if personality_id is not None and personality_id > 0 and body.personality_id is None:
+        body.personality_id = personality_id
     session_id = body.session_id or str(uuid.uuid4())
     system_prompt, memories, grounding, active_pid = await build_grounding_context(
         db=db,

@@ -288,34 +288,37 @@ async def build_grounding_context(
         logger.warning(f"Could not retrieve live face info: {e}")
 
     # 2. Determine Personality: Dynamic Hybrid Smart Routing
-    # Priority: 1) Explicit mention in question -> 2) Camera Face -> 3) Voice Speaker -> 4) Requested ID -> 5) Active -> 6) Default
+    # If caller explicitly provided personality_id, respect it as top priority!
     target_p: Optional[Personality] = None
     all_personalities_res = await db.execute(select(Personality))
     all_personalities = list(all_personalities_res.scalars().all())
 
-    # Priority 1: Explicit name in user question
-    matched_p = match_personality_in_message(message, all_personalities)
-    if matched_p:
-        target_p = matched_p
-        logger.info(f"Dynamically routed personality to '{target_p.name}' (ID: {target_p.id}) based on explicit mention in message.")
+    # Priority 1: Caller explicitly requested personality_id parameter
+    if personality_id is not None:
+        target_p = await db.get(Personality, personality_id)
+        if target_p:
+            logger.info(f"Explicitly routed personality to '{target_p.name}' (ID: {target_p.id}) from request parameter.")
 
-    # Priority 2: Biometric Camera Face
+    # Priority 2: Explicit name in user question (if personality_id not explicitly given)
+    if not target_p:
+        matched_p = match_personality_in_message(message, all_personalities)
+        if matched_p:
+            target_p = matched_p
+            logger.info(f"Dynamically routed personality to '{target_p.name}' (ID: {target_p.id}) based on explicit mention in message.")
+
+    # Priority 3: Biometric Camera Face
     if not target_p and detected_face_name:
         matched_p = match_personality_by_identity(detected_face_name, all_personalities)
         if matched_p:
             target_p = matched_p
             logger.info(f"Biometrically routed personality to '{target_p.name}' (ID: {target_p.id}) based on detected face: {detected_face_name}.")
 
-    # Priority 3: Biometric Verified Voice Speaker
+    # Priority 4: Biometric Verified Voice Speaker
     if not target_p and verified_speaker:
         matched_p = match_personality_by_identity(verified_speaker, all_personalities)
         if matched_p:
             target_p = matched_p
             logger.info(f"Biometrically routed personality to '{target_p.name}' (ID: {target_p.id}) based on verified speaker: {verified_speaker}.")
-
-    # Priority 4: Requested personality_id parameter
-    if not target_p and personality_id:
-        target_p = await db.get(Personality, personality_id)
 
     # Priority 5: Active personality in DB
     if not target_p:
