@@ -6,7 +6,7 @@ Architecture: Phone/Desk/ESP32 all connect to THIS backend.
 No device talks to another device directly (design decision from doc §4).
 """
 
-from filelock import asyncio
+import asyncio
 import os
 
 # Disable TensorFlow backend in Transformers so unused TF DLLs do not consume pagefile/commit memory

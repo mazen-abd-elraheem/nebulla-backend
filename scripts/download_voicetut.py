@@ -13,7 +13,9 @@ from huggingface_hub import snapshot_download
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 TARGET_DIR = str((ROOT_DIR / "models" / "voicetut-tts").resolve())
+TOKENIZER_DIR = str((ROOT_DIR / "models" / "voicetut-tts" / "audio_tokenizer").resolve())
 REPO_ID = "mohammedaly22/VoiceTut-TTS"
+TOKENIZER_REPO_ID = "eustlb/higgs-audio-v2-tokenizer"
 
 def download():
     print(f"=== Starting VoiceTut-TTS Download ===")
@@ -24,10 +26,22 @@ def download():
     start = time.time()
     
     os.makedirs(TARGET_DIR, exist_ok=True)
+    os.makedirs(TOKENIZER_DIR, exist_ok=True)
     
+    # 1. Download primary VoiceTut weights
+    print("\n--- 1. Downloading VoiceTut-TTS model weights ---")
     snapshot_path = snapshot_download(
         repo_id=REPO_ID,
         local_dir=TARGET_DIR,
+        local_dir_use_symlinks=False,
+        resume_download=True,
+    )
+
+    # 2. Download Higgs Audio Tokenizer required by OmniVoice
+    print(f"\n--- 2. Downloading Audio Tokenizer ({TOKENIZER_REPO_ID}) ---")
+    snapshot_download(
+        repo_id=TOKENIZER_REPO_ID,
+        local_dir=TOKENIZER_DIR,
         local_dir_use_symlinks=False,
         resume_download=True,
     )
@@ -42,6 +56,14 @@ def download():
         print(f"Verified model.safetensors: {size_gb:.2f} GB")
     else:
         print("WARNING: model.safetensors not found!")
+
+    # Check audio tokenizer
+    tok_file = os.path.join(TOKENIZER_DIR, "model.safetensors")
+    if os.path.exists(tok_file):
+        tok_size_mb = os.path.getsize(tok_file) / (1024**2)
+        print(f"Verified audio tokenizer model.safetensors: {tok_size_mb:.1f} MB")
+    else:
+        print("WARNING: audio tokenizer model.safetensors not found!")
 
     # Check reference speakers
     refs = os.path.join(TARGET_DIR, "reference_speakers", "references.json")
