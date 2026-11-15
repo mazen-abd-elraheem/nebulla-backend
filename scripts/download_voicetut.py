@@ -19,7 +19,8 @@ def download():
     print(f"=== Starting VoiceTut-TTS Download ===")
     print(f"Source Repo: {REPO_ID}")
     print(f"Destination: {TARGET_DIR}")
-    print(f"HuggingFace Cache: {os.environ['HF_HOME']}")
+    hf_cache = os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface")
+    print(f"HuggingFace Cache: {hf_cache}")
     start = time.time()
     
     os.makedirs(TARGET_DIR, exist_ok=True)
