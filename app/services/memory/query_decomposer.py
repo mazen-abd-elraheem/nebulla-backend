@@ -19,7 +19,8 @@ class QueryDecomposer:
         r"\s+(?:مقارنة بـ|مقارنة مع|وقارن بين|وقارن مع)\s+",
         r"\s+(?:وفي نفس الوقت|ويا ريت تقولي عن|واحكيلي عن|وإيه كمان عن)\s+",
         r"[،,\?؟]\s*و\s*",
-        r"\s+و(?=إيه|مين|فين|ازاي|كام|متى|ليه|هل)\b",
+        r"\s+و\s*(?=(?:(?:هو|هي|هم|[أإا]حمد|مازن|عمر|محمد|مصعب|الكتاب|المفتاح|السماعه|الساعة|معاد|مكان|عنوان)\s+)?(?:شغال|بيشتغل|راكب|بيسوق|فين|كام|[أإا]يه|مين|ساكن|معاد|حط|حطه|اتأجل))",
+        r"\s+و(?=إيه|مين|فين|ازاي|كام|متى|ليه|هل|راكب|شغال|ساكن)",
     ]
 
     SPLIT_PATTERNS_EN = [
@@ -48,7 +49,8 @@ class QueryDecomposer:
             if len(parts) > 1:
                 for p in parts:
                     p_str = p.strip().rstrip("؟?.,،")
-                    if len(p_str) >= 4 and p_str not in sub_queries:
+                    p_str = re.sub(r"^[و\s]+", "", p_str).strip()
+                    if len(p_str) >= 3 and p_str not in sub_queries:
                         sub_queries.append(p_str)
                 is_split = True
                 break

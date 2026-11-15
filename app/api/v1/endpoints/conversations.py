@@ -309,7 +309,7 @@ async def chat_with_llm(
     # Clean Swagger UI default placeholder values
     if body.personality_id == 0:
         body.personality_id = None
-    if personality_id is not None and personality_id > 0 and body.personality_id is None:
+    if isinstance(personality_id, int) and personality_id > 0 and body.personality_id is None:
         body.personality_id = personality_id
     if body.session_id == "string" or not body.session_id:
         body.session_id = str(uuid.uuid4())
@@ -563,7 +563,7 @@ async def chat_stream(
     db: AsyncSession = Depends(get_db),
     _user: str = Depends(_get_auth_user),
 ):
-    if personality_id is not None and personality_id > 0 and body.personality_id is None:
+    if isinstance(personality_id, int) and personality_id > 0 and body.personality_id is None:
         body.personality_id = personality_id
     session_id = body.session_id or str(uuid.uuid4())
     system_prompt, memories, grounding, active_pid = await build_grounding_context(

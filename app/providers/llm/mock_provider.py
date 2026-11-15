@@ -76,6 +76,14 @@ def _check_predicate_relevance(prompt_words: set[str], content_words: set[str], 
         ),
     ]
 
+    # Strict entity verification: if prompt explicitly specifies a person, the fact must not contradict it
+    known_names = {"احمد", "مازن", "ايمن", "عمر", "محمد", "مصعب", "سارة", "ساره"}
+    prompt_names = prompt_words.intersection(known_names)
+    content_names = content_words.intersection(known_names)
+    if prompt_names and content_names:
+        if not prompt_names.intersection(content_names):
+            return False  # Target person mismatch (e.g. asked about Musab, memory is about Ahmed)
+
     # If prompt triggers any specific predicate, memory MUST satisfy it
     for p_triggers, f_targets in predicates:
         if prompt_words.intersection(p_triggers):
@@ -137,10 +145,74 @@ def _find_most_relevant_fact(prompt: str, context: List[Union[str, Dict[str, Any
     return None
 
 
+def _get_topic_desc(subquery: str) -> str:
+    """Generate a clean Arabic topic descriptor for unrecorded question predicates."""
+    s = subquery.strip().lower()
+    clean_sub = re.sub(r"[أإآ]", "ا", s)
+    if any(w in clean_sub for w in ["شغال", "وظيفة", "بيشتغل", "مهنة", "عمل"]):
+        names = [n for n in ["مصعب", "عمر", "احمد", "مازن", "محمد", "أيمن"] if n in clean_sub]
+        if names:
+            return f"هو {names[0]} شغال إيه"
+        return "هو شغال إيه"
+    if any(w in clean_sub for w in ["راكب", "عربيه", "عربية", "عجله", "عجلة", "مواصلات", "بيسوق"]):
+        return "هو راكب إيه"
+    if "كتاب" in clean_sub:
+        return "مكان الكتاب"
+    if "مفتاح" in clean_sub:
+        return "مكان المفتاح"
+    if any(w in clean_sub for w in ["ساكن", "عنوان", "بيت", "شقة", "شقه"]):
+        return "عنوان السكن"
+    if any(w in clean_sub for w in ["معاد", "موعد", "ميعاد"]):
+        return "المعاد"
+    if "سماعه" in clean_sub or "سماعة" in clean_sub:
+        return "مكان السماعة"
+    return re.sub(r"^[؟?.,،و\s]+", "", subquery).strip()
+
+
+def _synthesize_single_subquery_reply(subq: str, context: Optional[List[Union[str, Dict[str, Any]]]]) -> Optional[str]:
+    """Find and format the answer for a single focused question predicate from context."""
+    if not context:
+        return None
+    fact = _find_most_relevant_fact(subq, context)
+    if not fact:
+        return None
+
+    fact_norm = _extract_arabic_words(fact)
+    p_norm = _extract_arabic_words(subq)
+
+    # A. Job inquiry
+    if p_norm.intersection({"شغال", "وظيفة", "بيشتغل", "مهنة"}):
+        if "دكتور" in fact_norm:
+            return "أحمد شغال دكتور"
+        if "مدرس" in fact_norm:
+            return "أحمد شغال مدرس"
+        if "مهندس" in fact_norm:
+            return fact.rstrip(".")
+        return fact.rstrip(".")
+
+    # B. Book location inquiry
+    if "كتاب" in p_norm and p_norm.intersection({"فين", "مكان", "حط", "حطه"}):
+        if "مكتب" in fact_norm:
+            return "الكتاب موجود في المكتب بعد ما أحمد نقله من الصالة"
+        if "صاله" in fact_norm:
+            return "الكتاب موجود في الصالة"
+        return fact.rstrip(".")
+
+    # C. Key location inquiry
+    if "مفتاح" in p_norm and p_norm.intersection({"فين", "مكان", "حط"}):
+        if "درج" in fact_norm:
+            return "مفتاح العربية موجود في الدرج اللي فوق"
+        return fact.rstrip(".")
+
+    # D. General fact
+    return fact.rstrip(".")
+
+
 def synthesize_mock_reply(prompt: str, context: Optional[List[Union[str, Dict[str, Any]]]] = None) -> str:
-    """Generate a precise, context-grounded Egyptian Arabic reply."""
+    """Generate a precise, context-grounded Egyptian Arabic reply supporting compound questions."""
+    from app.services.memory.query_decomposer import QueryDecomposer
+
     p_clean = prompt.strip().lower()
-    p_norm = _extract_arabic_words(prompt)
 
     # 1. Greeting & Identity
     if any(w in p_clean for w in ["صباح الخير", "صباح الفل", "ازيك", "إزيك", "عامل ايه", "عامل إيه", "مرحبا", "سلام عليكم", "هاي", "أهلاً", "اهلا"]):
@@ -155,40 +227,35 @@ def synthesize_mock_reply(prompt: str, context: Optional[List[Union[str, Dict[st
     if "مين اللي صممك" in p_clean or "مين صممك" in p_clean or "مين عملك" in p_clean:
         return "صممني وطورني الباشمهندس مازن عبد الرحيم. [eyes:happy] [nod]"
 
-    # 2. Fact query grounded in memory context
-    best_fact = _find_most_relevant_fact(prompt, context) if context else None
+    # 2. Check for Compound / Multi-Questions (سؤالين في نفس الرسالة)
+    subqueries = [sq for sq in QueryDecomposer.decompose(prompt) if sq.strip() != prompt.strip()]
+    if len(subqueries) >= 2:
+        ans1 = _synthesize_single_subquery_reply(subqueries[0], context)
+        ans2 = _synthesize_single_subquery_reply(subqueries[1], context)
 
-    if best_fact:
-        fact_norm = _extract_arabic_words(best_fact)
+        # Case A: Both questions have recorded answers in this personality's memory
+        if ans1 and ans2:
+            return f"{ans1}، و{ans2}. [eyes:happy] [nod]"
 
-        # Specialized direct answers
-        # A. Job inquiry
-        if p_norm.intersection({"شغال", "وظيفة", "بيشتغل", "مهنة"}):
-            if "مدرس" in fact_norm:
-                return "أحمد شغال مدرس. [eyes:happy] [nod]"
-            if "مهندس" in fact_norm:
-                return "شغال مهندس ومطور لروبوت نيبولا. [eyes:happy] [nod]"
-            return f"{best_fact}. [eyes:happy] [nod]"
+        # Case B: First question answered, second question unknown
+        if ans1 and not ans2:
+            topic2 = _get_topic_desc(subqueries[1])
+            return f"{ans1}، لكن بخصوص {topic2} فالمعلومة دي مش مسجلة عندي في الذاكرة حالياً. [eyes:happy] [nod]"
 
-        # B. Book location inquiry
-        if "كتاب" in p_norm and p_norm.intersection({"فين", "مكان", "حط", "حطه"}):
-            if "مكتب" in fact_norm:
-                return "الكتاب موجود في المكتب بعد ما أحمد نقله من الصالة. [eyes:happy] [nod]"
-            if "صاله" in fact_norm:
-                return "الكتاب موجود في الصالة. [eyes:happy] [nod]"
-            return f"{best_fact}. [eyes:happy] [nod]"
+        # Case C: Second question answered, first question unknown
+        if not ans1 and ans2:
+            topic1 = _get_topic_desc(subqueries[0])
+            return f"{ans2}، لكن بخصوص {topic1} فالمعلومة دي مش مسجلة عندي في الذاكرة حالياً. [eyes:happy] [nod]"
 
-        # C. Key location inquiry
-        if "مفتاح" in p_norm and p_norm.intersection({"فين", "مكان", "حط"}):
-            if "درج" in fact_norm:
-                return "مفتاح العربية موجود في الدرج اللي فوق. [eyes:happy] [nod]"
-            return f"{best_fact}. [eyes:happy] [nod]"
+        # Case D: Neither question has recorded answers
+        return "المعلومات دي مش مسجلة عندي في الذاكرة حالياً. [eyes:thinking] [shake_head]"
 
-        # D. General direct factual statement
-        clean_fact = best_fact.rstrip(".")
-        return f"{clean_fact}. [eyes:happy] [nod]"
+    # 3. Single Question Grounded in Memory Context
+    single_ans = _synthesize_single_subquery_reply(prompt, context)
+    if single_ans:
+        return f"{single_ans}. [eyes:happy] [nod]"
 
-    # 3. Not in memory / Unknown predicate
+    # 4. Unknown / Not in memory
     return "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [eyes:thinking] [shake_head]"
 
 

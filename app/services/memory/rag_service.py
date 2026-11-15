@@ -130,7 +130,7 @@ class RAGService:
         cursor = conn.cursor()
         if personality_id is not None:
             cursor.execute(
-                "SELECT id, content, personality_id, embedding, source, importance FROM memories WHERE personality_id = ? OR personality_id IS NULL",
+                "SELECT id, content, personality_id, embedding, source, importance FROM memories WHERE personality_id = ?",
                 (personality_id,),
             )
             rows = cursor.fetchall()
@@ -282,7 +282,7 @@ class RAGService:
         if db is not None:
             stmt = select(Memory)
             if personality_id is not None:
-                stmt_p = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
+                stmt_p = stmt.where(Memory.personality_id == personality_id)
                 res = await db.execute(stmt_p)
                 memories = list(res.scalars().all())
             else:
@@ -700,7 +700,7 @@ class RAGService:
         # Automatic Conflict Resolution: Check for and delete conflicting obsolete memories
         if personality_id is not None:
             cursor.execute(
-                "SELECT id, content FROM memories WHERE personality_id = ? OR personality_id IS NULL",
+                "SELECT id, content FROM memories WHERE personality_id = ?",
                 (personality_id,),
             )
         else:
@@ -764,7 +764,7 @@ class RAGService:
             # Automatic Conflict Resolution: detect & remove obsolete conflicting memories
             stmt = select(Memory)
             if personality_id is not None:
-                stmt = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
+                stmt = stmt.where(Memory.personality_id == personality_id)
             res = await db.execute(stmt)
             existing_mems = res.scalars().all()
             obsolete_found = False
