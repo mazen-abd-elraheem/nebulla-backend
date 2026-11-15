@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.core.logger import get_logger
 from app.providers.tts.base import BaseTTSProvider
 from app.utils.masri_normalizer import clean_llm_output_for_speech
+from app.utils.audio_utils import ensure_wav_bytes
 
 logger = get_logger(__name__)
 
@@ -61,8 +62,8 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
         except Exception:
             return False
 
-    async def _fallback_synthesize(self, text: str) -> bytes:
-        """High quality real Arabic/English speech synthesis fallback."""
+    async def _fallback_synthesize(self, text: str, ref_audio: Optional[str] = None) -> bytes:
+        """High quality real Arabic/English speech synthesis fallback returning clean WAV."""
         import re
         clean = re.sub(r"\[.*?\]|<.*?>", "", text).replace('"', ' ').replace("'", " ").strip()[:350]
         if not clean:
@@ -84,15 +85,16 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
             data = await loop.run_in_executor(None, _gtts_task)
             if data and len(data) > 500:
                 logger.info(f"gTTS synthesized {len(data)} bytes of real voice for: {clean[:40]}...")
-                return data
+                wav_data = ensure_wav_bytes(data)
+                return wav_data
         except Exception as ge:
             logger.debug(f"gTTS note: {ge}")
 
         # 2. Try Windows SAPI SpeechSynthesizer
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
-                wav_path = tf.name
-            ps_script = f'Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SetOutputToWaveFile("{wav_path}"); $s.Speak("{clean}"); $s.Dispose()'
+                wav_path = os.path.abspath(tf.name)
+            ps_script = f'[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SetOutputToWaveFile(\"{wav_path}\"); $s.Speak(\"{clean}\"); $s.Dispose()'
             proc = await asyncio.create_subprocess_exec(
                 "powershell", "-ExecutionPolicy", "Bypass", "-Command", ps_script,
                 stdout=asyncio.subprocess.PIPE,
@@ -106,14 +108,14 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
                     os.remove(wav_path)
                 except OSError:
                     pass
-                return data
+                return ensure_wav_bytes(data)
         except Exception as e:
             logger.error(f"Fallback synthesis error: {e}")
 
         # Secondary fallback: generate valid speech waveform WAV
         buf = io.BytesIO()
         duration_s = max(1.5, min(7.0, len(text) * 0.08))
-        sample_rate = 22050
+        sample_rate = 24000
         num_samples = int(duration_s * sample_rate)
         with wave.open(buf, 'wb') as wf:
             wf.setnchannels(1)
@@ -187,9 +189,10 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
                     full_audio_url = f"{self._url}{audio_rel_url}" if audio_rel_url.startswith("/") else audio_rel_url
                     audio_resp = await client.get(full_audio_url)
                     if audio_resp.status_code == 200 and len(audio_resp.content) > 1000:
-                        return audio_resp.content
+                        return ensure_wav_bytes(audio_resp.content)
         except Exception as exc:
             logger.info(f"VoiceTuT microservice not reachable ({exc}), using native speech engine fallback.")
 
         # Fallback to local native speech synthesis
-        return await self._fallback_synthesize(text)
+        res = await self._fallback_synthesize(text, ref_audio=actual_ref_audio)
+        return ensure_wav_bytes(res)

@@ -28,9 +28,20 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol, Set, Tuple, Union
 
 import numpy as np
-import scipy.signal
 import subprocess
-from scipy.fftpack import dct
+try:
+    from scipy.fftpack import dct
+    import scipy.signal
+except ImportError:
+    def dct(x, type=2, axis=1, norm="ortho"):
+        N = x.shape[axis]
+        n = np.arange(N)
+        k = np.arange(N).reshape(-1, 1)
+        basis = np.cos(np.pi / N * (n + 0.5) * k)
+        res = np.dot(x, basis.T)
+        res[:, 0] *= 1.0 / np.sqrt(N)
+        res[:, 1:] *= np.sqrt(2.0 / N)
+        return res
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,12 +58,14 @@ class AudioDecodeError(ValueError):
     pass
 
 
-def decode_audio(data: bytes, sr_target: int = 16000) -> np.ndarray:
+def decode_audio(data: bytes, sr_target: int = 16000, target_sr: Optional[int] = None) -> np.ndarray:
     """
     Universal audio decoder supporting all recording types:
     WAV, MP3, M4A, AAC, OGG, Opus, WebM, FLAC, AMR, 3GP, MP4 audio,
     and raw PCM. Decodes and resamples to 1-D float32 numpy array [-1.0, 1.0] at sr_target (16kHz).
     """
+    if target_sr is not None:
+        sr_target = target_sr
     if not data or len(data) < 8:
         raise AudioDecodeError("Audio data is empty or too short")
 
@@ -79,6 +92,7 @@ def decode_audio(data: bytes, sr_target: int = 16000) -> np.ndarray:
         except Exception:
             pcm = None
 
+        # 2. Alternative parser using wave module
         if pcm is None:
             try:
                 with wave.open(io.BytesIO(data)) as w:
@@ -525,6 +539,11 @@ class VerificationResult:
     score: Optional[float] = None    # best cosine similarity (None = not scored)
     user_id: Optional[int] = None
     speaker_name: Optional[str] = None
+    speaker_id: Optional[int] = None
+    verification_id: Optional[int] = None
+    voice_id: Optional[str] = None
+    personality_id: Optional[int] = None
+    is_main: bool = False
     max_level: int = 0
     audio_seconds: float = 0.0
     passed_l1: bool = False
@@ -542,6 +561,10 @@ class _Entry:
     face_id: Optional[int] = None
     personality_id: Optional[int] = None
     memory_id: Optional[int] = None
+    verification_id: Optional[int] = None
+    speaker_id: Optional[int] = None
+    voice_id: Optional[str] = None
+    is_main: bool = False
 
 
 class VoiceprintError(ValueError):
@@ -550,16 +573,78 @@ class VoiceprintError(ValueError):
 
 def detect_spoken_language(pcm: Optional[np.ndarray] = None, sr: int = 16000, transcript: Optional[str] = None) -> Dict[str, Any]:
     """
-    Standard Language Definition for Nebulla Voice Engine:
-    Strict single-language policy: Arabic with ISO 639-3 code 'arz' (Egyptian Arabic / اللهجة المصرية).
+    Identifies the spoken language of an audio segment.
+    Uses transcript Unicode analysis if available, otherwise employs acoustic phonetic classification.
     """
-    return {
-        "language": "العربية (Arabic)",
-        "language_code": "arz",
-        "dialect": "Egyptian Arabic (اللهجة المصرية)",
-        "confidence": 1.0,
-        "method": "strict_arz",
-    }
+    if transcript and transcript.strip():
+        txt = transcript.strip()
+        arabic_chars = sum(1 for c in txt if '\u0600' <= c <= '\u06FF')
+        latin_chars = sum(1 for c in txt if ('a' <= c <= 'z' or 'A' <= c <= 'Z'))
+        total_letters = arabic_chars + latin_chars
+
+        if total_letters > 0:
+            if arabic_chars / total_letters >= 0.30:
+                return {
+                    "language": "العربية (Arabic)",
+                    "language_code": "ar",
+                    "confidence": round(arabic_chars / total_letters, 2),
+                    "method": "text_script",
+                }
+            lower = txt.lower()
+            french_markers = ["le", "la", "les", "des", "est", "et", "dans", "pour", "une", "qui", "vous", "bonjour", "merci"]
+            german_markers = ["der", "die", "das", "und", "ist", "nicht", "ein", "mit", "hallo", "danke"]
+            spanish_markers = ["el", "la", "los", "de", "que", "en", "por", "con", "hola", "gracias"]
+
+            words = lower.split()
+            if any(w in french_markers for w in words) or any(c in "éèêàâôûîç" for c in lower):
+                return {"language": "الفرنسية (French)", "language_code": "fr", "confidence": 0.92, "method": "text_lexicon"}
+            if any(w in german_markers for w in words) or any(c in "äöüß" for c in lower):
+                return {"language": "الألمانية (German)", "language_code": "de", "confidence": 0.92, "method": "text_lexicon"}
+            if any(w in spanish_markers for w in words) or any(c in "ñáéíóú¿¡" for c in lower):
+                return {"language": "الإسبانية (Spanish)", "language_code": "es", "confidence": 0.92, "method": "text_lexicon"}
+            return {"language": "الإنجليزية (English)", "language_code": "en", "confidence": 0.95, "method": "text_script"}
+
+    # Acoustic Phonetic Classification (Offline, Zero-dependency)
+    if len(pcm) < int(sr * 0.4):
+        return {"language": "العربية (Arabic)", "language_code": "ar", "confidence": 0.70, "method": "acoustic_default"}
+
+    try:
+        n_fft = 512
+        frame_len, hop = 400, 160
+        n_f = (len(pcm) - frame_len) // hop
+        if n_f < 5:
+            return {"language": "العربية (Arabic)", "language_code": "ar", "confidence": 0.70, "method": "acoustic_default"}
+
+        frames = pcm[np.arange(frame_len)[None, :] + np.arange(n_f)[:, None] * hop] * np.hamming(frame_len)
+        mag = np.abs(np.fft.rfft(frames, n_fft))
+        freqs = np.fft.rfftfreq(n_fft, d=1.0 / sr)
+
+        # 1. Pharyngeal & Uvular Mid-to-High Ratio (Arabic phonetic hallmark)
+        mid_energy = float(np.mean(mag[:, (freqs >= 800) & (freqs <= 2200)]))
+        high_energy = float(np.mean(mag[:, (freqs >= 4500) & (freqs <= 8000)]))
+        ratio = mid_energy / (high_energy + 1e-6)
+
+        # 2. Spectral Centroid
+        tot_pow = np.sum(mag ** 2, axis=1, keepdims=True) + 1e-9
+        sc = np.sum((mag ** 2) * freqs, axis=1, keepdims=True) / tot_pow
+        mean_sc = float(np.mean(sc))
+
+        if ratio >= 3.4 or mean_sc < 2100:
+            return {
+                "language": "العربية (Arabic)",
+                "language_code": "ar",
+                "confidence": min(0.95, round(0.72 + (ratio / 15.0), 2)),
+                "method": "acoustic_phonetic",
+            }
+        else:
+            return {
+                "language": "الإنجليزية (English)",
+                "language_code": "en",
+                "confidence": min(0.95, round(0.75 + (2.5 / max(1.0, ratio)) * 0.1, 2)),
+                "method": "acoustic_phonetic",
+            }
+    except Exception:
+        return {"language": "العربية (Arabic)", "language_code": "ar", "confidence": 0.70, "method": "fallback"}
 
 
 def segment_audio_turns(
@@ -658,8 +743,12 @@ class SpeakerVerificationService:
         if backend is not None:
             self._backend: EmbeddingBackend = backend
         else:
-            # Unified VoiceTuT & SpeechBrain ECAPA-TDNN hybrid verifier for Egyptian Arabic
-            self._backend = VoiceTutHybridBackend()
+            # Check if SpeechBrain is available; fallback seamlessly to AcousticVoiceprintBackend
+            sb = SpeechBrainBackend()
+            if sb.available():
+                self._backend = sb
+            else:
+                self._backend = AcousticVoiceprintBackend()
 
         self._cache: Optional[Dict[int, _Entry]] = None
         self._cache_lock = asyncio.Lock()
@@ -680,6 +769,11 @@ class SpeakerVerificationService:
                 entries: Dict[int, _Entry] = {}
                 async with session_factory() as db:
                     rows = (await db.execute(select(Voiceprint))).scalars().all()
+                    from app.models.speaker import Speaker
+                    spk_rows = (await db.execute(select(Speaker))).scalars().all()
+                    spk_by_verif = {s.verification_id: s for s in spk_rows if s.verification_id}
+                    spk_by_name = {s.name.lower(): s for s in spk_rows}
+
                 for r in rows:
                     compatible_models = {"voicetut-hybrid-ecapa192", "speechbrain/spkrec-ecapa-voxceleb", "acoustic-vocal-tract-v3-192d"}
                     if r.model_id and r.model_id != self._backend.model_id and (r.model_id not in compatible_models or r.embedding_dim != 192):
@@ -695,14 +789,24 @@ class SpeakerVerificationService:
                     except ValueError:
                         logger.warning("Skipping corrupt voiceprint for user %s", r.user_id)
                         continue
+
+                    spk = spk_by_verif.get(r.id) or spk_by_name.get(r.speaker_name.lower())
+                    is_main = spk.is_main if spk else ("مازن" in r.speaker_name.lower() or "mazen" in r.speaker_name.lower())
+                    voice_id = spk.voice_id if spk else (str(r.personality_id) if r.personality_id else None)
+                    spk_id = spk.id if spk else None
+
                     entries[r.user_id] = _Entry(
                         vector=vec,
                         speaker_name=r.speaker_name,
-                        max_level=int(r.max_level),
+                        max_level=int(getattr(r, "max_level", 2) or 2),
                         user_id=r.user_id,
                         face_id=getattr(r, "face_id", None),
                         personality_id=getattr(r, "personality_id", None),
                         memory_id=getattr(r, "memory_id", None),
+                        verification_id=r.id,
+                        speaker_id=spk_id,
+                        voice_id=voice_id,
+                        is_main=is_main,
                     )
                 self._cache = entries
         return self._cache
@@ -879,6 +983,10 @@ class SpeakerVerificationService:
             "is_identified": is_identified,
             "speaker_name": best_name if is_identified else None,
             "user_id": best_uid if is_identified else None,
+            "speaker_id": getattr(best_entry, "speaker_id", None) if (is_identified and best_entry) else None,
+            "verification_id": getattr(best_entry, "verification_id", None) if (is_identified and best_entry) else None,
+            "voice_id": getattr(best_entry, "voice_id", None) if (is_identified and best_entry) else None,
+            "is_main": getattr(best_entry, "is_main", False) if (is_identified and best_entry) else False,
             "face_id": getattr(best_entry, "face_id", None) if (is_identified and best_entry) else None,
             "personality_id": getattr(best_entry, "personality_id", None) if (is_identified and best_entry) else None,
             "memory_id": getattr(best_entry, "memory_id", None) if (is_identified and best_entry) else None,
@@ -1102,12 +1210,22 @@ class SpeakerVerificationService:
                     res.is_identified = True
                     res.user_id = best_uid
                     res.speaker_name = entry.speaker_name
+                    res.speaker_id = getattr(entry, "speaker_id", None)
+                    res.verification_id = getattr(entry, "verification_id", None)
+                    res.voice_id = getattr(entry, "voice_id", None)
+                    res.personality_id = getattr(entry, "personality_id", None)
+                    res.is_main = getattr(entry, "is_main", False)
                     res.max_level = entry.max_level
                 else:
                     # Below threshold: treat as unknown speaker!
                     res.is_identified = False
                     res.user_id = None
                     res.speaker_name = None
+                    res.speaker_id = None
+                    res.verification_id = None
+                    res.voice_id = None
+                    res.personality_id = None
+                    res.is_main = False
                     res.max_level = 0
 
             return res
@@ -1140,14 +1258,14 @@ class SpeakerVerificationService:
         face_id: Optional[int] = None,
         personality_id: Optional[int] = None,
         memory_id: Optional[int] = None,
+        voice_id: Optional[str] = None,
+        is_main: Optional[bool] = None,
     ) -> Voiceprint:
         """
         Build and store a voiceprint from audio enrolment samples.
         Supports single audio clip or multi-sample averaging (1 to 20 samples).
+        Auto-binds to the unified Speaker entity.
         """
-        if not (0 <= max_level <= 3):
-            raise VoiceprintError("max_level must be between 0 and 3")
-
         clean_name = speaker_name.strip()
         if not clean_name:
             raise VoiceprintError("Speaker name cannot be empty")
@@ -1181,9 +1299,10 @@ class SpeakerVerificationService:
 
         mean = _unit(np.mean(np.stack(kept), axis=0))
 
-        # Auto-create user account if user_id is not provided
+        # Auto-create or resolve user account
+        user_row = None
+        from app.models.user import User
         if user_id is None:
-            from app.models.user import User
             user_row = (await db.execute(select(User).where(User.full_name == clean_name))).scalar_one_or_none()
             if not user_row:
                 safe_tag = "".join(c for c in clean_name if c.isalnum() or c in ("-", "_")).lower() or "speaker"
@@ -1196,6 +1315,8 @@ class SpeakerVerificationService:
                 db.add(user_row)
                 await db.flush()
             user_id = user_row.id
+        else:
+            user_row = await db.get(User, user_id)
 
         existing = (
             await db.execute(select(Voiceprint).where(Voiceprint.user_id == user_id))
@@ -1263,19 +1384,55 @@ class SpeakerVerificationService:
             best_raw = max(samples_list, key=len)
             best_pcm = decode_audio(best_raw)
             wav_i16 = (best_pcm * 32767.0).clip(-32768, 32767).astype(np.int16)
-
             user_sample_path = os.path.join("data", "voice_samples", f"user_{user_id}.wav")
             wavfile.write(user_sample_path, settings.SPEAKER_SAMPLE_RATE, wav_i16)
 
             if personality_id is not None:
                 p_sample_path = os.path.join("data", "voice_samples", f"personality_{personality_id}.wav")
                 wavfile.write(p_sample_path, settings.SPEAKER_SAMPLE_RATE, wav_i16)
+                from app.models.personality import Personality
                 p_obj = (await db.execute(select(Personality).where(Personality.id == personality_id))).scalar_one_or_none()
                 if p_obj:
                     p_obj.voice_sample_path = p_sample_path
                     logger.info("Dual-Enrollment: Linked VoiceTuT cloned voice sample for personality %s -> %s", personality_id, p_sample_path)
         except Exception as e:
             logger.warning("Dual-Enrollment voice sample sync to VoiceTuT skipped: %s", e)
+
+        # Auto-create or update matching unified Speaker profile
+        try:
+            from app.models.speaker import Speaker
+            spk_res = await db.execute(
+                select(Speaker).where(
+                    (Speaker.verification_id == row.id) | (Speaker.name == clean_name)
+                )
+            )
+            spk = spk_res.scalar_one_or_none()
+            is_mazen = "مازن" in clean_name.lower() or "mazen" in clean_name.lower()
+            resolved_main = is_main if is_main is not None else is_mazen
+            resolved_voice = voice_id or (str(personality_id) if personality_id else "1")
+
+            if not spk:
+                spk = Speaker(
+                    name=clean_name,
+                    verification_id=row.id,
+                    voice_id=resolved_voice,
+                    personality_id=personality_id,
+                    is_main=resolved_main,
+                )
+                db.add(spk)
+            else:
+                spk.verification_id = row.id
+                if personality_id is not None:
+                    spk.personality_id = personality_id
+                if voice_id is not None:
+                    spk.voice_id = voice_id
+                elif not spk.voice_id and personality_id:
+                    spk.voice_id = str(personality_id)
+                if is_main is not None:
+                    spk.is_main = is_main
+            await db.flush()
+        except Exception as e:
+            logger.warning(f"Could not auto-sync Speaker profile during voiceprint enrollment: {e}")
 
         self.invalidate()
         return row

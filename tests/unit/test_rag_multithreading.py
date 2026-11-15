@@ -6,7 +6,7 @@ Evaluates:
 2. Parallel sub-query execution across worker threads.
 3. Thread-safe VectorStore concurrent reads and writes.
 4. Non-blocking asynchronous offloading (_embed_async, search_async, rerank_async).
-5. Zero Fallback Model adherence under multithreaded load.
+5. Deterministic retrieval adherence under multithreaded load.
 """
 
 import asyncio
@@ -156,12 +156,12 @@ async def test_concurrent_async_rag_retrieval():
             assert isinstance(res, list)
 
 
-# ── 5. Zero Fallback Model Enforcement Under Concurrent Load ─────────────────
+# ── 5. Deterministic Retrieval Under Concurrent Load ─────────────────
 
 @pytest.mark.asyncio
-async def test_zero_fallback_model_under_multithreading():
+async def test_deterministic_retrieval_under_multithreading():
     rag = RAGService()
-    rag._embedder = "disabled"  # Even without embedder, strictly no fallback model
+    rag._embedder = "disabled"  # Even without embedder, strictly deterministic retrieval
 
     empty_mems = []
     with patch.object(rag, "_load_memories_sync", return_value=empty_mems):

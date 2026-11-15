@@ -1,8 +1,7 @@
 """
 Deterministic Fact Verification & Anti-Hallucination Guard.
 
-Solves the Hallucination & Faithfulness Problem in RAG WITHOUT a Fallback Model:
-- Does NOT invoke or fall back to another LLM or pre-trained fallback model.
+Solves the Hallucination & Faithfulness Problem in RAG:
 - Uses strict rule-based, entity-matching, and citation-grounding verification against the retrieved context.
 - Detects fabricated sensitive data (phone numbers, passwords, fake IDs, ungrounded numbers).
 - If an ungrounded claim is detected, it sanitizes and enforces the strict verified response.
@@ -34,6 +33,24 @@ class FactVerifier:
         re.compile(r"(?:الباسورد|كلمة السر|الرقم السري|password|pin code)\s*[:=]?\s*[\w\d@#$%]+", re.IGNORECASE),
     ]
 
+    SENSITIVE_INQUIRY_TERMS = [
+        "هاتف", "تليفون", "موبايل", "محمول", "phone", "mobile",
+        "سر", "سري", "سرية", "باسورد", "password", "pin",
+        "حساب", "خزنة", "بنك", "فيزا", "بطاقة", "كارت", "bank", "credit",
+        "عنوان", "غير مسجل", "غير مسجلة",
+    ]
+
+    @classmethod
+    def is_sensitive_or_private_inquiry(cls, query: str) -> bool:
+        """
+        Determines whether the user's query is asking for private/sensitive personal facts,
+        credentials, phone numbers, or passwords that require strict refusal if not in memory.
+        """
+        if not query:
+            return False
+        q_norm = normalize_masri_orthography(query).lower()
+        return any(term in q_norm for term in cls.SENSITIVE_INQUIRY_TERMS)
+
     @classmethod
     def verify_and_sanitize(
         cls,
@@ -41,6 +58,7 @@ class FactVerifier:
         response: str,
         retrieved_memories: List[str],
         is_greeting: bool = False,
+        has_action: bool = False,
     ) -> str:
         """
         Validates the generated response against retrieved memories.
@@ -52,10 +70,25 @@ class FactVerifier:
         is_arabic = bool(re.search(r"[\u0600-\u06FF]", query or response))
         default_refusal = cls.REFUSAL_AR if is_arabic else cls.REFUSAL_EN
 
-        # 1. If context was completely empty and this is not a greeting:
-        if not retrieved_memories and not is_greeting:
-            logger.info("FactVerifier: Context is empty for non-greeting query -> Enforcing refusal.")
-            return default_refusal
+        # 1. If context was completely empty and this is not a greeting or action:
+        if not retrieved_memories and not is_greeting and not has_action:
+            if cls.is_sensitive_or_private_inquiry(query):
+                logger.info("FactVerifier: Sensitive/private query with empty context -> Enforcing refusal.")
+                return default_refusal
+
+            # For open-domain questions (general knowledge, coding, math), verify no hallucinated sensitive patterns:
+            for pat in cls.SENSITIVE_PATTERNS:
+                if pat.search(response):
+                    logger.warning("FactVerifier: Open-domain response contains sensitive pattern -> Enforcing refusal.")
+                    return default_refusal
+
+            # If the response fabricated specific critical numbers without context:
+            resp_numbers = set(re.findall(r"\b\d{3,}\b", response))
+            if resp_numbers:
+                logger.warning(f"FactVerifier: Open-domain response contains ungrounded critical numbers {resp_numbers} -> Enforcing refusal.")
+                return default_refusal
+
+            return response
 
         combined_context = " ".join(retrieved_memories)
         norm_context = normalize_masri_orthography(combined_context).lower()
@@ -77,7 +110,7 @@ class FactVerifier:
 
         unsupported_numbers = resp_numbers - ctx_numbers
         # Filter out numbers that might be harmless (e.g. 1, 2 for list enumeration)
-        unsupported_critical_numbers = [n for n in unsupported_numbers if len(n) >= 4 or n.startswith("01")]
+        unsupported_critical_numbers = [n for n in unsupported_numbers if len(n) >= 3 or n.startswith("01")]
         if unsupported_critical_numbers:
             logger.warning(
                 f"FactVerifier: Response contains ungrounded critical numbers {unsupported_critical_numbers}. "
@@ -96,9 +129,8 @@ class FactVerifier:
         q_words = [w for w in re.findall(r"[\w\d]+", normalize_masri_orthography(query).lower()) if len(w) > 3]
         if q_words and not has_refusal:
             overlap_with_ctx = any(w in norm_context for w in q_words)
-            if not overlap_with_ctx and not is_greeting:
+            if not overlap_with_ctx and not is_greeting and not has_action and cls.is_sensitive_or_private_inquiry(query):
                 logger.info("FactVerifier: Query terms not found in context and model did not refuse -> Enforcing refusal.")
                 return default_refusal
 
         return response
-
