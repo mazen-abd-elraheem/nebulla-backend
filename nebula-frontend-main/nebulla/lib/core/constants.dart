@@ -56,5 +56,13 @@ class AppConstants {
   static const String facesRegister = '/api/v1/faces/register';
   static const String actionContacts = '/api/v1/actions/contacts';
   static const String actionContactsSync = '/api/v1/actions/contacts/sync';
+  static const String avatarCreate = '/api/v1/avatar/create';
+  static const String avatarActive = '/api/v1/avatar/active';
+  static const String avatarList = '/api/v1/avatar/list';
+  static const String avatarEmojis = '/api/v1/avatar/emojis/map';
+  static String avatarApprove(int id) => '/api/v1/avatar/$id/approve';
+  static String avatarReject(int id) => '/api/v1/avatar/$id/reject';
+  static String avatarRecreate(int id) => '/api/v1/avatar/$id/recreate';
+  static String avatarRender(int id) => '/api/v1/avatar/$id/render';
   static const String health = '/health';
 }

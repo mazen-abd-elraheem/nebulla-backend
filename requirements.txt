@@ -36,6 +36,15 @@ Pillow==10.4.0
 uniface
 # pip install uniface  (or clone from GitHub)
 onnxruntime==1.19.2   # CPU; swap with onnxruntime-gpu for NVIDIA GPU
+opencv-python-headless>=4.10.0  # image crop, landmark warp & expression rendering
+imageio>=2.35.0                 # animated avatar GIF/frame export
+huggingface-hub>=0.25.0         # model asset fetching
+
+# ── AI — 3D Avatar (xg-chu/GAGAvatar — Sole Avatar Engine) ──────────────────
+# Full CUDA 3D Gaussian Splatting runtime (diff_gaussian_rasterization_32d + pytorch3d)
+# lives in requirements-gagavatar.txt (install alongside CUDA torch):
+#   pip install -r requirements-gagavatar.txt
+# Strict GAGAvatar-only mode is enabled by default (AVATAR_ALLOW_LOCAL_FALLBACK=false).
 
 # ── AI — Memory / RAG ────────────────────────────────────────────────────────
 sentence-transformers==3.1.1
@@ -55,3 +64,4 @@ pyaudio==0.2.14       # optional: for local mic testing
 python-multipart==0.0.12  # for file upload (voice samples)
 python-dotenv==1.0.1
 deep-translator>=1.11.4
+httpx>=0.27.0             # async client for remote GPU workers (VoiceTut / GAGAvatar)

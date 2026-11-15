@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import '../models/avatar_profile.dart';
+import 'api_service.dart';
 import 'storage_service.dart';
 import 'audio_viseme_analyzer.dart';
 
@@ -17,9 +19,14 @@ class AvatarAudioService {
   final ValueNotifier<double> speechAmplitude = ValueNotifier<double>(0.0);
   final ValueNotifier<VisemeFrame> currentViseme = ValueNotifier<VisemeFrame>(VisemeFrame.neutral);
   final ValueNotifier<String> currentEmotion = ValueNotifier<String>('neutral');
+  final ValueNotifier<String> currentFaceEmoji = ValueNotifier<String>('😐');
   final ValueNotifier<String> activeAvatarType = ValueNotifier<String>('female'); // 'male' | 'female'
   final ValueNotifier<int> activePersonalityId = ValueNotifier<int>(1);
   final ValueNotifier<String> activePersonaName = ValueNotifier<String>('المساعد الذكي');
+  final ValueNotifier<AvatarProfileModel?> activeAvatar = ValueNotifier<AvatarProfileModel?>(null);
+
+  bool _avatarLoadedOnce = false;
+  String? _lastAvatarToken;
 
   Timer? _amplitudeTimer;
   Process? _activeAudioProcess;
@@ -29,6 +36,37 @@ class AvatarAudioService {
     final clean = name.trim();
     if (clean.isNotEmpty) {
       activePersonaName.value = clean;
+    }
+  }
+
+  /// Update locally active GAGAvatar profile for all mounted avatars.
+  void setActiveAvatar(AvatarProfileModel? avatar) {
+    activeAvatar.value = avatar;
+    _avatarLoadedOnce = true;
+    if (avatar?.name != null && avatar!.name!.trim().isNotEmpty) {
+      activePersonaName.value = avatar.name!.trim();
+    }
+  }
+
+  /// Fetch active approved avatar from backend on startup / after login.
+  Future<void> loadActiveAvatar({bool force = false, int? personalityId}) async {
+    final currentToken = StorageService.instance.getToken();
+    if (_avatarLoadedOnce && !force && _lastAvatarToken == currentToken) return;
+    _avatarLoadedOnce = true;
+    _lastAvatarToken = currentToken;
+    try {
+      final params = <String, dynamic>{};
+      if (personalityId != null) params['personality_id'] = personalityId;
+      final data = await ApiService.instance.get('/api/v1/avatar/active', params);
+      if (data is Map<String, dynamic> &&
+          data['has_avatar'] == true &&
+          data['avatar'] is Map<String, dynamic>) {
+        setActiveAvatar(AvatarProfileModel.fromJson(data['avatar'] as Map<String, dynamic>));
+      } else {
+        setActiveAvatar(null);
+      }
+    } catch (e) {
+      debugPrint('AvatarAudioService loadActiveAvatar notice: $e');
     }
   }
 
@@ -43,19 +81,107 @@ class AvatarAudioService {
     }
   }
 
+  static const Map<String, String> _emojiToExpression = {
+    '😐': 'neutral',
+    '😊': 'happy',
+    '😃': 'happy',
+    '😄': 'happy',
+    '😂': 'laugh',
+    '🤣': 'laugh',
+    '😍': 'love',
+    '🥰': 'love',
+    '❤️': 'love',
+    '😢': 'sad',
+    '😭': 'sad',
+    '😮': 'surprised',
+    '😲': 'surprised',
+    '😡': 'angry',
+    '😠': 'angry',
+    '🤔': 'thinking',
+    '😉': 'wink',
+    '😴': 'sleepy',
+    '👋': 'wave',
+    '👍': 'like',
+  };
+
+  static const Map<String, String> _expressionToEmoji = {
+    'neutral': '😐',
+    'happy': '😊',
+    'laugh': '😂',
+    'love': '😍',
+    'sad': '😢',
+    'surprised': '😮',
+    'angry': '😡',
+    'thinking': '🤔',
+    'wink': '😉',
+    'sleepy': '😴',
+    'wave': '👋',
+    'like': '👍',
+  };
+
+  /// Apply an incoming face-emoji or expression payload from LLM / WebSocket.
+  void applyEmojiAction({
+    String? faceEmoji,
+    String? expression,
+    Map<String, dynamic>? avatarAction,
+  }) {
+    final actionEmoji = avatarAction?['face_emoji'] as String?;
+    final actionExpr = avatarAction?['expression'] as String?;
+
+    final chosenEmoji = faceEmoji ?? actionEmoji;
+    String? chosenExpr = expression ?? actionExpr;
+
+    if (chosenExpr == null && chosenEmoji != null) {
+      chosenExpr = _emojiToExpression[chosenEmoji];
+    }
+    if (chosenExpr != null && chosenExpr.isNotEmpty) {
+      currentEmotion.value = chosenExpr;
+    }
+    if (chosenEmoji != null && chosenEmoji.isNotEmpty) {
+      currentFaceEmoji.value = chosenEmoji;
+    } else if (chosenExpr != null) {
+      currentFaceEmoji.value = _expressionToEmoji[chosenExpr] ?? '😐';
+    }
+  }
+
   /// Synthesizes and speaks text using the backend audio pipeline,
-  /// animating the avatar in real time.
+  /// animating the avatar in real time with its expression & cloned voice.
   Future<void> speak(
     String text, {
     String? emotion,
+    String? faceEmoji,
+    String? expression,
+    Map<String, dynamic>? avatarAction,
     int? personalityId,
   }) async {
-    final clean = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+    final detectedEmoji = faceEmoji ??
+        (avatarAction?['face_emoji'] as String?) ??
+        _extractFaceEmojiFromText(text);
+
+    // Strip HTML, [tags], and Unicode face emojis before TTS so cloned voice never reads them aloud
+    final clean = text
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'\[[^\]]+\]'), '')
+        .replaceAll(
+          RegExp(r'[\u{1F1E0}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0E\uFE0F\u200D]', unicode: true),
+          ' ',
+        )
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
     if (clean.isEmpty) return;
 
     final targetPid = personalityId ?? activePersonalityId.value;
-    final targetEmotion = emotion ?? _detectEmotion(clean);
-    currentEmotion.value = targetEmotion;
+    final resolvedExpr = expression ??
+        (avatarAction?['expression'] as String?) ??
+        (detectedEmoji != null ? _emojiToExpression[detectedEmoji] : null) ??
+        emotion ??
+        _detectEmotion(clean);
+
+    applyEmojiAction(
+      faceEmoji: detectedEmoji,
+      expression: resolvedExpr,
+      avatarAction: avatarAction,
+    );
 
     try {
       // 1. Fetch audio from backend (supports /api/v1/voice-clone/synthesize or /api/v1/audio/voicetut)
@@ -287,12 +413,23 @@ while (\$wmp.playState -eq 3 -or \$wmp.playState -eq 6 -or \$wmp.playState -eq 9
     });
   }
 
+  String? _extractFaceEmojiFromText(String text) {
+    for (final entry in _emojiToExpression.entries) {
+      if (text.contains(entry.key)) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
   String _detectEmotion(String text) {
+    final em = _extractFaceEmojiFromText(text);
+    if (em != null) return _emojiToExpression[em] ?? 'neutral';
     if (text.contains('سعيد') || text.contains('ممتاز') || text.contains('رائع') || text.contains('مرحباً') || text.contains('أهلاً')) {
       return 'happy';
     }
     if (text.contains('؟') || text.contains('هل') || text.contains('لماذا') || text.contains('كيف')) {
-      return 'curious';
+      return 'thinking';
     }
     if (text.contains('خطأ') || text.contains('تحذير') || text.contains('انتبه')) {
       return 'serious';

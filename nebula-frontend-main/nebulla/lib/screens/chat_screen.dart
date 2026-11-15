@@ -182,6 +182,11 @@ class _ChatScreenState extends State<ChatScreen> {
           '';
       _sessionId = data['session_id'] as String? ?? _sessionId;
       final emotion = data['emotion'] as String?;
+      final faceEmoji = data['face_emoji'] as String?;
+      final expression = data['expression'] as String?;
+      final avatarAction = data['avatar_action'] is Map<String, dynamic>
+          ? data['avatar_action'] as Map<String, dynamic>
+          : null;
       final latency = (data['llm_latency_ms'] as num?)?.toDouble();
 
       // Check if the reply contains numbered points (1, 2, 3...)
@@ -207,10 +212,13 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       });
 
-      // Synchronize backend speech audio with animated character lip-sync and expressions
+      // Synchronize backend speech audio with animated character lip-sync and face-emoji expression
       AvatarAudioService.instance.speak(
         reply,
         emotion: emotion,
+        faceEmoji: faceEmoji,
+        expression: expression,
+        avatarAction: avatarAction,
         personalityId: _activePersonalityId,
       );
     } catch (e) {
@@ -654,60 +662,45 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Builds the circular cyborg face avatar with live speaking pulse & interactive full-screen popup
+  /// Builds the circular active GAGAvatar face thumbnail with live speaking pulse & popup
   Widget _buildCyborgAvatarCircle({double radius = 18}) {
     final audio = AvatarAudioService.instance;
-    return ValueListenableBuilder<String>(
-      valueListenable: audio.activeAvatarType,
-      builder: (context, avatarType, _) {
-        final isFemale = avatarType == 'female';
-        final img = isFemale
-            ? 'assets/images/avatar_female.png'
-            : 'assets/images/avatar_male.jpg';
-
-        return ValueListenableBuilder<bool>(
-          valueListenable: audio.isSpeaking,
-          builder: (context, isSpeaking, _) {
-            return InkWell(
-              onTap: _showLiveAvatarDialog,
-              borderRadius: BorderRadius.circular(radius),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                width: radius * 2,
-                height: radius * 2,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFF1F5F9),
-                  border: Border.all(
-                    color: isSpeaking
-                        ? const Color(0xFF00E5FF)
-                        : const Color(0xFFE2E8F0),
-                    width: isSpeaking ? 2.4 : 1.4,
-                  ),
-                  boxShadow: isSpeaking
-                      ? [
-                          BoxShadow(
-                            color: const Color(0xFF00E5FF).withValues(alpha: 0.55),
-                            blurRadius: 12,
-                            spreadRadius: 2,
-                          ),
-                        ]
-                      : null,
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  img,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  errorBuilder: (_, _, _) => Icon(
-                    Icons.smart_toy_rounded,
-                    color: const Color(0xFF00B4D8),
-                    size: radius * 1.1,
-                  ),
-                ),
+    return ValueListenableBuilder<bool>(
+      valueListenable: audio.isSpeaking,
+      builder: (context, isSpeaking, _) {
+        return InkWell(
+          onTap: _showLiveAvatarDialog,
+          borderRadius: BorderRadius.circular(radius),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            width: radius * 2,
+            height: radius * 2,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF0F172A),
+              border: Border.all(
+                color: isSpeaking
+                    ? const Color(0xFF00E5FF)
+                    : const Color(0xFFE2E8F0),
+                width: isSpeaking ? 2.4 : 1.4,
               ),
-            );
-          },
+              boxShadow: isSpeaking
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF00E5FF).withValues(alpha: 0.55),
+                        blurRadius: 12,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : null,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: ActiveAvatarThumb(
+              size: radius * 2,
+              radius: radius,
+              showBorder: false,
+            ),
+          ),
         );
       },
     );

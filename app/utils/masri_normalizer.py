@@ -22,6 +22,8 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Match, Optional, Tuple
 
+from app.services.avatar.emoji_actions import strip_emojis_for_speech
+
 # --------------------------------------------------------------------------- Core regex patterns
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _ACTION_TAG_RE = re.compile(r"\[(?:action:|gesture:|cmd:)?([\w\u0600-\u06FF]+)(?::([^\]]+))?\]", re.IGNORECASE)
@@ -434,10 +436,13 @@ def clean_llm_output_for_speech(text: str) -> str:
     # 2. Strip action and gesture bracket tags
     cleaned = _BRACKET_TAG_RE.sub("", cleaned)
 
-    # 3. Strip stray non-Arabic, non-Latin, non-punctuation symbols (e.g. CJK chars)
+    # 3. Strip face/gesture Unicode emojis (used for avatar expression, never read aloud)
+    cleaned = strip_emojis_for_speech(cleaned)
+
+    # 4. Strip stray non-Arabic, non-Latin, non-punctuation symbols (e.g. CJK chars)
     cleaned = re.sub(r"[\u4e00-\u9fff]", "", cleaned)
 
-    # 4. Apply Masri normalization + code-switching pipeline
+    # 5. Apply Masri normalization + code-switching pipeline
     cleaned = _NORMALIZER.normalize(cleaned)
 
     return cleaned

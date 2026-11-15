@@ -1,10 +1,12 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../models/avatar_profile.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/storage_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 import '../screens/main_shell.dart';
+import 'interactive_animated_avatar.dart';
 
 /// The shared side menu overlay / drawer matching the provided design.
 /// Can be opened from any screen via hamburger menu.
@@ -162,14 +164,12 @@ class NebulaSideMenu extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
 
-                        // 2. Active AI Profile Header Card with Quick Persona Switch
-                        ValueListenableBuilder<String>(
-                          valueListenable: audioService.activeAvatarType,
-                          builder: (context, avatarType, _) {
-                            final isFemale = avatarType == 'female';
-                            final avatarImg = isFemale
-                                ? 'assets/images/avatar_female.png'
-                                : 'assets/images/avatar_male.jpg';
+                        // 2. Active GAGAvatar Profile Header Card
+                        ValueListenableBuilder<AvatarProfileModel?>(
+                          valueListenable: audioService.activeAvatar,
+                          builder: (context, activeAvatar, _) {
+                            final hasGagAvatar =
+                                activeAvatar != null && activeAvatar.isGagAvatar;
 
                             return Container(
                               padding: const EdgeInsets.all(12),
@@ -190,7 +190,6 @@ class NebulaSideMenu extends StatelessWidget {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      // Dynamic User-Chosen Persona Name
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,9 +209,11 @@ class NebulaSideMenu extends StatelessWidget {
                                               ),
                                             ),
                                             const SizedBox(height: 2),
-                                            const Text(
-                                              'متصل • استجابة فورية',
-                                              style: TextStyle(
+                                            Text(
+                                              hasGagAvatar
+                                                  ? 'GAGAvatar 3D • مفعّل'
+                                                  : 'GAGAvatar • في انتظار الصورة',
+                                              style: const TextStyle(
                                                 fontFamily: 'Cairo',
                                                 fontSize: 12,
                                                 color: Color(0xFF0284C7),
@@ -222,29 +223,14 @@ class NebulaSideMenu extends StatelessWidget {
                                           ],
                                         ),
                                       ),
-
-                                      // Avatar Image with AI-01 / AI-02 badge
                                       Stack(
                                         clipBehavior: Clip.none,
                                         children: [
-                                          Container(
-                                            width: 56,
-                                            height: 56,
-                                            decoration: BoxDecoration(
-                                              borderRadius: BorderRadius.circular(16),
-                                              border: Border.all(
-                                                color: const Color(0xFF0284C7),
-                                                width: 1.5,
-                                              ),
-                                            ),
-                                            child: ClipRRect(
-                                              borderRadius: BorderRadius.circular(14),
-                                              child: Image.asset(
-                                                avatarImg,
-                                                fit: BoxFit.cover,
-                                                alignment: Alignment.topCenter,
-                                              ),
-                                            ),
+                                          const ActiveAvatarThumb(
+                                            size: 56,
+                                            radius: 16,
+                                            showBorder: true,
+                                            borderColor: Color(0xFF0284C7),
                                           ),
                                           Positioned(
                                             bottom: -4,
@@ -253,12 +239,14 @@ class NebulaSideMenu extends StatelessWidget {
                                               padding: const EdgeInsets.symmetric(
                                                   horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF0284C7),
+                                                color: hasGagAvatar
+                                                    ? const Color(0xFF10B981)
+                                                    : const Color(0xFF0284C7),
                                                 borderRadius: BorderRadius.circular(8),
                                               ),
-                                              child: Text(
-                                                isFemale ? 'AI - 02' : 'AI - 01',
-                                                style: const TextStyle(
+                                              child: const Text(
+                                                '3D',
+                                                style: TextStyle(
                                                   fontFamily: 'Cairo',
                                                   fontSize: 9,
                                                   fontWeight: FontWeight.bold,
@@ -272,12 +260,8 @@ class NebulaSideMenu extends StatelessWidget {
                                     ],
                                   ),
                                   const SizedBox(height: 10),
-                                  // Quick Switch Persona Button
                                   InkWell(
-                                    onTap: () {
-                                      final nextType = isFemale ? 'male' : 'female';
-                                      audioService.switchAvatar(nextType);
-                                    },
+                                    onTap: () => _handleItemTap(context, 0),
                                     borderRadius: BorderRadius.circular(12),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
@@ -293,15 +277,15 @@ class NebulaSideMenu extends StatelessWidget {
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
                                           const Icon(
-                                            Icons.swap_horiz_rounded,
+                                            Icons.face_retouching_natural_rounded,
                                             size: 16,
                                             color: Color(0xFF0284C7),
                                           ),
                                           const SizedBox(width: 6),
                                           Text(
-                                            isFemale
-                                                ? 'تبديل إلى الشخصية الأولى (AI - 01)'
-                                                : 'تبديل إلى الشخصية الثانية (AI - 02)',
+                                            hasGagAvatar
+                                                ? 'تحديث الأفاتار من الرئيسية'
+                                                : 'إنشاء الأفاتار من الرئيسية',
                                             style: const TextStyle(
                                               fontFamily: 'Cairo',
                                               fontSize: 11.5,

@@ -23,6 +23,7 @@ from app.models.personality import Personality
 from app.models.face_profile import FaceProfile
 from app.providers.llm.factory import get_llm_provider
 from app.services.ai.pipeline import clean_text_for_tts, _extract_emotion
+from app.services.avatar.emoji_actions import extract_emoji_and_emotion
 from app.services.memory.rag_service import RAGService
 from app.websocket.manager import manager
 from app.websocket.handlers import get_face_service, get_ai_pipeline as _get_ai_pipeline
@@ -94,6 +95,9 @@ class ChatResponse(BaseModel):
     session_id: str
     conversation_id: int
     emotion: str
+    face_emoji: str = "😐"
+    expression: str = "neutral"
+    avatar_action: Dict[str, Any] = Field(default_factory=dict)
     llm_latency_ms: float = 0.0
     latency: Dict[str, Any] = Field(default_factory=dict)
     retrieved_memories: List[str] = Field(default_factory=list)
@@ -106,12 +110,6 @@ class ChatResponse(BaseModel):
     audio_url: Optional[str] = Field(None, description="Endpoint URL to fetch or stream the synthesized audio")
     has_voice_sample: bool = Field(True, description="Whether user has a registered voice sample")
     voice_notice: Optional[str] = Field(None, description="Notice if user needs to upload a voice sample")
-
-    # Backward compatibility fields
-    response: Optional[str] = None
-    retrieved_memories: Optional[List[str]] = None
-    personality_id: Optional[int] = None
-    latency: Optional[dict] = None
 
 
 # ── Authentication Helper ────────────────────────────────────────────────────
@@ -178,6 +176,44 @@ async def _synthesize_chat_audio(
     except Exception as ex:
         logger.error(f"Error synthesizing chat audio: {ex}")
     return None, None, True, None
+
+
+async def _build_and_broadcast_avatar_action(
+    reply_text: str,
+    personality_id: Optional[int],
+    audio_url: Optional[str],
+    has_voice_sample: bool,
+) -> Dict[str, Any]:
+    """Build structured face-emoji avatar action and notify live WebSocket clients safely."""
+    action = extract_emoji_and_emotion(
+        reply_text,
+        voice_mode="cloned" if has_voice_sample else "none",
+    )
+    action["personality_id"] = personality_id
+    action["audio_url"] = audio_url
+    ws_payload = {
+        "t": "avatar_action",
+        "face_emoji": action["face_emoji"],
+        "expression": action["expression"],
+        "mouth_preset": action["mouth_preset"],
+        "speak_mouth": True,
+        "voice_mode": action["voice_mode"],
+        "personality_id": personality_id,
+        "audio_url": audio_url,
+        "flame_params": action["flame_params"],
+    }
+    try:
+        await manager.send_to_phone({
+            "t": "eyes",
+            "mood": action["ws_mood"],
+            "face_emoji": action["face_emoji"],
+            "audio_url": audio_url,
+        })
+        await manager.send_to_phone(ws_payload)
+        await manager.broadcast_to_desks(ws_payload)
+    except Exception as ex:
+        logger.debug(f"WebSocket avatar broadcast notice: {ex}")
+    return action
 
 
 @router.post("/chat", summary="Chat with the LLM via REST API", response_model=ChatResponse)
@@ -295,6 +331,7 @@ async def chat_with_llm(
         audio_b64, audio_url, has_sample, voice_notice = (None, None, True, None)
         if body.return_audio:
             audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(reply, active_pid)
+        avatar_action = await _build_and_broadcast_avatar_action(reply, active_pid, audio_url, has_sample)
 
         return ChatResponse(
             reply=reply,
@@ -303,6 +340,9 @@ async def chat_with_llm(
             session_id=session_id,
             conversation_id=conv_id,
             emotion=emotion,
+            face_emoji=avatar_action["face_emoji"],
+            expression=avatar_action["expression"],
+            avatar_action=avatar_action,
             llm_latency_ms=0.0,
             latency={"llm_ms": 0.0, "total_ms": 0.0},
             retrieved_memories=[],
@@ -411,6 +451,7 @@ async def chat_with_llm(
     audio_b64, audio_url, has_sample, voice_notice = (None, None, True, None)
     if body.return_audio:
         audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(reply, active_pid)
+    avatar_action = await _build_and_broadcast_avatar_action(reply, active_pid, audio_url, has_sample)
 
     return ChatResponse(
         reply=reply,
@@ -419,6 +460,9 @@ async def chat_with_llm(
         session_id=session_id,
         conversation_id=conv_id,
         emotion=emotion,
+        face_emoji=avatar_action["face_emoji"],
+        expression=avatar_action["expression"],
+        avatar_action=avatar_action,
         llm_latency_ms=round(llm_ms, 2),
         latency={"llm_ms": round(llm_ms, 2), "total_ms": round(llm_ms, 2)},
         retrieved_memories=memories,
@@ -560,7 +604,21 @@ async def chat_stream(
                 err_msg = "خطأ في قراءة استجابة الموديل المباشرة (Streaming read error)"
             yield f"data: {json.dumps({'type': 'error', 'content': err_msg}, ensure_ascii=False)}\n\n"
         finally:
-            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+            full_str_done = "".join(full_content)
+            done_action = extract_emoji_and_emotion(full_str_done)
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "done",
+                        "face_emoji": done_action["face_emoji"],
+                        "expression": done_action["expression"],
+                        "avatar_action": done_action,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
 
         # Save to DB safely using a fresh session
         if full_content:

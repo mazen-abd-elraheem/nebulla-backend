@@ -137,6 +137,17 @@ class Settings(BaseSettings):
     REMINDER_ESCALATION_MINUTES: int = 5
     ACTION_LOG_RETENTION_DAYS: int = 90
 
+    # ── 3D Avatar / GAGAvatar Config ───────────────────────────────────────
+    # Primary & sole engine: xg-chu/GAGAvatar local CUDA runtime or GPU worker.
+    # Legacy UniFace/OpenCV fallback is disabled unless explicitly enabled.
+    GAGAVATAR_REPO_PATH: str = "vendor/GAGAvatar"
+    GAGAVATAR_MODEL_PATH: str = "assets/GAGAvatar"
+    GAGAVATAR_SERVICE_URL: str | None = None
+    GAGAVATAR_DEVICE: str = "auto"  # "auto" | "cuda" | "cpu"
+    AVATAR_ALLOW_LOCAL_FALLBACK: bool = False
+    GAGAVATAR_STRICT_ONLY: bool = True
+    AVATAR_OUTPUT_DIR: str = "data/avatars"
+
     # ── Logging ────────────────────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/nebula.log"

@@ -1,17 +1,20 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../core/theme.dart';
+import '../models/avatar_profile.dart';
+import '../services/api_service.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/audio_viseme_analyzer.dart';
 
-/// Full interactive animated cybernetic avatar.
-/// - Full-screen edge-to-edge portrait framing for the female & male avatar.
-/// - The base character portrait stays steady and firmly grounded (no sliding/shaking of the photo).
-/// - Natural organic eye blinking on the actual eye sockets.
-/// - Dynamic lip-sync and mouth articulation directly on the character's lips when speaking.
-/// - Tap to speak greeting; double-tap to switch character appearance.
+/// Interactive neural avatar powered solely by xg-chu/GAGAvatar.
+///
+/// Renders backend-generated 3D Gaussian Splatting frames driven by FLAME
+/// expression codes, neural eye-blink states, and neural jaw-opening levels
+/// synced to VoiceTut cloned speech (zero synthetic Canvas mouth/eyelid overlays).
 class InteractiveAnimatedAvatar extends StatefulWidget {
-  final String? avatarType; // 'male' or 'female'
+  final String? avatarType;
+  final AvatarProfileModel? overrideAvatar;
   final bool fullScreen;
   final double? width;
   final double? height;
@@ -21,6 +24,7 @@ class InteractiveAnimatedAvatar extends StatefulWidget {
   const InteractiveAnimatedAvatar({
     super.key,
     this.avatarType,
+    this.overrideAvatar,
     this.fullScreen = false,
     this.width,
     this.height,
@@ -37,7 +41,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     with TickerProviderStateMixin {
   final _audioService = AvatarAudioService.instance;
 
-  // Animation controllers
   AnimationController? _breathingController;
   Animation<double>? _breathingAnimation;
   AnimationController? _auraPulseController;
@@ -47,16 +50,17 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
 
   Timer? _blinkTimer;
   final Random _random = Random();
+  String? _precachedKey;
 
   @override
   void initState() {
     super.initState();
     _initControllers();
     _scheduleNextBlink();
+    unawaited(_audioService.loadActiveAvatar());
   }
 
   void _initControllers() {
-    // 1. Ambient living breathing pulse (4 seconds)
     _breathingController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4000),
@@ -69,19 +73,16 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
       ),
     );
 
-    // 2. Ambient neural glow pulse
     _auraPulseController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
 
-    // 3. Filter-Style 3D Micro-Head Parallax Sway (5.5 seconds organic cycle)
     _headMotionController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 5500),
     )..repeat(reverse: true);
 
-    // 4. Natural Eye Blinking Controller (140ms organic eyelid close & open)
     _blinkController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 140),
@@ -97,7 +98,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
 
   void _scheduleNextBlink() {
     _blinkTimer?.cancel();
-    // Blinks naturally every 2.4 to 4.0 seconds
     final delayMs = 2400 + _random.nextInt(1600);
     _blinkTimer = Timer(Duration(milliseconds: delayMs), () {
       if (!mounted || _blinkController == null) return;
@@ -107,6 +107,30 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
           if (mounted) _scheduleNextBlink();
         });
       });
+    });
+  }
+
+  /// Precache GAGAvatar expression, blink, and mouth-level frames for gapless 60fps animation.
+  void _ensurePrecached(AvatarProfileModel avatar) {
+    final key = '${avatar.id}_${avatar.updatedAt ?? ""}_${avatar.attemptNumber}';
+    if (_precachedKey == key) return;
+    _precachedKey = key;
+
+    final urls = <String>{
+      if (avatar.previewUrl.isNotEmpty) avatar.previewUrl,
+      if (avatar.blinkSpriteUrl != null && avatar.blinkSpriteUrl!.isNotEmpty)
+        avatar.blinkSpriteUrl!,
+      ...avatar.sprites.values,
+      for (final list in avatar.mouthFrames.values) ...list,
+    };
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final rel in urls) {
+        if (rel.isEmpty) continue;
+        final resolved = ApiService.instance.resolveUrl(rel);
+        unawaited(precacheImage(NetworkImage(resolved), context).catchError((_) {}));
+      }
     });
   }
 
@@ -124,14 +148,13 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   Widget build(BuildContext context) {
     _initControllers();
 
-    return ValueListenableBuilder<String>(
-      valueListenable: _audioService.activeAvatarType,
-      builder: (context, activeType, _) {
-        final currentType = widget.avatarType ?? activeType;
-        final isFemale = currentType == 'female';
-        final assetPath = isFemale
-            ? 'assets/images/avatar_female.png'
-            : 'assets/images/avatar_male.jpg';
+    return ValueListenableBuilder<AvatarProfileModel?>(
+      valueListenable: _audioService.activeAvatar,
+      builder: (context, globalAvatar, _) {
+        final effectiveAvatar = widget.overrideAvatar ?? globalAvatar;
+        if (effectiveAvatar != null && effectiveAvatar.isGagAvatar) {
+          _ensurePrecached(effectiveAvatar);
+        }
 
         return ValueListenableBuilder<bool>(
           valueListenable: _audioService.isSpeaking,
@@ -146,8 +169,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                       valueListenable: _audioService.currentEmotion,
                       builder: (context, emotion, _) {
                         return _buildAvatarContent(
-                          assetPath: assetPath,
-                          isFemale: isFemale,
+                          avatar: effectiveAvatar,
                           isSpeaking: isSpeaking,
                           amplitude: amplitude,
                           viseme: viseme,
@@ -166,21 +188,40 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   Widget _buildAvatarContent({
-    required String assetPath,
-    required bool isFemale,
+    AvatarProfileModel? avatar,
     required bool isSpeaking,
     required double amplitude,
     required VisemeFrame viseme,
     required String emotion,
   }) {
-    final auraColor = _getEmotionColor(emotion, isSpeaking);
+    final auraColor = _getEmotionColor(emotion);
+    final hasGagAvatar =
+        avatar != null && avatar.isGagAvatar && avatar.previewUrl.isNotEmpty;
+
+    String? frameUrl;
+    if (hasGagAvatar) {
+      final blinkVal = _blinkAnimation?.value ?? 0.0;
+      final isBlinking =
+          blinkVal > 0.35 && (avatar.blinkSpriteUrl?.isNotEmpty ?? false);
+      final effOpen = isSpeaking ? max(viseme.openness, amplitude * 0.95) : 0.0;
+      final int mouthLevel = !isSpeaking
+          ? 0
+          : (effOpen >= 0.72
+              ? 3
+              : (effOpen >= 0.42 ? 2 : (effOpen >= 0.14 ? 1 : 0)));
+
+      final relPath = avatar.frameForState(
+        emotion: emotion,
+        mouthLevel: mouthLevel,
+        blinking: isBlinking,
+      );
+      frameUrl = ApiService.instance.resolveUrl(relPath);
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableW = widget.width ?? constraints.maxWidth;
         final availableH = widget.height ?? constraints.maxHeight;
-
-        // Take full width & height when fullScreen is active
         final portraitW = widget.fullScreen ? availableW : min(availableW, 420.0);
         final portraitH = availableH;
 
@@ -192,11 +233,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
               _triggerTapFeedback();
             }
           },
-          onDoubleTap: () {
-            final nextType = isFemale ? 'male' : 'female';
-            _audioService.switchAvatar(nextType);
-            widget.onAvatarDoubleTapped?.call();
-          },
+          onDoubleTap: widget.onAvatarDoubleTapped,
           child: AnimatedBuilder(
             animation: Listenable.merge([
               _breathingAnimation!,
@@ -204,16 +241,12 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
               _headMotionController!,
               _blinkAnimation!,
             ]),
-            builder: (context, child) {
-              final imgW = isFemale ? 418.0 : 448.0;
-              const imgH = 1024.0;
-
-              // Filter-Style 3D Micro-Head Parallax & Idle Sway
+            builder: (context, _) {
               final headT = (_headMotionController?.value ?? 0.5) * 2 * pi;
-              final yaw = sin(headT * 0.7) * 0.018; // ±1.0° horizontal sway
+              final yaw = sin(headT * 0.7) * 0.018;
               final pitch = (cos(headT * 0.9) * 0.012) +
-                  (isSpeaking ? sin(headT * 3.5) * 0.006 : 0.0); // subtle speech nod
-              final roll = sin(headT * 0.5) * 0.007; // ±0.4° gentle head tilt
+                  (isSpeaking ? sin(headT * 3.5) * 0.006 : 0.0);
+              final roll = sin(headT * 0.5) * 0.007;
 
               return Center(
                 child: SizedBox(
@@ -223,99 +256,63 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                     alignment: Alignment.center,
                     clipBehavior: Clip.none,
                     children: [
-                      // 1. Ambient Cybernetic Energy Glow
                       _buildAmbientGlow(auraColor, isSpeaking, amplitude, portraitW, portraitH),
-
-                      // 2. Character Portrait: Filter 3D Parallax Perspective + Organic Micro-Breathing
                       Transform(
                         alignment: const Alignment(0.0, -0.15),
                         transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.001) // 3D depth perspective
+                          ..setEntry(3, 2, 0.001)
                           ..rotateY(yaw)
                           ..rotateX(pitch)
                           ..rotateZ(roll),
                         child: ClipRRect(
                           borderRadius: widget.fullScreen
                               ? BorderRadius.zero
-                              : BorderRadius.circular(28),
+                              : BorderRadius.circular(24),
                           child: SizedBox(
                             width: portraitW,
                             height: portraitH,
-                            child: FittedBox(
-                              fit: BoxFit.cover,
-                              alignment: isFemale
-                                  ? const Alignment(0.0, -0.06)
-                                  : const Alignment(0.0, -0.16),
-                              child: SizedBox(
-                                width: imgW,
-                                height: imgH,
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    // Base Character Image with subtle organic micro-breathing & speech resonance
-                                    Transform.scale(
-                                      scale: 1.0 +
-                                          (0.012 * (_breathingAnimation?.value ?? 0.0)) +
-                                          (isSpeaking ? amplitude * 0.015 : 0.0),
-                                      alignment: const Alignment(0.0, 0.25),
-                                      child: Image.asset(
-                                        assetPath,
-                                        width: imgW,
-                                        height: imgH,
-                                        fit: BoxFit.fill,
-                                        errorBuilder: (_, _, _) => _buildFallback(isFemale),
-                                      ),
-                                    ),
-
-                                    // Natural Organic Eye Blinking (Positioned accurately on actual eye sockets)
-                                    Positioned.fill(
-                                      child: CustomPaint(
-                                        painter: _NaturalEyeBlinkPainter(
-                                          isFemale: isFemale,
-                                          blinkProgress: _blinkAnimation?.value ?? 0.0,
+                            child: frameUrl != null
+                                ? Transform.scale(
+                                    scale: 1.0 +
+                                        (0.010 * (_breathingAnimation?.value ?? 0.0)) +
+                                        (isSpeaking ? amplitude * 0.014 : 0.0),
+                                    alignment: const Alignment(0.0, 0.1),
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Image.network(
+                                          frameUrl,
+                                          fit: BoxFit.cover,
+                                          alignment: Alignment.center,
+                                          gaplessPlayback: true,
+                                          errorBuilder: (_, _, _) =>
+                                              _buildNoAvatarPlaceholder(auraColor),
                                         ),
-                                      ),
-                                    ),
-
-                                    // Dynamic Audio-Driven Lip-Sync (Viseme based mouth morph directly on lips)
-                                    Positioned.fill(
-                                      child: CustomPaint(
-                                        painter: _RealisticMouthLipSyncPainter(
-                                          isFemale: isFemale,
-                                          viseme: viseme,
-                                        ),
-                                      ),
-                                    ),
-
-                                    // Subtle bottom gradient fade to white
-                                    Positioned.fill(
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topCenter,
-                                            end: Alignment.bottomCenter,
-                                            colors: [
-                                              Colors.transparent,
-                                              Colors.transparent,
-                                              Colors.white.withValues(alpha: 0.85),
-                                            ],
-                                            stops: const [0.0, 0.78, 1.0],
+                                        if (widget.fullScreen)
+                                          DecoratedBox(
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                begin: Alignment.topCenter,
+                                                end: Alignment.bottomCenter,
+                                                colors: [
+                                                  Colors.transparent,
+                                                  Colors.transparent,
+                                                  AppColors.bg.withValues(alpha: 0.88),
+                                                ],
+                                                stops: const [0.0, 0.68, 1.0],
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                                  )
+                                : _buildNoAvatarPlaceholder(auraColor),
                           ),
                         ),
                       ),
-
-                      // 3. Sci-Fi Floating Waveform Equalizer when speaking
-                      if (isSpeaking)
+                      if (isSpeaking && hasGagAvatar)
                         Positioned(
-                          bottom: widget.fullScreen ? 94 : 20,
+                          bottom: widget.fullScreen ? 210 : 14,
                           child: _buildSpeechWaveform(auraColor, amplitude),
                         ),
                     ],
@@ -332,17 +329,17 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   Widget _buildAmbientGlow(
       Color color, bool isSpeaking, double amplitude, double w, double h) {
     final pulseVal = _auraPulseController?.value ?? 0.5;
-    final pulse = isSpeaking ? 0.35 + (amplitude * 0.25) : 0.12 + (pulseVal * 0.08);
+    final pulse = isSpeaking ? 0.32 + (amplitude * 0.22) : 0.10 + (pulseVal * 0.06);
 
     return Container(
-      width: w * 0.85,
-      height: h * 0.65,
+      width: w * 0.82,
+      height: h * 0.62,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
             color: color.withValues(alpha: pulse),
-            blurRadius: isSpeaking ? 60 : 35,
+            blurRadius: isSpeaking ? 64 : 40,
             spreadRadius: isSpeaking ? 16 : 6,
           ),
         ],
@@ -356,17 +353,17 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
+        color: const Color(0xFF0F172A).withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: color.withValues(alpha: 0.5),
-          width: 1.2,
+          color: Colors.white.withValues(alpha: 0.14),
+          width: 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: color.withValues(alpha: 0.25),
-            blurRadius: 14,
-            offset: const Offset(0, 3),
+            color: color.withValues(alpha: 0.28),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -375,7 +372,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
         children: List.generate(7, (i) {
           final wave = sin((i * 0.7) + (pulseVal * pi * 2.5)).abs();
           final barHeight = 5.0 + (wave * amplitude * 18.0);
-
           return Container(
             margin: const EdgeInsets.symmetric(horizontal: 2.0),
             width: 3.0,
@@ -390,31 +386,73 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     );
   }
 
-  Widget _buildFallback(bool isFemale) {
+  Widget _buildNoAvatarPlaceholder(Color auraColor) {
     return Container(
-      color: const Color(0xFFF8FAFC),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF090D16),
+            const Color(0xFF0F172A),
+            auraColor.withValues(alpha: 0.14),
+          ],
+        ),
+      ),
       child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isFemale ? Icons.face_3_rounded : Icons.face_rounded,
-              size: 80,
-              color: const Color(0xFF00E5FF),
-            ),
-            const SizedBox(height: 8),
-            ValueListenableBuilder<String>(
-              valueListenable: _audioService.activePersonaName,
-              builder: (context, name, _) => Text(
-                name,
-                style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1E293B),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 92,
+                height: 92,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF1E293B).withValues(alpha: 0.85),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: auraColor.withValues(alpha: 0.22),
+                      blurRadius: 28,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.face_retouching_natural_rounded,
+                  size: 42,
+                  color: auraColor,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              ValueListenableBuilder<String>(
+                valueListenable: _audioService.activePersonaName,
+                builder: (context, name, _) => Text(
+                  name,
+                  style: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'ارفع صورتك لتحويلها لشخصية 3D بنموذج GAGAvatar',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 12.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -422,188 +460,96 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
 
   void _triggerTapFeedback() {
     final name = _audioService.activePersonaName.value;
-    final isFemale = _audioService.activeAvatarType.value == 'female';
-    final greeting = isFemale
-        ? 'أهلاً بك! أنا $name، جاهزة لمساعدتك في أي استفسار.'
-        : 'أهلاً بك! أنا $name، مستعد لمساعدتك وإنجاز مهامك فوراً.';
-    _audioService.speak(greeting, emotion: 'happy');
+    _audioService.speak(
+      'أهلاً بك! أنا $name، جاهز لمساعدتك بالصوت والتعبيرات الحية.',
+      faceEmoji: '😊',
+      expression: 'happy',
+    );
   }
 
-  Color _getEmotionColor(String emotion, bool isSpeaking) {
+  Color _getEmotionColor(String emotion) {
     switch (emotion) {
       case 'happy':
-        return const Color(0xFF00E5FF); // Vibrant Cyan
-      case 'curious':
-        return const Color(0xFF38BDF8); // Sky Blue
-      case 'confident':
-        return const Color(0xFF2563EB); // Royal Sapphire
-      case 'serious':
-        return const Color(0xFF0284C7); // Deep Ocean Blue
-      case 'neutral':
+      case 'wave':
+      case 'like':
+        return const Color(0xFF00E5FF);
+      case 'laugh':
+        return const Color(0xFF10B981);
+      case 'love':
+        return const Color(0xFFF472B6);
+      case 'surprised':
+        return const Color(0xFFF59E0B);
+      case 'angry':
+        return const Color(0xFFEF4444);
+      case 'sad':
+      case 'sleepy':
+        return const Color(0xFF818CF8);
+      case 'thinking':
+        return const Color(0xFF38BDF8);
       default:
-        return const Color(0xFF0EA5E9); // Electric Tech Blue
+        return AppColors.teal;
     }
   }
 }
 
-/// Organic, photorealistic eye blinking painter positioned accurately on actual eye sockets
-class _NaturalEyeBlinkPainter extends CustomPainter {
-  final bool isFemale;
-  final double blinkProgress; // 0.0 = open, 1.0 = fully closed
+/// Shared circular/rounded thumbnail displaying the active GAGAvatar character.
+class ActiveAvatarThumb extends StatelessWidget {
+  final double size;
+  final double radius;
+  final bool showBorder;
+  final Color? borderColor;
 
-  _NaturalEyeBlinkPainter({
-    required this.isFemale,
-    required this.blinkProgress,
+  const ActiveAvatarThumb({
+    super.key,
+    this.size = 44,
+    this.radius = 22,
+    this.showBorder = true,
+    this.borderColor,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (blinkProgress < 0.04) return;
+  Widget build(BuildContext context) {
+    final audio = AvatarAudioService.instance;
+    return ValueListenableBuilder<AvatarProfileModel?>(
+      valueListenable: audio.activeAvatar,
+      builder: (context, avatar, _) {
+        final hasAvatar =
+            avatar != null && avatar.isGagAvatar && avatar.previewUrl.isNotEmpty;
+        final imgUrl =
+            hasAvatar ? ApiService.instance.resolveUrl(avatar.previewUrl) : null;
 
-    // Exact center coordinates in 1:1 image pixel space (1024h)
-    final leftCenter = isFemale
-        ? const Offset(166.0, 416.0)
-        : const Offset(158.0, 370.0);
-    final rightCenter = isFemale
-        ? const Offset(252.0, 416.0)
-        : const Offset(290.0, 370.0);
-
-    final eyeW = isFemale ? 42.0 : 44.0;
-    final eyeH = isFemale ? 18.0 : 18.0;
-
-    final lidColor = isFemale ? const Color(0xFFE4CEBF) : const Color(0xFFD2B29F);
-    final shadowColor = isFemale ? const Color(0xFF382A26) : const Color(0xFF281E1C);
-
-    _paintSingleEye(canvas, leftCenter, eyeW, eyeH, lidColor, shadowColor);
-    _paintSingleEye(canvas, rightCenter, eyeW, eyeH, lidColor, shadowColor);
-  }
-
-  void _paintSingleEye(
-    Canvas canvas,
-    Offset center,
-    double w,
-    double h,
-    Color lid,
-    Color shadow,
-  ) {
-    final drop = h * blinkProgress * 1.05;
-    final rect = Rect.fromCenter(center: center, width: w, height: h);
-
-    final path = Path();
-    path.moveTo(rect.left, center.dy - (h * 0.35));
-    path.quadraticBezierTo(
-      center.dx,
-      center.dy - (h * 0.35) + drop,
-      rect.right,
-      center.dy - (h * 0.35),
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            color: const Color(0xFF0F172A),
+            border: showBorder
+                ? Border.all(
+                    color: borderColor ?? AppColors.teal.withValues(alpha: 0.6),
+                    width: 1.4,
+                  )
+                : null,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: imgUrl != null
+              ? Image.network(
+                  imgUrl,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, _, _) => Icon(
+                    Icons.face_retouching_natural_rounded,
+                    color: AppColors.teal,
+                    size: size * 0.55,
+                  ),
+                )
+              : Icon(
+                  Icons.face_retouching_natural_rounded,
+                  color: AppColors.teal,
+                  size: size * 0.55,
+                ),
+        );
+      },
     );
-    path.quadraticBezierTo(
-      center.dx,
-      center.dy - (h * 0.35) + (drop * 0.78),
-      rect.left,
-      center.dy - (h * 0.35),
-    );
-    path.close();
-
-    final paint = Paint()
-      ..color = lid.withValues(alpha: (0.95 * blinkProgress).clamp(0.0, 1.0))
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(path, paint);
-
-    final linePaint = Paint()
-      ..color = shadow.withValues(alpha: (0.75 * blinkProgress).clamp(0.0, 1.0))
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round;
-    canvas.drawPath(path, linePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _NaturalEyeBlinkPainter old) {
-    return old.blinkProgress != blinkProgress || old.isFemale != isFemale;
-  }
-}
-
-/// Dynamic Audio-Driven Viseme Lip-Sync Painter positioned accurately directly on lips
-class _RealisticMouthLipSyncPainter extends CustomPainter {
-  final bool isFemale;
-  final VisemeFrame viseme;
-
-  _RealisticMouthLipSyncPainter({
-    required this.isFemale,
-    required this.viseme,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (viseme.openness < 0.05 && viseme.type != VisemeType.mbp) return;
-
-    // Exact center coordinates on actual lips
-    final mouthCenter = isFemale
-        ? const Offset(209.0, 554.0)
-        : const Offset(224.0, 562.0);
-
-    final baseW = isFemale ? 56.0 : 68.0;
-    // Viseme pucker narrows width (oo/u), widthRatio expands width (ee/smile)
-    final mouthW = (baseW * viseme.widthRatio * (1.0 - (viseme.pucker * 0.28))).clamp(28.0, 84.0);
-
-    final maxH = isFemale ? 9.5 : 11.0;
-    final openH = (viseme.openness * maxH).clamp(1.2, maxH);
-
-    final mouthRect = Rect.fromCenter(
-      center: Offset(mouthCenter.dx, mouthCenter.dy + (viseme.jawDrop * 2.2)),
-      width: mouthW,
-      height: openH,
-    );
-
-    // 1. Inner mouth cavity (curved based on viseme pucker & openness)
-    final cornerRadius = viseme.pucker > 0.4 ? openH * 0.78 : openH * 0.52;
-    final cavityPaint = Paint()
-      ..color = const Color(0xFF22090C)
-      ..style = PaintingStyle.fill;
-    final cavityRRect = RRect.fromRectAndRadius(mouthRect, Radius.circular(cornerRadius));
-    canvas.drawRRect(cavityRRect, cavityPaint);
-
-    // 2. Upper teeth hint based on viseme.teethVisible
-    if (openH > 2.8 && viseme.teethVisible > 0.15) {
-      final teethAlpha = (viseme.teethVisible * 0.95).clamp(0.0, 1.0);
-      final teethPaint = Paint()
-        ..color = const Color(0xFFFAF7F4).withValues(alpha: teethAlpha)
-        ..style = PaintingStyle.fill;
-      final teethRect = Rect.fromLTWH(
-        mouthRect.left + (mouthRect.width * 0.20),
-        mouthRect.top,
-        mouthRect.width * 0.60,
-        min(2.5, openH * 0.35),
-      );
-      canvas.drawRRect(RRect.fromRectAndRadius(teethRect, const Radius.circular(1.2)), teethPaint);
-    }
-
-    // 3. Lower Lip highlight & shadow
-    final lipColor = isFemale ? const Color(0xFFDC7D7D) : const Color(0xFFBF7568);
-    final lowerLipPaint = Paint()
-      ..color = lipColor.withValues(alpha: 0.92)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
-      ..strokeCap = StrokeCap.round;
-
-    final lowerLipPath = Path();
-    lowerLipPath.moveTo(mouthRect.left, mouthRect.top + (openH * 0.35));
-    lowerLipPath.quadraticBezierTo(
-      mouthCenter.dx,
-      mouthRect.bottom + 1.2,
-      mouthRect.right,
-      mouthRect.top + (openH * 0.35),
-    );
-    canvas.drawPath(lowerLipPath, lowerLipPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _RealisticMouthLipSyncPainter old) {
-    return old.viseme.openness != viseme.openness ||
-        old.viseme.type != viseme.type ||
-        old.viseme.widthRatio != viseme.widthRatio ||
-        old.viseme.pucker != viseme.pucker ||
-        old.isFemale != isFemale;
   }
 }

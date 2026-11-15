@@ -52,7 +52,7 @@ async def init_db() -> None:
     from sqlalchemy import text
     from app.models import (  # noqa: F401  — import to register models
         device, personality, memory, conversation, signal, calibration, tracking, log, face_profile, user,
-        contact, voiceprint, action_log, reminder,
+        contact, voiceprint, action_log, reminder, avatar_profile,
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
