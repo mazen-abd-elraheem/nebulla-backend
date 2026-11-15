@@ -449,8 +449,40 @@ class XTTSProvider(BaseTTSProvider):
                 if default_ref.exists():
                     target_ref_audio = str(default_ref.resolve())
 
+            # Validate reference audio format using soundfile to prevent LibsndfileError
+            import soundfile as sf
+            valid_ref = False
+            if target_ref_audio and os.path.exists(target_ref_audio):
+                try:
+                    with sf.SoundFile(target_ref_audio) as sf_test:
+                        if sf_test.frames > 0:
+                            valid_ref = True
+                except Exception as sf_err:
+                    logger.warning(
+                        f"Reference audio '{target_ref_audio}' is invalid or corrupted ({sf_err}). "
+                        "Falling back to built-in studio speaker reference."
+                    )
+                    valid_ref = False
+
+            if not valid_ref:
+                built_in_candidates = [
+                    Path("models/voicetut-tts/reference_speakers/ahmed.wav"),
+                    Path("models/voicetut-tts/reference_speakers/mohammed.wav"),
+                    Path("models/voicetut-tts/reference_speakers/ali.wav"),
+                ]
+                for bic in built_in_candidates:
+                    if bic.exists():
+                        target_ref_audio = str(bic.resolve())
+                        txt_cand = bic.with_suffix(".txt")
+                        if txt_cand.exists():
+                            actual_ref_text = txt_cand.read_text(encoding="utf-8").strip()
+                        else:
+                            actual_ref_text = "يعني كل ما تيجي تفكر ان الدنيا بايظة و ان الحياة مش قد كدة، اِفتكر ان ربنا موجود و انه قادر على كل شئ."
+                        valid_ref = True
+                        break
+
             # Attempt to read transcript for reference audio if available
-            actual_ref_text = ref_text
+            actual_ref_text = ref_text or locals().get("actual_ref_text")
             if not actual_ref_text and target_ref_audio:
                 txt_file = Path(target_ref_audio).with_suffix(".txt")
                 if txt_file.exists():
