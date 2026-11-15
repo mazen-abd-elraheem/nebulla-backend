@@ -10,7 +10,7 @@ import '../widgets/nebula_side_menu.dart';
 import '../widgets/global_footer.dart';
 
 class MainShell extends StatefulWidget {
-  const MainShell({super.key, this.initialIndex = 0});
+  const MainShell({super.key, this.initialIndex = 2});
   final int initialIndex;
 
   static void navigateTo(BuildContext context, int index) {
@@ -61,9 +61,9 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      DashboardScreen(onNavigate: _onNavigate),
-      ChatScreen(onNavigate: _onNavigate),
       MemoryPersonasScreen(onNavigate: _onNavigate),
+      ChatScreen(onNavigate: _onNavigate),
+      DashboardScreen(onNavigate: _onNavigate),
       PersonaMemorySpecsScreen(onNavigate: _onNavigate),
       const ProfileScreen(),
       const DiagnosticsScreen(),

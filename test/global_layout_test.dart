@@ -35,6 +35,16 @@ void main() {
     expect(find.text('الذاكرة'), findsOneWidget);
     expect(find.text('الملف الشخصي'), findsOneWidget);
 
+    // Tap on Personas (index 0)
+    await tester.tap(find.text('الشخصيات'));
+    await tester.pump();
+    expect(navigatedIndex, 0);
+
+    // Tap on Home (index 2)
+    await tester.tap(find.text('الصفحه الرئيسيه'));
+    await tester.pump();
+    expect(navigatedIndex, 2);
+
     // Tap on Memory (index 3)
     await tester.tap(find.text('الذاكرة'));
     await tester.pump();

@@ -1,6 +1,6 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../services/avatar_audio_service.dart';
 import '../services/locale_service.dart';
 import '../services/storage_service.dart';
 import '../screens/login_screen.dart';
@@ -94,7 +94,6 @@ class NebulaSideMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final audioService = AvatarAudioService.instance;
     final locale = LocaleService.instance;
     final isArabic = locale.isArabic;
 
@@ -173,14 +172,29 @@ class NebulaSideMenu extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
 
-                        // 2. AI Header Card matching Image 2 reference (clean, no overflow)
-                        ValueListenableBuilder<String>(
-                          valueListenable: audioService.activeAvatarType,
-                          builder: (context, avatarType, _) {
-                            final isFemale = avatarType == 'female';
-                            final avatarImg = isFemale
-                                ? 'assets/images/avatar_female.png'
-                                : 'assets/images/avatar_male.jpg';
+                        // 2. User Profile Header Card (User Name & User Picture)
+                        Builder(
+                          builder: (context) {
+                            final user = StorageService.instance.getUser();
+                            final userName = (user != null && user.fullName.trim().isNotEmpty)
+                                ? user.fullName.trim()
+                                : (isArabic ? 'مازن عبد الرحيم' : 'Mazen Abdelraheem');
+                            final userAvatarPath = StorageService.instance.getUserAvatarPath();
+
+                            Widget avatarImageWidget;
+                            if (userAvatarPath != null && File(userAvatarPath).existsSync()) {
+                              avatarImageWidget = Image.file(
+                                File(userAvatarPath),
+                                fit: BoxFit.cover,
+                                alignment: Alignment.topCenter,
+                              );
+                            } else {
+                              avatarImageWidget = Image.asset(
+                                'assets/images/cyborg_bg.jpg',
+                                fit: BoxFit.cover,
+                                alignment: Alignment.topCenter,
+                              );
+                            }
 
                             return Container(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -199,21 +213,41 @@ class NebulaSideMenu extends StatelessWidget {
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  // Title: المساعد الذكي
+                                  // User Name & Info
                                   Expanded(
-                                    child: Text(
-                                      isArabic ? 'المساعد الذكي' : 'Smart Assistant',
-                                      style: const TextStyle(
-                                        fontFamily: 'Cairo',
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 15,
-                                        color: Color(0xFF1E293B),
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          userName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontFamily: 'Cairo',
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 15,
+                                            color: Color(0xFF1E293B),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          user?.email ?? (isArabic ? 'حساب المستخدم' : 'User Account'),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontFamily: 'Cairo',
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                   const SizedBox(width: 12),
 
-                                  // Avatar Image with AI-01 badge
+                                  // User Photo with USER Badge
                                   Stack(
                                     clipBehavior: Clip.none,
                                     children: [
@@ -229,11 +263,7 @@ class NebulaSideMenu extends StatelessWidget {
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(12),
-                                          child: Image.asset(
-                                            avatarImg,
-                                            fit: BoxFit.cover,
-                                            alignment: Alignment.topCenter,
-                                          ),
+                                          child: avatarImageWidget,
                                         ),
                                       ),
                                       Positioned(
@@ -246,9 +276,9 @@ class NebulaSideMenu extends StatelessWidget {
                                             color: const Color(0xFF00B4D8),
                                             borderRadius: BorderRadius.circular(6),
                                           ),
-                                          child: Text(
-                                            isFemale ? 'AI - 02' : 'AI - 01',
-                                            style: const TextStyle(
+                                          child: const Text(
+                                            'USER',
+                                            style: TextStyle(
                                               fontFamily: 'Cairo',
                                               fontSize: 8.5,
                                               fontWeight: FontWeight.bold,
@@ -271,29 +301,19 @@ class NebulaSideMenu extends StatelessWidget {
                           child: ListView(
                             padding: EdgeInsets.zero,
                             children: [
-                              // 1: الصفحه الرئيسيه
+                              // 1: الشخصيات (Personas - Index 0)
                               _MenuItemCard(
-                                title: isArabic ? 'الصفحه الرئيسيه' : 'Home',
-                                icon: Icons.home_rounded,
-                                iconBoxColor: const Color(0xFFE0F2FE),
-                                iconColor: const Color(0xFF0284C7),
+                                title: isArabic ? 'الشخصيات' : 'Personas',
+                                icon: Icons.groups_rounded,
+                                iconBoxColor: const Color(0xFFF3E8FF),
+                                iconColor: const Color(0xFF9333EA),
+                                hasArrow: true,
                                 isActive: activeIndex == 0,
                                 onTap: () => _handleItemTap(context, 0),
                               ),
                               const SizedBox(height: 9),
 
-                              // 2: إضافة شخصية
-                              _MenuItemCard(
-                                title: isArabic ? 'إضافة شخصية' : 'Add Persona',
-                                icon: Icons.add_rounded,
-                                iconBoxColor: const Color(0xFFEDE9FE),
-                                iconColor: const Color(0xFF7C3AED),
-                                hasArrow: true,
-                                onTap: () => _handleItemTap(context, 2),
-                              ),
-                              const SizedBox(height: 9),
-
-                              // 3: الدردشة (ACTIVE Highlight matching Image 2)
+                              // 2: الدردشة (Chat - Index 1)
                               _MenuItemCard(
                                 title: isArabic ? 'الدردشة' : 'Chat',
                                 icon: Icons.chat_bubble_outline_rounded,
@@ -309,7 +329,18 @@ class NebulaSideMenu extends StatelessWidget {
                               ),
                               const SizedBox(height: 9),
 
-                              // 4: الذاكرة
+                              // 3: الصفحه الرئيسيه (Home - Index 2)
+                              _MenuItemCard(
+                                title: isArabic ? 'الصفحه الرئيسيه' : 'Home',
+                                icon: Icons.home_rounded,
+                                iconBoxColor: const Color(0xFFE0F2FE),
+                                iconColor: const Color(0xFF0284C7),
+                                isActive: activeIndex == 2,
+                                onTap: () => _handleItemTap(context, 2),
+                              ),
+                              const SizedBox(height: 9),
+
+                              // 4: الذاكرة (Memory - Index 3)
                               _MenuItemCard(
                                 title: isArabic ? 'الذاكرة' : 'Memory',
                                 icon: Icons.psychology_rounded,
@@ -321,7 +352,7 @@ class NebulaSideMenu extends StatelessWidget {
                               ),
                               const SizedBox(height: 9),
 
-                              // 5: الملف الشخصي
+                              // 5: الملف الشخصي (Profile - Index 4)
                               _MenuItemCard(
                                 title: isArabic ? 'الملف الشخصي' : 'Profile',
                                 icon: Icons.person_outline_rounded,
@@ -332,7 +363,7 @@ class NebulaSideMenu extends StatelessWidget {
                               ),
                               const SizedBox(height: 9),
 
-                              // 6: الأجهزة
+                              // 6: الأجهزة (Devices - Index 5)
                               _MenuItemCard(
                                 title: isArabic ? 'الأجهزة' : 'Devices',
                                 icon: Icons.computer_rounded,
@@ -341,18 +372,6 @@ class NebulaSideMenu extends StatelessWidget {
                                 hasPillIndicator: true,
                                 isActive: activeIndex == 5,
                                 onTap: () => _handleItemTap(context, 5),
-                              ),
-                              const SizedBox(height: 9),
-
-                              // 7: الشخصيات
-                              _MenuItemCard(
-                                title: isArabic ? 'الشخصيات' : 'Personas',
-                                icon: Icons.groups_rounded,
-                                iconBoxColor: const Color(0xFFF3E8FF),
-                                iconColor: const Color(0xFF9333EA),
-                                hasArrow: true,
-                                isActive: activeIndex == 2,
-                                onTap: () => _handleItemTap(context, 2),
                               ),
                             ],
                           ),

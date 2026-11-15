@@ -75,4 +75,10 @@ class StorageService {
 
   String getPairingCode() =>
       _prefs?.getString('pairing_code') ?? 'change-me-in-production';
+
+  Future<void> setUserAvatarPath(String path) async {
+    await _prefs?.setString('pref_user_avatar_path', path);
+  }
+
+  String? getUserAvatarPath() => _prefs?.getString('pref_user_avatar_path');
 }

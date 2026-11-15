@@ -449,7 +449,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (Navigator.canPop(context)) {
           Navigator.pop(context);
         } else {
-          widget.onNavigate?.call(0); // return to dashboard
+          widget.onNavigate?.call(2); // return to dashboard (Home)
         }
       },
       borderRadius: BorderRadius.circular(12),

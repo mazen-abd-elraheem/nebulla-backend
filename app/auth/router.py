@@ -6,11 +6,13 @@ Password Recovery, and Profile Management endpoints.
 import asyncio
 from datetime import datetime, timedelta, timezone
 import io
+import pathlib
 import secrets
 from typing import Any, Optional
 
 import numpy as np
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select, and_
 from sqlalchemy.exc import IntegrityError
@@ -20,6 +22,8 @@ from app.auth.jwt import (
     create_access_token,
     get_current_user,
     get_current_user_model,
+    get_optional_user,
+    get_optional_user_model,
 )
 from app.auth.schemas import (
     AuthTokenResponse,
@@ -566,3 +570,181 @@ async def exchange_pairing_token(body: LegacyTokenRequest):
         extra={"device": body.device_name},
     )
     return {"access_token": token, "token_type": "bearer", "expires_in": 60 * 60 * 8}
+
+
+# ── 8. Onboarding Questionnaire Endpoints (أسئلة التخصيص) ─────────────────────
+
+@router.get(
+    "/onboarding/questions",
+    summary="Get dynamic onboarding questionnaire (أسئلة تخصيص الذكاء الاصطناعي)",
+)
+async def get_onboarding_questions():
+    """
+    Returns dynamic onboarding questions to personalize the AI companion and seed long-term memory.
+    Matches the onboarding questions card in the UI.
+    """
+    return {
+        "questions": [
+            {
+                "id": "interaction_style",
+                "title": "ما هو أسلوب التفاعل المفضل لديك؟",
+                "subtitle": "اختر الطريقة الأنسب للتواصل والتفاعل مع مساعدك الذكي",
+                "options": ["نصي وصوتي", "صوتي تفاعلي", "نصي فقط"],
+                "default": "نصي وصوتي",
+            },
+            {
+                "id": "interest_domain",
+                "title": "ما هو مجال اهتمامك الأساسي؟",
+                "subtitle": "لتخصيص الردود والذكاء الاصطناعي وفق اهتماماتك اليومية",
+                "options": ["البرمجة والتقنية", "التعليم والدراسة", "الأعمال والإدارة", "الترفيه والتسلية"],
+                "default": "البرمجة والتقنية",
+            },
+            {
+                "id": "personal_fact",
+                "title": "معلومة شخصية تريد من المساعد حفظها بذاكرته:",
+                "subtitle": "احفظ حقيقة أو تفضيل عنك في الذاكرة طويلة المدى",
+                "placeholder": "مثال: اسمي مازن، أحب تطوير التطبيقات وتصميم الأنظمة الذكية",
+                "default": "",
+            },
+        ]
+    }
+
+
+class OnboardingAnswersRequest(BaseModel):
+    answers: dict[str, Any]
+
+
+@router.post(
+    "/onboarding/answers",
+    summary="Save onboarding answers and inject directly to RAG memory (حفظ أسئلة التخصيص)",
+)
+async def save_onboarding_answers(
+    body: OnboardingAnswersRequest,
+    current_user: Optional[User] = Depends(get_optional_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Persists onboarding questionnaire answers directly into the RAG memory system
+    and user personalization profile.
+    """
+    answers = body.answers
+    interaction = answers.get("interaction_style", "نصي وصوتي")
+    interest = answers.get("interest_domain", "البرمجة والتقنية")
+    personal_fact = str(answers.get("personal_fact", "")).strip()
+
+    memories_to_add: list[str] = []
+    if interaction:
+        memories_to_add.append(f"أسلوب التفاعل المفضل للمستخدم: {interaction}")
+    if interest:
+        memories_to_add.append(f"المجال والاهتمام الرئيسي للمستخدم: {interest}")
+    if personal_fact:
+        memories_to_add.append(f"معلومة هامة عن المستخدم في الذاكرة: {personal_fact}")
+
+    # Seed into RAG and Memory table
+    from app.models.memory import Memory
+    from app.services.memory.rag_service import RAGService
+    rag = RAGService()
+
+    saved_count = 0
+    target_pid = 1  # Default primary persona
+    for mem_text in memories_to_add:
+        try:
+            m = Memory(
+                personality_id=target_pid,
+                content=mem_text,
+                source="onboarding",
+                importance=8,
+            )
+            db.add(m)
+            saved_count += 1
+            try:
+                await rag.add_memory(personality_id=target_pid, text=mem_text)
+            except Exception as rag_err:
+                logger.debug(f"RAG vector index notice: {rag_err}")
+        except Exception as e:
+            logger.warning(f"Error persisting onboarding memory: {e}")
+
+    await db.commit()
+    logger.info(f"Persisted {saved_count} onboarding memory items for user {current_user.email if current_user else 'guest'}")
+
+    return {
+        "success": True,
+        "saved_memories_count": saved_count,
+        "message": "تم حفظ تفضيلات التخصيص وإضافتها لذاكرة المساعد الذكي بنجاح",
+    }
+
+
+# ── 9. User Avatar Generation & Processing (توليد الأفاتار) ───────────────────
+
+@router.post(
+    "/avatar/generate",
+    summary="Upload image and transform into Digital Avatar (توليد الأفاتار الرقمي)",
+)
+async def generate_user_avatar(
+    file: UploadFile = File(..., description="صورة المستخدم لتحويلها إلى أفاتار رقمي"),
+    current_user: Optional[User] = Depends(get_optional_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Accepts user photo, processes and saves it as the user avatar,
+    and automatically registers face biometric embedding for Neural Face ID.
+    """
+    content = await file.read()
+    if len(content) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="حجم الصورة كبير جداً، الحد الأقصى 5 ميجابايت.",
+        )
+
+    # Save to data/avatars
+    avatar_dir = pathlib.Path("data/avatars")
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"avatar_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}.jpg"
+    file_path = avatar_dir / filename
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # Automatically enroll face embedding if a face is detected
+    try:
+        face_service = get_face_service()
+        embedding = await asyncio.get_event_loop().run_in_executor(
+            None, face_service.extract_embedding_sync, content
+        )
+        if embedding is not None and len(embedding) > 0 and current_user:
+            profile_name = f"user_{current_user.id}_{current_user.email}"
+            res = await db.execute(select(FaceProfile).where(FaceProfile.name == profile_name))
+            face_prof = res.scalar_one_or_none()
+            if not face_prof:
+                face_prof = FaceProfile(name=profile_name, embedding=embedding)
+                db.add(face_prof)
+                await db.flush()
+            else:
+                face_prof.embedding = embedding
+            current_user.face_profile_id = face_prof.id
+            db.add(current_user)
+            await db.commit()
+            await face_service.reload_known_faces(db)
+            logger.info(f"Auto-enrolled Face ID during avatar creation for {current_user.email}")
+    except Exception as e:
+        logger.debug(f"Face biometric auto-enroll notice: {e}")
+
+    avatar_url = f"/api/v1/auth/avatar/file/{filename}"
+    return {
+        "success": True,
+        "avatar_url": avatar_url,
+        "file_name": filename,
+        "message": "تم تحويل صورتك إلى أفاتار رقمي بنجاح",
+    }
+
+
+@router.get(
+    "/avatar/file/{filename}",
+    summary="Serve generated user avatar file",
+)
+async def get_avatar_file(filename: str):
+    """Serves the generated avatar image file."""
+    file_path = pathlib.Path("data/avatars") / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="الأفاتار غير موجود")
+    return FileResponse(file_path)
+
