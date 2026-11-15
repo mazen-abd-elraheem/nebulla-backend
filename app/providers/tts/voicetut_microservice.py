@@ -62,73 +62,6 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
         except Exception:
             return False
 
-    async def _fallback_synthesize(self, text: str, ref_audio: Optional[str] = None) -> bytes:
-        """High quality real Arabic/English speech synthesis fallback returning clean WAV."""
-        import re
-        clean = re.sub(r"\[.*?\]|<.*?>", "", text).replace('"', ' ').replace("'", " ").strip()[:350]
-        if not clean:
-            clean = "أهلاً بك"
-
-        # 1. Try Google Text-to-Speech (gTTS) for natural human voice
-        try:
-            from gtts import gTTS
-            is_ar = bool(re.search(r"[\u0600-\u06FF]", clean))
-            lang_code = "ar" if is_ar else "en"
-            loop = asyncio.get_event_loop()
-
-            def _gtts_task():
-                tts = gTTS(text=clean, lang=lang_code)
-                b = io.BytesIO()
-                tts.write_to_fp(b)
-                return b.getvalue()
-
-            data = await loop.run_in_executor(None, _gtts_task)
-            if data and len(data) > 500:
-                logger.info(f"gTTS synthesized {len(data)} bytes of real voice for: {clean[:40]}...")
-                wav_data = ensure_wav_bytes(data)
-                return wav_data
-        except Exception as ge:
-            logger.debug(f"gTTS note: {ge}")
-
-        # 2. Try Windows SAPI SpeechSynthesizer
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
-                wav_path = os.path.abspath(tf.name)
-            ps_script = f'[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SetOutputToWaveFile(\"{wav_path}\"); $s.Speak(\"{clean}\"); $s.Dispose()'
-            proc = await asyncio.create_subprocess_exec(
-                "powershell", "-ExecutionPolicy", "Bypass", "-Command", ps_script,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await proc.communicate()
-            if os.path.exists(wav_path) and os.path.getsize(wav_path) > 100:
-                with open(wav_path, "rb") as f:
-                    data = f.read()
-                try:
-                    os.remove(wav_path)
-                except OSError:
-                    pass
-                return ensure_wav_bytes(data)
-        except Exception as e:
-            logger.error(f"Fallback synthesis error: {e}")
-
-        # Secondary fallback: generate valid speech waveform WAV
-        buf = io.BytesIO()
-        duration_s = max(1.5, min(7.0, len(text) * 0.08))
-        sample_rate = 24000
-        num_samples = int(duration_s * sample_rate)
-        with wave.open(buf, 'wb') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(sample_rate)
-            samples = []
-            for i in range(num_samples):
-                t = i / sample_rate
-                val = int(2200 * math.sin(2 * math.pi * 185 * t) * (0.6 + 0.4 * math.sin(2 * math.pi * 4 * t)))
-                samples.append(struct.pack('<h', max(-32767, min(32767, val))))
-            wf.writeframes(b''.join(samples))
-        return buf.getvalue()
-
     async def synthesize(
         self,
         text: str,
@@ -191,8 +124,11 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
                     if audio_resp.status_code == 200 and len(audio_resp.content) > 1000:
                         return ensure_wav_bytes(audio_resp.content)
         except Exception as exc:
-            logger.info(f"VoiceTuT microservice not reachable ({exc}), using native speech engine fallback.")
+            logger.error(f"VoiceTuT microservice not reachable: {exc}")
+            raise RuntimeError(
+                f"فشل الاتصال بخدمة VoiceTut GPU Studio ({exc}). لا يوجد أي نموذج بديل (Zero Fallback)."
+            )
 
-        # Fallback to local native speech synthesis
-        res = await self._fallback_synthesize(text, ref_audio=actual_ref_audio)
-        return ensure_wav_bytes(res)
+        raise RuntimeError(
+            "لم تقم خدمة VoiceTut بإرجاع ملف صوتي سليم، يرجى التحقق من حالة الموديل."
+        )

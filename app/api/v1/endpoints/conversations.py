@@ -9,8 +9,8 @@ import urllib.parse
 from typing import Optional, List, Dict, Any, Tuple, AsyncIterator, Union
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Header, Request
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Header, Request, Body
+from fastapi.responses import StreamingResponse, HTMLResponse, Response, JSONResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +29,7 @@ from app.services.memory.fact_verifier import FactVerifier
 from app.websocket.manager import manager
 from app.websocket.handlers import get_face_service, get_ai_pipeline as _get_ai_pipeline
 from app.services.ai.context_builder import build_grounding_context, GroundingInfo, is_greeting_or_persona_inquiry
+from app.api.v1.endpoints.voice_clone import LLMVoiceCloneRequest
 
 logger = get_logger(__name__)
 
@@ -130,6 +131,69 @@ async def _get_auth_user(
 
 
 # ── Chat Endpoints ───────────────────────────────────────────────────────────
+
+@router.post(
+    "/llm_voice_clone",
+    summary="تحويل ردود LLM Chat إلى صوت مستنسخ فعلي عبر VoiceTut بدون Fallback (Alias)",
+    tags=["conversations"],
+    responses={
+        200: {
+            "content": {
+                "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+                "application/json": {"schema": {"$ref": "#/components/schemas/LLMVoiceCloneResponse"}},
+            },
+            "description": "WAV audio file or JSON with base64 audio",
+        }
+    },
+)
+async def conversations_llm_voice_clone_post(
+    body: LLMVoiceCloneRequest,
+    _user: str | None = Depends(get_optional_user),
+):
+    """
+    Alias under conversations router:
+    تستقبل رد الـ LLM وتقوم بتحويله لصوت مستنسخ فعلياً عبر الموديل الأساسي VoiceTut-TTS بدون أي Fallback.
+    """
+    from app.api.v1.endpoints.voice_clone import handle_llm_voice_clone
+    return await handle_llm_voice_clone(
+        text=body.text,
+        personality_id=body.personality_id,
+        return_json=body.return_json,
+        speed=body.speed,
+        guidance_scale=body.guidance_scale,
+        num_steps=body.num_steps,
+        user=_user,
+    )
+
+
+@router.get(
+    "/llm_voice_clone",
+    summary="سماع أو تشغيل الصوت المستنسخ لردود الـ LLM مباشرة (Alias)",
+    tags=["conversations"],
+)
+async def conversations_llm_voice_clone_get(
+    text: str | None = Query(None, description="نص رد الـ LLM"),
+    personality_id: int | None = Query(None, description="معرف الشخصية"),
+    return_json: bool = Query(False, description="إرجاع كائن JSON"),
+    speed: float | None = Query(1.15, description="سرعة النطق"),
+    guidance_scale: float | None = Query(2.6, description="مطابقة نبرة الصوت المرجعي"),
+    num_steps: int | None = Query(48, description="عدد خطوات التوليد"),
+    _user: str | None = Depends(get_optional_user),
+):
+    """
+    Alias under conversations router to stream or test llm_voice_clone in browser.
+    """
+    from app.api.v1.endpoints.voice_clone import llm_voice_clone_get
+    return await llm_voice_clone_get(
+        text=text,
+        personality_id=personality_id,
+        return_json=return_json,
+        speed=speed,
+        guidance_scale=guidance_scale,
+        num_steps=num_steps,
+        _user=_user,
+    )
+
 
 @router.get("/playground", response_class=HTMLResponse, summary="Interactive Web Chat Playground")
 async def chat_playground():

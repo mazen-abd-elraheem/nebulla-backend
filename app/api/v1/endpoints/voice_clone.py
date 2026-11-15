@@ -12,10 +12,12 @@ GET    /voice-clone/test                     — quick test (playable directly i
 """
 
 import os
+import re
 import pathlib
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, UploadFile, status
-from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse, Response, JSONResponse
+from pydantic import BaseModel, Field, model_validator
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,8 +133,47 @@ async def list_available_voices(
     Returns all cloned voice samples available in the system.
     """
     samples = svc.list_samples()
-    from app.providers.tts.voicetut import VoiceTutProvider
-    speakers = VoiceTutProvider.list_speakers()
+    speakers = []
+    try:
+        if hasattr(svc, "list_speakers"):
+            speakers = svc.list_speakers()
+        else:
+            from app.providers.tts.xtts.provider import XTTSProvider
+            speakers = XTTSProvider.list_speakers() if hasattr(XTTSProvider, "list_speakers") else []
+    except Exception as exc:
+        logger.warning(f"Error fetching voicetut speakers: {exc}")
+
+    if not speakers:
+        speakers = [
+            {
+                "id": "mazen",
+                "name": "مازن (Mazen)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": True,
+                "description": "الصوت الافتراضي المصري لموديل VoiceTut",
+            },
+            {
+                "id": "tut",
+                "name": "توت (Tut)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت نيبولا المصري الكلاسيكي",
+            },
+            {
+                "id": "nebula",
+                "name": "نيبولا (Nebula)",
+                "gender": "female",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت الذكاء الاصطناعي لنيبولا",
+            },
+        ]
+
     return {
         "active_provider": settings.TTS_PROVIDER,
         "cloned_samples": samples,
@@ -398,6 +439,284 @@ async def test_voice(
             "Content-Length": str(len(wav_bytes)),
             "Content-Disposition": 'inline; filename="test_voice.wav"',
         },
+    )
+
+
+# ── LLM Voice Clone (Dedicated conversion of LLM Chat responses to Cloned Voice) ──
+
+class LLMVoiceCloneRequest(BaseModel):
+    text: str = Field(
+        "أهلاً بيك يا صديقي! أنا جاهز أساعدك في أي وقت.",
+        description="نص رد الـ LLM المراد تحويله لصوت مستنسخ",
+    )
+    personality_id: int | None = Field(1, description="معرف الشخصية لاستخدام عينة صوتها المستنسخة (افتراضياً 1 أو النشطة)")
+    return_json: bool = Field(False, description="إذا كان True يرجع كائن JSON مع audio_base64، وإذا كان False يرجع ملف صوتي مباشر audio/wav")
+    speed: float | None = Field(1.15, description="سرعة نطق الصوت (افتراضياً 1.15 للعامية المصرية)")
+    guidance_scale: float | None = Field(2.6, description="مقياس تطابق نبرة الصوت المرجعي بدقة (افتراضياً 2.6)")
+    num_steps: int | None = Field(48, description="عدد خطوات التوليد لموديل VoiceTut (افتراضياً 48)")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "text": "أهلاً بيك يا صديقي! أنا جاهز أساعدك في أي وقت.",
+                "personality_id": 1,
+                "return_json": False,
+                "speed": 1.15,
+                "guidance_scale": 2.6,
+                "num_steps": 48,
+            }
+        }
+    }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fallback_text_keys(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "text" not in data or not data["text"]:
+                for alt_key in ("message", "msg", "input", "prompt", "additionalProp1", "additionalProp2"):
+                    val = data.get(alt_key)
+                    if isinstance(val, str) and val.strip():
+                        data["text"] = val.strip()
+                        break
+                    elif isinstance(val, dict):
+                        for sub_val in val.values():
+                            if isinstance(sub_val, str) and sub_val.strip():
+                                data["text"] = sub_val.strip()
+                                break
+        return data
+
+
+class LLMVoiceCloneResponse(BaseModel):
+    status: str = Field("success", description="حالة الطلب")
+    text_cleaned: str = Field(..., description="النص المنظف بعد إزالة وسوم المشاعر وتهيئته للنطق")
+    audio_base64: str = Field(..., description="بيانات الصوت المشفرة Base64")
+    audio_url: str = Field(..., description="رابط تحميل أو سماع ملف الصوت")
+    personality_id: int = Field(..., description="معرف الشخصية التي استخدم صوتها")
+    sample_path_used: str = Field(..., description="مسار عينة الصوت المستخدمة للاستنساخ")
+    model_used: str = Field("VoiceTut-TTS", description="الموديل المستخدم (VoiceTut دون أي fallback)")
+
+
+async def handle_llm_voice_clone(
+    text: str,
+    personality_id: int | None = None,
+    return_json: bool = False,
+    speed: float | None = None,
+    guidance_scale: float | None = None,
+    num_steps: int | None = None,
+    user: str | None = None,
+    svc: VoiceCloneService | None = None,
+) -> Response:
+    """
+    Core handler for LLM-to-Voice synthesis:
+    1. Cleans LLM text (strips markdown, emotion tags like [happy], thinking tokens).
+    2. Identifies target personality and verifies registered voice sample.
+    3. Strictly enforces ZERO FALLBACK (HTTP 422 if sample is missing).
+    4. Synthesizes using primary VoiceTut-TTS model.
+    5. Returns audio/wav or JSONResponse based on return_json.
+    """
+    import base64
+    from app.utils.masri_normalizer import clean_llm_output_for_speech
+
+    if svc is None:
+        svc = _svc()
+
+    raw_text = (text or "").strip()
+    if not raw_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="النص المطلوب تحويله لصوت فارغ، يرجى إدخال نص رد الـ LLM.",
+        )
+
+    # 1. Clean and normalize LLM text
+    cleaned_text = clean_llm_output_for_speech(raw_text)
+    if not cleaned_text or not cleaned_text.strip():
+        cleaned_text = re.sub(r"\[.*?\]", "", raw_text).strip()
+    if not cleaned_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="النص لا يحتوي على أي كلمات أو حروف قابلة للنطق بعد التنظيف.",
+        )
+
+    # 2. Determine target personality
+    target_pid = personality_id
+    if target_pid is None and user:
+        try:
+            from app.db.session import AsyncSessionLocal
+            from app.models.personality import Personality
+            u_id = int(user) if str(user).isdigit() else None
+            if u_id:
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(
+                        select(Personality).where(Personality.user_id == u_id, Personality.is_active == True)
+                    )
+                    up = res.scalar_one_or_none()
+                    if up and svc.has_voice_sample(up.id):
+                        target_pid = up.id
+        except Exception:
+            pass
+
+    if target_pid is None or target_pid <= 0:
+        target_pid = 1
+
+    # 3. Strict Zero Fallback Check: Must have a registered voice sample
+    has_sample = svc.has_voice_sample(target_pid)
+    sample_path = svc.get_sample_path(target_pid) if has_sample else None
+
+    if not has_sample or not sample_path or not os.path.exists(sample_path):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"يرجى تسجيل عينة صوتك أولاً للشخصية {target_pid} لتفعيل استنساخ الصوت. لا يوجد نموذج بديل (Zero Fallback).",
+        )
+
+    # 4. Synthesize with VoiceTut-TTS
+    steps = num_steps or getattr(settings, "VOICETUT_NUM_STEPS", 48)
+    cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.6)
+    spd = speed or getattr(settings, "VOICETUT_SPEED", 1.15)
+
+    wav_bytes = await svc.synthesize(
+        text=cleaned_text,
+        personality_id=target_pid,
+        reference_wav=sample_path,
+        language="arz",
+        num_step=steps,
+        guidance_scale=cfg,
+        speed=spd,
+    )
+
+    if not wav_bytes or len(wav_bytes) <= 1000:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="فشل استنساخ الصوت عبر نموذج VoiceTut-TTS الأساسي.",
+        )
+
+    # Cache for immediate browser streaming
+    try:
+        LATEST_WAV_FILE.write_bytes(wav_bytes)
+        _last_synthesized_audio[target_pid] = wav_bytes
+        _last_synthesized_audio["latest"] = wav_bytes
+    except Exception:
+        pass
+
+    # 5. Return based on requested format
+    audio_url = f"/api/v1/voice-clone/llm_voice_clone?personality_id={target_pid}"
+
+    if return_json:
+        audio_b64 = base64.b64encode(wav_bytes).decode("ascii")
+        return JSONResponse(
+            content=LLMVoiceCloneResponse(
+                status="success",
+                text_cleaned=cleaned_text,
+                audio_base64=audio_b64,
+                audio_url=audio_url,
+                personality_id=target_pid,
+                sample_path_used=str(sample_path),
+                model_used="VoiceTut-TTS",
+            ).model_dump()
+        )
+
+    return Response(
+        content=wav_bytes,
+        media_type="audio/wav",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(len(wav_bytes)),
+            "Content-Disposition": f'inline; filename="llm_voice_clone_{target_pid}.wav"',
+        },
+    )
+
+
+@router.post(
+    "/llm_voice_clone",
+    summary="تحويل ردود LLM Chat إلى صوت مستنسخ فعلي عبر VoiceTut بدون Fallback",
+    responses={
+        200: {
+            "content": {
+                "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+                "application/json": {"schema": {"$ref": "#/components/schemas/LLMVoiceCloneResponse"}},
+            },
+            "description": "WAV audio file or JSON with base64 audio",
+        }
+    },
+)
+async def llm_voice_clone_post(
+    body: LLMVoiceCloneRequest,
+    _user: str | None = Depends(get_optional_user),
+    svc: VoiceCloneService = Depends(_svc),
+):
+    """
+    تستقبل رد الـ LLM وتقوم بتنظيفه وتحويله لصوت مستنسخ فعلياً عبر الموديل الأساسي VoiceTut-TTS.
+    - Zero Fallback Model: لا يتم استخدام أي موديل بديل نهائياً.
+    - تدعم إرجاع ملف صوتي مباشر audio/wav أو كائن JSON مع audio_base64 عبر return_json=True.
+    """
+    return await handle_llm_voice_clone(
+        text=body.text,
+        personality_id=body.personality_id,
+        return_json=body.return_json,
+        speed=body.speed,
+        guidance_scale=body.guidance_scale,
+        num_steps=body.num_steps,
+        user=_user,
+        svc=svc,
+    )
+
+
+@router.get(
+    "/llm_voice_clone",
+    summary="سماع أو تشغيل الصوت المستنسخ لردود الـ LLM مباشرة في المتصفح أو Swagger",
+    response_class=Response,
+    responses=_AUDIO_RESPONSES,
+)
+async def llm_voice_clone_get(
+    text: str | None = Query(None, description="نص رد الـ LLM المراد تحويله لصوت (إذا تُرِك فارغاً يتم تشغيل آخر صوت تم توليده)"),
+    personality_id: int | None = Query(None, description="معرف الشخصية"),
+    return_json: bool = Query(False, description="إرجاع كائن JSON بدلاً من الملف الصوتي المباشر"),
+    speed: float | None = Query(1.15, description="سرعة النطق"),
+    guidance_scale: float | None = Query(2.6, description="مطابقة نبرة الصوت المرجعي"),
+    num_steps: int | None = Query(48, description="عدد خطوات التوليد"),
+    _user: str | None = Depends(get_optional_user),
+    svc: VoiceCloneService = Depends(_svc),
+):
+    """
+    GET endpoint for `/llm_voice_clone`:
+    1. إذا أُرسل نص، يقوم بتنظيفه وتوليد الصوت وسماعه فوراً في المتصفح.
+    2. إذا تُرِك فارغاً، يقوم بتشغيل آخر صوت تم توليده مع دعم Byte-Range للـ HTML5 Audio Player.
+    """
+    if text and text.strip():
+        return await handle_llm_voice_clone(
+            text=text,
+            personality_id=personality_id,
+            return_json=return_json,
+            speed=speed,
+            guidance_scale=guidance_scale,
+            num_steps=num_steps,
+            user=_user,
+            svc=svc,
+        )
+
+    pid = personality_id or 1
+    cached = _last_synthesized_audio.get(pid) or _last_synthesized_audio.get("latest")
+    if cached:
+        return Response(
+            content=cached,
+            media_type="audio/wav",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(len(cached)),
+                "Content-Disposition": f'inline; filename="llm_voice_clone_{pid}.wav"',
+            },
+        )
+
+    if LATEST_WAV_FILE.exists() and LATEST_WAV_FILE.stat().st_size > 0:
+        return FileResponse(
+            path=str(LATEST_WAV_FILE),
+            media_type="audio/wav",
+            content_disposition_type="inline",
+            filename="llm_voice_clone.wav",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="لا يوجد صوت مُولّد مسبقاً، يرجى إرسال نص ليتم توليده.",
     )
 
 

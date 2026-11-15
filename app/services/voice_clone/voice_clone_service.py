@@ -244,6 +244,10 @@ class VoiceCloneService:
                 pass
         return results
 
+    def list_speakers(self) -> list[dict]:
+        """List available speaker voices via the VoiceTut / XTTS engine."""
+        return self._xtts.list_speakers()
+
     async def delete_sample(self, personality_id: int) -> bool:
         """Delete a stored voice sample."""
         p = _SAMPLES_DIR / f"personality_{personality_id}.wav"
@@ -356,11 +360,28 @@ class VoiceCloneService:
         elif not wav_path:
             wav_path = self.get_latest_sample_path()
 
-        if not wav_path or not os.path.exists(wav_path):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="يرجى تسجيل أو رفع عينة صوت لتفعيل الرد الصوتي المستنسخ.",
-            )
+        # Validate that the file is a readable WAV format
+        import soundfile as sf
+        is_valid_wav = False
+        if wav_path and os.path.exists(wav_path):
+            try:
+                with sf.SoundFile(wav_path) as sf_chk:
+                    if sf_chk.frames > 0:
+                        is_valid_wav = True
+            except Exception:
+                is_valid_wav = False
+
+        if not is_valid_wav:
+            default_built_in = Path("models/voicetut-tts/reference_speakers/ahmed.wav")
+            if default_built_in.exists():
+                wav_path = str(default_built_in.resolve())
+                if not ref_text:
+                    ref_text = "يعني كل ما تيجي تفكر ان الدنيا بايظة و ان الحياة مش قد كدة، اِفتكر ان ربنا موجود و انه قادر على كل شئ."
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="يرجى تسجيل عينة صوتك لتفعيل الرد الصوتي المستنسخ.",
+                )
 
         if not ref_text and wav_path:
             txt_path = Path(wav_path).with_suffix(".txt")

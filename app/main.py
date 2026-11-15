@@ -215,6 +215,16 @@ def repair_malformed_json(raw_text: str) -> str:
         except Exception:
             pass
 
+    # Fix inner single-value set/dict missing colon like: "key": { "some string" } -> "key": "some string"
+    fixed = re.sub(r':\s*\{\s*("(?:\\.|[^"\\])*")\s*\}', r': \1', fixed)
+    fixed = re.sub(r':\s*\{\s*(\'(?:\\.|[^\'\\])*\')\s*\}', r': \1', fixed)
+
+    try:
+        json.loads(fixed)
+        return fixed
+    except Exception:
+        pass
+
     # Fix unbracketed list of strings inside { "content": "str1", "str2" }
     if fixed.startswith('{') and fixed.endswith('}'):
         inner = fixed[1:-1].strip()

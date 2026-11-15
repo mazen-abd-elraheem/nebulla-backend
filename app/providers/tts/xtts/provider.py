@@ -63,6 +63,64 @@ class XTTSProvider(BaseTTSProvider):
         self._device = device or getattr(settings, "VOICETUT_DEVICE", "cuda")
         self._speaker = speaker or getattr(settings, "VOICETUT_SPEAKER", "mazen")
 
+    # ── Speakers Management ───────────────────────────────────────────────────
+
+    @classmethod
+    def list_speakers(cls) -> list[dict]:
+        """
+        List available speaker characters and voices for VoiceTut / XTTS engine.
+        Returns a list of speaker dictionaries with name, id, language, and description.
+        """
+        speakers = [
+            {
+                "id": "mazen",
+                "name": "مازن (Mazen)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": True,
+                "description": "الصوت الافتراضي المصري لموديل VoiceTut",
+            },
+            {
+                "id": "tut",
+                "name": "توت (Tut)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت نيبولا المصري الكلاسيكي",
+            },
+            {
+                "id": "nebula",
+                "name": "نيبولا (Nebula)",
+                "gender": "female",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت الذكاء الاصطناعي لنيبولا",
+            },
+        ]
+
+        # Also discover any custom characters/samples saved in data/voice_samples
+        samples_dir = Path("data/voice_samples")
+        if samples_dir.exists():
+            for p in sorted(samples_dir.glob("personality_*.wav")):
+                pid_str = p.stem.replace("personality_", "")
+                if pid_str.isdigit():
+                    pid = int(pid_str)
+                    speakers.append({
+                        "id": f"personality_{pid}",
+                        "name": f"صوت الشخصية {pid} المستنسخ",
+                        "gender": "custom",
+                        "language": "arz",
+                        "dialect": "Egyptian Arabic (Cloned)",
+                        "is_default": False,
+                        "personality_id": pid,
+                        "sample_path": str(p),
+                    })
+
+        return speakers
+
     # ── Greeting Cache Management ─────────────────────────────────────────────
 
     @staticmethod
@@ -313,18 +371,13 @@ class XTTSProvider(BaseTTSProvider):
                 language,
             )
 
-        # Tertiary: VoiceTutMicroservice fallback (gTTS / Windows SAPI Arabic voice generator)
-        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
-        svc = VoiceTutMicroserviceProvider()
-        res = await svc.synthesize(
-            text=clean_text,
-            speaker=speaker or self._speaker,
-            ref_audio=ref_audio or self._reference_wav,
-            ref_text=ref_text,
-            num_step=num_step,
-            guidance_scale=guidance_scale,
-            speed=speed,
-            language=language or self._language,
+        # Zero Fallback Enforcement: strictly VoiceTut-TTS only, no gTTS or SAPI
+        logger.error(
+            "VoiceTut-TTS model is not loaded or unreachable. Strictly NO fallback models allowed (Zero Fallback)."
+        )
+        raise RuntimeError(
+            "فشل استنساخ الصوت: موديل VoiceTut-TTS الأساسي غير متوفر حالياً ولا يوجد أي نموذج بديل (Strict Zero Fallback). "
+            "يرجى التأكد من تحميل أوزان الموديل في models/voicetut-tts أو تشغيل سيرفر VoiceTuT."
         )
         return ensure_wav_bytes(res)
 
@@ -401,8 +454,40 @@ class XTTSProvider(BaseTTSProvider):
                 if default_ref.exists():
                     target_ref_audio = str(default_ref.resolve())
 
+            # Validate reference audio format using soundfile to prevent LibsndfileError
+            import soundfile as sf
+            valid_ref = False
+            if target_ref_audio and os.path.exists(target_ref_audio):
+                try:
+                    with sf.SoundFile(target_ref_audio) as sf_test:
+                        if sf_test.frames > 0:
+                            valid_ref = True
+                except Exception as sf_err:
+                    logger.warning(
+                        f"Reference audio '{target_ref_audio}' is invalid or corrupted ({sf_err}). "
+                        "Falling back to built-in studio speaker reference."
+                    )
+                    valid_ref = False
+
+            if not valid_ref:
+                built_in_candidates = [
+                    Path("models/voicetut-tts/reference_speakers/ahmed.wav"),
+                    Path("models/voicetut-tts/reference_speakers/mohammed.wav"),
+                    Path("models/voicetut-tts/reference_speakers/ali.wav"),
+                ]
+                for bic in built_in_candidates:
+                    if bic.exists():
+                        target_ref_audio = str(bic.resolve())
+                        txt_cand = bic.with_suffix(".txt")
+                        if txt_cand.exists():
+                            actual_ref_text = txt_cand.read_text(encoding="utf-8").strip()
+                        else:
+                            actual_ref_text = "يعني كل ما تيجي تفكر ان الدنيا بايظة و ان الحياة مش قد كدة، اِفتكر ان ربنا موجود و انه قادر على كل شئ."
+                        valid_ref = True
+                        break
+
             # Attempt to read transcript for reference audio if available
-            actual_ref_text = ref_text
+            actual_ref_text = ref_text or locals().get("actual_ref_text")
             if not actual_ref_text and target_ref_audio:
                 txt_file = Path(target_ref_audio).with_suffix(".txt")
                 if txt_file.exists():
