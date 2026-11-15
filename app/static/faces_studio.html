@@ -191,6 +191,19 @@
       border-radius: var(--radius-lg);
       border: 1px solid var(--border);
       overflow-x: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(6, 182, 212, 0.3) transparent;
+    }
+
+    .tabs-nav::-webkit-scrollbar {
+      height: 4px;
+    }
+    .tabs-nav::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .tabs-nav::-webkit-scrollbar-thumb {
+      background: rgba(6, 182, 212, 0.3);
+      border-radius: 4px;
     }
 
     .tab-btn {
@@ -996,9 +1009,9 @@
             <div class="setting-item">
               <div class="setting-label">
                 <span>حد قبول التطابق (Threshold)</span>
-                <span class="setting-val" id="thresh-val">55%</span>
+                <span class="setting-val" id="thresh-val">60%</span>
               </div>
-              <input type="range" id="threshold-slider" min="0.10" max="0.90" step="0.05" value="0.55"
+              <input type="range" id="threshold-slider" min="0.10" max="0.90" step="0.05" value="0.60"
                 oninput="document.getElementById('thresh-val').innerText = Math.round(this.value * 100) + '%'">
             </div>
 
@@ -1129,9 +1142,9 @@
             <div class="setting-item">
               <div class="setting-label">
                 <span>حد التطابق (Threshold)</span>
-                <span class="setting-val" id="cmp-thresh-val">55%</span>
+                <span class="setting-val" id="cmp-thresh-val">60%</span>
               </div>
-              <input type="range" id="cmp-threshold" min="0.10" max="0.90" step="0.05" value="0.55"
+              <input type="range" id="cmp-threshold" min="0.10" max="0.90" step="0.05" value="0.60"
                 oninput="document.getElementById('cmp-thresh-val').innerText = Math.round(this.value * 100) + '%'">
             </div>
             <div class="setting-item">
@@ -1270,7 +1283,7 @@
           </span>
           <span
             style="font-size: 0.8rem; font-weight: 700; color: #fed7aa; background: rgba(249, 115, 22, 0.15); border: 1px solid rgba(249, 115, 22, 0.3); padding: 5px 12px; border-radius: 9999px;">
-            حد التطابق الأساسي: <span id="voice-threshold-badge">82%</span>
+            حد التطابق الأساسي: <span id="voice-threshold-badge">68%</span>
           </span>
         </div>
       </div>
@@ -1410,15 +1423,15 @@
           <div>
             <span style="font-size: 0.88rem; font-weight: 700; color: #e2e8f0;">حد قبول التطابق المخصص
               (Threshold):</span>
-            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 82% للتعرف الفائق
+            <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 8px;">(افتراضي: 68% للتعرف الفائق
               الدقة وعزل الأصوات الغريبة)</span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="range" id="voice-threshold-slider" min="0.60" max="0.96" step="0.01" value="0.82"
+            <input type="range" id="voice-threshold-slider" min="0.50" max="0.95" step="0.01" value="0.68"
               oninput="document.getElementById('voice-thresh-val-display').innerText = Math.round(this.value * 100) + '%'"
               style="width: 140px;">
             <span id="voice-thresh-val-display"
-              style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">82%</span>
+              style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.95rem;">68%</span>
           </div>
         </div>
 
@@ -1498,11 +1511,11 @@
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
             <div style="display: flex; align-items: center; gap: 10px;">
               <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">حد التطابق (Threshold):</span>
-              <input type="range" id="compare-thresh-slider" min="0.75" max="0.95" step="0.01" value="0.82"
+              <input type="range" id="compare-thresh-slider" min="0.50" max="0.95" step="0.01" value="0.68"
                 oninput="document.getElementById('compare-thresh-display').innerText = Math.round(this.value * 100) + '%'"
                 style="width: 120px;">
               <span id="compare-thresh-display"
-                style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">82%</span>
+                style="font-family: monospace; font-weight: 800; color: var(--accent-cyan); font-size: 0.9rem;">68%</span>
             </div>
 
             <button type="button" id="btn-compare-submit" onclick="handleCompareSubmit()" class="btn-submit"
@@ -1614,7 +1627,7 @@
   <script>
     // Tab Switching
     function switchTab(tabId) {
- ent.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       const target = document.getElementById(tabId);
       if (target) target.style.display = 'block';
@@ -1863,7 +1876,7 @@
         banner.className = 'comparison-banner no-match';
         gauge.className = 'match-gauge-box low-match';
         title.innerText = '❌ الوش مش متطابق خالص';
-        sub.innerText = data.summary || `الوشين لشخصين مختلفين (نسبة التطابق 0.0% | معامل التشابه الخام ${data.raw_similarity !== undefined ? data.raw_similarity : (data.similarity || 0)} أقل من حد القبول ${Math.round(data.threshold * 100)}%).`;
+        sub.innerText = data.summary || `الوشين لشخصين مختلفين (نسبة التطابق 0.0% | معامل التشابه ${data.similarity || 0} أقل من حد القبول ${Math.round(data.threshold * 100)}%).`;
       }
 
       // Render Ref Image
@@ -2427,7 +2440,7 @@
       `;
       box.scrollIntoView({ behavior: 'smooth' });
 
-      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.82;
+      const threshold = parseFloat(document.getElementById('voice-threshold-slider').value) || 0.68;
       const formData = new FormData();
       formData.append('file', wavBlob, 'recording.wav');
 
@@ -2523,7 +2536,7 @@
             </div>
 
             <div style="display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0, 0, 0, 0.25); padding: 12px 18px; border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.2); margin-bottom: 1rem;">
-              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>معامل التشابه:</strong> ${data.similarity} ${data.raw_similarity !== undefined && data.raw_similarity !== data.similarity ? `<span style="color:#94a3b8; font-size:0.75rem;">(الخام: ${data.raw_similarity})</span>` : ''}</span>
+              <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>أعلى معامل تشابه:</strong> ${data.similarity}</span>
               <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
               <span style="font-size: 0.85rem; color: #e2e8f0;"><strong>حد القبول المطلوب:</strong> ${data.threshold}</span>
               <span style="font-size: 0.85rem; color: #94a3b8;">|</span>
@@ -2590,7 +2603,7 @@
       btn.disabled = true;
 
       try {
-        const threshold = parseFloat(document.getElementById('compare-thresh-slider').value) || 0.82;
+        const threshold = parseFloat(document.getElementById('compare-thresh-slider').value) || 0.68;
         const formData = new FormData();
         formData.append('file1', compareFile1);
         formData.append('file2', compareFile2);
@@ -2666,7 +2679,7 @@
               <div>
                 <span style="font-size: 0.75rem; color: var(--text-muted);">التشابه الكوزيني:</span>
                 <div style="font-size: 1rem; font-weight: 800; color: #93c5fd; font-family: monospace;">
-                  ${v.similarity} ${v.raw_similarity !== undefined && v.raw_similarity !== v.similarity ? `<span style="font-size:0.75rem; color:#94a3b8;">(خام: ${v.raw_similarity})</span>` : ''}
+                  ${v.similarity}
                 </div>
               </div>
             </div>
@@ -2701,12 +2714,12 @@
           <div style="text-align: right; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); padding: 0.75rem 1.25rem; border-radius: var(--radius-sm); min-width: 145px;">
             <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 2px;">نسبة التطابق بين الصوتين</div>
             <div style="font-size: 1.8rem; font-weight: 900; color: ${bannerBadgeColor}; font-family: monospace;">
-              ${isSame ? matchPct + '%' : '0.0%'}
+              ${matchPct}%
             </div>
             <div style="font-size: 0.75rem; color: ${isSame ? '#34d399' : '#f87171'}; font-weight: 800; margin-top: 1px;">
               ${isSame ? '✅ متطابقان' : '❌ غير متطابقين'}
             </div>
-            <div style="font-size: 0.70rem; color: var(--text-muted); margin-top: 3px;">Similarity: ${data.similarity} ${data.raw_similarity !== undefined && data.raw_similarity !== data.similarity ? `(خام: ${data.raw_similarity})` : ''}</div>
+            <div style="font-size: 0.70rem; color: var(--text-muted); margin-top: 3px;">Similarity: ${data.similarity}</div>
           </div>
         </div>
 

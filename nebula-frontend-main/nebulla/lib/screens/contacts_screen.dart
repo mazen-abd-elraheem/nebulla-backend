@@ -94,7 +94,9 @@ class _ContactsScreenState extends State<ContactsScreen>
         if (mounted) {
           setState(() => _loadingDevice = false);
           showErrorSnackbar(
-              context, 'لازم توافق على صلاحية الوصول لجهات الاتصال في الموبايل');
+            context,
+            'لازم توافق على صلاحية الوصول لجهات الاتصال في الموبايل',
+          );
         }
       }
     } catch (e) {
@@ -117,14 +119,17 @@ class _ContactsScreenState extends State<ContactsScreen>
         return;
       }
 
-      final synced =
-          await _phoneService.syncDeviceContactsToBackend(replaceExisting: false);
+      final synced = await _phoneService.syncDeviceContactsToBackend(
+        replaceExisting: false,
+      );
       await _loadRobotContacts();
 
       if (mounted) {
         setState(() => _syncing = false);
         showSuccessSnackbar(
-            context, 'اتزامنت ${synced.length} جهة اتصال مع نيبولا بنجاح ✨');
+          context,
+          'اتزامنت ${synced.length} جهة اتصال مع نيبولا بنجاح ✨',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -162,37 +167,48 @@ class _ContactsScreenState extends State<ContactsScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.card,
         shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: AppColors.cardBorder)),
-        title: const Text('حذف جهة الاتصال',
-            style: TextStyle(
-                fontFamily: 'Cairo',
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary)),
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.cardBorder),
+        ),
+        title: const Text(
+          'حذف جهة الاتصال',
+          style: TextStyle(
+            fontFamily: 'Cairo',
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
         content: Text(
           'متأكد إنك عاوز تحذف "${contact.name}" من قائمة نيبولا؟ الروبوت مش هيقدر يكلمه.',
           style: const TextStyle(
-              fontFamily: 'Cairo', color: AppColors.textSecondary),
+            fontFamily: 'Cairo',
+            color: AppColors.textSecondary,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('إلغاء',
-                style: TextStyle(
-                    fontFamily: 'Cairo', color: AppColors.textMuted)),
+            child: const Text(
+              'إلغاء',
+              style: TextStyle(fontFamily: 'Cairo', color: AppColors.textMuted),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('احذف',
-                style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white)),
+            child: const Text(
+              'احذف',
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
           ),
         ],
       ),
@@ -282,8 +298,12 @@ class _ContactsScreenState extends State<ContactsScreen>
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back_ios,
-                          color: AppColors.textPrimary, size: 20),
+                      icon: const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        textDirection: TextDirection.ltr,
+                        color: AppColors.textPrimary,
+                        size: 20,
+                      ),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const Expanded(
@@ -330,28 +350,44 @@ class _ContactsScreenState extends State<ContactsScreen>
 
               // Search bar
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
                 child: TextField(
                   controller: _searchCtrl,
                   style: const TextStyle(
-                      color: AppColors.textPrimary, fontFamily: 'Cairo'),
+                    color: AppColors.textPrimary,
+                    fontFamily: 'Cairo',
+                  ),
                   decoration: InputDecoration(
                     hintText: 'ابحث بالاسم أو الرقم أو صلة القرابة...',
                     hintStyle: const TextStyle(
-                        color: AppColors.textMuted, fontFamily: 'Cairo', fontSize: 13),
-                    prefixIcon:
-                        const Icon(Icons.search, color: AppColors.teal, size: 20),
+                      color: AppColors.textMuted,
+                      fontFamily: 'Cairo',
+                      fontSize: 13,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      color: AppColors.teal,
+                      size: 20,
+                    ),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear,
-                                color: AppColors.textMuted, size: 18),
+                            icon: const Icon(
+                              Icons.clear,
+                              color: AppColors.textMuted,
+                              size: 18,
+                            ),
                             onPressed: () => _searchCtrl.clear(),
                           )
                         : null,
                     filled: true,
                     fillColor: AppColors.card,
-                    contentPadding:
-                        const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 10,
+                      horizontal: 14,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(color: AppColors.cardBorder),
@@ -362,8 +398,10 @@ class _ContactsScreenState extends State<ContactsScreen>
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                          const BorderSide(color: AppColors.teal, width: 1.5),
+                      borderSide: const BorderSide(
+                        color: AppColors.teal,
+                        width: 1.5,
+                      ),
                     ),
                   ),
                 ),
@@ -383,7 +421,8 @@ class _ContactsScreenState extends State<ContactsScreen>
                     borderRadius: BorderRadius.circular(10),
                     color: AppColors.teal.withValues(alpha: 0.15),
                     border: Border.all(
-                        color: AppColors.teal.withValues(alpha: 0.5)),
+                      color: AppColors.teal.withValues(alpha: 0.5),
+                    ),
                   ),
                   labelColor: AppColors.teal,
                   unselectedLabelColor: AppColors.textMuted,
@@ -433,7 +472,8 @@ class _ContactsScreenState extends State<ContactsScreen>
   Widget _buildRobotContactsTab() {
     if (_loadingRobot) {
       return const Center(
-          child: CircularProgressIndicator(color: AppColors.teal));
+        child: CircularProgressIndicator(color: AppColors.teal),
+      );
     }
 
     final filtered = _robotContacts.where((c) {
@@ -451,8 +491,11 @@ class _ContactsScreenState extends State<ContactsScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.contact_phone_outlined,
-                  size: 64, color: AppColors.teal.withValues(alpha: 0.4)),
+              Icon(
+                Icons.contact_phone_outlined,
+                size: 64,
+                color: AppColors.teal.withValues(alpha: 0.4),
+              ),
               const SizedBox(height: 16),
               const Text(
                 'مفيش جهات اتصال مسجلة في نيبولا',
@@ -479,14 +522,17 @@ class _ContactsScreenState extends State<ContactsScreen>
                   backgroundColor: AppColors.teal,
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: _syncAllFromDevice,
                 icon: const Icon(Icons.sync),
                 label: const Text(
                   'مزامنة الأرقام من الموبايل دلوقتي',
                   style: TextStyle(
-                      fontFamily: 'Cairo', fontWeight: FontWeight.w700),
+                    fontFamily: 'Cairo',
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -553,14 +599,17 @@ class _ContactsScreenState extends State<ContactsScreen>
                   backgroundColor: AppColors.teal,
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: _checkAndLoadDeviceContacts,
                 icon: const Icon(Icons.check_circle_outline),
                 label: const Text(
                   'تفعيل الصلاحية وقراءة الأسماء',
                   style: TextStyle(
-                      fontFamily: 'Cairo', fontWeight: FontWeight.w700),
+                    fontFamily: 'Cairo',
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -571,14 +620,16 @@ class _ContactsScreenState extends State<ContactsScreen>
 
     if (_loadingDevice) {
       return const Center(
-          child: CircularProgressIndicator(color: AppColors.teal));
+        child: CircularProgressIndicator(color: AppColors.teal),
+      );
     }
 
     final filtered = _deviceContacts.where((c) {
       if (_searchQuery.isEmpty) return true;
       final name = c.displayName.toLowerCase();
-      final hasMatchingPhone =
-          c.phones.any((p) => p.number.contains(_searchQuery));
+      final hasMatchingPhone = c.phones.any(
+        (p) => p.number.contains(_searchQuery),
+      );
       return name.contains(_searchQuery) || hasMatchingPhone;
     }).toList();
 
@@ -621,18 +672,22 @@ class _ContactsScreenState extends State<ContactsScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.teal,
                   foregroundColor: Colors.black,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 onPressed: _syncing ? null : _syncAllFromDevice,
                 child: Text(
                   _syncing ? 'جاري...' : 'مزامنة الكل',
                   style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700),
+                    fontFamily: 'Cairo',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -646,12 +701,15 @@ class _ContactsScreenState extends State<ContactsScreen>
             separatorBuilder: (_, index) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final dc = filtered[index];
-              final phone =
-                  dc.phones.isNotEmpty ? dc.phones.first.number : 'بدون رقم';
+              final phone = dc.phones.isNotEmpty
+                  ? dc.phones.first.number
+                  : 'بدون رقم';
               final alreadyInRobot = _robotContacts.any((rc) {
                 final c1 = _phoneService.cleanPhoneNumber(rc.phoneNumber);
                 final c2 = _phoneService.cleanPhoneNumber(phone);
-                return c1.isNotEmpty && c2.isNotEmpty && (c1 == c2 || c1.endsWith(c2) || c2.endsWith(c1));
+                return c1.isNotEmpty &&
+                    c2.isNotEmpty &&
+                    (c1 == c2 || c1.endsWith(c2) || c2.endsWith(c1));
               });
 
               return NebulaCard(
@@ -705,12 +763,15 @@ class _ContactsScreenState extends State<ContactsScreen>
                     if (alreadyInRobot)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.success.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                              color: AppColors.success.withValues(alpha: 0.4)),
+                            color: AppColors.success.withValues(alpha: 0.4),
+                          ),
                         ),
                         child: const Text(
                           'مضاف للروبوت ✓',
@@ -724,8 +785,10 @@ class _ContactsScreenState extends State<ContactsScreen>
                       )
                     else
                       IconButton(
-                        icon: const Icon(Icons.add_circle_outline,
-                            color: AppColors.teal),
+                        icon: const Icon(
+                          Icons.add_circle_outline,
+                          color: AppColors.teal,
+                        ),
                         tooltip: 'إضافة لقائمة الروبوت',
                         onPressed: () => _addDeviceContactToRobot(dc),
                       ),
@@ -811,7 +874,9 @@ class _RobotContactCard extends StatelessWidget {
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.purple.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(6),
@@ -858,8 +923,11 @@ class _RobotContactCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.record_voice_over_outlined,
-                    size: 14, color: AppColors.textMuted),
+                const Icon(
+                  Icons.record_voice_over_outlined,
+                  size: 14,
+                  color: AppColors.textMuted,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -910,22 +978,31 @@ class _RobotContactCard extends StatelessWidget {
               ),
               // Direct SMS button
               IconButton(
-                icon: const Icon(Icons.message_outlined,
-                    color: AppColors.purple, size: 20),
+                icon: const Icon(
+                  Icons.message_outlined,
+                  color: AppColors.purple,
+                  size: 20,
+                ),
                 tooltip: 'رسالة نصية',
                 onPressed: onSms,
               ),
               // Edit button
               IconButton(
-                icon: const Icon(Icons.edit_outlined,
-                    color: AppColors.textSecondary, size: 20),
+                icon: const Icon(
+                  Icons.edit_outlined,
+                  color: AppColors.textSecondary,
+                  size: 20,
+                ),
                 tooltip: 'تعديل البيانات',
                 onPressed: onEdit,
               ),
               // Delete button
               IconButton(
-                icon: const Icon(Icons.delete_outline,
-                    color: AppColors.error, size: 20),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.error,
+                  size: 20,
+                ),
                 tooltip: 'حذف',
                 onPressed: onDelete,
               ),
@@ -1077,7 +1154,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               TextFormField(
                 controller: _nameCtrl,
                 style: const TextStyle(
-                    color: AppColors.textPrimary, fontFamily: 'Cairo'),
+                  color: AppColors.textPrimary,
+                  fontFamily: 'Cairo',
+                ),
                 decoration: const InputDecoration(
                   labelText: 'اسم جهة الاتصال *',
                   prefixIcon: Icon(Icons.person_outline),
@@ -1093,7 +1172,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 keyboardType: TextInputType.phone,
                 textDirection: TextDirection.ltr,
                 style: const TextStyle(
-                    color: AppColors.textPrimary, fontFamily: 'Cairo'),
+                  color: AppColors.textPrimary,
+                  fontFamily: 'Cairo',
+                ),
                 decoration: const InputDecoration(
                   labelText: 'رقم الهاتف * (مثال: +201012345678 أو 010...)',
                   prefixIcon: Icon(Icons.phone_outlined),
@@ -1111,7 +1192,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 initialValue: _relationship,
                 dropdownColor: AppColors.card,
                 style: const TextStyle(
-                    color: AppColors.textPrimary, fontFamily: 'Cairo'),
+                  color: AppColors.textPrimary,
+                  fontFamily: 'Cairo',
+                ),
                 decoration: const InputDecoration(
                   labelText: 'صلة القرابة / العلاقة',
                   prefixIcon: Icon(Icons.family_restroom_outlined),
@@ -1127,7 +1210,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               TextFormField(
                 controller: _aliasesCtrl,
                 style: const TextStyle(
-                    color: AppColors.textPrimary, fontFamily: 'Cairo'),
+                  color: AppColors.textPrimary,
+                  fontFamily: 'Cairo',
+                ),
                 decoration: const InputDecoration(
                   labelText: 'الأسماء البديلة في الصوت (مفصولة بفاصلة)',
                   hintText: 'مثال: مامي, أمي, الوالدة',
@@ -1138,33 +1223,42 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
 
               // Switches
               SwitchListTile(
-                title: const Text('السماح لنيبولا بالاتصال بهذه الجهة',
-                    style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 13,
-                        color: AppColors.textPrimary)),
+                title: const Text(
+                  'السماح لنيبولا بالاتصال بهذه الجهة',
+                  style: TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
                 value: _isAllowlisted,
                 activeThumbColor: AppColors.teal,
                 onChanged: (v) => setState(() => _isAllowlisted = v),
                 contentPadding: EdgeInsets.zero,
               ),
               SwitchListTile(
-                title: const Text('طلب تأكيد صوتي قبل إجراء المكالمة',
-                    style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 13,
-                        color: AppColors.textPrimary)),
+                title: const Text(
+                  'طلب تأكيد صوتي قبل إجراء المكالمة',
+                  style: TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
                 value: _requiresConfirmation,
                 activeThumbColor: AppColors.teal,
                 onChanged: (v) => setState(() => _requiresConfirmation = v),
                 contentPadding: EdgeInsets.zero,
               ),
               SwitchListTile(
-                title: const Text('إبلاغ هذه الجهة إذا نسيت جرعة الدواء',
-                    style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 13,
-                        color: AppColors.textPrimary)),
+                title: const Text(
+                  'إبلاغ هذه الجهة إذا نسيت جرعة الدواء',
+                  style: TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
                 value: _notifyOnMissed,
                 activeThumbColor: AppColors.teal,
                 onChanged: (v) => setState(() => _notifyOnMissed = v),
@@ -1173,7 +1267,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               const SizedBox(height: 20),
 
               NebulaPrimaryButton(
-                label: widget.contact != null ? 'حفظ التعديلات' : 'إضافة للروبوت',
+                label: widget.contact != null
+                    ? 'حفظ التعديلات'
+                    : 'إضافة للروبوت',
                 icon: Icons.check,
                 loading: _saving,
                 onTap: _save,

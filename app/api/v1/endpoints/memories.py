@@ -460,6 +460,6 @@ def _m(m: Memory) -> dict:
         "content": m.content,
         "source": m.source,
         "importance": m.importance,
-        "created_at": m.created_at.isoformat(),
+        "created_at": m.created_at.isoformat() if m.created_at else None,
         "last_accessed": m.last_accessed.isoformat() if m.last_accessed else None,
     }
