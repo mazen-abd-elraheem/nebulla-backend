@@ -28,6 +28,8 @@ class Personality(Base):
     dialect: Mapped[str] = mapped_column(String(64), default="cairo")
     language_mix: Mapped[str] = mapped_column(String(64), default="ar_en")
     voice_sample_path: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    image_path: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    tone: Mapped[str | None] = mapped_column(String(128), default="ودود وعفوي ومباشر", nullable=True)
     greeting: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
