@@ -6,11 +6,12 @@ import 'persona_memory_specs_screen.dart';
 import 'profile_screen.dart';
 import 'diagnostics_screen.dart';
 import 'settings_screen.dart';
+import 'contacts_screen.dart';
 import '../widgets/nebula_side_menu.dart';
 import '../widgets/global_footer.dart';
 
 class MainShell extends StatefulWidget {
-  const MainShell({super.key, this.initialIndex = 0});
+  const MainShell({super.key, this.initialIndex = 2});
   final int initialIndex;
 
   static void navigateTo(BuildContext context, int index) {
@@ -45,7 +46,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _onNavigate(int index) {
-    if (index >= 0 && index < 7) {
+    if (index >= 0 && index < 8) {
       setState(() => _currentIndex = index);
     }
   }
@@ -61,13 +62,14 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      DashboardScreen(onNavigate: _onNavigate),
-      ChatScreen(onNavigate: _onNavigate),
       MemoryPersonasScreen(onNavigate: _onNavigate),
+      ChatScreen(onNavigate: _onNavigate),
+      DashboardScreen(onNavigate: _onNavigate),
       PersonaMemorySpecsScreen(onNavigate: _onNavigate),
       const ProfileScreen(),
       const DiagnosticsScreen(),
       const SettingsScreen(),
+      ContactsScreen(onNavigate: _onNavigate),
     ];
 
     // Sidebar: In RTL (Arabic) endDrawer opens from LEFT.

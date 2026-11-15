@@ -22,9 +22,9 @@ class GlobalNebulaFooter extends StatelessWidget {
     final items = [
       _FooterItem(
         index: 0,
-        icon: Icons.home_outlined,
-        activeIcon: Icons.home_rounded,
-        label: t('nav_home'),
+        icon: Icons.groups_outlined,
+        activeIcon: Icons.groups_rounded,
+        label: t('nav_personas'),
       ),
       _FooterItem(
         index: 1,
@@ -34,9 +34,9 @@ class GlobalNebulaFooter extends StatelessWidget {
       ),
       _FooterItem(
         index: 2,
-        icon: Icons.groups_outlined,
-        activeIcon: Icons.groups_rounded,
-        label: t('nav_personas'),
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_rounded,
+        label: t('nav_home'),
       ),
       _FooterItem(
         index: 3,

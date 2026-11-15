@@ -23,7 +23,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _openMenu() {
     NebulaSideMenu.show(
       context,
-      activeIndex: 0,
+      activeIndex: 2,
       onNavigate: (idx) {
         if (widget.onNavigate != null && idx >= 0) {
           widget.onNavigate!(idx);
@@ -123,7 +123,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         child: NebulaSideMenu(
-          activeIndex: 0,
+          activeIndex: 2,
           onNavigate: (idx) {
             _scaffoldKey.currentState?.closeDrawer();
             if (widget.onNavigate != null && idx >= 0) {

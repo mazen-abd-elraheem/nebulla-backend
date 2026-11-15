@@ -485,7 +485,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (Navigator.canPop(context)) {
           Navigator.pop(context);
         } else {
-          widget.onNavigate?.call(0); // return to dashboard
+          widget.onNavigate?.call(2); // return to dashboard (Home)
         }
       },
       borderRadius: BorderRadius.circular(12),
@@ -1068,7 +1068,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (isUser) const SizedBox(width: 8),
               ],
             ),
-          ),
 
           // Quick Action Pills under Assistant welcome message
           if (msg.quickActions != null && msg.quickActions!.isNotEmpty) ...[

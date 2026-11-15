@@ -61,9 +61,29 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      final isConnError = e.toString().contains('SocketException') ||
+          e.toString().contains('refused') ||
+          e.toString().contains('1225');
       setState(() {
-        _error = 'تعذر تحميل الشخصيات: $e';
+        _error = isConnError
+            ? 'تعذر الاتصال بخادم نيبولا (127.0.0.1:8000)\nيرجى التأكد من تشغيل خادم الباك إند والمحاولة مجدداً.'
+            : 'تعذر تحميل الشخصيات: $e';
         _loading = false;
+        if (_personalities.isEmpty) {
+          _personalities = [
+            Personality(
+              id: 1,
+              name: 'مازن (Mazen) - التوأم الرقمي',
+              description:
+                  'التوأم الرقمي الرسمي لمستخدم نيبولا، قادر على التفاعل الصوتي والتحدث بأسلوبك ولهجتك.',
+              dialect: 'اللهجة المصرية والإنجليزية',
+              languageMix: 'ar-EG',
+              systemPrompt:
+                  'أنت مازن، التوأم الرقمي والمساعد الذكي الرسمي المتقدم لنظام نيبولا.',
+              isActive: true,
+            ),
+          ];
+        }
       });
     }
   }
@@ -376,7 +396,7 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                   final exitBtn = GestureDetector(
                     onTap: () {
                       if (widget.onNavigate != null) {
-                        widget.onNavigate!(0);
+                        widget.onNavigate!(2); // return to home (index 2)
                       } else if (Navigator.canPop(context)) {
                         Navigator.pop(context);
                       }
@@ -425,30 +445,118 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
                         color: Color(0xFF00B4D8),
                       ),
                     )
-                  : _error != null
+                  : _error != null && _personalities.isEmpty
                   ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _error!,
-                            style: const TextStyle(
-                              fontFamily: 'Cairo',
-                              color: Color(0xFFEF4444),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEE2E2),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.wifi_off_rounded,
+                                color: Color(0xFFDC2626),
+                                size: 32,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          ElevatedButton(
-                            onPressed: _loadData,
-                            child: const Text(
-                              'إعادة المحاولة',
-                              style: TextStyle(fontFamily: 'Cairo'),
+                            const SizedBox(height: 16),
+                            Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontFamily: 'Cairo',
+                                color: Color(0xFF991B1B),
+                                fontSize: 13,
+                                height: 1.5,
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: _loadData,
+                              icon: const Icon(Icons.refresh_rounded, size: 18),
+                              label: const Text(
+                                'إعادة المحاولة',
+                                style: TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF00B4D8),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     )
-                  : _buildPersonaContent(),
+                  : Column(
+                      children: [
+                        if (_error != null)
+                          Container(
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 6,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(0xFFFECACA),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.info_outline_rounded,
+                                  color: Color(0xFFDC2626),
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _error!,
+                                    style: const TextStyle(
+                                      fontFamily: 'Cairo',
+                                      fontSize: 11,
+                                      color: Color(0xFF991B1B),
+                                    ),
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: _loadData,
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(4),
+                                    child: Icon(
+                                      Icons.refresh_rounded,
+                                      color: Color(0xFF00B4D8),
+                                      size: 18,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        Expanded(child: _buildPersonaContent()),
+                      ],
+                    ),
             ),
           ],
         ),

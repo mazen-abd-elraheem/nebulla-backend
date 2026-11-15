@@ -767,7 +767,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
       backgroundColor: Colors.transparent,
       elevation: 0,
       child: NebulaSideMenu(
-        activeIndex: 2,
+        activeIndex: 0,
         onNavigate: (idx) {
           if (isArabic) {
             _memScaffoldKey.currentState?.closeEndDrawer();
@@ -895,7 +895,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                           InkWell(
                                             onTap: () {
                                               if (widget.onNavigate != null) {
-                                                widget.onNavigate!(0);
+                                                widget.onNavigate!(2);
                                               } else if (Navigator.canPop(context)) {
                                                 Navigator.pop(context);
                                               }
@@ -942,7 +942,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                           InkWell(
                                             onTap: () {
                                               if (widget.onNavigate != null) {
-                                                widget.onNavigate!(0);
+                                                widget.onNavigate!(2);
                                               } else if (Navigator.canPop(context)) {
                                                 Navigator.pop(context);
                                               }

@@ -140,6 +140,54 @@ class NebulaRepository {
 
   bool get isLoggedIn => _store.getToken() != null;
 
+  // ── Onboarding & Avatar (التخصيص والأفاتار) ──────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getOnboardingQuestions() async {
+    try {
+      final data = await _api.get('/api/v1/auth/onboarding/questions');
+      if (data is Map<String, dynamic> && data['questions'] is List) {
+        return List<Map<String, dynamic>>.from(data['questions']);
+      }
+    } catch (_) {}
+    return [
+      {
+        'id': 'interaction_style',
+        'title': 'ما هو أسلوب التفاعل المفضل لديك؟',
+        'subtitle': 'اختر الطريقة الأنسب للتواصل والتفاعل مع مساعدك الذكي',
+        'options': ['نصي وصوتي', 'صوتي تفاعلي', 'نصي فقط'],
+        'default': 'نصي وصوتي',
+      },
+      {
+        'id': 'interest_domain',
+        'title': 'ما هو مجال اهتمامك الأساسي؟',
+        'subtitle': 'لتخصيص الردود والذكاء الاصطناعي وفق اهتماماتك اليومية',
+        'options': ['البرمجة والتقنية', 'التعليم والدراسة', 'الأعمال والإدارة', 'الترفيه والتسلية'],
+        'default': 'البرمجة والتقنية',
+      },
+      {
+        'id': 'personal_fact',
+        'title': 'معلومة شخصية تريد من المساعد حفظها بذاكرته:',
+        'subtitle': 'احفظ حقيقة أو تفضيل عنك في الذاكرة طويلة المدى',
+        'placeholder': 'مثال: اسمي مازن، أحب تطوير التطبيقات وتصميم الأنظمة الذكية',
+        'default': '',
+      },
+    ];
+  }
+
+  Future<void> submitOnboardingAnswers(Map<String, dynamic> answers) async {
+    await _api.post('/api/v1/auth/onboarding/answers', {'answers': answers});
+  }
+
+  Future<Map<String, dynamic>> generateAvatar(File imageFile) async {
+    final data = await _api.postMultipart(
+      '/api/v1/auth/avatar/generate',
+      {},
+      imageFile,
+      'file',
+    );
+    return data is Map<String, dynamic> ? data : {};
+  }
+
   // ── Devices ───────────────────────────────────────────────────────────────
 
   Future<DeviceStatus> getDeviceStatus() async {

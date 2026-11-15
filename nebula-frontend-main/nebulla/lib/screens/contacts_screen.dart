@@ -5,9 +5,11 @@ import '../models/models.dart';
 import '../services/nebula_repository.dart';
 import '../services/phone_actions_service.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/nebula_side_menu.dart';
 
 class ContactsScreen extends StatefulWidget {
-  const ContactsScreen({super.key});
+  final ValueChanged<int>? onNavigate;
+  const ContactsScreen({super.key, this.onNavigate});
 
   @override
   State<ContactsScreen> createState() => _ContactsScreenState();
@@ -299,13 +301,24 @@ class _ContactsScreenState extends State<ContactsScreen>
                   children: [
                     IconButton(
                       icon: const Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        textDirection: TextDirection.ltr,
+                        Icons.menu_rounded,
                         color: AppColors.textPrimary,
-                        size: 20,
+                        size: 24,
                       ),
-                      onPressed: () => Navigator.of(context).pop(),
+                      tooltip: 'القائمة الجانبية',
+                      onPressed: () {
+                        NebulaSideMenu.show(
+                          context,
+                          activeIndex: 7,
+                          onNavigate: (idx) {
+                            if (widget.onNavigate != null && idx >= 0) {
+                              widget.onNavigate!(idx);
+                            }
+                          },
+                        );
+                      },
                     ),
+                    const SizedBox(width: 4),
                     const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -314,7 +327,7 @@ class _ContactsScreenState extends State<ContactsScreen>
                             'جهات الاتصال والتليفون',
                             style: TextStyle(
                               fontFamily: 'Cairo',
-                              fontSize: 20,
+                              fontSize: 18,
                               fontWeight: FontWeight.w800,
                               color: AppColors.textPrimary,
                             ),
@@ -323,7 +336,7 @@ class _ContactsScreenState extends State<ContactsScreen>
                             'تحكم في الأرقام اللي يقدر نيبولا يكلمها بصوتك',
                             style: TextStyle(
                               fontFamily: 'Cairo',
-                              fontSize: 12,
+                              fontSize: 11.5,
                               color: AppColors.textMuted,
                             ),
                           ),
@@ -343,6 +356,22 @@ class _ContactsScreenState extends State<ContactsScreen>
                           : const Icon(Icons.sync, color: AppColors.teal),
                       tooltip: 'مزامنة من الموبايل',
                       onPressed: _syncing ? null : _syncAllFromDevice,
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        textDirection: TextDirection.ltr,
+                        color: AppColors.textPrimary,
+                        size: 18,
+                      ),
+                      tooltip: 'رجوع',
+                      onPressed: () {
+                        if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                        } else {
+                          widget.onNavigate?.call(2);
+                        }
+                      },
                     ),
                   ],
                 ),
