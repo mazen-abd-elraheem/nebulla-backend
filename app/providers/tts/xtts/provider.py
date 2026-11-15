@@ -62,6 +62,64 @@ class XTTSProvider(BaseTTSProvider):
         self._device = device or getattr(settings, "VOICETUT_DEVICE", "cuda")
         self._speaker = speaker or getattr(settings, "VOICETUT_SPEAKER", "mazen")
 
+    # ── Speakers Management ───────────────────────────────────────────────────
+
+    @classmethod
+    def list_speakers(cls) -> list[dict]:
+        """
+        List available speaker characters and voices for VoiceTut / XTTS engine.
+        Returns a list of speaker dictionaries with name, id, language, and description.
+        """
+        speakers = [
+            {
+                "id": "mazen",
+                "name": "مازن (Mazen)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": True,
+                "description": "الصوت الافتراضي المصري لموديل VoiceTut",
+            },
+            {
+                "id": "tut",
+                "name": "توت (Tut)",
+                "gender": "male",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت نيبولا المصري الكلاسيكي",
+            },
+            {
+                "id": "nebula",
+                "name": "نيبولا (Nebula)",
+                "gender": "female",
+                "language": "arz",
+                "dialect": "Egyptian Arabic",
+                "is_default": False,
+                "description": "صوت الذكاء الاصطناعي لنيبولا",
+            },
+        ]
+
+        # Also discover any custom characters/samples saved in data/voice_samples
+        samples_dir = Path("data/voice_samples")
+        if samples_dir.exists():
+            for p in sorted(samples_dir.glob("personality_*.wav")):
+                pid_str = p.stem.replace("personality_", "")
+                if pid_str.isdigit():
+                    pid = int(pid_str)
+                    speakers.append({
+                        "id": f"personality_{pid}",
+                        "name": f"صوت الشخصية {pid} المستنسخ",
+                        "gender": "custom",
+                        "language": "arz",
+                        "dialect": "Egyptian Arabic (Cloned)",
+                        "is_default": False,
+                        "personality_id": pid,
+                        "sample_path": str(p),
+                    })
+
+        return speakers
+
     # ── Greeting Cache Management ─────────────────────────────────────────────
 
     @staticmethod

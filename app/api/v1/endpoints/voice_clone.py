@@ -133,8 +133,12 @@ async def list_available_voices(
     Returns all cloned voice samples available in the system.
     """
     samples = svc.list_samples()
-    from app.providers.tts.voicetut import VoiceTutProvider
-    speakers = VoiceTutProvider.list_speakers()
+    try:
+        from app.providers.tts.voicetut import VoiceTutProvider
+        speakers = VoiceTutProvider.list_speakers() if hasattr(VoiceTutProvider, "list_speakers") else svc.list_speakers()
+    except Exception as exc:
+        logger.warning(f"Error fetching voicetut speakers: {exc}")
+        speakers = []
     return {
         "active_provider": settings.TTS_PROVIDER,
         "cloned_samples": samples,

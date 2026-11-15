@@ -238,6 +238,10 @@ class VoiceCloneService:
                 pass
         return results
 
+    def list_speakers(self) -> list[dict]:
+        """List available speaker voices via the VoiceTut / XTTS engine."""
+        return self._xtts.list_speakers()
+
     async def delete_sample(self, personality_id: int) -> bool:
         """Delete a stored voice sample."""
         p = _SAMPLES_DIR / f"personality_{personality_id}.wav"
