@@ -1,10 +1,9 @@
 import os
 import sys
 import time
+from pathlib import Path
 
-# Direct all Hugging Face caches and temp files to drive D:
-os.environ["HF_HOME"] = r"D:\huggingface_cache"
-os.environ["HF_HUB_CACHE"] = r"D:\huggingface_cache\hub"
+# Use user's default Hugging Face cache on drive C:
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 if sys.platform == "win32":
@@ -12,7 +11,8 @@ if sys.platform == "win32":
 
 from huggingface_hub import snapshot_download
 
-TARGET_DIR = r"D:\models\voicetut-tts"
+ROOT_DIR = Path(__file__).resolve().parent.parent
+TARGET_DIR = str((ROOT_DIR / "models" / "voicetut-tts").resolve())
 REPO_ID = "mohammedaly22/VoiceTut-TTS"
 
 def download():

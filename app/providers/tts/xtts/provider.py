@@ -367,18 +367,13 @@ class XTTSProvider(BaseTTSProvider):
                 language,
             )
 
-        # Tertiary: VoiceTutMicroservice fallback (gTTS / Windows SAPI Arabic voice generator)
-        from app.providers.tts.voicetut_microservice import VoiceTutMicroserviceProvider
-        svc = VoiceTutMicroserviceProvider()
-        return await svc.synthesize(
-            text=clean_text,
-            speaker=speaker or self._speaker,
-            ref_audio=ref_audio or self._reference_wav,
-            ref_text=ref_text,
-            num_step=num_step,
-            guidance_scale=guidance_scale,
-            speed=speed,
-            language=language or self._language,
+        # Zero Fallback Enforcement: strictly VoiceTut-TTS only, no gTTS or SAPI
+        logger.error(
+            "VoiceTut-TTS model is not loaded or unreachable. Strictly NO fallback models allowed (Zero Fallback)."
+        )
+        raise RuntimeError(
+            "فشل استنساخ الصوت: موديل VoiceTut-TTS الأساسي غير متوفر حالياً ولا يوجد أي نموذج بديل (Strict Zero Fallback). "
+            "يرجى التأكد من تحميل أوزان الموديل في models/voicetut-tts أو تشغيل سيرفر VoiceTuT."
         )
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
