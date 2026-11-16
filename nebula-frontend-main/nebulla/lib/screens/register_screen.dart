@@ -354,7 +354,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
       showSuccessSnackbar(
         context,
-        'تم تدريب واستنساخ صوتك بنجاح عبر محرك XTTS!',
+        'تم تدريب واستنساخ صوتك بنجاح!',
       );
     } catch (e) {
       if (!mounted) return;
@@ -845,7 +845,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           SizedBox(width: 8),
                           Icon(
-                            Icons.arrow_forward_rounded,
+                            Icons.arrow_back_rounded,
                             color: Colors.white,
                             size: 19,
                           ),
@@ -1099,7 +1099,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
               SizedBox(width: 8),
-              Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 19),
+              Icon(Icons.arrow_back_rounded, color: Colors.white, size: 19),
             ],
           ),
         ),
@@ -1422,7 +1422,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     SizedBox(width: 8),
                     Icon(
-                      Icons.arrow_forward_rounded,
+                      Icons.arrow_back_rounded,
                       color: Colors.white,
                       size: 19,
                     ),
@@ -1441,7 +1441,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
-          'استنساخ صوتك عبر الذكاء الاصطناعي (XTTS)',
+          'استنساخ صوتك بالذكاء الاصطناعي',
           style: TextStyle(
             fontFamily: 'Cairo',
             fontSize: 21,
@@ -1451,7 +1451,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'الخطوة 4 من 4: سجل مقطعاً بصوتك ليتحدث الأفاتار بصوتك المستنسخ وتوأمك الرقمي',
+          'الخطوة 4 من 4: سجل مقطع بصوتك عشان الأفاتار يتكلم بنفس نبرتك وصوتك الطبيعي',
           style: TextStyle(
             fontFamily: 'Cairo',
             fontSize: 12,
@@ -1494,7 +1494,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 6),
               const Text(
-                '«أهلاً بك، أنا جاهز للتواصل مع نيبولا ومتحمس لتجربة التوأم الرقمي الذكي.»',
+                '«أهلاً بيك، أنا بسجل بصوتي عشان توأمي الرقمي يتعلم طريقتي في الكلام ونبرتي، ونبدأ نشتغل سوا.»',
                 style: TextStyle(
                   fontFamily: 'Cairo',
                   fontSize: 12.5,
@@ -1592,8 +1592,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 : const Icon(Icons.cloud_upload_rounded, size: 18),
             label: Text(
               _isUploadingVoice
-                  ? 'جاري استنساخ الصوت عبر XTTS...'
-                  : 'رفع الصوت وتدريب XTTS',
+                  ? 'جاري استنساخ وتدريب الصوت...'
+                  : 'رفع وتدريب الصوت',
               style: const TextStyle(
                 fontFamily: 'Cairo',
                 fontWeight: FontWeight.bold,
@@ -1627,7 +1627,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'تم استنساخ صوتك وتدريب نموذج XTTS بنجاح!',
+                    'تم استنساخ صوتك وتدريب نبرتك بنجاح!',
                     style: TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 12,

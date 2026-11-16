@@ -90,7 +90,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('استنساخ صوتك عبر الذكاء الاصطناعي (XTTS)'), findsOneWidget);
+    expect(find.text('استنساخ صوتك بالذكاء الاصطناعي'), findsOneWidget);
     expect(find.text('الجملة المقترحة للقراءة بصوتك:'), findsOneWidget);
     expect(find.byIcon(Icons.mic_rounded), findsNWidgets(2));
     expect(find.text('إتمام التسجيل والبدء في نيبولا'), findsOneWidget);
