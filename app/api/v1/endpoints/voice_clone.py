@@ -13,9 +13,10 @@ GET    /voice-clone/test                     — quick test (playable directly i
 
 import os
 import re
+import time
 import pathlib
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, UploadFile, status
-from fastapi.responses import FileResponse, Response, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from typing import Any
 
@@ -24,11 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user, get_optional_user
 from app.core.config import settings
+from app.core.logger import get_logger
 from app.db.session import get_db
 from app.models.personality import Personality
-
-from app.core.config import settings
 from app.services.voice_clone.voice_clone_service import VoiceCloneService
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 _last_synthesized_audio: dict = {}
@@ -99,16 +101,19 @@ async def upload_voice_sample(
     try:
         from app.services.voice_verification.speaker_service import get_speaker_service
         spk_svc = get_speaker_service()
-        raw_audio = Path(path).read_bytes()
-        speaker_label = getattr(personality, "name", "المالك الأصلي") if personality else "المالك الأصلي"
+        raw_audio = pathlib.Path(path).read_bytes()
+        speaker_label = (getattr(personality, "name", None) or "المالك الأصلي") if personality else "المالك الأصلي"
         await spk_svc.enroll(
             db,
-            user_id=personality.user_id if personality else 1,
+            user_id=personality.user_id if personality else None,
             speaker_name=speaker_label,
-            audio_data=raw_audio,
+            samples=raw_audio,
+            personality_id=personality_id,
         )
+        await db.commit()
         logger.info(f"Auto-enrolled voiceprint for {speaker_label} (personality {personality_id})")
     except Exception as spk_err:
+        await db.rollback()
         logger.warning(f"Note on auto-enrolling speaker voiceprint: {spk_err}")
 
     return {"message": "تم حفظ عينة الصوت واستنساخها بنجاح", "path": path, "personality_id": personality_id}
@@ -215,9 +220,78 @@ class SynthesizeRequest(BaseModel):
     personality_id: int | None = Field(None, description="معرف الشخصية (اختياري)")
     language: str = Field("arz", description="اللهجة (arz للمصري)")
     ref_text: str | None = Field(None, description="نص العينة المرجعية (اختياري، يتم جلبه تلقائياً)")
-    num_steps: int | None = Field(48, description="عدد خطوات التوليد (48 لجودة ستوديو فائقة النقاء وعالية الدقة)")
-    guidance_scale: float | None = Field(2.6, description="مقياس مطابقة نبرة الصوت المرجعي بدقة (2.5 - 2.8)")
-    speed: float | None = Field(1.15, description="سرعة الكلام (1.15 للريتم الطبيعي السريع للعامية المصرية)")
+    num_steps: int | None = Field(14, description="عدد خطوات التوليد (14 التوازن السريع الموصى به، بحد أقصى 20 ما لم يتم تفعيل studio_hq)")
+    guidance_scale: float | None = Field(2.1, description="مقياس مطابقة نبرة الصوت المرجعي بدقة (2.0 - 2.3)")
+    speed: float | None = Field(1.0, description="سرعة الكلام الطبيعية المطابقة للصوت الأصلي (1.0)")
+    studio_hq: bool = Field(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً")
+
+
+def _resolve_steps_and_params(
+    num_step: int | None,
+    guidance_scale: float | None,
+    speed: float | None,
+    studio_hq: bool = False,
+) -> tuple[int, float, float]:
+    """Resolve VoiceTut synthesis params and enforce `VOICETUT_MAX_STEPS` unless `studio_hq=True`."""
+    default_steps = int(getattr(settings, "VOICETUT_NUM_STEPS", 14))
+    max_steps = int(getattr(settings, "VOICETUT_MAX_STEPS", 20))
+    steps = int(num_step) if (num_step is not None and int(num_step) > 0) else default_steps
+    if not studio_hq:
+        steps = min(steps, max_steps)
+    steps = max(4, steps)
+
+    default_cfg = float(getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.1))
+    cfg = float(guidance_scale) if (guidance_scale is not None and float(guidance_scale) >= 0.0) else default_cfg
+
+    default_spd = float(getattr(settings, "VOICETUT_SPEED", 1.0))
+    spd = float(speed) if (speed is not None and float(speed) > 0.0) else default_spd
+    return steps, cfg, spd
+
+
+async def _resolve_target_pid(
+    svc: VoiceCloneService,
+    voice_id: int | str | None = None,
+    personality_id: int | None = None,
+    user: str | None = None,
+) -> int:
+    """Resolve target personality_id consistently across sync/stream/LLM endpoints."""
+    target_pid: int | None = None
+    if voice_id is not None:
+        v_str = str(voice_id).strip().lower()
+        if v_str.isdigit():
+            target_pid = int(v_str)
+        elif v_str in ("mazen", "personality_1"):
+            target_pid = 1
+        elif v_str.startswith("personality_"):
+            try:
+                target_pid = int(v_str.replace("personality_", ""))
+            except Exception:
+                target_pid = None
+        else:
+            try:
+                target_pid = int(v_str)
+            except Exception:
+                target_pid = None
+
+    if target_pid is None and personality_id is not None and personality_id > 0:
+        target_pid = personality_id
+
+    if target_pid is None and user:
+        try:
+            from app.db.session import AsyncSessionLocal
+            u_id = int(user) if str(user).isdigit() else None
+            if u_id:
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(
+                        select(Personality).where(Personality.user_id == u_id, Personality.is_active == True)
+                    )
+                    up = res.scalar_one_or_none()
+                    if up and svc.has_voice_sample(up.id):
+                        target_pid = up.id
+        except Exception:
+            pass
+
+    return target_pid if (target_pid is not None and target_pid > 0) else 1
 
 
 _AUDIO_RESPONSES = {
@@ -255,52 +329,16 @@ async def synthesize(
             detail="النص ده مفهوش أي حروف قابلة للنطق.",
         )
 
-    # Sanitize target PID
-    target_pid: int | None = None
-    if body.voice_id is not None:
-        v_str = str(body.voice_id).strip().lower()
-        if v_str.isdigit():
-            target_pid = int(v_str)
-        elif v_str in ("mazen", "personality_1"):
-            target_pid = 1
-        elif v_str.startswith("personality_"):
-            try:
-                target_pid = int(v_str.replace("personality_", ""))
-            except Exception:
-                target_pid = None
-        else:
-            try:
-                target_pid = int(v_str)
-            except Exception:
-                target_pid = None
-
-    if target_pid is None and body.personality_id is not None and body.personality_id > 0:
-        target_pid = body.personality_id
-
-    if target_pid is None and _user:
-        try:
-            from app.db.session import AsyncSessionLocal
-            from app.models.personality import Personality
-            u_id = int(_user) if str(_user).isdigit() else None
-            if u_id:
-                async with AsyncSessionLocal() as session:
-                    res = await session.execute(
-                        select(Personality).where(Personality.user_id == u_id, Personality.is_active == True)
-                    )
-                    up = res.scalar_one_or_none()
-                    if up and svc.has_voice_sample(up.id):
-                        target_pid = up.id
-        except Exception:
-            pass
-
-    if target_pid is None:
-        target_pid = 1
+    target_pid = await _resolve_target_pid(
+        svc, voice_id=body.voice_id, personality_id=body.personality_id, user=_user
+    )
 
     actual_ref_text = body.ref_text if (body.ref_text and body.ref_text.strip() and body.ref_text.strip() != "string") else None
-    steps = body.num_steps if (body.num_steps and body.num_steps > 0) else getattr(settings, "VOICETUT_NUM_STEPS", 48)
-    cfg = body.guidance_scale if (body.guidance_scale and body.guidance_scale > 0) else 2.6
-    spd = body.speed if (body.speed and body.speed > 0) else 1.15
+    steps, cfg, spd = _resolve_steps_and_params(
+        body.num_steps, body.guidance_scale, body.speed, body.studio_hq
+    )
 
+    t0 = time.perf_counter()
     wav_bytes = await svc.synthesize(
         text=cleaned_text,
         personality_id=target_pid,
@@ -310,6 +348,7 @@ async def synthesize(
         guidance_scale=cfg,
         speed=spd,
     )
+    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
 
     if not wav_bytes or len(wav_bytes) <= 1000:
         raise HTTPException(
@@ -317,15 +356,15 @@ async def synthesize(
             detail="معرفناش نستنسخ الصوت ونطلع مقطع صوت سليم.",
         )
 
-    # Cache latest audio to disk and memory for immediate browser streaming
+    # Cache latest audio to disk and memory for immediate browser playback
     try:
         LATEST_WAV_FILE.write_bytes(wav_bytes)
     except Exception:
         pass
 
-    cache_key = target_pid if target_pid is not None else 1
-    _last_synthesized_audio[cache_key] = wav_bytes
+    _last_synthesized_audio[target_pid] = wav_bytes
     _last_synthesized_audio["latest"] = wav_bytes
+    metrics = getattr(svc._xtts, "last_metrics", {}) or {}
 
     return Response(
         content=wav_bytes,
@@ -334,6 +373,9 @@ async def synthesize(
             "Accept-Ranges": "bytes",
             "Content-Length": str(len(wav_bytes)),
             "Content-Disposition": 'inline; filename="cloned_voice.wav"',
+            "X-TTS-Latency-Ms": str(latency_ms),
+            "X-TTS-Chunks": str(metrics.get("chunks", 1)),
+            "X-TTS-Steps": str(steps),
         },
     )
 
@@ -348,9 +390,11 @@ async def synthesize_get(
     text: str | None = Query(None, description="النص المراد نطقه بالصوت المستنسخ"),
     voice_id: int | None = Query(None, description="معرف الصوت المستنسخ (ID مثل 1)"),
     personality_id: int | None = Query(None, description="معرف الشخصية (ID مثل 1)"),
-    num_steps: int | None = Query(48, description="عدد خطوات التوليد (الافتراضي: 48 لجودة ستوديو فائقة النقاء)"),
-    speed: float | None = Query(1.15, description="سرعة الكلام (الافتراضي: 1.15 للعامية المصرية)"),
-    guidance_scale: float | None = Query(2.6, description="مطابقة نبرة الصوت المستنسخ"),
+    num_steps: int | None = Query(14, description="عدد خطوات التوليد (الافتراضي السريع: 14، بحد أقصى 20)"),
+    speed: float | None = Query(1.0, description="سرعة الكلام (الافتراضي: 1.0 المطابق لنبرة الصوت الأصلي)"),
+    guidance_scale: float | None = Query(2.1, description="مطابقة نبرة الصوت المستنسخ (الافتراضي: 2.1)"),
+    stream: bool = Query(False, description="تفعيل البث المتدفق السريع جملة بجملة (Streaming Audio)"),
+    studio_hq: bool = Query(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً"),
     _user: str | None = Depends(get_optional_user),
     svc: VoiceCloneService = Depends(_svc),
 ):
@@ -358,16 +402,38 @@ async def synthesize_get(
     GET endpoint for `/synthesize`:
     1. If called without text (e.g. by Swagger UI embedded <audio> tag or browser),
        it immediately serves the latest synthesized audio clip with byte-range support.
-    2. If text is provided, it generates speech on-the-fly in the cloned voice and streams it back.
+    2. If text is provided, it generates speech in the cloned voice (or streams sentence-by-sentence when stream=true).
     """
     if text and text.strip():
+        if stream:
+            target_pid = await _resolve_target_pid(
+                svc, voice_id=voice_id, personality_id=personality_id, user=_user
+            )
+            steps, cfg, spd = _resolve_steps_and_params(num_steps, guidance_scale, speed, studio_hq)
+            return StreamingResponse(
+                svc.synthesize_stream(
+                    text=text.strip(),
+                    personality_id=target_pid,
+                    language="arz",
+                    num_step=steps,
+                    guidance_scale=cfg,
+                    speed=spd,
+                ),
+                media_type="audio/wav",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "Content-Disposition": 'inline; filename="cloned_voice_stream.wav"',
+                },
+            )
         req = SynthesizeRequest(
             text=text,
             voice_id=voice_id,
             personality_id=personality_id,
-            num_steps=num_steps or 48,
-            guidance_scale=guidance_scale or 2.6,
-            speed=speed or 1.15,
+            num_steps=num_steps,
+            guidance_scale=guidance_scale,
+            speed=speed,
+            studio_hq=studio_hq,
         )
         return await synthesize(req, _user=_user, svc=svc)
 
@@ -393,12 +459,84 @@ async def synthesize_get(
         )
 
     # Default preview request
+    steps, cfg, spd = _resolve_steps_and_params(None, None, None, False)
     req = SynthesizeRequest(
         text="أهلاً بيك يا صديقي! الصوت المصري المستنسخ شغال وجاهز تماماً.",
         personality_id=pid,
-        num_steps=48,
+        num_steps=steps,
+        guidance_scale=cfg,
+        speed=spd,
     )
     return await synthesize(req, _user=_user, svc=svc)
+
+
+@router.post(
+    "/synthesize/stream",
+    summary="Progressive chunked audio streaming (low TTFA) in cloned voice",
+    responses=_AUDIO_RESPONSES,
+)
+async def synthesize_stream_post(
+    body: SynthesizeRequest,
+    _user: str | None = Depends(get_optional_user),
+    svc: VoiceCloneService = Depends(_svc),
+):
+    """Stream WAV chunks sentence-by-sentence while generating subsequent chunks in parallel."""
+    cleaned_text = body.text.strip()
+    if not cleaned_text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="النص المطلوب فارغ.")
+    target_pid = await _resolve_target_pid(
+        svc, voice_id=body.voice_id, personality_id=body.personality_id, user=_user
+    )
+    actual_ref_text = body.ref_text if (body.ref_text and body.ref_text.strip() and body.ref_text.strip() != "string") else None
+    steps, cfg, spd = _resolve_steps_and_params(
+        body.num_steps, body.guidance_scale, body.speed, body.studio_hq
+    )
+
+    return StreamingResponse(
+        svc.synthesize_stream(
+            text=cleaned_text,
+            personality_id=target_pid,
+            language=body.language,
+            ref_text=actual_ref_text,
+            num_step=steps,
+            guidance_scale=cfg,
+            speed=spd,
+        ),
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Content-Disposition": 'inline; filename="cloned_voice_stream.wav"',
+        },
+    )
+
+
+@router.get(
+    "/synthesize/stream",
+    summary="Browser/Swagger GET progressive streaming endpoint in cloned voice",
+    responses=_AUDIO_RESPONSES,
+)
+async def synthesize_stream_get(
+    text: str = Query(..., description="النص المراد نطقه وبثه متدفقاً بالصوت المستنسخ"),
+    voice_id: int | None = Query(None, description="معرف الصوت المستنسخ"),
+    personality_id: int | None = Query(None, description="معرف الشخصية"),
+    num_steps: int | None = Query(14, description="عدد خطوات التوليد (الافتراضي السريع: 14، بحد أقصى 20)"),
+    speed: float | None = Query(1.0, description="سرعة النطق الطبيعية (الافتراضي: 1.0)"),
+    guidance_scale: float | None = Query(2.1, description="مقياس مطابقة نبرة الصوت (الافتراضي: 2.1)"),
+    studio_hq: bool = Query(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً"),
+    _user: str | None = Depends(get_optional_user),
+    svc: VoiceCloneService = Depends(_svc),
+):
+    req = SynthesizeRequest(
+        text=text,
+        voice_id=voice_id,
+        personality_id=personality_id,
+        num_steps=num_steps,
+        guidance_scale=guidance_scale,
+        speed=speed,
+        studio_hq=studio_hq,
+    )
+    return await synthesize_stream_post(req, _user=_user, svc=svc)
 
 
 # ── Quick test ────────────────────────────────────────────────────────────────
@@ -416,12 +554,14 @@ async def test_voice(
 ):
     """Returns a short WAV clip of 'أهلاً يا صديقي!' in the cloned voice."""
     pid = personality_id or 1
+    steps, cfg, spd = _resolve_steps_and_params(None, None, None, False)
     wav_bytes = await svc.synthesize(
         text="أهلاً يا صديقي! الروبوت بيكلم بصوتك المستنسخ.",
         personality_id=pid,
         language="arz",
-        num_step=48,
-        guidance_scale=2.2,
+        num_step=steps,
+        guidance_scale=cfg,
+        speed=spd,
     )
     try:
         LATEST_WAV_FILE.write_bytes(wav_bytes)
@@ -451,9 +591,10 @@ class LLMVoiceCloneRequest(BaseModel):
     )
     personality_id: int | None = Field(1, description="معرف الشخصية لاستخدام عينة صوتها المستنسخة (افتراضياً 1 أو النشطة)")
     return_json: bool = Field(False, description="إذا كان True يرجع كائن JSON مع audio_base64، وإذا كان False يرجع ملف صوتي مباشر audio/wav")
-    speed: float | None = Field(1.15, description="سرعة نطق الصوت (افتراضياً 1.15 للعامية المصرية)")
-    guidance_scale: float | None = Field(2.6, description="مقياس تطابق نبرة الصوت المرجعي بدقة (افتراضياً 2.6)")
-    num_steps: int | None = Field(48, description="عدد خطوات التوليد لموديل VoiceTut (افتراضياً 48)")
+    speed: float | None = Field(1.0, description="سرعة نطق الصوت الطبيعية (افتراضياً 1.0 لمطابقة النبرة الأصلية)")
+    guidance_scale: float | None = Field(2.1, description="مقياس تطابق نبرة الصوت المرجعي بدقة (افتراضياً 2.1)")
+    num_steps: int | None = Field(14, description="عدد خطوات التوليد لموديل VoiceTut (افتراضياً 14 التوازن السريع، بحد أقصى 20)")
+    studio_hq: bool = Field(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً")
 
     model_config = {
         "json_schema_extra": {
@@ -461,9 +602,10 @@ class LLMVoiceCloneRequest(BaseModel):
                 "text": "أهلاً بيك يا صديقي! أنا جاهز أساعدك في أي وقت.",
                 "personality_id": 1,
                 "return_json": False,
-                "speed": 1.15,
-                "guidance_scale": 2.6,
-                "num_steps": 48,
+                "speed": 1.0,
+                "guidance_scale": 2.1,
+                "num_steps": 14,
+                "studio_hq": False,
             }
         }
     }
@@ -505,6 +647,7 @@ async def handle_llm_voice_clone(
     num_steps: int | None = None,
     user: str | None = None,
     svc: VoiceCloneService | None = None,
+    studio_hq: bool = False,
 ) -> Response:
     """
     Core handler for LLM-to-Voice synthesis:
@@ -527,8 +670,8 @@ async def handle_llm_voice_clone(
             detail="النص المطلوب تحويله لصوت فارغ، يرجى إدخال نص رد الـ LLM.",
         )
 
-    # 1. Clean and normalize LLM text
-    cleaned_text = clean_llm_output_for_speech(raw_text)
+    # 1. Clean and normalize LLM text (preserve harakat injection cleanly for VoiceTut's own normalizer)
+    cleaned_text = clean_llm_output_for_speech(raw_text, for_voicetut=True)
     if not cleaned_text or not cleaned_text.strip():
         cleaned_text = re.sub(r"\[.*?\]", "", raw_text).strip()
     if not cleaned_text:
@@ -538,25 +681,7 @@ async def handle_llm_voice_clone(
         )
 
     # 2. Determine target personality
-    target_pid = personality_id
-    if target_pid is None and user:
-        try:
-            from app.db.session import AsyncSessionLocal
-            from app.models.personality import Personality
-            u_id = int(user) if str(user).isdigit() else None
-            if u_id:
-                async with AsyncSessionLocal() as session:
-                    res = await session.execute(
-                        select(Personality).where(Personality.user_id == u_id, Personality.is_active == True)
-                    )
-                    up = res.scalar_one_or_none()
-                    if up and svc.has_voice_sample(up.id):
-                        target_pid = up.id
-        except Exception:
-            pass
-
-    if target_pid is None or target_pid <= 0:
-        target_pid = 1
+    target_pid = await _resolve_target_pid(svc, personality_id=personality_id, user=user)
 
     # 3. Strict Zero Fallback Check: Must have a registered voice sample
     has_sample = svc.has_voice_sample(target_pid)
@@ -568,11 +693,12 @@ async def handle_llm_voice_clone(
             detail=f"يرجى تسجيل عينة صوتك أولاً للشخصية {target_pid} لتفعيل استنساخ الصوت. لا يوجد نموذج بديل (Zero Fallback).",
         )
 
-    # 4. Synthesize with VoiceTut-TTS
-    steps = num_steps or getattr(settings, "VOICETUT_NUM_STEPS", 48)
-    cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.6)
-    spd = speed or getattr(settings, "VOICETUT_SPEED", 1.15)
+    # 4. Synthesize with VoiceTut-TTS (clamped to <= 20 steps unless studio_hq=True)
+    steps, cfg, spd = _resolve_steps_and_params(
+        num_steps, guidance_scale, speed, studio_hq
+    )
 
+    t0 = time.perf_counter()
     wav_bytes = await svc.synthesize(
         text=cleaned_text,
         personality_id=target_pid,
@@ -582,6 +708,7 @@ async def handle_llm_voice_clone(
         guidance_scale=cfg,
         speed=spd,
     )
+    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
 
     if not wav_bytes or len(wav_bytes) <= 1000:
         raise HTTPException(
@@ -589,7 +716,7 @@ async def handle_llm_voice_clone(
             detail="فشل استنساخ الصوت عبر نموذج VoiceTut-TTS الأساسي.",
         )
 
-    # Cache for immediate browser streaming
+    # Cache for immediate browser playback
     try:
         LATEST_WAV_FILE.write_bytes(wav_bytes)
         _last_synthesized_audio[target_pid] = wav_bytes
@@ -621,6 +748,8 @@ async def handle_llm_voice_clone(
             "Accept-Ranges": "bytes",
             "Content-Length": str(len(wav_bytes)),
             "Content-Disposition": f'inline; filename="llm_voice_clone_{target_pid}.wav"',
+            "X-TTS-Latency-Ms": str(latency_ms),
+            "X-TTS-Steps": str(steps),
         },
     )
 
@@ -657,6 +786,7 @@ async def llm_voice_clone_post(
         num_steps=body.num_steps,
         user=_user,
         svc=svc,
+        studio_hq=body.studio_hq,
     )
 
 
@@ -670,9 +800,10 @@ async def llm_voice_clone_get(
     text: str | None = Query(None, description="نص رد الـ LLM المراد تحويله لصوت (إذا تُرِك فارغاً يتم تشغيل آخر صوت تم توليده)"),
     personality_id: int | None = Query(None, description="معرف الشخصية"),
     return_json: bool = Query(False, description="إرجاع كائن JSON بدلاً من الملف الصوتي المباشر"),
-    speed: float | None = Query(1.15, description="سرعة النطق"),
-    guidance_scale: float | None = Query(2.6, description="مطابقة نبرة الصوت المرجعي"),
-    num_steps: int | None = Query(48, description="عدد خطوات التوليد"),
+    speed: float | None = Query(1.0, description="سرعة النطق الطبيعية"),
+    guidance_scale: float | None = Query(2.1, description="مطابقة نبرة الصوت المرجعي"),
+    num_steps: int | None = Query(14, description="عدد خطوات التوليد (الافتراضي السريع: 14، بحد أقصى 20)"),
+    studio_hq: bool = Query(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً"),
     _user: str | None = Depends(get_optional_user),
     svc: VoiceCloneService = Depends(_svc),
 ):
@@ -691,6 +822,7 @@ async def llm_voice_clone_get(
             num_steps=num_steps,
             user=_user,
             svc=svc,
+            studio_hq=studio_hq,
         )
 
     pid = personality_id or 1
@@ -801,9 +933,9 @@ async def train_lora_endpoint(
                         "reference_text": target_transcript,
                         "description": f"VoiceTuT LoRA character: {body.character_name} (rank={body.lora_rank})",
                         "tags": ["LoRA Fine-Tuned", "99% Clone", "Nebulla Team"],
-                        "num_step": 48,
-                        "guidance_scale": 2.2,
-                        "speed": 1.0,
+                        "num_step": int(getattr(settings, "VOICETUT_NUM_STEPS", 14)),
+                        "guidance_scale": float(getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.1)),
+                        "speed": float(getattr(settings, "VOICETUT_SPEED", 1.0)),
                     },
                 )
                 if res.status_code == 200:

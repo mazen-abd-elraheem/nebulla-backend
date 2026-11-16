@@ -1,0 +1,43 @@
+# GPU Microservice Dockerfile for xg-chu/GAGAvatar (Deployable on Railway GPU / Docker CUDA)
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    FORCE_CUDA=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-dev \
+    python3-pip \
+    git \
+    build-essential \
+    ninja-build \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python && \
+    python -m pip install --upgrade pip setuptools wheel
+
+WORKDIR /app
+
+COPY requirements-gagavatar.txt .
+RUN pip install --no-cache-dir \
+    fastapi>=0.115.0 \
+    uvicorn[standard]>=0.30.0 \
+    python-multipart>=0.0.12 \
+    -r requirements-gagavatar.txt
+
+COPY services/gagavatar_server.py ./services/gagavatar_server.py
+
+ENV PORT=8090 \
+    GAGAVATAR_REPO_PATH=/app/vendor/GAGAvatar \
+    GAGAVATAR_MODEL_PATH=/app/assets/GAGAvatar \
+    GAGAVATAR_DEVICE=cuda
+
+EXPOSE 8090
+
+CMD ["sh", "-c", "uvicorn services.gagavatar_server:app --host 0.0.0.0 --port ${PORT:-8090}"]
+

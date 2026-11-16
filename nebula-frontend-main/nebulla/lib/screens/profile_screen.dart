@@ -1,9 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../models/avatar_profile.dart';
+import '../services/api_service.dart';
+import '../services/avatar_audio_service.dart';
 import '../services/storage_service.dart';
 import '../services/locale_service.dart';
 import '../services/nebula_repository.dart';
+import '../widgets/avatar_studio_panel.dart';
 import '../widgets/common_widgets.dart';
 import 'language_appearance_screen.dart';
 import 'notification_preferences_screen.dart';
@@ -30,6 +34,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _loadUser();
+    AvatarAudioService.instance.loadActiveAvatar();
+  }
+
+  void _openAvatarStudioSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFFF8FAFC),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                AvatarStudioPanel(
+                  darkMode: false,
+                  defaultName: _fullName,
+                  onAvatarApproved: (_) {
+                    if (Navigator.of(ctx).canPop()) {
+                      Navigator.of(ctx).pop();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _loadUser() {
@@ -78,6 +130,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         errorBuilder: (context, error, stackTrace) => _profileInitialFallback(),
       );
     } else {
+      final avatar = AvatarAudioService.instance.activeAvatar.value;
+      if (avatar != null && avatar.previewUrl.isNotEmpty) {
+        return Image.network(
+          ApiService.instance.resolveUrl(avatar.previewUrl),
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _profileInitialFallback(),
+        );
+      }
       return _profileInitialFallback();
     }
   }
@@ -392,49 +452,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 18),
 
-              // 2. Centered User Avatar & Verified Name
+              // 2. Centered User Avatar & Verified Name (tappable to manage GAGAvatar)
               Center(
                 child: Column(
                   children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Container(
-                          width: 86,
-                          height: 86,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFF006677).withValues(alpha: 0.2),
-                              width: 3,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.08),
-                                blurRadius: 16,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ClipOval(
-                            child: _buildProfileAvatar(),
-                          ),
-                        ),
-                        // Online green dot
-                        Positioned(
-                          bottom: 2,
-                          left: 4,
-                          child: Container(
-                            width: 14,
-                            height: 14,
+                    GestureDetector(
+                      onTap: _openAvatarStudioSheet,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 86,
+                            height: 86,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF10B981),
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
+                              border: Border.all(
+                                color: const Color(0xFF006677).withValues(alpha: 0.2),
+                                width: 3,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ClipOval(
+                              child: _buildProfileAvatar(),
                             ),
                           ),
-                        ),
-                      ],
+                          // Online green dot
+                          Positioned(
+                            bottom: 2,
+                            left: 4,
+                            child: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF10B981),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                            ),
+                          ),
+                          // Subtle avatar studio badge
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF006677),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                              child: const Icon(
+                                Icons.camera_alt_rounded,
+                                color: Colors.white,
+                                size: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Row(

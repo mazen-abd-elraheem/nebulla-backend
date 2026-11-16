@@ -99,9 +99,38 @@ class ApiService {
     fields.forEach((k, v) => request.fields[k] = v);
     request.files
         .add(await http.MultipartFile.fromPath(fileField, file.path));
-    final streamed = await request.send().timeout(const Duration(seconds: 60));
+    final streamed = await request.send().timeout(const Duration(seconds: 180));
     final response = await http.Response.fromStream(streamed);
     return _handle(response);
+  }
+
+  /// Multipart POST with optional file upload (for recreate/regenerate flows)
+  Future<dynamic> postMultipartOptionalFile(
+    String path,
+    Map<String, String> fields, {
+    File? file,
+    String fileField = 'file',
+  }) async {
+    final request = http.MultipartRequest('POST', _uri(path));
+    if (_token != null) {
+      request.headers['Authorization'] = 'Bearer $_token';
+    }
+    fields.forEach((k, v) => request.fields[k] = v);
+    if (file != null) {
+      request.files.add(await http.MultipartFile.fromPath(fileField, file.path));
+    }
+    final streamed = await request.send().timeout(const Duration(seconds: 180));
+    final response = await http.Response.fromStream(streamed);
+    return _handle(response);
+  }
+
+  String resolveUrl(String pathOrUrl) {
+    if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+      return pathOrUrl;
+    }
+    final base = _base.endsWith('/') ? _base.substring(0, _base.length - 1) : _base;
+    final cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl : '/$pathOrUrl';
+    return '$base$cleanPath';
   }
 
   dynamic _handle(http.Response response) {

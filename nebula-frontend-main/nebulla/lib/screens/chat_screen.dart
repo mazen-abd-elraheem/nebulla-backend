@@ -263,6 +263,11 @@ class _ChatScreenState extends State<ChatScreen> {
           data['reply'] as String? ?? data['response'] as String? ?? '';
       _sessionId = data['session_id'] as String? ?? _sessionId;
       final emotion = data['emotion'] as String?;
+      final faceEmoji = data['face_emoji'] as String?;
+      final expression = data['expression'] as String?;
+      final avatarAction = data['avatar_action'] is Map<String, dynamic>
+          ? data['avatar_action'] as Map<String, dynamic>
+          : null;
       final latency = (data['llm_latency_ms'] as num?)?.toDouble();
 
       // Check if the reply contains numbered points (1, 2, 3...)
@@ -293,7 +298,15 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       });
 
-      // User requested: "وعايزاه برده يبقى من غير صوت" (Muted / Silent chat)
+      // Synchronize backend speech audio with GAGAvatar lip-sync and face-emoji expression
+      AvatarAudioService.instance.speak(
+        reply,
+        emotion: emotion,
+        faceEmoji: faceEmoji,
+        expression: expression,
+        avatarAction: avatarAction,
+        personalityId: _activePersonalityId,
+      );
     } catch (_) {
       if (!mounted) return;
       // Seamless natural reply when backend is offline
@@ -934,6 +947,7 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
   }
+
 
   Future<void> _selectPersonality(Personality p) async {
     setState(() {

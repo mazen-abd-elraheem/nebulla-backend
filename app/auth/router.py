@@ -769,12 +769,21 @@ async def save_onboarding_answers(
                 importance=8,
             )
             db.add(m)
+            await db.commit()
             saved_count += 1
             try:
-                await rag.add_memory(content=mem_text, personality_id=target_pid, user_id=uid)
+                await rag.add_memory(
+                    content=mem_text,
+                    personality_id=target_pid,
+                    source="onboarding",
+                    importance=8,
+                    user_id=uid,
+                    db=db,
+                )
             except Exception as rag_err:
                 logger.debug(f"RAG vector index notice: {rag_err}")
         except Exception as e:
+            await db.rollback()
             logger.warning(f"Error persisting onboarding memory: {e}")
 
     await db.commit()

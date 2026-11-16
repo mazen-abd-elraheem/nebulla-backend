@@ -13,6 +13,7 @@ High-level service that manages:
 Used by the REST API (/api/v1/voice-clone/*) and by the AI pipeline.
 """
 
+import asyncio
 import io
 import os
 import subprocess
@@ -103,12 +104,24 @@ class VoiceCloneService:
                 detail=f"Sample too long ({duration:.1f}s). Maximum is {_MAX_DURATION_S}s.",
             )
 
+        from app.providers.tts.xtts.provider import prepare_optimized_reference_wav
+
+        # Remove stale optimization / VoiceClonePrompt caches for re-uploaded sample
+        for suffix in (".opt.wav", ".opt.txt", ".opt.meta.json", ".vcp.pt", ".vcp.json", ".opt.vcp.pt", ".opt.vcp.json", ".pt"):
+            stale = dest.with_suffix(suffix)
+            if stale.exists():
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
+        self._xtts.invalidate_prompt_cache(str(dest))
+
         txt_dest = dest.with_suffix(".txt")
         if transcript and transcript.strip():
             txt_dest.write_text(transcript.strip(), encoding="utf-8")
             logger.info(f"Saved transcript for personality {personality_id}")
         else:
-            # Auto-transcribe using QwenCleo Egyptian Arabic STT (multithreaded chunks processing)
+            # Auto-transcribe full sample using QwenCleo Egyptian Arabic STT
             try:
                 from app.providers.stt.factory import get_stt_provider
                 stt = get_stt_provider("qwencleo")
@@ -119,11 +132,27 @@ class VoiceCloneService:
             except Exception as stt_err:
                 logger.warning(f"Could not auto-transcribe reference audio with QwenCleo: {stt_err}")
 
+        # Prepare studio-conditioned 5-9s reference WAV and keep ref_text synchronized
+        existing_txt = txt_dest.read_text(encoding="utf-8").strip() if txt_dest.exists() else None
+        opt_wav, _opt_txt, needs_retranscribe = await asyncio.to_thread(
+            prepare_optimized_reference_wav, str(dest), existing_txt
+        )
+        if needs_retranscribe and opt_wav and os.path.exists(opt_wav):
+            try:
+                from app.providers.stt.factory import get_stt_provider
+                stt = get_stt_provider("qwencleo")
+                slice_txt = await stt.transcribe(Path(opt_wav).read_bytes())
+                if slice_txt and slice_txt.strip():
+                    Path(opt_wav).with_suffix(".txt").write_text(slice_txt.strip(), encoding="utf-8")
+                    logger.info(f"Synchronized transcript for trimmed ref clip ({Path(opt_wav).name})")
+            except Exception as exc:
+                logger.warning(f"Could not transcribe trimmed ref clip: {exc}")
+
         self._personality_voice_map[personality_id] = str(dest)
         logger.info(f"Voice sample saved for personality {personality_id}: {dest} ({duration:.1f}s)")
         await self._sync_db_voice_sample(personality_id, str(dest))
-        # Trigger background pre-caching of greeting with the new cloned voice
-        import asyncio
+        # Trigger background VoiceClonePrompt warm-up + greeting cache
+        asyncio.create_task(self.prewarm_sample(personality_id))
         asyncio.create_task(self.generate_and_cache_greeting(personality_id))
         return str(dest)
 
@@ -142,12 +171,19 @@ class VoiceCloneService:
             logger.warning(f"Could not sync voice_sample_path with DB: {exc}")
 
     def get_latest_sample_path(self) -> str | None:
-        """Return the most recently saved or modified voice sample path."""
-        samples = list(_SAMPLES_DIR.glob("personality_*.wav"))
+        """Return the most recently saved or modified voice sample path (excluding derived/cache files)."""
+        samples = [
+            s for s in _SAMPLES_DIR.glob("personality_*.wav")
+            if not s.stem.endswith(".opt") and s.stem.replace("personality_", "").isdigit()
+        ]
         if samples:
             samples.sort(key=lambda s: s.stat().st_mtime, reverse=True)
             return str(samples[0])
-        any_wavs = list(_SAMPLES_DIR.glob("*.wav"))
+        any_wavs = [
+            s for s in _SAMPLES_DIR.glob("*.wav")
+            if not s.stem.endswith(".opt")
+            and not s.stem.startswith(("greeting_", "latest_"))
+        ]
         if any_wavs:
             any_wavs.sort(key=lambda s: s.stat().st_mtime, reverse=True)
             return str(any_wavs[0])
@@ -173,7 +209,6 @@ class VoiceCloneService:
             return None
 
         # Only if personality_id is None (general system call), use the latest available sample
-        return self.get_latest_sample_path()
         return self.get_latest_sample_path()
 
     def has_voice_sample(self, personality_id: int | None = None) -> bool:
@@ -230,7 +265,11 @@ class VoiceCloneService:
         """List all stored voice samples."""
         results = []
         for wav in sorted(_SAMPLES_DIR.glob("personality_*.wav")):
+            if wav.stem.endswith(".opt"):
+                continue
             pid_str = wav.stem.replace("personality_", "")
+            if not pid_str.isdigit():
+                continue
             try:
                 pid = int(pid_str)
                 duration = _wav_duration(wav.read_bytes())
@@ -259,6 +298,25 @@ class VoiceCloneService:
         if txt_p.exists():
             txt_p.unlink()
             deleted = True
+        # Also remove alias `.opt` stem artifacts cleanly
+        opt_p = _SAMPLES_DIR / f"personality_{personality_id}.opt.wav"
+        for extra in (
+            p.with_suffix(".opt.wav"),
+            p.with_suffix(".opt.txt"),
+            p.with_suffix(".opt.meta.json"),
+            p.with_suffix(".vcp.pt"),
+            p.with_suffix(".vcp.json"),
+            p.with_suffix(".pt"),
+            opt_p.with_suffix(".vcp.pt"),
+            opt_p.with_suffix(".vcp.json"),
+        ):
+            if extra.exists():
+                try:
+                    extra.unlink()
+                except OSError:
+                    pass
+        self._xtts.invalidate_prompt_cache(str(p))
+
         if deleted:
             self._personality_voice_map.pop(personality_id, None)
             logger.info(f"Deleted voice sample for personality {personality_id}")
@@ -272,7 +330,17 @@ class VoiceCloneService:
             return True
         return False
 
-    # ── Cloned Greeting Caching ───────────────────────────────────────────────
+    # ── Warmup & Greeting Caching ─────────────────────────────────────────────
+
+    async def prewarm_sample(self, personality_id: int | None = None) -> None:
+        """Pre-warm VoiceTut model & VoiceClonePrompt cache for a personality sample."""
+        pid = personality_id if personality_id is not None else 1
+        sp = self.get_sample_path(pid)
+        if sp and os.path.exists(sp):
+            try:
+                await self._xtts.warmup([sp])
+            except Exception as exc:
+                logger.debug(f"Sample prewarm notice (pid={pid}): {exc}")
 
     def get_cached_greeting(self, personality_id: int | None = None) -> bytes | None:
         """Fetch pre-cached greeting audio if available on disk (0ms instant playback)."""
@@ -325,29 +393,20 @@ class VoiceCloneService:
 
     # ── Synthesis ─────────────────────────────────────────────────────────────
 
-    async def synthesize(
+    def _prepare_synthesis_request(
         self,
         text: str,
         personality_id: int | None = None,
         reference_wav: str | None = None,
-        language: str = "arz",
         ref_text: str | None = None,
         num_step: int | None = None,
         guidance_scale: float | None = None,
         speed: float | None = None,
-    ) -> bytes:
-        """
-        Synthesise *text* in the cloned voice after applying Masri dialect normalization.
-
-        Priority of voice reference:
-          1. Explicit reference_wav path (override)
-          2. Personality-bound sample (personality_id lookup)
-          3. Default provider synthesis
-        """
-        clean_text = clean_llm_output_for_speech(text)
+    ) -> tuple[str, str, str | None, int, float, float]:
+        """Validate voice reference and normalize Egyptian speech text for VoiceTut-TTS."""
+        clean_text = clean_llm_output_for_speech(text, for_voicetut=True)
         if not clean_text or not clean_text.strip():
-            logger.debug("clean_llm_output_for_speech resulted in empty text, returning empty audio bytes.")
-            return b""
+            return "", "", ref_text, 0, 0.0, 1.0
 
         wav_path = reference_wav
         if not wav_path and personality_id is not None:
@@ -360,14 +419,11 @@ class VoiceCloneService:
         elif not wav_path:
             wav_path = self.get_latest_sample_path()
 
-        # Validate that the file is a readable WAV format
         import soundfile as sf
         is_valid_wav = False
         if wav_path and os.path.exists(wav_path):
             try:
-                with sf.SoundFile(wav_path) as sf_chk:
-                    if sf_chk.frames > 0:
-                        is_valid_wav = True
+                is_valid_wav = sf.info(wav_path).frames > 0
             except Exception:
                 is_valid_wav = False
 
@@ -391,23 +447,50 @@ class VoiceCloneService:
                 except Exception:
                     pass
 
-        steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", 48)
-        cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
-        spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
+        steps = int(num_step if num_step is not None else getattr(settings, "VOICETUT_NUM_STEPS", 14))
+        cfg = float(
+            guidance_scale if guidance_scale is not None else getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.1)
+        )
+        spd = float(speed if speed is not None else getattr(settings, "VOICETUT_SPEED", 1.0))
+        return clean_text, wav_path, ref_text, steps, cfg, spd
 
-        # Primary VoiceTut-powered XTTS synthesis
+    async def synthesize(
+        self,
+        text: str,
+        personality_id: int | None = None,
+        reference_wav: str | None = None,
+        language: str = "arz",
+        ref_text: str | None = None,
+        num_step: int | None = None,
+        guidance_scale: float | None = None,
+        speed: float | None = None,
+    ) -> bytes:
+        """Synthesise *text* strictly in the cloned VoiceTut speaker voice."""
+        clean_text, wav_path, resolved_ref_text, steps, cfg, spd = self._prepare_synthesis_request(
+            text=text,
+            personality_id=personality_id,
+            reference_wav=reference_wav,
+            ref_text=ref_text,
+            num_step=num_step,
+            guidance_scale=guidance_scale,
+            speed=speed,
+        )
+        if not clean_text:
+            logger.debug("clean_llm_output_for_speech resulted in empty text, returning empty audio bytes.")
+            return b""
+
         try:
             return await self._xtts.synthesize(
                 clean_text,
                 ref_audio=wav_path,
-                ref_text=ref_text,
+                ref_text=resolved_ref_text,
                 num_step=steps,
                 guidance_scale=cfg,
                 speed=spd,
                 language=language,
             )
         except Exception as exc:
-            logger.error(f"XTTS synthesis error: {exc}", exc_info=True)
+            logger.error(f"VoiceTut synthesis error: {exc}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Voice synthesis failed: {exc}",
@@ -419,12 +502,34 @@ class VoiceCloneService:
         personality_id: int | None = None,
         reference_wav: str | None = None,
         language: str = "arz",
+        ref_text: str | None = None,
+        num_step: int | None = None,
+        guidance_scale: float | None = None,
+        speed: float | None = None,
     ) -> AsyncIterator[bytes]:
-        """Streaming variant — yields WAV chunks for low-latency playback."""
-        wav_bytes = await self.synthesize(text, personality_id, reference_wav, language)
-        chunk_size = 4096
-        for i in range(0, len(wav_bytes), chunk_size):
-            yield wav_bytes[i : i + chunk_size]
+        """True progressive sentence-level streaming using VoiceTut-TTS."""
+        clean_text, wav_path, resolved_ref_text, steps, cfg, spd = self._prepare_synthesis_request(
+            text=text,
+            personality_id=personality_id,
+            reference_wav=reference_wav,
+            ref_text=ref_text,
+            num_step=num_step,
+            guidance_scale=guidance_scale,
+            speed=speed,
+        )
+        if not clean_text:
+            return
+
+        async for chunk in self._xtts.synthesize_stream(
+            text=clean_text,
+            ref_audio=wav_path,
+            ref_text=resolved_ref_text,
+            num_step=steps,
+            guidance_scale=cfg,
+            speed=spd,
+            language=language,
+        ):
+            yield chunk
 
     # ── Singleton ─────────────────────────────────────────────────────────────
 

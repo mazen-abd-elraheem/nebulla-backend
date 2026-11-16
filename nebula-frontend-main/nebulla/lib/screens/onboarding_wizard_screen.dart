@@ -5,8 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import '../core/theme.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/nebula_repository.dart';
+import '../widgets/avatar_studio_panel.dart';
 import '../widgets/common_widgets.dart';
-import '../widgets/interactive_animated_avatar.dart';
 import 'main_shell.dart';
 
 class OnboardingWizardScreen extends StatefulWidget {
@@ -1014,20 +1014,10 @@ class _OnboardingWizardScreenState extends State<OnboardingWizardScreen> {
   // ── Step 3: Meet Avatar UI ─────────────────────────────────────────────────
 
   Widget _buildStep3MeetAvatar() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(
-            width: 180,
-            height: 180,
-            child: InteractiveAnimatedAvatar(
-              width: 180,
-              height: 180,
-            ),
-          ),
-          const SizedBox(height: 24),
           const Text(
             'أهلاً بيك! أنا نيبولا توأمك الرقمي',
             style: TextStyle(
@@ -1038,64 +1028,79 @@ class _OnboardingWizardScreenState extends State<OnboardingWizardScreen> {
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           const Text(
-            'استنسخت صوتك وحفظت دايرة معارفك وذكرياتك.\nدلوقتي جاهز أتكلم معاك بنفس نبرتك وصوتك الطبيعي!',
+            'ارفع صورتك عشان أعملك الأفاتار الخاص بيك بتقنية GAGAvatar.\nراجعه وجرّب تعبيراته بصوتك المستنسخ، ولو مش عاجبك تقدر تنشئ واحد جديد!',
             style: TextStyle(
               fontFamily: 'Cairo',
-              fontSize: 13,
+              fontSize: 12,
               color: AppColors.textSecondary,
               height: 1.6,
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 32),
-          ElevatedButton.icon(
-            onPressed: () {
-              _audioService.speak(
-                'أهلاً بيك، أنا نيبولا توأمك الرقمي، بتكلم بنفس صوتك وجاهز أساعدك في أي وقت!',
-                personalityId: 1,
-              );
-            },
-            icon: const Icon(Icons.volume_up_rounded, color: Colors.black, size: 22),
-            label: const Text(
-              'اسمع ترحيبي بصوتك المستنسخ (0ms)',
-              style: TextStyle(
-                fontFamily: 'Cairo',
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.teal,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 4,
-            ),
+          const SizedBox(height: 16),
+          AvatarStudioPanel(
+            darkMode: true,
+            personalityId: 1,
+            onAvatarApproved: (_) {},
           ),
-          const SizedBox(height: 20),
-          OutlinedButton(
-            onPressed: _finishOnboarding,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.textPrimary,
-              side: const BorderSide(color: AppColors.cardBorder),
-              padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                _audioService.speak(
+                  'أهلاً بيك، أنا نيبولا توأمك الرقمي، بتكلم بنفس صوتك وجاهز أساعدك في أي وقت! 😊',
+                  faceEmoji: '😊',
+                  expression: 'happy',
+                  personalityId: 1,
+                );
+              },
+              icon: const Icon(Icons.volume_up_rounded, color: Colors.black, size: 22),
+              label: const Text(
+                'اسمع ترحيبي بصوتك المستنسخ (0ms)',
+                style: TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
               ),
-            ),
-            child: const Text(
-              'الدخول للتطبيق وبدء المحادثة',
-              style: TextStyle(
-                fontFamily: 'Cairo',
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.teal,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                elevation: 4,
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _finishOnboarding,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textPrimary,
+                side: const BorderSide(color: AppColors.cardBorder),
+                padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: const Text(
+                'الدخول للتطبيق وبدء المحادثة',
+                style: TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );

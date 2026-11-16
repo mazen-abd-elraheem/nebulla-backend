@@ -8,12 +8,16 @@ Aggregates:
 """
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
+
+if TYPE_CHECKING:
+    from app.models.personality import Personality
+    from app.models.voiceprint import Voiceprint
 
 
 def _utcnow() -> datetime:

@@ -3,12 +3,19 @@ User ORM Model — user registration, login, and personality ownership.
 """
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import Boolean, DateTime, Integer, String, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
+
+if TYPE_CHECKING:
+    from app.models.contact import Contact
+    from app.models.face_profile import FaceProfile
+    from app.models.personality import Personality
+    from app.models.reminder import Reminder
+    from app.models.voiceprint import Voiceprint
 
 
 def _utcnow() -> datetime:
