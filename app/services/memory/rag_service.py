@@ -687,6 +687,7 @@ class RAGService:
         embedding: bytes | None,
         source: str,
         importance: int,
+        user_id: int | None = None,
     ) -> int:
         db_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
         if db_path.startswith("./"):
@@ -713,8 +714,8 @@ class RAGService:
             logger.info(f"Auto-resolved conflicting memory: removed obsolete memory ID {oid} in favor of: '{content}'")
 
         cursor.execute(
-            "INSERT INTO memories (content, personality_id, embedding, source, importance, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (content, personality_id, embedding, source, importance, datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO memories (user_id, content, personality_id, embedding, source, importance, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, content, personality_id, embedding, source, importance, datetime.now(timezone.utc).isoformat()),
         )
         mid = cursor.lastrowid
         conn.commit()
@@ -727,6 +728,7 @@ class RAGService:
         # Update in-memory vector store
         mem = Memory(
             id=mid,
+            user_id=user_id,
             content=content,
             personality_id=personality_id,
             embedding=embedding,
@@ -742,6 +744,7 @@ class RAGService:
         personality_id: int | None = None,
         source: str = "conversation",
         importance: int = 5,
+        user_id: int | None = None,
         db: AsyncSession | None = None,
     ) -> int:
         """
@@ -776,6 +779,7 @@ class RAGService:
                     obsolete_found = True
 
             mem = Memory(
+                user_id=user_id,
                 content=content.strip(),
                 personality_id=personality_id,
                 embedding=embedding_bytes,
@@ -790,7 +794,7 @@ class RAGService:
                 with RAGService._cache_lock:
                     RAGService._shared_cache.clear()
 
-            logger.info(f"Memory {mem.id} added via db session (personality: {personality_id})")
+            logger.info(f"Memory {mem.id} added via db session (personality: {personality_id}, user: {user_id})")
             return mem.id
         else:
             return self._add_memory_sync(
@@ -799,6 +803,7 @@ class RAGService:
                 embedding_bytes,
                 source,
                 importance,
+                user_id=user_id,
             )
 
     async def delete_memory(self, memory_id: int, db: AsyncSession | None = None) -> bool:

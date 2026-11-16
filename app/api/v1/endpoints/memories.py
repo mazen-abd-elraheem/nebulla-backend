@@ -6,12 +6,14 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt import get_current_user, get_optional_user
+from app.auth.jwt import get_current_user, get_optional_user, get_optional_user_model
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.memory import Memory
 from app.models.personality import Personality
+from app.models.user import User
 from app.services.memory.rag_service import RAGService
+
 
 router = APIRouter()
 _rag = RAGService()
@@ -136,19 +138,28 @@ class RAGPromptRequest(BaseModel):
         return data
 
 
+@router.get("", include_in_schema=False)
 @router.get("/", summary="List memories")
 async def list_memories(
     personality_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    _u: str | None = Depends(get_optional_user),
+    current_user: Optional[User] = Depends(get_optional_user_model),
 ):
     stmt = select(Memory).order_by(Memory.created_at.desc())
+    if current_user:
+        # Strictly user-isolated: Only return memories belonging to this authenticated user
+        stmt = stmt.where(Memory.user_id == current_user.id)
+    else:
+        # Unauthenticated: Return global/unassigned memories only
+        stmt = stmt.where(Memory.user_id.is_(None))
+
     if personality_id is not None:
         stmt = stmt.where(Memory.personality_id == personality_id)
     r = await db.execute(stmt)
     return {"memories": [_m(m) for m in r.scalars()]}
 
 
+@router.post("", status_code=201, include_in_schema=False)
 @router.post("/", status_code=201, summary="Add a memory")
 async def add_memory(
     body: Optional[MemoryCreate] = None,
@@ -157,7 +168,7 @@ async def add_memory(
     person_name: Optional[str] = Query(None, description="Optional personality/person name to bind memory to"),
     importance: Optional[int] = Query(None, description="Importance query param"),
     db: AsyncSession = Depends(get_db),
-    _u: str | None = Depends(get_optional_user),
+    current_user: Optional[User] = Depends(get_optional_user_model),
 ):
     actual_content: Union[str, list[str]] = ""
     pid = None
@@ -198,6 +209,8 @@ async def add_memory(
         active_id = res.scalar_one_or_none()
         pid = active_id if active_id is not None else 1
 
+    uid = current_user.id if current_user else None
+
     # If a list of memories was provided, add all of them
     if isinstance(actual_content, list):
         created_ids = []
@@ -209,6 +222,7 @@ async def add_memory(
                     personality_id=pid,
                     source=src,
                     importance=imp,
+                    user_id=uid,
                     db=db,
                 )
                 created_ids.append(mid)
@@ -224,13 +238,15 @@ async def add_memory(
         personality_id=pid,
         source=src,
         importance=imp,
+        user_id=uid,
         db=db,
     )
     return {
         "id": mid,
         "content": actual_content,
         "personality_id": pid,
-        "message": "المعلومة اتحفظت واتسجلت في عقل الروبوت بنجاح.",
+        "user_id": uid,
+        "message": "المعلومة اتحفظت في ذاكرتك الخاصة بنجاح.",
     }
 
 
@@ -320,11 +336,13 @@ class MemoryForgetRequest(BaseModel):
 async def delete_memory(
     mid: int,
     db: AsyncSession = Depends(get_db),
-    _u: str | None = Depends(get_optional_user),
+    current_user: Optional[User] = Depends(get_optional_user_model),
 ):
     m = await db.get(Memory, mid)
     if not m:
         raise HTTPException(status_code=404, detail="المعلومة دي مش موجودة في الذاكرة.")
+    if current_user and m.user_id and m.user_id != current_user.id and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="مش مسموح لك بحذف ذاكرة مستخدم تاني.")
     deleted_content = m.content
     deleted_pid = m.personality_id
     await db.delete(m)
@@ -375,6 +393,7 @@ async def forget_memory_endpoint(
         "deleted_memories": deleted_items,
         "message": f"تم نسيان ومسح {len(deleted_items)} معلومة من الذاكرة بنجاح." if deleted_items else "لم يتم العثور على معلومات تطابق هذا النص لمسحها.",
     }
+
 
 
 @router.get("/search", summary="Semantic search memories")

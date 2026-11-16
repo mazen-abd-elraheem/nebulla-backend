@@ -7,6 +7,10 @@ class UserModel {
   final bool isActive;
   final bool hasBiometric;
   final int personalitiesCount;
+  final String? avatarUrl;
+  final String? phone;
+  final String? location;
+  final String? organization;
   final String? createdAt;
 
   UserModel({
@@ -16,6 +20,10 @@ class UserModel {
     required this.isActive,
     this.hasBiometric = false,
     this.personalitiesCount = 0,
+    this.avatarUrl,
+    this.phone,
+    this.location,
+    this.organization,
     this.createdAt,
   });
 
@@ -26,6 +34,10 @@ class UserModel {
         isActive: json['is_active'] as bool? ?? true,
         hasBiometric: json['has_biometric'] as bool? ?? false,
         personalitiesCount: json['personalities_count'] as int? ?? 0,
+        avatarUrl: json['avatar_url'] as String?,
+        phone: json['phone'] as String?,
+        location: json['location'] as String?,
+        organization: json['organization'] as String?,
         createdAt: json['created_at'] as String?,
       );
 
@@ -36,6 +48,10 @@ class UserModel {
         'is_active': isActive,
         'has_biometric': hasBiometric,
         'personalities_count': personalitiesCount,
+        'avatar_url': avatarUrl,
+        'phone': phone,
+        'location': location,
+        'organization': organization,
         'created_at': createdAt,
       };
 }
