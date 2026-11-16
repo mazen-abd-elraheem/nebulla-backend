@@ -103,9 +103,9 @@ class CameraStreamer:
         if cap is None or not cap.isOpened():
             cap = cv2.VideoCapture(target_idx)
 
-        # Fallback to camera 0 if requested index is unavailable
+        # Default to camera 0 if requested index is unavailable
         if (cap is None or not cap.isOpened()) and target_idx != 0:
-            logger.warning(f"Camera index {target_idx} not accessible. Falling back to default camera 0...")
+            logger.warning(f"Camera index {target_idx} not accessible. Switching to default camera 0...")
             target_idx = 0
             self.camera_index = 0
             if sys.platform == "win32":

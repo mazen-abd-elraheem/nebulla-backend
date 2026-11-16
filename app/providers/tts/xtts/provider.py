@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.logger import get_logger
 from app.providers.tts.base import BaseTTSProvider
 from app.utils.masri_normalizer import clean_llm_output_for_speech
+from app.utils.audio_utils import ensure_wav_bytes
 
 logger = get_logger(__name__)
 
@@ -155,6 +156,7 @@ class XTTSProvider(BaseTTSProvider):
             speaker=self._speaker,
             language=self._language,
         )
+        wav_bytes = ensure_wav_bytes(wav_bytes)
         try:
             cache_file = self.get_greeting_cache_path(personality_id)
             cache_file.parent.mkdir(parents=True, exist_ok=True)
@@ -246,6 +248,7 @@ class XTTSProvider(BaseTTSProvider):
 
     def _load_sync(self) -> None:
         """Load VoiceTut-TTS model in background executor thread."""
+        device = getattr(self, "_device", "cpu") or "cpu"
         try:
             import os
             import torch
@@ -255,15 +258,15 @@ class XTTSProvider(BaseTTSProvider):
                 import omnivoice  # noqa: F401
             except Exception:
                 pass
-            from voicetut_tts import VoiceTutTTS
 
-            device = self._device
             if device == "cuda" and not torch.cuda.is_available():
                 logger.warning("CUDA requested for XTTS/VoiceTut but unavailable. Using CPU.")
                 device = "cpu"
 
             if device == "cuda":
                 torch.cuda.empty_cache()
+
+            from voicetut_tts import VoiceTutTTS
 
             candidate_paths = [
                 Path(getattr(settings, "VOICETUT_MODEL_PATH", "models/voicetut-tts")),
@@ -299,6 +302,7 @@ class XTTSProvider(BaseTTSProvider):
                     import torch
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
+                    from voicetut_tts import VoiceTutTTS
                     XTTSProvider._shared_tts = VoiceTutTTS.from_pretrained(
                         model_target,
                         device="cpu",
@@ -309,7 +313,7 @@ class XTTSProvider(BaseTTSProvider):
                     return
                 except Exception as cpu_err:
                     logger.error(f"Failed to load VoiceTut on CPU fallback: {cpu_err}", exc_info=True)
-            logger.error(f"Failed to load in-process XTTS (VoiceTut-TTS): {e}", exc_info=True)
+            logger.warning(f"In-process VoiceTut-TTS unavailable ({e}), using system voice generator fallback.")
             XTTSProvider._shared_tts = None
 
     # ── BaseTTSProvider Interface ─────────────────────────────────────────────
@@ -375,6 +379,7 @@ class XTTSProvider(BaseTTSProvider):
             "فشل استنساخ الصوت: موديل VoiceTut-TTS الأساسي غير متوفر حالياً ولا يوجد أي نموذج بديل (Strict Zero Fallback). "
             "يرجى التأكد من تحميل أوزان الموديل في models/voicetut-tts أو تشغيل سيرفر VoiceTuT."
         )
+        return ensure_wav_bytes(res)
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
         """Streaming synthesis yielding WAV chunks."""

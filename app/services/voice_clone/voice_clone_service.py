@@ -154,20 +154,26 @@ class VoiceCloneService:
         return None
 
     def get_sample_path(self, personality_id: int | None = None) -> str | None:
-        """Return the stored WAV path for a personality, or latest available sample if None."""
+        """
+        Return the stored WAV path strictly for a specific personality.
+        Does NOT fall back to other personalities' voices to prevent voice mixing.
+        """
         if personality_id is not None:
             # Check in-memory map first
             if personality_id in self._personality_voice_map:
                 p = Path(self._personality_voice_map[personality_id])
                 if p.exists() and p.stat().st_size > 1000:
                     return str(p)
-            # Fall back to disk
+            # Fall back to disk strictly for this personality
             p = _SAMPLES_DIR / f"personality_{personality_id}.wav"
             if p.exists() and p.stat().st_size > 1000:
                 self._personality_voice_map[personality_id] = str(p)
                 return str(p)
+            # Personality has no dedicated voice sample
             return None
-        # If personality_id is None, use the latest uploaded sample
+
+        # Only if personality_id is None (general system call), use the latest available sample
+        return self.get_latest_sample_path()
         return self.get_latest_sample_path()
 
     def has_voice_sample(self, personality_id: int | None = None) -> bool:
@@ -346,6 +352,11 @@ class VoiceCloneService:
         wav_path = reference_wav
         if not wav_path and personality_id is not None:
             wav_path = self.get_sample_path(personality_id)
+            if not wav_path or not os.path.exists(wav_path):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"الشخصية رقم {personality_id} ملهاش بصمة صوت مسجلة حتى الآن. يرجى رفع أو تسجيل عينة صوت للشخصية أولاً لتفعيل الرد الصوتي الخاص بيها.",
+                )
         elif not wav_path:
             wav_path = self.get_latest_sample_path()
 
@@ -493,70 +504,93 @@ def _wav_duration(raw: bytes) -> float:
 def _save_and_convert_to_wav(raw: bytes, ext: str, dest: Path) -> float:
     """
     Save incoming audio/video bytes to standard WAV (16-bit PCM, 24kHz, mono).
-    If it's already a clean WAV, save directly.
-    If it's MP4, M4A, or non-standard WAV, convert using ffmpeg.
-    Then trims leading and trailing dead silence ("الريك الفاضي") so voice starts instantly.
+    Supports WAV, MP3, OGG, FLAC via Python-native SoundFile & Scipy (zero FFmpeg dependency).
+    Falls back to Torchaudio and FFmpeg if available.
+    Trims leading and trailing silence ("الريك الفاضي") so voice starts instantly.
     Returns trimmed audio duration in seconds.
     """
-    import shutil
-    ffmpeg_exe = shutil.which("ffmpeg")
-    if not ffmpeg_exe:
-        try:
-            import imageio_ffmpeg
-            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        except Exception as exc:
-            logger.debug(f"imageio_ffmpeg lookup: {exc}")
-            ffmpeg_exe = None
-
     converted = False
-    if ext == ".wav":
+
+    # 1. Primary: Python-native SoundFile + Scipy (supports WAV, MP3, OGG, FLAC)
+    try:
+        import soundfile as sf
+        import numpy as np
+        from scipy import signal
+
+        data, sr = sf.read(io.BytesIO(raw))
+        if data.size > 0:
+            if data.ndim > 1:
+                data = data.mean(axis=1)
+            if sr != 24000:
+                num_samples = int(len(data) * 24000 / sr)
+                data = signal.resample(data, num_samples)
+            buf = io.BytesIO()
+            sf.write(buf, data, 24000, subtype="PCM_16", format="WAV")
+            dest.write_bytes(buf.getvalue())
+            converted = True
+    except Exception as sfe:
+        logger.debug(f"SoundFile audio conversion notice: {sfe}")
+
+    # 2. Secondary: Torchaudio converter
+    if not converted:
         try:
-            with wave.open(io.BytesIO(raw), "rb") as wf:
-                dur = wf.getnframes() / wf.getframerate()
-                if dur > 0:
-                    if not ffmpeg_exe or (wf.getnchannels() == 1 and wf.getframerate() == 24000 and wf.getsampwidth() == 2):
-                        dest.write_bytes(raw)
-                        converted = True
-        except Exception:
-            pass  # Use ffmpeg conversion if WAV format is compressed or non-standard
+            import torchaudio
+            waveform, sr = torchaudio.load(io.BytesIO(raw))
+            if waveform.numel() > 0:
+                if waveform.shape[0] > 1:
+                    waveform = waveform.mean(dim=0, keepdim=True)
+                if sr != 24000:
+                    resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=24000)
+                    waveform = resampler(waveform)
+                buf = io.BytesIO()
+                torchaudio.save(buf, waveform, 24000, format="wav", encoding="PCM_S", bits_per_sample=16)
+                dest.write_bytes(buf.getvalue())
+                converted = True
+        except Exception as tae:
+            logger.debug(f"Torchaudio audio conversion notice: {tae}")
+
+    # 3. Tertiary: FFmpeg if installed
+    if not converted:
+        import shutil
+        ffmpeg_exe = shutil.which("ffmpeg")
+        if not ffmpeg_exe:
+            try:
+                import imageio_ffmpeg
+                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            except Exception:
+                ffmpeg_exe = None
+
+        if ffmpeg_exe:
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                tmp_name = tmp.name
+                tmp.write(raw)
+
+            try:
+                cmd = [
+                    ffmpeg_exe,
+                    "-y",
+                    "-i", tmp_name,
+                    "-vn",
+                    "-acodec", "pcm_s16le",
+                    "-ar", "24000",
+                    "-ac", "1",
+                    str(dest),
+                ]
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if res.returncode == 0 and dest.exists():
+                    converted = True
+            finally:
+                if os.path.exists(tmp_name):
+                    try:
+                        os.unlink(tmp_name)
+                    except OSError:
+                        pass
 
     if not converted:
-        if not ffmpeg_exe:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Server audio conversion component is not available.",
-            )
-
-        # Write temporary file to pass to ffmpeg
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-            tmp_name = tmp.name
-            tmp.write(raw)
-
-        try:
-            cmd = [
-                ffmpeg_exe,
-                "-y",
-                "-i", tmp_name,
-                "-vn",                   # Strip video track (in case of MP4 video)
-                "-acodec", "pcm_s16le",  # Standard 16-bit PCM
-                "-ar", "24000",          # 24kHz sample rate (XTTS/VoiceTut native)
-                "-ac", "1",              # Mono audio
-                str(dest),
-            ]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            if res.returncode != 0:
-                err = res.stderr.decode("utf-8", errors="ignore")
-                logger.error(f"FFmpeg conversion failed: {err}")
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Could not extract audio track from file. Please ensure it has a valid audio stream.",
-                )
-        finally:
-            if os.path.exists(tmp_name):
-                try:
-                    os.unlink(tmp_name)
-                except OSError:
-                    pass
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="صيغة الملف الصوتي غير مدعومة أو تالفة. يرجى رفع ملف صوتي بصيغة WAV أو MP3 أو OGG.",
+        )
 
     # Trim leading and trailing silence so recordings never start with long empty delays
     raw_out = dest.read_bytes()

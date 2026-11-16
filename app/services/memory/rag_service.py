@@ -7,7 +7,7 @@ Multithreading Architecture & Concurrency:
 - Parallel Dense + Sparse Hybrid Search (VectorStore Matrix Multiply + Okapi BM25).
 - Thread-safe RLock-guarded embedding cache (_shared_cache) and in-memory VectorStore.
 - Asynchronous Non-blocking Cross-Reranking and access-time database updates.
-- Strictly Deterministic: ZERO Fallback Model.
+- Strictly Deterministic Hybrid Retrieval.
 """
 
 import asyncio
@@ -83,6 +83,7 @@ class RAGService:
                 return
             try:
                 from sentence_transformers import SentenceTransformer  # type: ignore[import]
+                embedder = None
                 try:
                     embedder = SentenceTransformer(
                         settings.EMBEDDING_MODEL,
@@ -90,13 +91,26 @@ class RAGService:
                         local_files_only=True,
                     )
                     logger.info(f"Embedding model loaded from local cache: {settings.EMBEDDING_MODEL}")
-                    RAGService._shared_embedder = embedder
-                    self._embedder = embedder
-                    return
                 except Exception:
                     pass
 
-                logger.info("Embedding weights not in local cache; RAG utilizing accelerated Okapi BM25 engine.")
+                if embedder is None:
+                    try:
+                        embedder = SentenceTransformer(
+                            settings.EMBEDDING_MODEL,
+                            device=settings.EMBEDDING_DEVICE,
+                            local_files_only=False,
+                        )
+                        logger.info(f"Embedding model loaded/downloaded: {settings.EMBEDDING_MODEL}")
+                    except Exception:
+                        pass
+
+                if embedder is not None:
+                    RAGService._shared_embedder = embedder
+                    self._embedder = embedder
+                    return
+
+                logger.info("Embedding weights not in cache/network; RAG utilizing accelerated Okapi BM25 engine.")
                 RAGService._shared_embedder = "disabled"
                 self._embedder = "disabled"
             except Exception as e:
@@ -120,9 +134,6 @@ class RAGService:
                 (personality_id,),
             )
             rows = cursor.fetchall()
-            if not rows:
-                cursor.execute("SELECT id, content, personality_id, embedding, source, importance FROM memories")
-                rows = cursor.fetchall()
         else:
             cursor.execute("SELECT id, content, personality_id, embedding, source, importance FROM memories")
             rows = cursor.fetchall()
@@ -143,6 +154,26 @@ class RAGService:
 
     # ── Core Multithreaded Retrieval Engine ───────────────────────────────────
 
+    @staticmethod
+    def _should_augment_with_person(query: str, person_name: str) -> bool:
+        if not person_name:
+            return False
+        q_lower = query.lower()
+        if person_name.lower() in q_lower:
+            return True
+        robot_keywords = [
+            "نيبولا", "روبوت", "robot", "nebula", "محرك", "سيرفو", "كاميرا",
+            "مستشعر", "حساس", "بطارية", "esp", "عتاد", "hardware", "طقس", "weather"
+        ]
+        if any(rk in q_lower for rk in robot_keywords):
+            return False
+        person_signals = [
+            "هو", "هي", "مين", "بيحب", "شغال", "بيشتغل", "تخصص", "مواليد",
+            "سنة", "تخرج", "مشروع", "أكل", "اكل", "شرب", "مكان", "فين", "معاه", "عنده",
+            "who", "he", "she", "his", "her", "work", "project", "like"
+        ]
+        return any(ps in q_lower for ps in person_signals) or len(query.split()) <= 3
+
     def _score_single_subquery_sync(
         self,
         sub_query: str,
@@ -159,7 +190,8 @@ class RAGService:
         2. Computes Okapi BM25 lexical scores.
         3. Fuses scores using Reciprocal Rank Fusion (RRF).
         """
-        augmented_sq = f"{clean_person} {sub_query}" if clean_person and clean_person not in sub_query else sub_query
+        should_use_person = bool(clean_person and self._should_augment_with_person(sub_query, clean_person))
+        augmented_sq = f"{clean_person} {sub_query}" if (should_use_person and clean_person and clean_person not in sub_query) else sub_query
 
         sem_scores: dict[int, float] = {}
         lex_scores: dict[int, float] = {}
@@ -167,14 +199,14 @@ class RAGService:
         # 1. Vector Dense Search
         if self._embedder != "disabled":
             try:
-                embed_text = augmented_sq if clean_person else sub_query
+                embed_text = augmented_sq if should_use_person else sub_query
                 query_vec = self._embed(embed_text)
                 if query_vec is not None:
                     vec_hits = self._vstore.search(
                         query_vec=query_vec,
                         top_k=25,
                         personality_id=personality_id,
-                        person_name=clean_person,
+                        person_name=clean_person if should_use_person else None,
                         min_similarity=0.20,
                     )
                     for sim_val, mem_hit in vec_hits:
@@ -189,8 +221,8 @@ class RAGService:
             if b_score > 0.05:
                 lex_scores[mid] = b_score
 
-        # Boost person name if found in memory text
-        if clean_person:
+        # Boost person name if found in memory text and query is person-relevant
+        if should_use_person and clean_person:
             p_lower = clean_person.lower()
             for m in memories:
                 if p_lower in m.content.lower():
@@ -253,9 +285,6 @@ class RAGService:
                 stmt_p = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
                 res = await db.execute(stmt_p)
                 memories = list(res.scalars().all())
-                if not memories:
-                    res_all = await db.execute(stmt)
-                    memories = list(res_all.scalars().all())
             else:
                 res = await db.execute(stmt)
                 memories = list(res.scalars().all())
@@ -268,8 +297,10 @@ class RAGService:
         # Synchronize in-memory VectorStore
         incoming_ids = {m.id for m in memories}
         with self._vstore._lock:
-            current_ids = set(self._vstore._memory_cache.keys())
-        if not self._vstore._is_initialized or current_ids != incoming_ids:
+            is_init = self._vstore._is_initialized
+            cached_ids = set(self._vstore._memory_cache.keys())
+        missing_ids = incoming_ids - cached_ids
+        if not is_init or missing_ids:
             active_emb = self._embedder if self._embedder != "disabled" else None
             self._vstore.load_from_db(memories, embedder=active_emb)
 
@@ -310,10 +341,10 @@ class RAGService:
             for mid, score in sq_res.items():
                 accumulated_candidates[mid] = max(accumulated_candidates.get(mid, 0.0), score)
 
-        # Fallback BM25 pass if no candidates matched
+        # Direct BM25 pass if no candidates matched
         if not accumulated_candidates:
-            fallback_bm25 = bm25.get_scores(query)
-            for idx, sc in enumerate(fallback_bm25):
+            direct_bm25 = bm25.get_scores(query)
+            for idx, sc in enumerate(direct_bm25):
                 if sc > 0.0:
                     accumulated_candidates[id_by_index[idx]] = sc
 
@@ -398,7 +429,12 @@ class RAGService:
 
         for score, mem in scored:
             norm_content = self._normalize_for_dedup(mem.content)
-            if norm_content not in seen_contents:
+            if norm_content in seen_contents:
+                continue
+
+            # Temporal suppression: if an already-accepted memory supersedes/conflicts with this one, skip obsolete memory
+            is_conflicted = any(self._is_conflicting_fact(m.content, mem.content) for m in unique_top)
+            if not is_conflicted:
                 seen_contents.add(norm_content)
                 unique_top.append(mem)
                 if len(unique_top) >= top_k:
@@ -581,14 +617,68 @@ class RAGService:
         response: str,
         retrieved_memories: List[str],
         is_greeting: bool = False,
+        has_action: bool = False,
     ) -> str:
         """
-        Direct Fact Verification (No Fallback Model):
+        Direct Fact Verification:
         Validates the output against retrieved memories.
         """
-        return FactVerifier.verify_and_sanitize(query, response, retrieved_memories, is_greeting=is_greeting)
+        return FactVerifier.verify_and_sanitize(query, response, retrieved_memories, is_greeting=is_greeting, has_action=has_action)
 
     # ── Memory Ingestion & Modification ───────────────────────────────────────
+
+    def _is_conflicting_fact(self, new_text: str, old_text: str) -> bool:
+        """
+        Determines whether a new memory supersedes/conflicts with an existing older memory.
+        Example:
+          old: "أحمد حط الكتاب في الصالة"
+          new: "أحمد نقل الكتاب وحطه علي الكرسيي"
+          -> Returns True (supersedes old location).
+        """
+        if not new_text or not old_text:
+            return False
+
+        norm_new = self._normalize_arabic(new_text).lower()
+        norm_old = self._normalize_arabic(old_text).lower()
+        if norm_new == norm_old:
+            return True
+
+        tokens_new = set(re.findall(r"[\u0600-\u06FF\w]{3,}", norm_new))
+        tokens_old = set(re.findall(r"[\u0600-\u06FF\w]{3,}", norm_old))
+
+        stopwords = {
+            "على", "علي", "الي", "الى", "عن", "مع", "عند", "كان", "كانت", "يكون",
+            "اللي", "ذلك", "هذا", "هذه", "عشان", "علشان", "خلاص", "تمام",
+            "نيبولا", "وبعدين", "حيث", "حتى", "اكتر", "اكثر", "في", "من"
+        }
+        content_new = tokens_new - stopwords
+        content_old = tokens_old - stopwords
+
+        common_entities = content_new & content_old
+        if not common_entities:
+            return False
+
+        update_indicators = {
+            "نقل", "نقله", "نقلت", "حط", "حطه", "حطيت", "شال", "شاله", "شلت",
+            "غير", "غيره", "غيرت", "بدل", "بدله", "بقى", "بقت", "اصبح",
+            "اتأجل", "اتاجل", "تأجل", "تاجيل", "دلوقتي", "حاليا", "مكان"
+        }
+        has_update_cue = bool((tokens_new | tokens_old) & update_indicators)
+
+        subject_items = {
+            "كتاب", "مفتاح", "عربية", "محفظة", "ساعة", "شاحن", "لابتوب",
+            "كمبيوتر", "شنطة", "نظارة", "ميعاد", "معاد", "اجتماع", "فلوس",
+            "كرسي", "ترابيزة", "مكتب", "صالة", "اوضة", "غرفة", "درج", "دولاب"
+        }
+        common_subjects = common_entities & subject_items
+
+        if common_subjects and (has_update_cue or len(common_entities) >= 2):
+            return True
+
+        if len(common_entities) >= 2 and len(common_entities) / min(len(content_new), len(content_old)) >= 0.5:
+            return True
+
+        return False
 
     def _add_memory_sync(
         self,
@@ -606,6 +696,22 @@ class RAGService:
 
         conn = sqlite3.connect(db_path, timeout=5.0)
         cursor = conn.cursor()
+
+        # Automatic Conflict Resolution: Check for and delete conflicting obsolete memories
+        if personality_id is not None:
+            cursor.execute(
+                "SELECT id, content FROM memories WHERE personality_id = ? OR personality_id IS NULL",
+                (personality_id,),
+            )
+        else:
+            cursor.execute("SELECT id, content FROM memories")
+        existing_rows = cursor.fetchall()
+        obsolete_ids = [r[0] for r in existing_rows if self._is_conflicting_fact(content, r[1])]
+        for oid in obsolete_ids:
+            cursor.execute("DELETE FROM memories WHERE id = ?", (oid,))
+            self._vstore.delete(oid)
+            logger.info(f"Auto-resolved conflicting memory: removed obsolete memory ID {oid} in favor of: '{content}'")
+
         cursor.execute(
             "INSERT INTO memories (content, personality_id, embedding, source, importance, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (content, personality_id, embedding, source, importance, datetime.now(timezone.utc).isoformat()),
@@ -613,6 +719,10 @@ class RAGService:
         mid = cursor.lastrowid
         conn.commit()
         conn.close()
+
+        if obsolete_ids:
+            with RAGService._cache_lock:
+                RAGService._shared_cache.clear()
 
         # Update in-memory vector store
         mem = Memory(
@@ -635,7 +745,7 @@ class RAGService:
         db: AsyncSession | None = None,
     ) -> int:
         """
-        Add a new memory with automatic embedding generation and vector store synchronization.
+        Add a new memory with automatic embedding generation, conflict resolution and vector store synchronization.
         """
         await self._ensure_embedder()
 
@@ -651,6 +761,20 @@ class RAGService:
                 logger.warning(f"Could not generate embedding for new memory: {e}")
 
         if db is not None:
+            # Automatic Conflict Resolution: detect & remove obsolete conflicting memories
+            stmt = select(Memory)
+            if personality_id is not None:
+                stmt = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
+            res = await db.execute(stmt)
+            existing_mems = res.scalars().all()
+            obsolete_found = False
+            for ex in existing_mems:
+                if self._is_conflicting_fact(content.strip(), ex.content):
+                    logger.info(f"Auto-resolving conflicting memory: removing obsolete memory {ex.id} ('{ex.content}') in favor of: '{content.strip()}'")
+                    await db.delete(ex)
+                    self._vstore.delete(ex.id)
+                    obsolete_found = True
+
             mem = Memory(
                 content=content.strip(),
                 personality_id=personality_id,
@@ -662,6 +786,10 @@ class RAGService:
             await db.commit()
             await db.refresh(mem)
             self._vstore.add_or_update(mem, vec=vec_array)
+            if obsolete_found:
+                with RAGService._cache_lock:
+                    RAGService._shared_cache.clear()
+
             logger.info(f"Memory {mem.id} added via db session (personality: {personality_id})")
             return mem.id
         else:
@@ -672,6 +800,158 @@ class RAGService:
                 source,
                 importance,
             )
+
+    async def delete_memory(self, memory_id: int, db: AsyncSession | None = None) -> bool:
+        """
+        Deletes a memory from the in-memory VectorStore and optionally from the database.
+        """
+        # Invalidate in-memory vector store cache and matrix
+        self._vstore.delete(memory_id)
+
+        # Clear embedding cache
+        with RAGService._cache_lock:
+            RAGService._shared_cache.clear()
+
+        if db is not None:
+            mem = await db.get(Memory, memory_id)
+            if mem:
+                await db.delete(mem)
+                await db.commit()
+                return True
+            return False
+        else:
+            try:
+                db_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
+                if db_path.startswith("./"):
+                    db_path = db_path[2:]
+                if not os.path.isabs(db_path):
+                    db_path = os.path.abspath(db_path)
+                conn = sqlite3.connect(db_path, timeout=5.0)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+                conn.commit()
+                conn.close()
+                return True
+            except Exception as e:
+                logger.warning(f"Could not delete memory sync from SQLite: {e}")
+                return False
+
+        return True
+
+    async def update_memory(
+        self,
+        memory_id: int,
+        content: str | None = None,
+        personality_id: int | None = None,
+        source: str | None = None,
+        importance: int | None = None,
+        db: AsyncSession | None = None,
+    ) -> Memory | None:
+        """
+        Update an existing memory: updates fields, regenerates embedding if content changed,
+        and synchronizes with in-memory VectorStore and DB.
+        """
+        await self._ensure_embedder()
+
+        if db is not None:
+            mem = await db.get(Memory, memory_id)
+            if not mem:
+                return None
+
+            content_changed = False
+            if content is not None:
+                stripped_content = content.strip()
+                if stripped_content and stripped_content != mem.content:
+                    mem.content = stripped_content
+                    content_changed = True
+
+            if personality_id is not None:
+                mem.personality_id = personality_id
+            if source is not None:
+                mem.source = source
+            if importance is not None:
+                mem.importance = importance
+
+            vec_array: Optional[np.ndarray] = None
+            if content_changed:
+                if self._embedder != "disabled" and np is not None:
+                    try:
+                        vec = await self._embed_async(mem.content)
+                        if vec is not None:
+                            vec_array = vec.astype(np.float32)
+                            mem.embedding = vec_array.tobytes()
+                    except Exception as e:
+                        logger.warning(f"Could not re-generate embedding on memory update: {e}")
+                else:
+                    mem.embedding = None
+
+            await db.commit()
+            await db.refresh(mem)
+
+            # Update in-memory vector store & clear cache
+            self._vstore.add_or_update(mem, vec=vec_array)
+            with RAGService._cache_lock:
+                RAGService._shared_cache.clear()
+
+            logger.info(f"Memory {mem.id} updated (personality: {mem.personality_id})")
+            return mem
+        else:
+            # Sync SQLite fallback
+            db_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
+            if db_path.startswith("./"):
+                db_path = db_path[2:]
+            if not os.path.isabs(db_path):
+                db_path = os.path.abspath(db_path)
+
+            conn = sqlite3.connect(db_path, timeout=5.0)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, content, personality_id, source, importance FROM memories WHERE id = ?", (memory_id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return None
+
+            old_content = row[1]
+            new_content = content.strip() if content is not None else old_content
+            new_pid = personality_id if personality_id is not None else row[2]
+            new_src = source if source is not None else row[3]
+            new_imp = importance if importance is not None else row[4]
+
+            vec_array: Optional[np.ndarray] = None
+            embedding_bytes: Optional[bytes] = None
+            if new_content != old_content:
+                if self._embedder != "disabled" and np is not None:
+                    try:
+                        vec = await self._embed_async(new_content)
+                        if vec is not None:
+                            vec_array = vec.astype(np.float32)
+                            embedding_bytes = vec_array.tobytes()
+                    except Exception as e:
+                        logger.warning(f"Could not re-generate embedding for sync update: {e}")
+                cursor.execute(
+                    "UPDATE memories SET content = ?, personality_id = ?, embedding = ?, source = ?, importance = ? WHERE id = ?",
+                    (new_content, new_pid, embedding_bytes, new_src, new_imp, memory_id),
+                )
+            else:
+                cursor.execute(
+                    "UPDATE memories SET personality_id = ?, source = ?, importance = ? WHERE id = ?",
+                    (new_pid, new_src, new_imp, memory_id),
+                )
+            conn.commit()
+            conn.close()
+
+            mem = Memory(
+                id=memory_id,
+                content=new_content,
+                personality_id=new_pid,
+                embedding=embedding_bytes,
+                source=new_src,
+                importance=new_imp,
+            )
+            self._vstore.add_or_update(mem, vec=vec_array)
+            with RAGService._cache_lock:
+                RAGService._shared_cache.clear()
+            return mem
 
     # ── Internals ─────────────────────────────────────────────────────────────
 

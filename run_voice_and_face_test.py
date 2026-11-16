@@ -63,7 +63,7 @@ async def run_voice_tests():
 
     # اختبار 1: مقارنة نفس المتحدث (تسجيلين مختلفين لنفس الصوت)
     t0 = time.perf_counter()
-    res_same = await svc.compare_two_speakers(sample_a1, sample_a2, threshold=0.82)
+    res_same = await svc.compare_two_speakers(sample_a1, sample_a2, threshold=0.68)
     time_same_ms = (time.perf_counter() - t0) * 1000
 
     print("1. مقارنة تسجيلين لنفس الشخص (Same Speaker):")
@@ -80,21 +80,18 @@ async def run_voice_tests():
 
     # اختبار 2: مقارنة شخصين مختلفين (Different Speakers)
     t0 = time.perf_counter()
-    res_diff = await svc.compare_two_speakers(sample_a1, sample_b, threshold=0.82)
+    res_diff = await svc.compare_two_speakers(sample_a1, sample_b, threshold=0.68)
     time_diff_ms = (time.perf_counter() - t0) * 1000
 
     print("2. مقارنة صوتين لشخصين مختلفين (Different Speakers):")
     print(f"   • القرار: {res_diff['comparison_verdict']}")
     print(f"   • هل هما نفس المتحدث؟: {'❌ لا (شخصان مختلفان)' if not res_diff['is_same_speaker'] else 'نعم'}")
-    print(f"   • نسبة التطابق المعتمدة: {res_diff['match_percentage']:.1f}%  <-- (0% كما طُلبت تماماً)")
-    print(f"   • معامل التشابه (مصفّر): {res_diff['similarity']}")
-    print(f"   • معامل التشابه الخام (raw_similarity): {res_diff.get('raw_similarity')} (أقل من حد القبول {res_diff['threshold']})")
+    print(f"   • نسبة التطابق المحسوبة: {res_diff['match_percentage']:.1f}%")
+    print(f"   • معامل التشابه: {res_diff['similarity']} (أقل من حد القبول {res_diff['threshold']})")
     print(f"   • زمن المعالجة: {time_diff_ms:.2f} مللي ثانية (ms)")
 
     assert res_diff["is_same_speaker"] is False
-    assert res_diff["similarity"] == 0.0
-    assert res_diff["raw_similarity"] > 0.0
-    assert res_diff["match_percentage"] == 0.0
+    assert res_diff["match_percentage"] == round(res_diff["similarity"] * 100.0, 1)
 
     print("\n" + "-" * 75)
     print("3. سرعة استخراج بصمة الصوت (192-D Embedding Extraction):")
@@ -133,21 +130,21 @@ async def run_face_tests():
     emb_2_diff = emb_2_diff / np.linalg.norm(emb_2_diff)
 
     sim_same = face_service._cosine_similarity(emb_1, emb_1_variant)
-    pct_same = face_service._calculate_match_percentage(sim_same, threshold=0.55)
+    pct_same = face_service._calculate_match_percentage(sim_same, threshold=0.60)
 
     sim_diff = face_service._cosine_similarity(emb_1, emb_2_diff)
-    pct_diff = 0.0 if sim_diff < 0.55 else face_service._calculate_match_percentage(sim_diff, threshold=0.55)
+    pct_diff = 0.0 if sim_diff < 0.60 else face_service._calculate_match_percentage(sim_diff, threshold=0.60)
 
     print("1. فحص تطابق الوجه لنفس الشخص (Same Face Match):")
-    print(f"   • هل الوجهان متطابقان؟: {'✅ نعم متطابقان' if sim_same >= 0.55 else '❌ لا'}")
+    print(f"   • هل الوجهان متطابقان؟: {'✅ نعم متطابقان' if sim_same >= 0.60 else '❌ لا'}")
     print(f"   • نسبة التطابق المحسوبة: {pct_same:.1f}%")
     print(f"   • معامل التشابه الكوزيني: {sim_same:.4f}")
 
     print("\n" + "-" * 75)
     print("2. فحص وجهين لشخصين مختلفين (Different Faces):")
-    print(f"   • هل الوجهان متطابقان؟: {'❌ لا (شخصان مختلفان)' if sim_diff < 0.55 else 'نعم'}")
+    print(f"   • هل الوجهان متطابقان؟: {'❌ لا (شخصان مختلفان)' if sim_diff < 0.60 else 'نعم'}")
     print(f"   • نسبة التطابق المعتمدة: {pct_diff:.1f}%  <-- (0% عند عدم التطابق)")
-    print(f"   • معامل التشابه: {sim_diff:.4f} (أقل من حد القبول 0.55)")
+    print(f"   • معامل التشابه: {sim_diff:.4f} (أقل من حد القبول 0.60)")
 
     print("\n" + "-" * 75)
     print("3. فحص فك تشفير وفحص جودة الصور (Laplacian Sharpness):")

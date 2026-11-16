@@ -545,16 +545,18 @@ class AIPipeline:
                     personality_id=None,
                     message=transcript,
                     verified_speaker=speaker_id_name,
+                    speaker_verification=verification,
                 )
         except Exception as e:
-            logger.warning(f"Could not build full grounding context, falling back: {e}")
+            logger.warning(f"Could not build full grounding context: {e}")
             active_pid, active_prompt = await self._get_active_personality()
             memories = await self._rag.retrieve(transcript, personality_id=active_pid)
 
-        # Broadcast RAG & Visual telemetry to desktop screens
-        if grounding and getattr(grounding, "faces", None):
-            photo_url = grounding.faces.get("photo_url")
-            rag_person_name = grounding.faces.get("active_person")
+        # Broadcast RAG, Visual, Speaker & Action telemetry to desktop screens
+        if grounding:
+            faces_d = getattr(grounding, "faces", {}) or {}
+            photo_url = faces_d.get("photo_url")
+            rag_person_name = faces_d.get("active_person")
             await manager.broadcast_to_desks({
                 "t": "rag_telemetry",
                 "query": transcript,
@@ -562,6 +564,9 @@ class AIPipeline:
                 "person_photo_url": photo_url,
                 "memories_count": len(memories),
                 "memories": memories,
+                "speaker": getattr(grounding, "speaker", {}),
+                "voice_verification": getattr(grounding, "voice_verification", {}),
+                "action": getattr(grounding, "action", {}),
             })
             if photo_url and (grounding.faces.get("is_photo_inquiry") or grounding.faces.get("currently_detected")):
                 await manager.broadcast_to_desks({
@@ -824,6 +829,32 @@ class AIPipeline:
         })
         logger.info(f"Pipeline complete in {total_ms:.0f}ms")
 
+        # Check for [memory:content] tag from LLM and persist dynamically to RAG service
+        mem_match = re.search(r"\[memory:(.+?)\]", full_response)
+        if mem_match:
+            mem_content = mem_match.group(1).strip()
+            if mem_content:
+                asyncio.create_task(
+                    self._persist_dynamic_memory(
+                        content=mem_content,
+                        active_pid=active_pid,
+                        speaker_name=speaker_id_name,
+                    )
+                )
+
+        # Check for [forget:content] tag from LLM and forget/delete memory dynamically
+        forget_match = re.search(r"\[forget:(.+?)\]", full_response)
+        if forget_match:
+            forget_content = forget_match.group(1).strip()
+            if forget_content:
+                asyncio.create_task(
+                    self._forget_dynamic_memory(
+                        content=forget_content,
+                        active_pid=active_pid,
+                        speaker_name=speaker_id_name,
+                    )
+                )
+
         # ── 7. Asynchronously persist conversation to database ────────────
         asyncio.create_task(
             self._save_conversation_turn(
@@ -837,6 +868,82 @@ class AIPipeline:
                 emotion=emotion,
             )
         )
+
+    async def _persist_dynamic_memory(
+        self,
+        content: str,
+        active_pid: int | None = None,
+        speaker_name: str | None = None,
+    ) -> None:
+        """
+        Dynamically save live memory from conversation turn to RAG VectorStore & DB,
+        binding to the matching speaker's personality or fallback active personality.
+        """
+        target_pid = active_pid
+        try:
+            from app.db.session import AsyncSessionLocal
+            from app.models.personality import Personality
+            async with AsyncSessionLocal() as session:
+                if speaker_name and speaker_name.strip():
+                    sp_clean = speaker_name.strip()
+                    res = await session.execute(
+                        select(Personality.id).where(Personality.name.ilike(f"%{sp_clean}%")).limit(1)
+                    )
+                    found_pid = res.scalar_one_or_none()
+                    if found_pid is not None:
+                        target_pid = found_pid
+
+                await self._rag.add_memory(
+                    content=content,
+                    personality_id=target_pid,
+                    source="spoken_conversation",
+                    db=session,
+                )
+                logger.info(f"Dynamically stored new RAG memory for personality {target_pid}: '{content}'")
+        except Exception as e:
+            logger.warning(f"Could not dynamically persist RAG memory: {e}")
+
+    async def _forget_dynamic_memory(
+        self,
+        content: str,
+        active_pid: int | None = None,
+        speaker_name: str | None = None,
+    ) -> None:
+        """
+        Dynamically delete/forget matching memory from conversation turn in RAG VectorStore & DB.
+        """
+        try:
+            from app.db.session import AsyncSessionLocal
+            from app.models.memory import Memory
+            from app.models.personality import Personality
+            async with AsyncSessionLocal() as session:
+                target_pid = active_pid
+                if speaker_name and speaker_name.strip():
+                    sp_clean = speaker_name.strip()
+                    res = await session.execute(
+                        select(Personality.id).where(Personality.name.ilike(f"%{sp_clean}%")).limit(1)
+                    )
+                    found_pid = res.scalar_one_or_none()
+                    if found_pid is not None:
+                        target_pid = found_pid
+
+                stmt = select(Memory)
+                if target_pid is not None:
+                    stmt = stmt.where((Memory.personality_id == target_pid) | (Memory.personality_id.is_(None)))
+                all_mems = (await session.execute(stmt)).scalars().all()
+                deleted_any = False
+                for m in all_mems:
+                    if self._rag._is_conflicting_fact(content, m.content) or content.lower() in m.content.lower():
+                        await session.delete(m)
+                        self._rag._vstore.delete(m.id)
+                        logger.info(f"Dynamically deleted forgotten memory ID {m.id} ('{m.content}') for personality {target_pid}")
+                        deleted_any = True
+                if deleted_any:
+                    await session.commit()
+                    with RAGService._cache_lock:
+                        RAGService._shared_cache.clear()
+        except Exception as e:
+            logger.warning(f"Could not dynamically forget memory: {e}")
 
     async def process_text(
         self,
@@ -933,8 +1040,9 @@ class AIPipeline:
         refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]" if is_ar else "I do not have this information recorded in my memory. [wave]"
         has_memories = bool(memories)
         is_greeting_persona = is_greeting_or_persona_inquiry(text)
+        has_action = bool(grounding and getattr(grounding, "action", {}).get("has_action"))
 
-        if not has_memories and not is_greeting_persona:
+        if not has_memories and not is_greeting_persona and not has_action:
             full_response = refusal_reply
             emotion = "wave"
             total_ms = (time.perf_counter() - t_start) * 1000
@@ -988,8 +1096,8 @@ class AIPipeline:
         llm_ms = (t_llm - t_llm_start) * 1000
         total_ms = (time.perf_counter() - t_start) * 1000
 
-        # Strict Fact Verification against retrieved memories (No Fallback Model)
-        full_response = self._rag.verify_response(text, full_response, memories)
+        # Strict Fact Verification against retrieved memories
+        full_response = self._rag.verify_response(text, full_response, memories, is_greeting=is_greeting_persona, has_action=has_action)
         emotion = _extract_emotion(full_response)
 
         if broadcast_to_clients:
@@ -1020,6 +1128,30 @@ class AIPipeline:
                 personality_id=pid,
             )
         )
+
+        # Check for [memory:content] tag from LLM and persist dynamically
+        mem_match = re.search(r"\[memory:(.+?)\]", full_response)
+        if mem_match:
+            mem_content = mem_match.group(1).strip()
+            if mem_content:
+                asyncio.create_task(
+                    self._persist_dynamic_memory(
+                        content=mem_content,
+                        active_pid=pid,
+                    )
+                )
+
+        # Check for [forget:content] tag from LLM and delete memory dynamically
+        forget_match = re.search(r"\[forget:(.+?)\]", full_response)
+        if forget_match:
+            forget_content = forget_match.group(1).strip()
+            if forget_content:
+                asyncio.create_task(
+                    self._forget_dynamic_memory(
+                        content=forget_content,
+                        active_pid=pid,
+                    )
+                )
 
         return {
             "session_id": session_id,

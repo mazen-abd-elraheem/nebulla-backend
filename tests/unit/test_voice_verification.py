@@ -187,10 +187,10 @@ class TestSpeakerVerificationService:
         backend = MockEmbeddingBackend()
         svc = SpeakerVerificationService(backend=backend)
 
-        # Only 2 samples (less than minimum 5)
-        samples = [_generate_wav(duration_s=2.0) for _ in range(2)]
+        # 0 samples raises error
+        samples = []
         async with async_db() as session:
-            with pytest.raises(VoiceprintError, match="Provide 5–20 samples"):
+            with pytest.raises(VoiceprintError, match="Provide 1 to 20 audio samples"):
                 await svc.enroll(
                     session,
                     user_id=1,

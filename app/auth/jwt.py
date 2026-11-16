@@ -109,6 +109,8 @@ async def get_current_user(
             return "dev_user"
 
     # 4. Fallback for local desktop / dev client to prevent blocking 401
+    if settings.DEBUG:
+        return "dev_user"
     return "dev_user"
 
 

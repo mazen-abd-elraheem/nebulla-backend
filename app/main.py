@@ -299,7 +299,7 @@ class JSONRepairMiddleware:
                 if not body_sent:
                     body_sent = True
                     return {"type": "http.request", "body": body_bytes, "more_body": False}
-                return {"type": "http.request", "body": b"", "more_body": False}
+                return await receive()
 
             await self.app(scope, custom_receive, send)
             return
@@ -371,6 +371,8 @@ STUDIO_HTML_PATH = Path(__file__).parent / "static" / "faces_studio.html"
 
 
 @app.get("/faces-ui", response_class=HTMLResponse, tags=["vision-studio"], summary="Interactive Vision Testing Studio")
+@app.get("/static/faces_studio.html", include_in_schema=False)
+@app.get("/faces_studio.html", include_in_schema=False)
 async def vision_studio():
     """Interactive visual testing interface for video face recognition and match percentage."""
     if STUDIO_HTML_PATH.exists():

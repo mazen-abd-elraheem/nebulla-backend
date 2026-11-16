@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.core.logger import get_logger
 from app.providers.tts.base import BaseTTSProvider
 from app.utils.masri_normalizer import clean_llm_output_for_speech
+from app.utils.audio_utils import ensure_wav_bytes
 
 logger = get_logger(__name__)
 
@@ -121,7 +122,7 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
                     full_audio_url = f"{self._url}{audio_rel_url}" if audio_rel_url.startswith("/") else audio_rel_url
                     audio_resp = await client.get(full_audio_url)
                     if audio_resp.status_code == 200 and len(audio_resp.content) > 1000:
-                        return audio_resp.content
+                        return ensure_wav_bytes(audio_resp.content)
         except Exception as exc:
             logger.error(f"VoiceTuT microservice not reachable: {exc}")
             raise RuntimeError(

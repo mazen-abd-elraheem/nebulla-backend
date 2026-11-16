@@ -7,7 +7,7 @@ Solves the Person Image Data Retrieval Requirement:
     2. Image/Face -> Person Profile & Linked Long-Term Memories
 - Integrates with UniFace FaceAnalyzer and SQLite face_profiles table.
 - Emits Screen Control events to display photos on connected desktop control rooms and phone displays.
-- Zero fallback models: strictly adheres to registered database records.
+- Strictly adheres to registered database records.
 """
 
 import os
