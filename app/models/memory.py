@@ -19,6 +19,7 @@ class Memory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     personality_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     source: Mapped[str] = mapped_column(String(64), default="conversation")

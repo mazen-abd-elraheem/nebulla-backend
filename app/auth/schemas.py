@@ -201,3 +201,79 @@ class MessageResponse(BaseModel):
     """Generic status response."""
     message: str
     details: Optional[dict[str, Any]] = None
+
+
+# ── Akinator Onboarding Schemas ──────────────────────────────────────────────
+
+class AkinatorQuestionItem(BaseModel):
+    id: str
+    index: int
+    dimension: str
+    text: str
+    subtitle: Optional[str] = None
+    is_core: bool = False
+    options: list[str] = Field(default_factory=list)
+
+
+class AkinatorQuestionsResponse(BaseModel):
+    total: int
+    mode: str
+    dimension: Optional[str] = None
+    questions: list[AkinatorQuestionItem]
+
+
+class AkinatorSubmitRequest(BaseModel):
+    answers: dict[str, Any] = Field(
+        ...,
+        description="Dictionary mapping question IDs (e.g. 'q1_software_builder') or numbers to chosen answers",
+    )
+    personality_id: Optional[int] = Field(
+        None,
+        description="Optional existing personality ID to bind memories to. If omitted, user personality is auto-resolved/created.",
+    )
+    auto_create_personality: bool = Field(
+        True,
+        description="Automatically create a dedicated Digital Twin personality for the user if they don't have one",
+    )
+    use_llm: bool = Field(
+        True,
+        description="Whether to run deep LLM synthesis in addition to deterministic rule extraction",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "answers": {
+                    "q1_software_builder": "نعم",
+                    "q3_data_driven": "في الغالب نعم",
+                    "q4_ai_enthusiast": "نعم",
+                    "q11_night_owl": "نعم",
+                    "q12_coffee_lover": "نعم",
+                    "q15_hyperfocus": "نعم",
+                    "q21_concise_replies": "في الغالب نعم",
+                    "q22_humorous_tone": "نعم",
+                    "q30_friendly_honorifics": "نعم",
+                    "q32_scifi_fan": "نعم",
+                    "q36_gear_enthusiast": "في الغالب نعم",
+                    "q37_physical_robot_companion": "نعم",
+                    "q41_logic_first": "نعم",
+                    "q43_prototype_fast": "نعم",
+                    "q50_founder_ambition": "نعم"
+                },
+                "auto_create_personality": True,
+                "use_llm": True
+            }
+        }
+    }
+
+
+class AkinatorSubmitResponse(BaseModel):
+    success: bool = True
+    user_id: Optional[int] = None
+    personality_id: int
+    personality_name: str
+    archetype: str
+    dimension_scores: dict[str, float]
+    memories_count: int
+    memories_saved: list[str]
+    message: str

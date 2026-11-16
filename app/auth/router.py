@@ -11,7 +11,7 @@ import secrets
 from typing import Any, Optional
 
 import numpy as np
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select, and_
@@ -26,6 +26,10 @@ from app.auth.jwt import (
     get_optional_user_model,
 )
 from app.auth.schemas import (
+    AkinatorQuestionItem,
+    AkinatorQuestionsResponse,
+    AkinatorSubmitRequest,
+    AkinatorSubmitResponse,
     AuthTokenResponse,
     ForgotPasswordRequest,
     MessageResponse,
@@ -682,6 +686,145 @@ async def save_onboarding_answers(
         "saved_memories_count": saved_count,
         "message": "تم حفظ تفضيلات التخصيص وإضافتها لذاكرة المساعد الذكي بنجاح",
     }
+
+
+# ── 8B. Akinator-Style Onboarding Questionnaire (استبيان المارد الأزرق) ────────
+
+@router.get(
+    "/onboarding/akinator/questions",
+    response_model=AkinatorQuestionsResponse,
+    summary="Get 50 Akinator-style profiling questions (أسئلة استبيان المارد الأزرق)",
+)
+async def get_akinator_questions(
+    mode: str = Query("full", description="'full' (50 questions) or 'quick' (15 core questions)"),
+    dimension: Optional[str] = Query(None, description="Filter by dimension (work_tech, routine, social, preferences, mindset)"),
+):
+    """
+    Returns 50 intelligent, indirect questions inspired by Akinator to deduce user traits,
+    habits, tone preferences, and mindset.
+    - mode='quick': 15 core questions for fast 60-second onboarding
+    - mode='full': all 50 questions for exhaustive personal profile
+    """
+    from app.services.onboarding.akinator_engine import AkinatorEngine
+
+    questions_data = AkinatorEngine.get_questions(mode=mode, dimension=dimension)
+    return AkinatorQuestionsResponse(
+        total=len(questions_data),
+        mode=mode,
+        dimension=dimension,
+        questions=[AkinatorQuestionItem(**q) for q in questions_data],
+    )
+
+
+@router.post(
+    "/onboarding/akinator/submit",
+    response_model=AkinatorSubmitResponse,
+    summary="Submit Akinator onboarding answers & ingest into RAG (استخراج الذكريات وحفظها في الذاكرة)",
+)
+async def submit_akinator_answers(
+    body: AkinatorSubmitRequest,
+    current_user: Optional[User] = Depends(get_optional_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Ingests Akinator onboarding answers:
+    1. Resolves or creates a dedicated Digital Twin personality for the user.
+    2. Runs hybrid extraction (deterministic rules + LLM synthesis).
+    3. Persists generated memories into database (bound to user_id and personality_id).
+    4. Indexes memories into RAG Vector Store and BM25 search for immediate interactive recall.
+    """
+    from app.services.onboarding.memory_extractor import MemoryExtractor
+    from app.models.memory import Memory
+    from app.models.personality import Personality
+    from app.services.memory.rag_service import RAGService
+
+    user_name = current_user.full_name if current_user else "المستخدم"
+    user_id = current_user.id if current_user else None
+
+    # Resolve or create Personality
+    target_p: Optional[Personality] = None
+    if body.personality_id:
+        target_p = await db.get(Personality, body.personality_id)
+
+    if not target_p and current_user:
+        # Check if user already owns a custom personality
+        p_res = await db.execute(
+            select(Personality).where(Personality.user_id == current_user.id).order_by(Personality.id.asc()).limit(1)
+        )
+        target_p = p_res.scalar_one_or_none()
+
+        # If not, auto-create one
+        if not target_p and body.auto_create_personality:
+            target_p = Personality(
+                name=current_user.full_name,
+                user_id=current_user.id,
+                description=f"التوأم الرقمي المخصص للمستخدم {current_user.full_name}",
+                system_prompt=f"أنت التوأم الرقمي لـ {current_user.full_name}. تتحدث بالعامية المصرية الودودة وبنبرته.",
+                dialect="cairo",
+                language_mix="ar_en",
+                is_active=True,
+            )
+            db.add(target_p)
+            await db.flush()
+            await db.refresh(target_p)
+
+    if not target_p:
+        # Default to active personality in DB or ID 1
+        active_res = await db.execute(
+            select(Personality).where(Personality.is_active == True).order_by(Personality.id.desc()).limit(1)  # noqa: E712
+        )
+        target_p = active_res.scalar_one_or_none()
+        if not target_p:
+            p1_res = await db.execute(select(Personality).limit(1))
+            target_p = p1_res.scalar_one_or_none()
+
+    target_pid = target_p.id if target_p else 1
+    target_pname = target_p.name if target_p else user_name
+
+    # Run hybrid memory extraction
+    extraction = await MemoryExtractor.hybrid_extract(
+        answers=body.answers,
+        user_name=user_name,
+        use_llm=body.use_llm,
+    )
+
+    memories_to_save: list[str] = extraction.get("memories", [])
+    rag = RAGService()
+    saved_facts: list[str] = []
+
+    for mem_content in memories_to_save:
+        clean_text = mem_content.strip()
+        if not clean_text:
+            continue
+
+        try:
+            await rag.add_memory(
+                content=clean_text,
+                personality_id=target_pid,
+                user_id=user_id,
+                source="akinator_onboarding",
+                importance=9,
+                db=db,
+            )
+            saved_facts.append(clean_text)
+        except Exception as rag_err:
+            logger.warning(f"Akinator RAG memory ingestion notice: {rag_err}")
+
+    logger.info(
+        f"Akinator onboarding: ingested {len(saved_facts)} memories for user '{user_name}' into personality '{target_pname}' (ID: {target_pid})"
+    )
+
+    return AkinatorSubmitResponse(
+        success=True,
+        user_id=user_id,
+        personality_id=target_pid,
+        personality_name=target_pname,
+        archetype=extraction.get("archetype", "مستكشف رقمي متوازن"),
+        dimension_scores=extraction.get("dimension_scores", {}),
+        memories_count=len(saved_facts),
+        memories_saved=saved_facts,
+        message=f"تم استخراج وحفظ {len(saved_facts)} حقيقة وذاكرة أساسية لشخصية ({target_pname}) وفهرستها في عقل الروبوت بنجاح!",
+    )
 
 
 # ── 9. User Avatar Generation & Processing (توليد الأفاتار) ───────────────────
