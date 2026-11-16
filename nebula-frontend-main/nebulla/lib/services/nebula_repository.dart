@@ -101,6 +101,28 @@ class NebulaRepository {
     return user;
   }
 
+  Future<UserModel> updateProfile({
+    String? fullName,
+    String? email,
+    String? phone,
+    String? location,
+    String? organization,
+    String? avatarUrl,
+  }) async {
+    final payload = <String, dynamic>{};
+    if (fullName != null) payload['full_name'] = fullName;
+    if (email != null) payload['email'] = email;
+    if (phone != null) payload['phone'] = phone;
+    if (location != null) payload['location'] = location;
+    if (organization != null) payload['organization'] = organization;
+    if (avatarUrl != null) payload['avatar_url'] = avatarUrl;
+
+    final data = await _api.put(AppConstants.authMe, payload);
+    final user = UserModel.fromJson(data as Map<String, dynamic>);
+    await _store.setUser(user);
+    return user;
+  }
+
   Future<String> forgotPassword(String email) async {
     final data = await _api.post(AppConstants.authForgotPassword, {
       'email': email.trim().toLowerCase(),

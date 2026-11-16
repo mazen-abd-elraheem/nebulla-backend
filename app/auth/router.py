@@ -33,6 +33,7 @@ from app.auth.schemas import (
     UserLogin,
     UserRegister,
     UserResponse,
+    UserUpdateRequest,
 )
 from app.core.logger import get_logger
 from app.core.security import get_password_hash, verify_password, verify_pairing_code
@@ -60,6 +61,9 @@ def _user_to_response(user: User, personalities_count: int = 0) -> UserResponse:
         has_biometric=user.face_profile_id is not None,
         personalities_count=personalities_count,
         avatar_url=getattr(user, "avatar_url", None),
+        phone=getattr(user, "phone", None),
+        location=getattr(user, "location", None),
+        organization=getattr(user, "organization", None),
         created_at=user.created_at,
     )
 
@@ -158,6 +162,22 @@ async def register(
             detail="البريد الإلكتروني أو اسم المستخدم ده مسجل بالفعل عندنا. اختار بيانات تانية.",
         )
 
+    # Automatically create user's personal digital twin persona
+    twin_persona = Personality(
+        user_id=new_user.id,
+        name=f"{new_user.full_name} - التوأم الرقمي",
+        description=f"التوأم الرقمي الرسمي لـ {new_user.full_name}",
+        system_prompt=f"أنت {new_user.full_name}، التوأم الرقمي المصري الذكي. بتتكلم بالمصري العامي العفوي وبنبرتك الطبيعية وبتعبر عن شخصية وتفضيلات {new_user.full_name}.",
+        dialect="cairo",
+        language_mix="ar_en",
+        is_active=True,
+    )
+    db.add(twin_persona)
+    try:
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"Could not auto-create personal twin for {new_user.id}: {e}")
+
     # Create access token (8 hours initial session)
     token_delta = timedelta(hours=8)
     token = create_access_token(
@@ -223,6 +243,24 @@ async def login(
         extra={"email": user.email, "name": user.full_name, "username": user.username},
         expires_delta=token_delta,
     )
+
+    # Ensure user has their own personal digital twin
+    user_p = await db.execute(select(Personality).where(Personality.user_id == user.id))
+    twin = user_p.scalars().first()
+    if not twin:
+        db.add(Personality(
+            user_id=user.id,
+            name=f"{user.full_name} - التوأم الرقمي",
+            description=f"التوأم الرقمي الرسمي لـ {user.full_name}",
+            system_prompt=f"أنت {user.full_name}، التوأم الرقمي المصري الذكي. بتتكلم بالمصري العامي وبنبرتك الطبيعية وبتعبر عن شخصية وتفضيلات {user.full_name}.",
+            dialect="cairo",
+            language_mix="ar_en",
+            is_active=True,
+        ))
+        try:
+            await db.commit()
+        except Exception as e:
+            logger.warning(f"Could not auto-create personal twin on login for {user.id}: {e}")
 
     # Query count of user personalities
     p_count_res = await db.execute(
@@ -548,6 +586,78 @@ async def whoami(
         select(Personality.id).where(Personality.user_id == current_user.id)
     )
     p_count = len(p_count_res.scalars().all())
+    return _user_to_response(current_user, personalities_count=p_count)
+
+
+@router.put(
+    "/me",
+    response_model=UserResponse,
+    summary="Update Current User Profile (تعديل وحفظ بيانات الحساب)",
+)
+@router.patch(
+    "/me",
+    response_model=UserResponse,
+    summary="Update Current User Profile (تعديل وحفظ بيانات الحساب)",
+)
+async def update_profile(
+    body: UserUpdateRequest,
+    current_user: User = Depends(get_current_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Updates the authenticated user's profile data (name, email, phone, location, organization, avatar)
+    and synchronizes changes with their personal digital twin persona.
+    """
+    if body.full_name is not None and body.full_name.strip():
+        current_user.full_name = body.full_name.strip()
+        # Update user's personal digital twin persona name and description
+        res = await db.execute(
+            select(Personality).where(Personality.user_id == current_user.id).limit(1)
+        )
+        twin = res.scalar_one_or_none()
+        if twin:
+            twin.name = f"{current_user.full_name} - التوأم الرقمي"
+            twin.description = f"التوأم الرقمي الرسمي لـ {current_user.full_name}"
+            twin.system_prompt = f"أنت {current_user.full_name}، التوأم الرقمي المصري الذكي. بتتكلم بالمصري العامي العفوي وبنبرتك الطبيعية وبتعبر عن شخصية وتفضيلات {current_user.full_name}."
+        else:
+            db.add(Personality(
+                user_id=current_user.id,
+                name=f"{current_user.full_name} - التوأم الرقمي",
+                description=f"التوأم الرقمي الرسمي لـ {current_user.full_name}",
+                system_prompt=f"أنت {current_user.full_name}، التوأم الرقمي المصري الذكي.",
+                dialect="cairo",
+                language_mix="ar_en",
+                is_active=True,
+            ))
+
+    if body.email is not None and body.email.strip():
+        new_email = body.email.strip().lower()
+        if new_email != current_user.email:
+            check_res = await db.execute(select(User).where(User.email == new_email))
+            if check_res.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="البريد الإلكتروني ده مسجل بالفعل لحساب آخر.",
+                )
+            current_user.email = new_email
+
+    if body.phone is not None:
+        current_user.phone = body.phone.strip()
+    if body.location is not None:
+        current_user.location = body.location.strip()
+    if body.organization is not None:
+        current_user.organization = body.organization.strip()
+    if body.avatar_url is not None:
+        current_user.avatar_url = body.avatar_url.strip()
+
+    await db.commit()
+    await db.refresh(current_user)
+
+    p_count_res = await db.execute(
+        select(Personality.id).where(Personality.user_id == current_user.id)
+    )
+    p_count = len(p_count_res.scalars().all())
+    logger.info(f"Updated profile for user {current_user.id}: {current_user.full_name}")
     return _user_to_response(current_user, personalities_count=p_count)
 
 

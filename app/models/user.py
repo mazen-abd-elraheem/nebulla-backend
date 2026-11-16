@@ -47,6 +47,11 @@ class User(Base):
     # User profile avatar URL / path
     avatar_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
+    # User profile contact info
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 

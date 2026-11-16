@@ -912,10 +912,10 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                                   width: 1.4,
                                                 ),
                                               ),
-                                              child: const Icon(
-                                                Icons.arrow_back_rounded,
+                                              child: Icon(
+                                                isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
                                                 size: 20,
-                                                color: Color(0xFF0F172A),
+                                                color: const Color(0xFF0F172A),
                                               ),
                                             ),
                                           ),

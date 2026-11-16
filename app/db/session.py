@@ -155,6 +155,22 @@ async def init_db() -> None:
                 if "user_id" not in cols:
                     connection.execute(text("ALTER TABLE action_logs ADD COLUMN user_id INTEGER REFERENCES users(id)"))
 
+            if "users" in tables:
+                cols = [c["name"] for c in inspector.get_columns("users")]
+                if "phone" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(64)"))
+                if "location" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN location VARCHAR(255)"))
+                if "organization" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN organization VARCHAR(255)"))
+
+            if "personalities" in tables:
+                cols = [c["name"] for c in inspector.get_columns("personalities")]
+                if "image_path" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN image_path VARCHAR(500)"))
+                if "tone" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN tone VARCHAR(50)"))
+
             if "speakers" in tables:
                 cols = [c["name"] for c in inspector.get_columns("speakers")]
                 if "verification_id" not in cols:
@@ -178,6 +194,7 @@ async def init_db() -> None:
     from app.models.user import User
     from app.models.personality import Personality
     from app.core.security import get_password_hash
+    from sqlalchemy import delete
 
     async with AsyncSessionLocal() as session:
         u_res = await session.execute(select(User).order_by(User.id).limit(1))
@@ -185,26 +202,30 @@ async def init_db() -> None:
         if not existing_u:
             default_user = User(
                 id=1,
-                full_name="مازن عبد الرحيم (Mazen)",
-                username="mazen",
-                email="admin@nebula.local",
+                full_name="المستخدم (User)",
+                username="user",
+                email="user@nebula.local",
                 hashed_password=get_password_hash("nebula2026"),
                 is_active=True,
                 is_superuser=True,
             )
             session.add(default_user)
             await session.commit()
-            logger.info("Default user seeded (id=1: Mazen)")
+            logger.info("Default user seeded (id=1: User)")
+        elif "مازن" in existing_u.full_name or "Mazen" in existing_u.full_name:
+            existing_u.full_name = "المستخدم (User)"
+            existing_u.username = "user"
+            await session.commit()
 
-        # Seed or configure default personality 1 (Mazen - Digital Twin)
+        # Seed or configure default personality 1 (Generic Digital Twin)
         result = await session.execute(select(Personality).where(Personality.id == 1))
         existing_p = result.scalar_one_or_none()
         if not existing_p:
             default_p = Personality(
                 id=1,
-                name="مازن (Mazen) - التوأم الرقمي",
-                description="التوأم الرقمي الرسمي لفريق نيبولا بصوت مازن الطبيعي",
-                system_prompt="أنت مازن، التوأم الرقمي المصري الذكي. بتتكلم بالمصري العامي العفوي وبنبرتك الطبيعية وبتخلط مصطلحات إنجليزي في السياق التقني.",
+                name="التوأم الرقمي (Digital Twin)",
+                description="التوأم الرقمي الرسمي والمساعد الذكي لنيبولا بصوت طبيعي",
+                system_prompt="أنت التوأم الرقمي والمساعد الذكي لنظام نيبولا. بتتكلم بالمصري العامي العفوي وبنبرتك الطبيعية وبتعبر عن شخصية وتفضيلات المستخدم.",
                 dialect="cairo",
                 language_mix="ar_en",
                 voice_sample_path="data/voice_samples/personality_1.wav",
@@ -212,38 +233,40 @@ async def init_db() -> None:
             )
             session.add(default_p)
             await session.commit()
-            logger.info("Default personality seeded (id=1: Mazen)")
+            logger.info("Default personality seeded (id=1: Digital Twin)")
         else:
-            if not existing_p.voice_sample_path or existing_p.name == "Nebula":
-                existing_p.name = "مازن (Mazen) - التوأم الرقمي"
-                existing_p.voice_sample_path = "data/voice_samples/personality_1.wav"
-                existing_p.description = "التوأم الرقمي الرسمي لفريق نيبولا بصوت مازن الطبيعي"
+            if not existing_p.voice_sample_path or "مازن" in existing_p.name or existing_p.name == "Nebula":
+                existing_p.name = "التوأم الرقمي (Digital Twin)"
+                existing_p.description = "التوأم الرقمي الرسمي والمساعد الذكي لنيبولا بصوت طبيعي"
+                existing_p.system_prompt = "أنت التوأم الرقمي والمساعد الذكي لنظام نيبولا. بتتكلم بالمصري العامي العفوي وبنبرتك الطبيعية وبتعبر عن شخصية وتفضيلات المستخدم."
                 await session.commit()
-                logger.info("Updated personality 1 to Mazen with clean reference voice")
+                logger.info("Updated personality 1 to Generic Digital Twin")
 
-        # Seed core personalized RAG memories for Mazen (doc §1 RAG & personalized grounding)
+        # Cleanup obsolete hardcoded memories mentioning Mazen
         from app.models.memory import Memory
+        await session.execute(
+            delete(Memory).where((Memory.content.ilike("%مازن%")) | (Memory.content.ilike("%mazen%")))
+        )
+        await session.commit()
+
+        # Seed generic hardware & environment RAG memories
         mem_res = await session.execute(select(Memory.content).where(Memory.personality_id == 1))
         existing_mem_contents = set(mem_res.scalars().all())
 
-        personalized_seeds = [
-            "مازن هو المهندس ومطور روبوت نيبولا الرئيسي، وهو من مواليد عام 2000.",
-            "مازن يفضل أكل الخضروات ولا يحب أكل الفواكه.",
-            "مشروع تخرج مازن هو روبوت نيبولا (Nebula) للذكاء الاصطناعي والتوأم الرقمي.",
+        generic_seeds = [
             "الروبوت نيبولا يمتلك 12 محرك سيرفو فائق الدقة ومتصل بنظام أمان متقدم.",
             "الروبوت نيبولا تم تزويده بكاميرا تدعم تتبع الوجوه بسرعة 60 إطار في الثانية.",
-            "مكان الباسبور وجواز السفر: في الدرج الأول على اليمين في مكتب مازن.",
             "مكان الشاحن ومحول الهاتف: محطوط على الكومودينو جنب السرير في أوضة النوم.",
             "مكان مفاتيح البيت والعربية: متعلقة على الحامل الخشبي جنب باب الشقة.",
         ]
         new_count = 0
-        for text_content in personalized_seeds:
+        for text_content in generic_seeds:
             if text_content not in existing_mem_contents:
                 session.add(Memory(content=text_content, personality_id=1, source="system", importance=5))
                 new_count += 1
         if new_count > 0:
             await session.commit()
-            logger.info(f"Seeded {new_count} personalized RAG memories for Mazen")
+            logger.info(f"Seeded {new_count} generic RAG memories")
 
         # Seed and auto-migrate Speakers (Speaker profile linking verification_id, voice_id, personality_id, is_main)
         from app.models.speaker import Speaker
@@ -259,36 +282,33 @@ async def init_db() -> None:
                 )
             )
             spk = spk_res.scalar_one_or_none()
-            is_mazen = "مازن" in vp.speaker_name.lower() or "mazen" in vp.speaker_name.lower()
             if not spk:
                 new_spk = Speaker(
                     name=vp.speaker_name,
                     verification_id=vp.id,
                     voice_id=str(vp.personality_id or "1"),
                     personality_id=vp.personality_id or 1,
-                    is_main=True if is_mazen else False,
+                    is_main=True if len(all_vps) == 1 else False,
                 )
                 session.add(new_spk)
                 await session.flush()
-                logger.info(f"Auto-migrated speaker profile for '{vp.speaker_name}' (is_main={new_spk.is_main})")
+                logger.info(f"Auto-migrated speaker profile for '{vp.speaker_name}'")
             else:
                 if spk.verification_id != vp.id:
                     spk.verification_id = vp.id
-                if is_mazen and not spk.is_main:
-                    spk.is_main = True
 
-        # 2. If no speaker exists at all (e.g. fresh installation before any enroll), seed default Mazen speaker
+        # 2. If no speaker exists at all (e.g. fresh installation before any enroll), seed default main speaker
         total_spk_res = await session.execute(select(Speaker).limit(1))
         if not total_spk_res.scalar_one_or_none():
-            mazen_spk = Speaker(
-                name="مازن (Mazen)",
+            main_spk = Speaker(
+                name="المتحدث الرئيسي (Main Speaker)",
                 verification_id=all_vps[0].id if all_vps else None,
                 voice_id="1",
                 personality_id=1,
                 is_main=True,
             )
-            session.add(mazen_spk)
-            logger.info("Seeded default main speaker: مازن (Mazen) [is_main=True]")
+            session.add(main_spk)
+            logger.info("Seeded default main speaker [is_main=True]")
 
         await session.commit()
 

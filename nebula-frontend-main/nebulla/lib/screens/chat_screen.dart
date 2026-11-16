@@ -56,7 +56,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<_ChatMessageItem> _messages = [];
   String? _sessionId;
   bool _sending = false;
-  String _assistantName = 'مازن (Mazen) - التوأم الرقمي';
+  String _assistantName = 'التوأم الرقمي';
   int? _activePersonalityId = 1;
 
   // Liked/disliked message state for the thumb icons
@@ -144,19 +144,28 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Initial state: ONLY the welcome greeting message is present at start!
   /// No fake questions or answers, exactly as requested: "المسج تبقى في الاول بس ولما اعمل حاجه جديده تتغير وتمشي"
   void _seedInitialWelcomeMessage() {
+    final user = StorageService.instance.getUser();
+    final displayName = user != null && user.fullName.isNotEmpty
+        ? user.fullName
+        : 'صديقي';
+    final assistantTitle = user != null && user.fullName.isNotEmpty
+        ? '${user.fullName} - التوأم الرقمي'
+        : 'التوأم الرقمي';
+    _assistantName = assistantTitle;
+
     _messages.clear();
     _messages.add(
       _ChatMessageItem(
         id: 'msg_welcome',
         role: 'assistant',
         content:
-            'أهلاً بك! أنا مازن، توأمك الرقمي ومساعدك الذكي لنظام نيبولا. اسألني عن مشروع التخرج، الروبوت، الذاكرة، أو أي استفسار تريده!',
+            'أهلاً بك يا $displayName! أنا توأمك الرقمي ومساعدك الذكي لنظام نيبولا. اسألني عن الروبوت، الذاكرة، أو أي استفسار تريده!',
         time: 'اليوم، ${_formatCurrentTime()}',
         isWelcome: true,
         quickActions: [
-          'مين هو مازن؟',
-          'مشروع تخرج روبوت نيبولا',
-          'أين جواز السفر والمفاتيح؟',
+          'من أنت وكيف تساعدني؟',
+          'مواصفات وإمكانيات الروبوت',
+          'ما هي معلوماتك في الذاكرة؟',
         ],
       ),
     );
@@ -172,14 +181,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadActivePersonality() async {
     try {
+      final user = StorageService.instance.getUser();
       final personalities = await _repo.getPersonalities();
-      final active =
-          personalities.where((p) => p.isActive).firstOrNull ??
+      Personality? active;
+      if (user != null && user.fullName.isNotEmpty) {
+        active = personalities.where((p) => p.name.contains(user.fullName)).firstOrNull;
+      }
+      active ??= personalities.where((p) => p.isActive).firstOrNull ??
           personalities.firstOrNull;
       if (active != null && mounted) {
+        var name = active.name;
+        if (user != null && user.fullName.isNotEmpty && (name == 'التوأم الرقمي' || name == 'نيبولا')) {
+          name = '${user.fullName} - التوأم الرقمي';
+        }
         setState(() {
-          _assistantName = active.name;
-          _activePersonalityId = active.id;
+          _assistantName = name;
+          _activePersonalityId = active!.id;
         });
       }
     } catch (_) {}
@@ -881,7 +898,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           leading: CircleAvatar(
                             backgroundColor: isSelected ? const Color(0xFF00B4D8) : const Color(0xFFE2E8F0),
                             child: Icon(
-                              Icons.smart_toy_rounded,
+                              Icons.person_rounded,
                               color: isSelected ? Colors.white : const Color(0xFF64748B),
                               size: 20,
                             ),
@@ -981,17 +998,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _defaultAvatarFallback(double radius) {
+    final user = StorageService.instance.getUser();
     final isFemale = AvatarAudioService.instance.activeAvatarType.value == 'female';
     final img = isFemale ? 'assets/images/avatar_female.png' : 'assets/images/avatar_male.jpg';
     return Image.asset(
       img,
       fit: BoxFit.cover,
       alignment: Alignment.topCenter,
-      errorBuilder: (context, error, stackTrace) => Icon(
-        Icons.smart_toy_rounded,
-        color: const Color(0xFF00B4D8),
-        size: radius * 1.1,
-      ),
+      errorBuilder: (context, error, stackTrace) =>
+          _userInitialWidget(user?.fullName, radius),
     );
   }
 

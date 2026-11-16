@@ -28,6 +28,9 @@ class StorageService {
   Future<void> setUser(UserModel user) async {
     final str = jsonEncode(user.toJson());
     await _prefs?.setString(AppConstants.prefUser, str);
+    if (user.avatarUrl != null && user.avatarUrl!.isNotEmpty) {
+      await setUserAvatarUrl(user.avatarUrl!);
+    }
   }
 
   UserModel? getUser() {

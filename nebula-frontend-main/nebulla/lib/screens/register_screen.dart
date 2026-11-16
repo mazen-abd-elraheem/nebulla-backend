@@ -698,7 +698,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               color: Color(0xFF1E293B),
             ),
             decoration: _buildInputDecoration(
-              hintText: 'مازن عبد الرحيم',
+              hintText: 'الاسم كامل (مثال: أحمد محمد)',
               suffixIcon: Icons.badge_outlined,
             ),
             validator: (v) {
@@ -834,12 +834,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     : const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            Icons.arrow_back_rounded,
-                            color: Colors.white,
-                            size: 19,
-                          ),
-                          SizedBox(width: 10),
                           Text(
                             'المتابعة: خطوة الأفاتار',
                             style: TextStyle(
@@ -848,6 +842,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               fontSize: 14.5,
                               color: Colors.white,
                             ),
+                          ),
+                          SizedBox(width: 8),
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            color: Colors.white,
+                            size: 19,
                           ),
                         ],
                       ),
@@ -1087,8 +1087,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.arrow_back_rounded, color: Colors.white, size: 19),
-              SizedBox(width: 8),
               Flexible(
                 child: Text(
                   'تأكيد الأفاتار ومتابعة لأسئلة التخصيص',
@@ -1100,6 +1098,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
+              SizedBox(width: 8),
+              Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 19),
             ],
           ),
         ),
@@ -1409,12 +1409,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               : const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.arrow_back_rounded,
-                      color: Colors.white,
-                      size: 19,
-                    ),
-                    SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         'حفظ التخصيص ومتابعة لاستنساخ الصوت',
@@ -1425,6 +1419,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           fontSize: 13.5,
                         ),
                       ),
+                    ),
+                    SizedBox(width: 8),
+                    Icon(
+                      Icons.arrow_forward_rounded,
+                      color: Colors.white,
+                      size: 19,
                     ),
                   ],
                 ),

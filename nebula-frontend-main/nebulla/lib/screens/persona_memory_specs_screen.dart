@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/nebula_repository.dart';
 import '../services/locale_service.dart';
+import '../services/storage_service.dart';
 import '../widgets/nebula_side_menu.dart';
 import '../widgets/common_widgets.dart';
 
@@ -70,16 +71,20 @@ class _PersonaMemorySpecsScreenState extends State<PersonaMemorySpecsScreen> {
             : 'تعذر تحميل الشخصيات: $e';
         _loading = false;
         if (_personalities.isEmpty) {
+          final u = StorageService.instance.getUser();
+          final twinName = u != null && u.fullName.isNotEmpty
+              ? '${u.fullName} - التوأم الرقمي'
+              : 'التوأم الرقمي';
           _personalities = [
             Personality(
               id: 1,
-              name: 'مازن (Mazen) - التوأم الرقمي',
+              name: twinName,
               description:
                   'التوأم الرقمي الرسمي لمستخدم نيبولا، قادر على التفاعل الصوتي والتحدث بأسلوبك ولهجتك.',
               dialect: 'اللهجة المصرية والإنجليزية',
               languageMix: 'ar-EG',
               systemPrompt:
-                  'أنت مازن، التوأم الرقمي والمساعد الذكي الرسمي المتقدم لنظام نيبولا.',
+                  'أنت $twinName والمساعد الذكي الرسمي المتقدم لنظام نيبولا.',
               isActive: true,
             ),
           ];

@@ -65,7 +65,7 @@ async def list_personalities(
         stmt = (
             select(Personality)
             .where(or_(Personality.user_id == None, Personality.user_id == current_user.id))  # noqa: E711
-            .order_by(Personality.id)
+            .order_by(Personality.user_id.is_(None), Personality.id)
         )
     else:
         stmt = (
@@ -75,7 +75,12 @@ async def list_personalities(
         )
 
     r = await db.execute(stmt)
-    return {"personalities": [_p(p) for p in r.scalars()]}
+    personalities = list(r.scalars().all())
+    for p in personalities:
+        if "مازن" in p.name:
+            p.name = "التوأم الرقمي (Digital Twin)"
+            p.description = "التوأم الرقمي والمساعد الذكي لنيبولا بصوت طبيعي"
+    return {"personalities": [_p(p) for p in personalities]}
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, include_in_schema=False)
