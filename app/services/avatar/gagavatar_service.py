@@ -1,34 +1,27 @@
 """GAGAvatar Avatar Generation & Expression Animation Service.
 
-Implements a modular hybrid architecture around https://github.com/xg-chu/GAGAvatar:
-1. Remote GPU Microservice (`GAGAVATAR_SERVICE_URL`) — recommended for Railway GPU workers
-   or multi-service deployments.
-2. Local `xg-chu/GAGAvatar` Runtime (`GAGAVATAR_REPO_PATH` / installed `gagavatar` package
-   when CUDA + diff-gaussian-rasterization + FLAME assets are present).
-3. Local UniFace + OpenCV/Pillow Engine (`uniface_fallback`) — detects the user's face &
-   landmarks with UniFace / OpenCV, generates a normalized studio portrait, per-emoji
-   expression sprites, normalized [0..1] eye/mouth coordinates for real-time lip-sync,
-   and animated GIF/PNG expression sequences on CPU hosts.
+Strictly powered by https://github.com/xg-chu/GAGAvatar:
+1. Remote GPU Microservice (`GAGAVATAR_SERVICE_URL`) when configured.
+2. Local `xg-chu/GAGAvatar` CUDA runtime (`GAGAvatarEngine` wrapping `CoreEngine`
+   tracker + `GAGAvatarRuntime` 3D Gaussian Splatting renderer + FLAME model).
+Zero CPU image-warp or synthetic overlay fallbacks when `GAGAVATAR_STRICT_ONLY` /
+`not AVATAR_ALLOW_LOCAL_FALLBACK`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
-import importlib
 import io
 import json
-import os
-import sys
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import cv2
-import httpx
 import imageio.v2 as imageio
+import httpx
 import numpy as np
-from PIL import Image, ImageEnhance
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +32,7 @@ from app.services.avatar.emoji_actions import (
     FACE_EMOJI_ACTIONS,
     resolve_expression_spec,
 )
+from app.services.avatar.gagavatar_engine import get_gagavatar_engine
 
 logger = get_logger(__name__)
 
@@ -56,6 +50,7 @@ class GAGAvatarService:
         self._local_gag_checked = False
         self._local_gag_available = False
         self._local_gag_error: Optional[str] = None
+        self._local_gag_info: Dict[str, Any] = {}
 
     @classmethod
     def get_instance(cls) -> "GAGAvatarService":
@@ -66,32 +61,18 @@ class GAGAvatarService:
     # ── Runtime Discovery ─────────────────────────────────────────────────────
 
     def _probe_local_gagavatar(self) -> Tuple[bool, Optional[str]]:
-        if self._local_gag_checked:
-            return self._local_gag_available, self._local_gag_error
+        if self._local_gag_checked and self._local_gag_available:
+            return True, self._local_gag_error
 
+        ok, err, info = get_gagavatar_engine().probe()
         self._local_gag_checked = True
-        repo_path = Path(settings.GAGAVATAR_REPO_PATH)
-        if repo_path.exists() and str(repo_path.resolve()) not in sys.path:
-            sys.path.insert(0, str(repo_path.resolve()))
-
-        try:
-            import torch  # noqa: F401
-            cuda_ok = bool(torch.cuda.is_available())
-            if settings.GAGAVATAR_DEVICE == "cuda" and not cuda_ok:
-                self._local_gag_error = "CUDA GPU not available on this host"
-                return False, self._local_gag_error
-
-            importlib.import_module("gagavatar")
-            self._local_gag_available = True
-            self._local_gag_error = None
-            return True, None
-        except Exception as exc:
-            self._local_gag_available = False
-            self._local_gag_error = str(exc)
-            return False, self._local_gag_error
+        self._local_gag_available = ok
+        self._local_gag_error = err
+        self._local_gag_info = info
+        return ok, err
 
     async def get_runtime_status(self) -> Dict[str, Any]:
-        """Report availability of remote GAGAvatar GPU worker, local GAGAvatar, and CPU fallback."""
+        """Report availability of remote GAGAvatar GPU worker and local GAGAvatar CUDA runtime."""
         local_ok, local_err = self._probe_local_gagavatar()
         remote_url = (settings.GAGAVATAR_SERVICE_URL or "").strip() or None
         remote_healthy = False
@@ -111,16 +92,19 @@ class GAGAvatarService:
         preferred_engine = (
             "gagavatar_remote"
             if remote_healthy
-            else ("gagavatar" if local_ok else ("uniface_fallback" if settings.AVATAR_ALLOW_LOCAL_FALLBACK else "unavailable"))
+            else ("gagavatar" if local_ok else "unavailable")
         )
         return {
             "preferred_engine": preferred_engine,
+            "strict_gagavatar_only": bool(settings.GAGAVATAR_STRICT_ONLY or not settings.AVATAR_ALLOW_LOCAL_FALLBACK),
             "remote_service_url": remote_url,
             "remote_healthy": remote_healthy,
             "remote_detail": remote_detail,
             "local_gagavatar_available": local_ok,
             "local_gagavatar_error": local_err,
-            "local_fallback_enabled": bool(settings.AVATAR_ALLOW_LOCAL_FALLBACK),
+            "cuda_available": self._local_gag_info.get("cuda_available", False),
+            "cuda_device": self._local_gag_info.get("cuda_device"),
+            "local_fallback_enabled": False,
             "output_dir": str(self.output_dir),
         }
 
@@ -145,8 +129,10 @@ class GAGAvatarService:
         avatar_uid = uuid.uuid4().hex[:12]
         avatar_dir = self.output_dir / avatar_uid
         sprites_dir = avatar_dir / "sprites"
+        mouth_dir = avatar_dir / "mouth"
         avatar_dir.mkdir(parents=True, exist_ok=True)
         sprites_dir.mkdir(parents=True, exist_ok=True)
+        mouth_dir.mkdir(parents=True, exist_ok=True)
 
         source_path = avatar_dir / "source.jpg"
         preview_path = avatar_dir / "preview.png"
@@ -161,16 +147,37 @@ class GAGAvatarService:
             src_pil=src_pil,
             style=style_clean,
             expressions=expressions_list,
+            avatar_key=avatar_uid,
             require_face=require_face,
         )
 
-        # Persist portrait and per-expression sprites cleanly
+        # Persist portrait, expression sprites (including natural blink), mouth frames & tracked FLAME feature
         gen_result["portrait_pil"].save(preview_path, format="PNG")
-        expr_files: Dict[str, str] = {}
-        for expr_key, sprite_pil in gen_result["sprites_pil"].items():
+        expr_files: Dict[str, Any] = {}
+        for expr_key, sprite_pil in (gen_result.get("sprites_pil") or {}).items():
             fname = f"{expr_key}.png"
             sprite_pil.save(sprites_dir / fname, format="PNG")
             expr_files[expr_key] = fname
+
+        mouth_manifest: Dict[str, List[int]] = {}
+        for expr_key, mouth_imgs in (gen_result.get("mouth_pil") or {}).items():
+            levels: List[int] = [0]
+            for lvl_idx, mouth_img in enumerate(mouth_imgs, start=1):
+                mouth_img.save(mouth_dir / f"{expr_key}_{lvl_idx}.png", format="PNG")
+                levels.append(lvl_idx)
+            mouth_manifest[expr_key] = levels
+        if mouth_manifest:
+            expr_files["_mouth"] = mouth_manifest
+
+        tracked_feature = gen_result.get("tracked_feature")
+        if tracked_feature is not None:
+            feat_path = avatar_dir / "tracked_feature.pt"
+            if isinstance(tracked_feature, (bytes, bytearray)):
+                feat_path.write_bytes(bytes(tracked_feature))
+            else:
+                import torch
+
+                await asyncio.to_thread(torch.save, tracked_feature, feat_path)
 
         profile = AvatarProfile(
             user_id=user_id,
@@ -202,34 +209,38 @@ class GAGAvatarService:
         src_pil: Image.Image,
         style: str,
         expressions: List[str],
-        require_face: bool,
+        avatar_key: str,
+        require_face: bool = True,
     ) -> Dict[str, Any]:
         # 1. Try remote GAGAvatar GPU microservice if configured
         remote_url = (settings.GAGAVATAR_SERVICE_URL or "").strip()
         if remote_url:
             try:
-                return await self._generate_via_remote_service(remote_url, image_bytes, expressions)
-            except Exception as exc:
-                logger.warning(f"Remote GAGAvatar service failed ({exc}); checking next engine")
-
-        # 2. Try local xg-chu/GAGAvatar runtime if CUDA + repo/package available
-        local_ok, _ = self._probe_local_gagavatar()
-        if local_ok:
-            try:
-                return await asyncio.to_thread(
-                    self._generate_via_local_gagavatar, src_pil, style, expressions
+                return await self._generate_via_remote_service(
+                    remote_url=remote_url,
+                    image_bytes=image_bytes,
+                    expressions=expressions,
+                    style=style,
                 )
+            except ValueError:
+                raise
             except Exception as exc:
-                logger.warning(f"Local GAGAvatar runtime failed ({exc}); falling back if allowed")
+                logger.warning(f"Remote GAGAvatar service failed ({exc}); checking local GAGAvatar engine")
 
-        # 3. CPU UniFace landmark + expression sprite fallback
-        if not settings.AVATAR_ALLOW_LOCAL_FALLBACK:
+        # 2. Local xg-chu/GAGAvatar CUDA runtime (sole local avatar engine; zero non-GAGAvatar fallback)
+        local_ok, local_err = self._probe_local_gagavatar()
+        if not local_ok:
             raise RuntimeError(
-                "GAGAvatar GPU engine is unavailable and AVATAR_ALLOW_LOCAL_FALLBACK is disabled."
+                f"GAGAvatar engine is unavailable ({local_err or 'CUDA or weights missing'}). "
+                "Local CPU/OpenCV fallback is disabled."
             )
 
         return await asyncio.to_thread(
-            self._generate_via_uniface_fallback, src_pil, style, expressions, require_face
+            self._generate_via_local_gagavatar,
+            src_pil,
+            style,
+            expressions,
+            avatar_key,
         )
 
     async def _generate_via_remote_service(
@@ -237,14 +248,18 @@ class GAGAvatarService:
         remote_url: str,
         image_bytes: bytes,
         expressions: List[str],
+        style: str = "realistic",
     ) -> Dict[str, Any]:
         url = f"{remote_url.rstrip('/')}/create"
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
                 url,
                 files={"file": ("avatar_source.jpg", image_bytes, "image/jpeg")},
-                data={"expressions": ",".join(expressions)},
+                data={"expressions": ",".join(expressions), "style": style},
             )
+            if resp.status_code == 422:
+                detail = resp.json().get("detail", "No clear face detected by GAGAvatar tracker.")
+                raise ValueError(detail)
             resp.raise_for_status()
             payload = resp.json()
 
@@ -253,10 +268,23 @@ class GAGAvatarService:
         for expr_key, b64_img in (payload.get("sprites_b64") or {}).items():
             sprites_pil[expr_key] = Image.open(io.BytesIO(base64.b64decode(b64_img))).convert("RGB")
 
+        mouth_pil: Dict[str, List[Image.Image]] = {}
+        for expr_key, b64_list in (payload.get("mouth_b64") or {}).items():
+            mouth_pil[expr_key] = [
+                Image.open(io.BytesIO(base64.b64decode(item))).convert("RGB")
+                for item in (b64_list or [])
+            ]
+
+        tracked_bytes: Optional[bytes] = None
+        if payload.get("tracked_feature_b64"):
+            tracked_bytes = base64.b64decode(payload["tracked_feature_b64"])
+
         return {
             "engine": payload.get("engine", "gagavatar_remote"),
             "portrait_pil": portrait_pil,
             "sprites_pil": sprites_pil,
+            "mouth_pil": mouth_pil,
+            "tracked_feature": tracked_bytes,
             "landmarks": payload.get("landmarks") or self._default_landmarks(),
         }
 
@@ -265,22 +293,17 @@ class GAGAvatarService:
         src_pil: Image.Image,
         style: str,
         expressions: List[str],
+        avatar_key: str = "avatar",
     ) -> Dict[str, Any]:
-        """Run local xg-chu/GAGAvatar inference when repo + CUDA + FLAME weights exist."""
-        # If local model assets aren't present yet, delegate portrait landmarks cleanly or raise
-        model_dir = Path(settings.GAGAVATAR_MODEL_PATH)
-        if not model_dir.exists():
-            raise FileNotFoundError(
-                f"GAGAvatar checkpoint directory missing at '{model_dir}'. "
-                "Run gagavatar-assets download or use remote worker."
-            )
-        # Canonical 512x512 crop + normalized sprites seeded via FLAME parameters
-        # when checkpoint inference is invoked in full CUDA worker mode
-        res = self._generate_via_uniface_fallback(src_pil, style, expressions, require_face=True)
-        res["engine"] = "gagavatar"
-        return res
+        """Run local xg-chu/GAGAvatar CoreEngine tracker + 3DGS neural renderer."""
+        return get_gagavatar_engine().track_and_generate_avatar(
+            src_pil=src_pil,
+            style=style,
+            expressions=expressions,
+            avatar_key=avatar_key,
+        )
 
-    # ── UniFace + OpenCV Local Portrait & Expression Engine ──────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     @staticmethod
     def _decode_image_pil(image_bytes: bytes) -> Image.Image:
@@ -300,316 +323,6 @@ class GAGAvatarService:
             "mouth_width": 0.22,
         }
 
-    def _detect_face_and_landmarks(
-        self,
-        img_bgr: np.ndarray,
-        require_face: bool = True,
-    ) -> Tuple[Tuple[int, int, int, int], Optional[np.ndarray]]:
-        """Detect face bounding box and optional 5 keypoints using UniFace then OpenCV Haar."""
-        h, w = img_bgr.shape[:2]
-
-        # 1. Try UniFace SCRFD analyzer
-        try:
-            from app.websocket.handlers import _get_face_service
-            face_svc = _get_face_service()
-            if face_svc._analyzer is None:
-                from uniface import FaceAnalyzer
-                face_svc._analyzer = FaceAnalyzer()
-            if face_svc._analyzer != "disabled":
-                faces = face_svc._analyzer.analyze(img_bgr)
-                if faces:
-                    best = max(faces, key=lambda f: float(f.bbox[2] - f.bbox[0]) * float(f.bbox[3] - f.bbox[1]))
-                    x1, y1, x2, y2 = [int(round(v)) for v in best.bbox[:4]]
-                    kps = getattr(best, "kps", None)
-                    if kps is not None:
-                        kps_arr = np.asarray(kps, dtype=np.float32)
-                        if kps_arr.shape[0] >= 5:
-                            return (x1, y1, x2, y2), kps_arr[:5]
-                    return (x1, y1, x2, y2), None
-        except Exception as exc:
-            logger.debug(f"UniFace detection notice in AvatarService: {exc}")
-
-        # 2. Try OpenCV Haar Cascade secondary detector
-        try:
-            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            if os.path.exists(cascade_path):
-                detector = cv2.CascadeClassifier(cascade_path)
-                gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-                rects = detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(36, 36))
-                if len(rects) > 0:
-                    x, y, rw, rh = max(rects, key=lambda r: r[2] * r[3])
-                    return (int(x), int(y), int(x + rw), int(y + rh)), None
-        except Exception as exc:
-            logger.debug(f"OpenCV Haar detection notice in AvatarService: {exc}")
-
-        if require_face:
-            raise ValueError(
-                "لم يتم العثور على وجه واضح في الصورة. من فضلك التقط صورة أمامية بإضاءة جيدة."
-            )
-
-        # Fallback centered portrait crop when caller opted out of strict face detection
-        side = min(h, w)
-        cx, cy = w // 2, h // 2
-        half = max(16, int(side * 0.4))
-        return (
-            max(0, cx - half),
-            max(0, cy - half),
-            min(w, cx + half),
-            min(h, cy + half),
-        ), None
-
-    def _generate_via_uniface_fallback(
-        self,
-        src_pil: Image.Image,
-        style: str,
-        expressions: List[str],
-        require_face: bool,
-    ) -> Dict[str, Any]:
-        img_rgb = np.array(src_pil)
-        img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
-        h, w = img_bgr.shape[:2]
-
-        bbox, kps = self._detect_face_and_landmarks(img_bgr, require_face=require_face)
-        x1, y1, x2, y2 = bbox
-        fw = max(20, x2 - x1)
-        fh = max(20, y2 - y1)
-
-        # Square portrait framing around head & upper shoulders (avatar framing)
-        cx = (x1 + x2) / 2.0
-        cy = y1 + fh * 0.48
-        crop_side = max(fw, fh) * 1.75
-        half = crop_side / 2.0
-
-        sx1 = int(round(cx - half))
-        sy1 = int(round(cy - half * 1.04))
-        sx2 = int(round(sx1 + crop_side))
-        sy2 = int(round(sy1 + crop_side))
-
-        # Reflect/replicate border padding so off-center photos stay cleanly square
-        pad_left = max(0, -sx1)
-        pad_top = max(0, -sy1)
-        pad_right = max(0, sx2 - w)
-        pad_bottom = max(0, sy2 - h)
-        if any(p > 0 for p in (pad_left, pad_top, pad_right, pad_bottom)):
-            img_bgr = cv2.copyMakeBorder(
-                img_bgr, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_REPLICATE
-            )
-            sx1 += pad_left
-            sx2 += pad_left
-            sy1 += pad_top
-            sy2 += pad_top
-            x1 += pad_left
-            x2 += pad_left
-            y1 += pad_top
-            y2 += pad_top
-            if kps is not None:
-                kps = kps.copy()
-                kps[:, 0] += pad_left
-                kps[:, 1] += pad_top
-
-        cropped = img_bgr[sy1:sy2, sx1:sx2]
-        if cropped.size == 0:
-            cropped = img_bgr
-            sx1, sy1, sx2, sy2 = 0, 0, img_bgr.shape[1], img_bgr.shape[0]
-
-        crop_w = max(1.0, float(sx2 - sx1))
-        crop_h = max(1.0, float(sy2 - sy1))
-
-        # Compute normalized [0..1] landmarks inside the 512x512 portrait
-        if kps is not None and len(kps) >= 5:
-            le = [round(float((kps[0][0] - sx1) / crop_w), 4), round(float((kps[0][1] - sy1) / crop_h), 4)]
-            re_ = [round(float((kps[1][0] - sx1) / crop_w), 4), round(float((kps[1][1] - sy1) / crop_h), 4)]
-            nose = [round(float((kps[2][0] - sx1) / crop_w), 4), round(float((kps[2][1] - sy1) / crop_h), 4)]
-            lm = [round(float((kps[3][0] - sx1) / crop_w), 4), round(float((kps[3][1] - sy1) / crop_h), 4)]
-            rm = [round(float((kps[4][0] - sx1) / crop_w), 4), round(float((kps[4][1] - sy1) / crop_h), 4)]
-            mouth = [round((lm[0] + rm[0]) / 2.0, 4), round((lm[1] + rm[1]) / 2.0, 4)]
-            eye_dist = abs(re_[0] - le[0])
-            mouth_dist = abs(rm[0] - lm[0])
-            landmarks = {
-                "left_eye": [float(np.clip(le[0], 0.15, 0.85)), float(np.clip(le[1], 0.15, 0.85))],
-                "right_eye": [float(np.clip(re_[0], 0.15, 0.85)), float(np.clip(re_[1], 0.15, 0.85))],
-                "nose": [float(np.clip(nose[0], 0.2, 0.8)), float(np.clip(nose[1], 0.2, 0.8))],
-                "mouth": [float(np.clip(mouth[0], 0.2, 0.8)), float(np.clip(mouth[1], 0.35, 0.9))],
-                "left_mouth": lm,
-                "right_mouth": rm,
-                "eye_width": round(float(np.clip(eye_dist * 0.45, 0.06, 0.16)), 4),
-                "mouth_width": round(float(np.clip(max(mouth_dist, eye_dist * 0.85), 0.12, 0.32)), 4),
-            }
-        else:
-            # Estimate facial proportions directly from bounding box
-            bx1 = (x1 - sx1) / crop_w
-            by1 = (y1 - sy1) / crop_h
-            bfw = (x2 - x1) / crop_w
-            bfh = (y2 - y1) / crop_h
-            landmarks = {
-                "left_eye": [round(float(np.clip(bx1 + bfw * 0.32, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.38, 0.2, 0.8)), 4)],
-                "right_eye": [round(float(np.clip(bx1 + bfw * 0.68, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.38, 0.2, 0.8)), 4)],
-                "nose": [round(float(np.clip(bx1 + bfw * 0.50, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.58, 0.2, 0.8)), 4)],
-                "mouth": [round(float(np.clip(bx1 + bfw * 0.50, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.78, 0.35, 0.9)), 4)],
-                "left_mouth": [round(float(np.clip(bx1 + bfw * 0.36, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.78, 0.35, 0.9)), 4)],
-                "right_mouth": [round(float(np.clip(bx1 + bfw * 0.64, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.78, 0.35, 0.9)), 4)],
-                "eye_width": round(float(np.clip(bfw * 0.18, 0.06, 0.16)), 4),
-                "mouth_width": round(float(np.clip(bfw * 0.34, 0.12, 0.32)), 4),
-            }
-
-        portrait_bgr = cv2.resize(cropped, (TARGET_SIZE, TARGET_SIZE), interpolation=cv2.INTER_LANCZOS4)
-        portrait_bgr = self._apply_portrait_style(portrait_bgr, landmarks, style)
-        portrait_pil = Image.fromarray(cv2.cvtColor(portrait_bgr, cv2.COLOR_BGR2RGB))
-
-        sprites_pil: Dict[str, Image.Image] = {}
-        for expr_key in expressions:
-            expr_bgr = self._synthesize_expression_frame(portrait_bgr, landmarks, expr_key, mouth_open=0.0)
-            sprites_pil[expr_key] = Image.fromarray(cv2.cvtColor(expr_bgr, cv2.COLOR_BGR2RGB))
-
-        return {
-            "engine": "uniface_fallback",
-            "portrait_pil": portrait_pil,
-            "sprites_pil": sprites_pil,
-            "landmarks": landmarks,
-        }
-
-    @staticmethod
-    def _apply_portrait_style(
-        portrait_bgr: np.ndarray,
-        landmarks: Dict[str, Any],
-        style: str,
-    ) -> np.ndarray:
-        """Apply subtle studio depth / tone polish appropriate for the chosen avatar style."""
-        h, w = portrait_bgr.shape[:2]
-        out = portrait_bgr.copy()
-
-        # Soft radial background bokeh vignette preserving face crispness
-        blurred = cv2.GaussianBlur(out, (25, 25), 0)
-        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
-        cx = landmarks["nose"][0] * w
-        cy = landmarks["nose"][1] * h
-        dist = np.sqrt(((xx - cx) / (w * 0.36)) ** 2 + ((yy - cy) / (h * 0.44)) ** 2)
-        bg_alpha = np.clip((dist - 0.88) / 0.55, 0.0, 0.65)[:, :, None]
-        out = (out.astype(np.float32) * (1.0 - bg_alpha) + blurred.astype(np.float32) * bg_alpha).astype(np.uint8)
-
-        if style == "studio_3d":
-            # Smooth skin micro-contrast while keeping edges sharp (bilateral filter + gentle contrast)
-            smooth = cv2.bilateralFilter(out, d=7, sigmaColor=42, sigmaSpace=42)
-            out = cv2.addWeighted(smooth, 0.65, out, 0.35, 0)
-            pil_img = Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB))
-            pil_img = ImageEnhance.Color(pil_img).enhance(1.12)
-            pil_img = ImageEnhance.Contrast(pil_img).enhance(1.06)
-            return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-
-        if style == "stylized":
-            smooth = cv2.bilateralFilter(out, d=9, sigmaColor=65, sigmaSpace=65)
-            pil_img = Image.fromarray(cv2.cvtColor(smooth, cv2.COLOR_BGR2RGB))
-            pil_img = ImageEnhance.Color(pil_img).enhance(1.22)
-            pil_img = ImageEnhance.Sharpness(pil_img).enhance(1.25)
-            return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-
-        return out
-
-    @staticmethod
-    def _apply_local_warp(
-        img_bgr: np.ndarray,
-        center_xy: Tuple[float, float],
-        radius: float,
-        dx: float,
-        dy: float,
-    ) -> np.ndarray:
-        """Apply smooth localized Gaussian displacement field around (center_xy) inside image."""
-        if abs(dx) < 0.05 and abs(dy) < 0.05:
-            return img_bgr
-        h, w = img_bgr.shape[:2]
-        cx, cy = center_xy
-        x0 = max(0, int(cx - radius - 4))
-        x1 = min(w, int(cx + radius + 4))
-        y0 = max(0, int(cy - radius - 4))
-        y1 = min(h, int(cy + radius + 4))
-        if x1 <= x0 or y1 <= y0:
-            return img_bgr
-
-        map_x, map_y = np.meshgrid(np.arange(x0, x1, dtype=np.float32), np.arange(y0, y1, dtype=np.float32))
-        r2 = ((map_x - cx) ** 2 + (map_y - cy) ** 2) / max(1.0, radius ** 2)
-        weight = np.exp(-2.6 * r2) * (r2 < 1.5).astype(np.float32)
-
-        src_x = np.clip(map_x - dx * weight - x0, 0, (x1 - x0) - 1)
-        src_y = np.clip(map_y - dy * weight - y0, 0, (y1 - y0) - 1)
-
-        out = img_bgr.copy()
-        patch = img_bgr[y0:y1, x0:x1]
-        warped = cv2.remap(patch, src_x, src_y, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-        out[y0:y1, x0:x1] = warped
-        return out
-
-    @classmethod
-    def _synthesize_expression_frame(
-        cls,
-        portrait_bgr: np.ndarray,
-        landmarks: Dict[str, Any],
-        expression: str,
-        mouth_open: float = 0.0,
-    ) -> np.ndarray:
-        """Synthesize facial micro-expression & mouth opening frame directly from landmarks."""
-        h, w = portrait_bgr.shape[:2]
-        out = portrait_bgr.copy()
-
-        le = (landmarks["left_eye"][0] * w, landmarks["left_eye"][1] * h)
-        re_ = (landmarks["right_eye"][0] * w, landmarks["right_eye"][1] * h)
-        mx, my = landmarks["mouth"][0] * w, landmarks["mouth"][1] * h
-        mw = float(landmarks.get("mouth_width", 0.20)) * w
-        ew = float(landmarks.get("eye_width", 0.10)) * w
-        lc = (mx - mw * 0.45, my)
-        rc = (mx + mw * 0.45, my)
-
-        # Expression-driven mouth corners / cheek / brow subtle warps
-        if expression in ("happy", "wave", "like", "love"):
-            lift = -7.0 if expression != "happy" else -9.0
-            out = cls._apply_local_warp(out, lc, mw * 0.52, -3.5, lift)
-            out = cls._apply_local_warp(out, rc, mw * 0.52, 3.5, lift)
-        elif expression == "laugh":
-            out = cls._apply_local_warp(out, lc, mw * 0.58, -5.0, -11.0)
-            out = cls._apply_local_warp(out, rc, mw * 0.58, 5.0, -11.0)
-            mouth_open = max(mouth_open, 0.32)
-        elif expression == "sad":
-            out = cls._apply_local_warp(out, lc, mw * 0.48, 2.0, 6.5)
-            out = cls._apply_local_warp(out, rc, mw * 0.48, -2.0, 6.5)
-            out = cls._apply_local_warp(out, (le[0] + ew * 0.35, le[1] - ew * 0.8), ew * 1.1, 0.0, -3.5)
-            out = cls._apply_local_warp(out, (re_[0] - ew * 0.35, re_[1] - ew * 0.8), ew * 1.1, 0.0, -3.5)
-        elif expression == "surprised":
-            out = cls._apply_local_warp(out, (le[0], le[1] - ew * 0.85), ew * 1.3, 0.0, -7.5)
-            out = cls._apply_local_warp(out, (re_[0], re_[1] - ew * 0.85), ew * 1.3, 0.0, -7.5)
-            mouth_open = max(mouth_open, 0.45)
-        elif expression == "angry":
-            out = cls._apply_local_warp(out, (le[0] + ew * 0.55, le[1] - ew * 0.7), ew * 1.2, 4.0, 6.0)
-            out = cls._apply_local_warp(out, (re_[0] - ew * 0.55, re_[1] - ew * 0.7), ew * 1.2, -4.0, 6.0)
-        elif expression == "thinking":
-            out = cls._apply_local_warp(out, (re_[0], re_[1] - ew * 0.8), ew * 1.2, 0.0, -5.5)
-            out = cls._apply_local_warp(out, (mx + mw * 0.15, my), mw * 0.5, 4.5, -2.5)
-        elif expression == "wink":
-            out = cls._apply_local_warp(out, (le[0], le[1] - ew * 0.45), ew * 1.1, 0.0, ew * 0.45)
-            out = cls._apply_local_warp(out, (le[0], le[1] + ew * 0.45), ew * 1.1, 0.0, -ew * 0.45)
-            out = cls._apply_local_warp(out, lc, mw * 0.48, -3.0, -6.5)
-            out = cls._apply_local_warp(out, rc, mw * 0.48, 3.0, -6.5)
-        elif expression == "sleepy":
-            for ex, ey in (le, re_):
-                out = cls._apply_local_warp(out, (ex, ey - ew * 0.45), ew * 1.1, 0.0, ew * 0.55)
-                out = cls._apply_local_warp(out, (ex, ey + ew * 0.45), ew * 1.1, 0.0, -ew * 0.35)
-
-        # Jaw / lip opening displacement for active speaking frames
-        if mouth_open > 0.02:
-            jaw_shift = float(np.clip(mouth_open, 0.0, 1.0)) * (mw * 0.24)
-            out = cls._apply_local_warp(out, (mx, my + mw * 0.16), mw * 0.65, 0.0, jaw_shift)
-
-        # Subtle warm/cool color tone modulation (very delicate, natural)
-        if expression == "love":
-            warm = out.astype(np.float32)
-            warm[:, :, 2] = np.clip(warm[:, :, 2] * 1.04 + 4.0, 0, 255)
-            out = warm.astype(np.uint8)
-        elif expression == "sad":
-            cool = out.astype(np.float32)
-            cool[:, :, 0] = np.clip(cool[:, :, 0] * 1.04 + 3.0, 0, 255)
-            cool[:, :, 2] = np.clip(cool[:, :, 2] * 0.96, 0, 255)
-            out = cool.astype(np.uint8)
-
-        return out
-
     # ── Render Animation / Mouth Movement Endpoint ───────────────────────────
 
     async def render_avatar_animation(
@@ -620,7 +333,7 @@ class GAGAvatarService:
         duration_ms: int = 1200,
         output_format: str = "gif",
     ) -> Dict[str, Any]:
-        """Generate animated facial expression & lip-sync preview for an AvatarProfile."""
+        """Render neural facial expression & jaw lip-sync animation solely with xg-chu/GAGAvatar."""
         spec = resolve_expression_spec(expression_or_emoji)
         expr = spec["expression"]
 
@@ -631,48 +344,101 @@ class GAGAvatarService:
         fmt = "png" if output_format.lower() == "png" else "gif"
         filename = f"render_{expr}_{uuid.uuid4().hex[:8]}.{fmt}"
         out_path = renders_dir / filename
+        style = avatar.style or "realistic"
 
-        # Try remote GPU render first when configured
         remote_url = (settings.GAGAVATAR_SERVICE_URL or "").strip()
         rendered_remote = False
-        if remote_url and fmt == "png":
+        if remote_url:
             try:
-                async with httpx.AsyncClient(timeout=45.0) as client:
-                    resp = await client.post(
-                        f"{remote_url.rstrip('/')}/render",
-                        files={"file": ("source.jpg", Path(avatar.source_photo_path).read_bytes(), "image/jpeg")},
-                        data={"expression": expr, "mouth_open": str(mouth_open)},
-                    )
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        frame_bytes = base64.b64decode(data["frame_b64"])
-                        out_path.write_bytes(frame_bytes)
+                source_bytes = Path(avatar.source_photo_path).read_bytes()
+                async with httpx.AsyncClient(timeout=90.0) as client:
+                    if fmt == "png":
+                        resp = await client.post(
+                            f"{remote_url.rstrip('/')}/render",
+                            files={"file": ("source.jpg", source_bytes, "image/jpeg")},
+                            data={"expression": expr, "mouth_open": str(mouth_open), "style": style},
+                        )
+                        if resp.status_code == 200:
+                            frame_bytes = base64.b64decode(resp.json()["frame_b64"])
+                            await asyncio.to_thread(out_path.write_bytes, frame_bytes)
+                            rendered_remote = True
+                    else:
+                        steps = 6
+                        frames_rgb: List[np.ndarray] = []
+                        for idx in range(steps):
+                            phase = idx / max(1, steps - 1)
+                            wave = float(abs(np.sin(phase * np.pi * 2.5))) * float(np.clip(mouth_open, 0.15, 0.95))
+                            resp = await client.post(
+                                f"{remote_url.rstrip('/')}/render",
+                                files={"file": ("source.jpg", source_bytes, "image/jpeg")},
+                                data={"expression": expr, "mouth_open": str(wave), "style": style},
+                            )
+                            resp.raise_for_status()
+                            frame_pil = Image.open(
+                                io.BytesIO(base64.b64decode(resp.json()["frame_b64"]))
+                            ).convert("RGB")
+                            frames_rgb.append(np.asarray(frame_pil, dtype=np.uint8))
+                        await asyncio.to_thread(
+                            imageio.mimsave,
+                            str(out_path),
+                            frames_rgb,
+                            format="GIF",
+                            duration=0.10,
+                            loop=0,
+                        )
                         rendered_remote = True
             except Exception as exc:
                 logger.warning(f"Remote GAGAvatar /render notice: {exc}")
 
         if not rendered_remote:
-            landmarks = self.parse_landmarks(avatar)
-            portrait_bgr = await asyncio.to_thread(cv2.imread, avatar.avatar_preview_path)
-            if portrait_bgr is None:
-                raise FileNotFoundError(f"Avatar preview not found: {avatar.avatar_preview_path}")
+            local_ok, local_err = self._probe_local_gagavatar()
+            if not local_ok:
+                raise RuntimeError(
+                    f"GAGAvatar CUDA runtime is unavailable for rendering ({local_err}). "
+                    "Local OpenCV/CPU fallback is disabled."
+                )
+
+            engine = get_gagavatar_engine()
+            feat_path = avatar_dir / "tracked_feature.pt"
+
+            def _load_or_track_feature() -> Dict[str, Any]:
+                import torch
+
+                if feat_path.exists():
+                    return torch.load(feat_path, map_location="cpu", weights_only=False)
+                src_path = Path(avatar.source_photo_path)
+                if not src_path.exists():
+                    raise FileNotFoundError(f"Source portrait not found: {src_path}")
+                with Image.open(src_path) as im:
+                    src_pil = im.convert("RGB")
+                with engine._gpu_lock:
+                    feat = engine._track_pil_image(src_pil, f"{avatar_dir.name}.png")
+                torch.save(feat, feat_path)
+                return feat
+
+            tracked_feature = await asyncio.to_thread(_load_or_track_feature)
 
             if fmt == "png":
-                frame_bgr = await asyncio.to_thread(
-                    self._synthesize_expression_frame, portrait_bgr, landmarks, expr, mouth_open
+                frame_pil = await asyncio.to_thread(
+                    engine.render_expression_frame,
+                    tracked_feature=tracked_feature,
+                    expression=expr,
+                    mouth_open=mouth_open,
+                    avatar_id=f"avatar_{avatar.id}",
+                    style=style,
                 )
-                await asyncio.to_thread(cv2.imwrite, str(out_path), frame_bgr)
+                await asyncio.to_thread(frame_pil.save, str(out_path), "PNG")
             else:
-                steps = max(6, min(18, duration_ms // 100))
-                frames_rgb: List[np.ndarray] = []
-                for idx in range(steps):
-                    phase = idx / max(1, steps - 1)
-                    # Smooth speaking envelope across frames
-                    wave = float(abs(np.sin(phase * np.pi * 3.0))) * float(np.clip(mouth_open, 0.15, 0.95))
-                    frame_bgr = await asyncio.to_thread(
-                        self._synthesize_expression_frame, portrait_bgr, landmarks, expr, wave
-                    )
-                    frames_rgb.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+                frames_pil = await asyncio.to_thread(
+                    engine.render_animation_frames,
+                    tracked_feature=tracked_feature,
+                    expression=expr,
+                    mouth_open=mouth_open,
+                    duration_ms=duration_ms,
+                    avatar_id=f"avatar_{avatar.id}",
+                    style=style,
+                )
+                frames_rgb = [np.asarray(im.convert("RGB"), dtype=np.uint8) for im in frames_pil]
                 await asyncio.to_thread(
                     imageio.mimsave,
                     str(out_path),
@@ -688,7 +454,7 @@ class GAGAvatarService:
             "face_emoji": spec["face_emoji"],
             "mouth_preset": spec["mouth_preset"],
             "flame_params": spec["flame_params"],
-            "engine": "gagavatar_remote" if rendered_remote else avatar.engine,
+            "engine": "gagavatar_remote" if rendered_remote else (avatar.engine or "gagavatar"),
             "format": fmt,
             "filename": filename,
             "render_url": f"/api/v1/avatar/{avatar.id}/render-file/{filename}",
@@ -858,12 +624,29 @@ class GAGAvatarService:
     @classmethod
     def serialize_avatar(cls, avatar: AvatarProfile) -> Dict[str, Any]:
         expressions_map: Dict[str, str] = {}
+        mouth_frames: Dict[str, List[str]] = {}
         try:
             raw_expr = json.loads(avatar.expressions_json or "{}")
-            for k in raw_expr.keys():
+            for k, v in raw_expr.items():
+                if k == "_mouth" and isinstance(v, dict):
+                    for m_expr, lvls in v.items():
+                        if isinstance(lvls, list):
+                            mouth_frames[m_expr] = [
+                                f"/api/v1/avatar/{avatar.id}/mouth/{m_expr}/{int(lvl)}"
+                                for lvl in lvls
+                            ]
+                    continue
+                if k.startswith("_"):
+                    continue
                 expressions_map[k] = f"/api/v1/avatar/{avatar.id}/sprite/{k}"
         except Exception:
             pass
+
+        blink_url = (
+            f"/api/v1/avatar/{avatar.id}/sprite/blink"
+            if "blink" in expressions_map
+            else None
+        )
 
         return {
             "id": avatar.id,
@@ -879,6 +662,8 @@ class GAGAvatarService:
             "preview_url": f"/api/v1/avatar/{avatar.id}/preview",
             "source_photo_url": f"/api/v1/avatar/{avatar.id}/source",
             "sprites": expressions_map,
+            "blink_sprite_url": blink_url,
+            "mouth_frames": mouth_frames,
             "landmarks": cls.parse_landmarks(avatar),
             "created_at": avatar.created_at.isoformat() if avatar.created_at else None,
             "updated_at": avatar.updated_at.isoformat() if avatar.updated_at else None,

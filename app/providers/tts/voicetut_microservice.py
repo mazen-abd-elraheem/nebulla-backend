@@ -96,11 +96,14 @@ class VoiceTutMicroserviceProvider(BaseTTSProvider):
                 except Exception:
                     actual_ref_text = None
 
-        steps = num_step or getattr(settings, "VOICETUT_NUM_STEPS", 32)
-        # Cap steps at 36 for fast response on laptop GPU
-        steps = min(steps, 36)
-        cfg = guidance_scale or getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
-        spd = speed or getattr(settings, "VOICETUT_SPEED", 1.0)
+        steps = int(num_step if num_step is not None else getattr(settings, "VOICETUT_NUM_STEPS", 14))
+        # Cap steps at configured fast ceiling (default 20) for sub-second/fast response on laptop GPU
+        max_steps = int(getattr(settings, "VOICETUT_MAX_STEPS", 20))
+        steps = max(4, min(steps, max_steps))
+        cfg = float(
+            guidance_scale if guidance_scale is not None else getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.1)
+        )
+        spd = float(speed if speed is not None else getattr(settings, "VOICETUT_SPEED", 1.0))
 
         payload = {
             "text": text,

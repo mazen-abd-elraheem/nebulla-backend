@@ -128,7 +128,8 @@ async def synthesize_voicetut(
     speaker: Optional[str] = Form(None, description="Pre-built speaker name (e.g. mohammed, yasmin, ahmed)"),
     file: Optional[UploadFile] = File(None, description="Optional audio file for zero-shot voice cloning"),
     ref_text: Optional[str] = Form(None, description="Optional transcript of the reference audio"),
-    num_steps: Optional[int] = Form(None, description="Denoising steps (default: 48 for high fidelity)"),
+    num_steps: Optional[int] = Form(None, description="Denoising steps (default: 14 fast high-fidelity, max 20 unless studio_hq=true)"),
+    studio_hq: bool = Form(False, description="Allow >20 denoising steps for manual studio override"),
     _user: Optional[str] = Depends(get_optional_user),
 ):
     """
@@ -156,8 +157,12 @@ async def synthesize_voicetut(
             _save_and_convert_to_wav(raw_bytes, ext, temp_ref_path)
             ref_audio_path = str(temp_ref_path)
 
-    steps = num_steps or getattr(settings, "VOICETUT_NUM_STEPS", 48)
-    cfg = getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.2)
+    default_steps = int(getattr(settings, "VOICETUT_NUM_STEPS", 14))
+    max_steps = int(getattr(settings, "VOICETUT_MAX_STEPS", 20))
+    steps = int(num_steps) if (num_steps is not None and int(num_steps) > 0) else default_steps
+    if not studio_hq:
+        steps = max(4, min(steps, max_steps))
+    cfg = float(getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.1))
 
     try:
         t0 = time.perf_counter()

@@ -9,10 +9,12 @@ No device talks to another device directly (design decision from doc §4).
 import asyncio
 import os
 
-# Disable TensorFlow backend in Transformers so unused TF DLLs do not consume pagefile/commit memory
+# Disable TensorFlow backend & TorchInductor/Triton compilation (unsupported on Windows without Triton)
 os.environ.setdefault("USE_TF", "0")
 os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 os.environ.setdefault("USE_TORCH", "1")
+os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
+os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 
 # Pre-initialize torchvision at startup to prevent circular import in concurrent background warmups
 try:
@@ -24,7 +26,6 @@ try:
 except Exception:
     pass
 
-import asyncio
 import json
 import re
 from contextlib import asynccontextmanager
@@ -108,6 +109,29 @@ async def _warmup_rag():
         logger.debug(f"RAG warm-up notice: {e}")
 
 
+async def _warmup_tts():
+    """Pre-warm VoiceTut-TTS on CUDA, VoiceClonePrompt caches, and Masri lexicon."""
+    try:
+        from pathlib import Path
+        from app.services.voice_clone.voice_clone_service import VoiceCloneService
+
+        svc = VoiceCloneService.get_instance()
+        samples_dir = Path("data/voice_samples")
+        sample_paths = []
+        if samples_dir.exists():
+            sample_paths = [
+                str(p.resolve())
+                for p in sorted(samples_dir.glob("personality_*.wav"))
+                if not p.stem.endswith(".opt") and p.stem.replace("personality_", "").isdigit()
+            ][:4]
+        info = await svc._xtts.warmup(sample_paths)
+        logger.info(f"✅ VoiceTut-TTS warm and ready on GPU ({info}).")
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.debug(f"TTS warm-up notice: {e}")
+
+
 async def _warmup_cloned_greeting():
     """Pre-caches the cloned voice greeting for instant (0ms) playback on connect."""
     try:
@@ -127,7 +151,6 @@ async def _warmup_cloned_greeting():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
-    import asyncio
     logger.info("🚀 Nebula backend starting up…")
     await init_db()
     warmup_tasks = [
@@ -135,6 +158,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_warmup_ollama()),
         asyncio.create_task(_warmup_rag()),
         asyncio.create_task(_warmup_stt()),
+        asyncio.create_task(_warmup_tts()),
         asyncio.create_task(_warmup_cloned_greeting()),
     ]
 
@@ -156,9 +180,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        for t in warmup_tasks:
-            if not t.done():
-                t.cancel()
+        pending = [t for t in warmup_tasks if not t.done()]
+        for t in pending:
+            t.cancel()
+        if warmup_tasks:
+            await asyncio.gather(*warmup_tasks, return_exceptions=True)
         if scheduler is not None:
             await scheduler.stop()
         logger.info("Nebula backend shutting down...")
@@ -369,6 +395,7 @@ async def health_check():
 
 
 STUDIO_HTML_PATH = Path(__file__).parent / "static" / "faces_studio.html"
+AVATAR_STUDIO_HTML_PATH = Path(__file__).parent / "static" / "avatar_studio.html"
 
 
 @app.get("/faces-ui", response_class=HTMLResponse, tags=["vision-studio"], summary="Interactive Vision Testing Studio")
@@ -379,6 +406,16 @@ async def vision_studio():
     if STUDIO_HTML_PATH.exists():
         return HTMLResponse(content=STUDIO_HTML_PATH.read_text(encoding="utf-8"))
     return HTMLResponse(content="<h3>Studio UI template not found</h3>", status_code=404)
+
+
+@app.get("/avatar-ui", response_class=HTMLResponse, tags=["avatar-studio"], summary="Interactive GAGAvatar 3D Viewer & Studio")
+@app.get("/static/avatar_studio.html", include_in_schema=False)
+@app.get("/avatar_studio.html", include_in_schema=False)
+async def avatar_studio():
+    """Interactive visual viewer and controller for generated GAGAvatar characters."""
+    if AVATAR_STUDIO_HTML_PATH.exists():
+        return HTMLResponse(content=AVATAR_STUDIO_HTML_PATH.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h3>Avatar Studio UI template not found</h3>", status_code=404)
 
 
 @app.get("/chat", response_class=HTMLResponse, tags=["chat"])

@@ -673,15 +673,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        LocaleService.instance.isArabic
-                            ? 'متصل الآن - استجابة فورية'
-                            : 'Online - Instant Response',
-                        style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF0096C7),
+                      Flexible(
+                        child: Text(
+                          LocaleService.instance.isArabic
+                              ? 'متصل الآن - استجابة فورية'
+                              : 'Online - Instant Response',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0096C7),
+                          ),
                         ),
                       ),
                     ],

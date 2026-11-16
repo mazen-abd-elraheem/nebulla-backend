@@ -20,7 +20,7 @@ connect_args = {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
+    echo=settings.SQL_ECHO,
     future=True,
     connect_args=connect_args,
 )
@@ -52,7 +52,7 @@ async def init_db() -> None:
     from sqlalchemy import text
     from app.models import (  # noqa: F401  — import to register models
         device, personality, memory, conversation, signal, calibration, tracking, log, face_profile, user,
-        contact, voiceprint, action_log, reminder, avatar_profile,
+        contact, voiceprint, action_log, reminder, avatar_profile, speaker,
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -78,6 +78,10 @@ async def init_db() -> None:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN updated_at DATETIME"))
                 if "greeting" not in cols:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN greeting VARCHAR(256)"))
+                if "image_path" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN image_path VARCHAR(256)"))
+                if "tone" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN tone VARCHAR(128) DEFAULT 'ودود وعفوي ومباشر'"))
                 try:
                     connection.execute(text("DROP INDEX IF EXISTS ix_personalities_name"))
                 except Exception as e:
@@ -162,6 +166,33 @@ async def init_db() -> None:
                     connection.execute(text("ALTER TABLE speakers ADD COLUMN created_at DATETIME"))
                 if "updated_at" not in cols:
                     connection.execute(text("ALTER TABLE speakers ADD COLUMN updated_at DATETIME"))
+
+            # Catch-all guard for SQLite: ensure any newly pulled ORM column exists before queries run
+            if connection.dialect.name == "sqlite":
+                refreshed_tables = {
+                    row[0]
+                    for row in connection.execute(
+                        text("SELECT name FROM sqlite_master WHERE type='table'")
+                    ).fetchall()
+                }
+                for table in Base.metadata.sorted_tables:
+                    if table.name not in refreshed_tables:
+                        continue
+                    existing_cols = {
+                        row[1]
+                        for row in connection.execute(
+                            text(f'PRAGMA table_info("{table.name}")')
+                        ).fetchall()
+                    }
+                    for col in table.columns:
+                        if col.name in existing_cols or col.primary_key:
+                            continue
+                        col_sql_type = col.type.compile(dialect=connection.dialect)
+                        connection.execute(
+                            text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {col_sql_type}')
+                        )
+                        existing_cols.add(col.name)
+                        logger.info(f"Auto-migrated missing column {table.name}.{col.name} ({col_sql_type})")
 
         await conn.run_sync(_migrate)
     logger.info("Database initialised")

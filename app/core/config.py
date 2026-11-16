@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # ── Database ───────────────────────────────────────────────────────────
     DATABASE_URL: str = "sqlite+aiosqlite:///./nebula.db"
+    SQL_ECHO: bool = False
 
     # ── WebSocket ──────────────────────────────────────────────────────────
     WS_HEARTBEAT_INTERVAL: int = 30  # seconds
@@ -64,13 +65,19 @@ class Settings(BaseSettings):
     # ── TTS Config (VoiceTut-TTS Studio) ───────────────────────────────────
     VOICETUT_MODEL_PATH: str = "models/voicetut-tts"
     VOICETUT_DEVICE: str = "cuda"  # "cuda" | "cpu" (RTX 4050 GPU)
-    VOICETUT_SERVICE_URL: str = "http://127.0.0.1:8001"  # Standalone studio microservice endpoint
+    VOICETUT_DTYPE: str = "float16"  # "float16" (official VoiceTut benchmark precision) | "bfloat16" | "float32"
+    VOICETUT_SERVICE_URL: str = "http://127.0.0.1:8001"  # Optional standalone microservice
+    VOICETUT_PREFER_MICROSERVICE: bool = False  # Run in-process by default (eliminates 1.5s/call dead probe)
     VOICETUT_SPEAKER: str = "mazen"
-    # Diffusion denoising steps (48 for max studio fidelity & crisp consonant transitions)
-    VOICETUT_NUM_STEPS: int = 48
-    VOICETUT_GUIDANCE_SCALE: float = 2.2
+    # Balanced sub-second / low-latency VoiceTut defaults preserving vocal likeness & Egyptian accent
+    VOICETUT_NUM_STEPS: int = 14
+    VOICETUT_MAX_STEPS: int = 20
+    VOICETUT_GUIDANCE_SCALE: float = 2.1
     VOICETUT_SPEED: float = 1.0
+    VOICETUT_T_SHIFT: float = 0.1
     VOICETUT_LANGUAGE: str = "arz"
+    VOICETUT_PREP_WORKERS: int = 4
+    VOICETUT_BATCH_CHUNKS: int = 4
     DEFAULT_VOICE_SAMPLE: str = "data/voice_samples/personality_1.wav"
     DEFAULT_VOICE_TRANSCRIPT: str = "data/voice_samples/personality_1.txt"
     TTS_MAX_NEW_TOKENS: int = 200

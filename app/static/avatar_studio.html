@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>استوديو نيبولا — عرض وتجربة GAGAvatar 3D</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #090D16;
+      --bg-surface: #0F172A;
+      --bg-elevated: #1E293B;
+      --glass-surface: rgba(15, 23, 42, 0.78);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(99, 102, 241, 0.55);
+      --indigo: #6366F1;
+      --violet: #8B5CF6;
+      --cyan: #06B6D4;
+      --emerald: #10B981;
+      --amber: #F59E0B;
+      --rose: #F43F5E;
+      --text-title: #F8FAFC;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
+      --font-sans: 'Cairo', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+      --space-1: 8px;
+      --space-2: 16px;
+      --space-3: 24px;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      min-height: 100%;
+      background-color: var(--bg-base);
+      background-image:
+        radial-gradient(circle at 18% 12%, rgba(99, 102, 241, 0.13) 0%, transparent 42%),
+        radial-gradient(circle at 82% 18%, rgba(139, 92, 246, 0.10) 0%, transparent 40%),
+        radial-gradient(circle at 50% 88%, rgba(6, 182, 212, 0.08) 0%, transparent 45%);
+      background-attachment: fixed;
+      color: var(--text-title);
+      font-family: var(--font-sans);
+      overflow-x: hidden;
+      line-height: 1.5;
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: rgba(9, 13, 22, 0.82);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: var(--space-2) var(--space-3);
+    }
+
+    .header-inner {
+      max-width: 1360px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(6, 182, 212, 0.22));
+      border: 1px solid var(--border-subtle);
+      display: grid;
+      place-items: center;
+      font-size: 20px;
+    }
+
+    .brand h1 {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--text-title);
+      letter-spacing: -0.01em;
+    }
+
+    .brand p {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      flex-wrap: wrap;
+    }
+
+    .pill-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--glass-surface);
+      border: 1px solid var(--border-subtle);
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--amber);
+    }
+
+    .dot.ready {
+      background: var(--emerald);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.65);
+    }
+
+    .dot.error {
+      background: var(--rose);
+    }
+
+    /* Interactive 5-state buttons & links */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+      color: var(--text-title);
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
+      user-select: none;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: scale(1.015);
+      filter: brightness(1.12);
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+
+    .btn:active:not(:disabled) {
+      transform: scale(0.985);
+      filter: brightness(0.95);
+    }
+
+    .btn:focus-visible {
+      outline: 2px solid var(--indigo);
+      outline-offset: 2px;
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--indigo), var(--violet));
+      border-color: rgba(139, 92, 246, 0.4);
+    }
+
+    .btn-emerald {
+      background: rgba(16, 185, 129, 0.16);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #6EE7B7;
+    }
+
+    .btn-cyan {
+      background: rgba(6, 182, 212, 0.14);
+      border-color: rgba(6, 182, 212, 0.35);
+      color: #67E8F9;
+    }
+
+    .btn-amber {
+      background: rgba(245, 158, 11, 0.14);
+      border-color: rgba(245, 158, 11, 0.35);
+      color: #FCD34D;
+    }
+
+    /* Main Grid */
+    main {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: var(--space-3);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+
+    .card {
+      background: var(--glass-surface);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: var(--space-3);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      margin-bottom: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-title);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+    }
+
+    /* Avatar Selector Strip */
+    .avatar-strip {
+      display: flex;
+      gap: var(--space-2);
+      overflow-x: auto;
+      padding-bottom: var(--space-1);
+    }
+
+    .avatar-chip {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 14px;
+      border-radius: var(--radius-md);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      cursor: pointer;
+      color: var(--text-title);
+      font-family: var(--font-sans);
+      text-align: right;
+      transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+    }
+
+    .avatar-chip:hover {
+      transform: scale(1.015);
+      background: var(--bg-elevated);
+    }
+
+    .avatar-chip:active {
+      transform: scale(0.985);
+    }
+
+    .avatar-chip:focus-visible {
+      outline: 2px solid var(--indigo);
+      outline-offset: 2px;
+    }
+
+    .avatar-chip.selected {
+      background: rgba(99, 102, 241, 0.16);
+      border-color: rgba(99, 102, 241, 0.65);
+    }
+
+    .avatar-chip img {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      object-fit: cover;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+    }
+
+    .chip-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .chip-name {
+      font-size: 0.88rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .chip-sub {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      border: 1px solid transparent;
+    }
+
+    .badge-active {
+      background: rgba(16, 185, 129, 0.16);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #6EE7B7;
+    }
+
+    .badge-pending {
+      background: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.35);
+      color: #FCD34D;
+    }
+
+    .badge-rejected {
+      background: rgba(244, 63, 94, 0.14);
+      border-color: rgba(244, 63, 94, 0.3);
+      color: #FDA4AF;
+    }
+
+    /* Two-column Workspace */
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(320px, 1.05fr) minmax(320px, 1fr);
+      gap: var(--space-3);
+      align-items: start;
+    }
+
+    @media (max-width: 980px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Avatar Stage */
+    .stage-box {
+      position: relative;
+      border-radius: var(--radius-lg);
+      background: radial-gradient(circle at 50% 35%, rgba(99, 102, 241, 0.14), var(--bg-surface) 72%);
+      border: 1px solid var(--border-subtle);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 460px;
+      padding: var(--space-2);
+    }
+
+    .stage-compare {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-2);
+      width: 100%;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .stage-compare.dual {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .portrait-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      aspect-ratio: 1 / 1;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-base);
+      display: grid;
+      place-items: center;
+    }
+
+    .portrait-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.25s ease;
+    }
+
+    .portrait-wrap.breathing img {
+      animation: breathe 4.2s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+      0%, 100% { transform: scale(1.00); }
+      50% { transform: scale(1.015); }
+    }
+
+    .frame-tag {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(9, 13, 22, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-subtle);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-title);
+      direction: ltr;
+    }
+
+    .mouth-meter {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(9, 13, 22, 0.85);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .meter-bar {
+      width: 4px;
+      height: 8px;
+      border-radius: 3px;
+      background: var(--cyan);
+      transition: height 0.08s ease;
+    }
+
+    .stage-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+      margin-top: var(--space-2);
+    }
+
+    /* Controls */
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .emoji-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: var(--space-1);
+    }
+
+    @media (max-width: 520px) {
+      .emoji-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    .expr-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 10px 8px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-title);
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: transform 0.14s ease, border-color 0.14s ease, background-color 0.14s ease;
+    }
+
+    .expr-btn:hover {
+      transform: scale(1.02);
+      background: var(--bg-elevated);
+    }
+
+    .expr-btn:active {
+      transform: scale(0.97);
+    }
+
+    .expr-btn:focus-visible {
+      outline: 2px solid var(--indigo);
+      outline-offset: 2px;
+    }
+
+    .expr-btn.active {
+      background: rgba(99, 102, 241, 0.20);
+      border-color: rgba(99, 102, 241, 0.70);
+    }
+
+    .expr-emoji {
+      font-size: 1.35rem;
+      line-height: 1;
+    }
+
+    .expr-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .field-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    input[type="text"], input[type="number"], select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-base);
+      color: var(--text-title);
+      font-family: var(--font-sans);
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--border-focus);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--indigo);
+      cursor: pointer;
+    }
+
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-1);
+    }
+
+    /* Skeleton loader */
+    .skeleton {
+      background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-elevated) 50%, var(--bg-surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.3s infinite linear;
+      border-radius: var(--radius-sm);
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: var(--space-1);
+    }
+
+    .kv-box {
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .kv-k {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+    }
+
+    .kv-v {
+      font-size: 0.84rem;
+      color: var(--text-title);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+      word-break: break-all;
+    }
+
+    .gif-panel {
+      margin-top: var(--space-2);
+      padding: var(--space-2);
+      border-radius: var(--radius-md);
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      display: none;
+      align-items: center;
+      gap: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    .gif-panel.visible {
+      display: flex;
+    }
+
+    .gif-panel img {
+      width: 132px;
+      height: 132px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      object-fit: cover;
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      z-index: 90;
+      padding: 12px 18px;
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: var(--text-title);
+      font-size: 0.85rem;
+      font-weight: 600;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">🧬</div>
+        <div>
+          <h1>استوديو نيبولا — عارض GAGAvatar 3D</h1>
+          <p>معاينة الأفاتار العصبي والتعبيرات وحركة الفم المتزامنة مع الصوت مباشرة في المتصفح</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="pill-status" id="engineStatusPill">
+          <span class="dot" id="engineDot"></span>
+          <span id="engineStatusText">Checking GAGAvatar...</span>
+        </div>
+        <a class="btn" href="/chat">💬 الدردشة</a>
+        <a class="btn" href="/faces-ui">👁️ استوديو الوجوه</a>
+        <a class="btn" href="/docs">📘 Swagger API</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Generated Avatars Strip -->
+    <section class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🎭 الأفاتارات المُولّدة</span>
+          <span class="badge badge-pending" id="avatarCountBadge">0</span>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn" id="btnRefresh" type="button">🔄 تحديث القائمة</button>
+        </div>
+      </div>
+      <div class="avatar-strip" id="avatarStrip">
+        <div class="skeleton" style="width:220px; height:62px;"></div>
+        <div class="skeleton" style="width:220px; height:62px;"></div>
+      </div>
+    </section>
+
+    <!-- Main Workspace -->
+    <section class="workspace">
+      <!-- Left/Primary Stage -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span id="selectedAvatarTitle">معاينة الأفاتار</span>
+            <span class="badge" id="selectedStatusBadge">—</span>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn" id="btnCompareToggle" type="button">🖼️ مقارنة بالصورة الأصلية</button>
+            <button class="btn" id="btnBlink" type="button">😉 رمشة عين</button>
+          </div>
+        </div>
+
+        <div class="stage-box">
+          <div class="stage-compare" id="stageCompare">
+            <div class="portrait-wrap breathing" id="avatarPortraitBox">
+              <img id="avatarMainImg" alt="GAGAvatar Live Frame" src="" />
+              <div class="frame-tag" id="frameTag">expr=neutral • mouth=0</div>
+              <div class="mouth-meter" aria-hidden="true">
+                <div class="meter-bar" id="bar0"></div>
+                <div class="meter-bar" id="bar1"></div>
+                <div class="meter-bar" id="bar2"></div>
+                <div class="meter-bar" id="bar3"></div>
+              </div>
+            </div>
+            <div class="portrait-wrap" id="sourcePhotoBox" style="display:none;">
+              <img id="sourcePhotoImg" alt="Source Photo" src="" />
+              <div class="frame-tag">source.jpg</div>
+            </div>
+          </div>
+
+          <div class="stage-toolbar">
+            <button class="btn btn-emerald" id="btnApprove" type="button">✅ اعتماد كشخصية رئيسية</button>
+            <button class="btn btn-cyan" id="btnRenderGif" type="button">🎞️ توليد حركة GIF</button>
+            <button class="btn btn-amber" id="btnRecreate" type="button">🔁 إعادة التوليد بنمط مختلف</button>
+          </div>
+        </div>
+
+        <div class="gif-panel" id="gifPanel">
+          <img id="renderedGifImg" alt="Rendered FLAME GIF" src="" />
+          <div style="flex:1; min-width:180px;">
+            <div style="font-weight:700; font-size:0.9rem; margin-bottom:4px;">ملف الحركة المُولّد (FLAME + GAGAvatar)</div>
+            <div class="mono" id="renderedGifMeta" style="font-size:0.75rem; color:var(--text-muted); word-break:break-all;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right/Controls -->
+      <div class="stack">
+        <!-- Expressions + Mouth -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">😄 التعبيرات الـ 12 وحركة الفم (GAGAvatar Neural Mouth)</div>
+          </div>
+
+          <div class="emoji-grid" id="emojiGrid"></div>
+
+          <div class="field-row" style="margin-top:16px;">
+            <div class="field-label">
+              <span>مستوى فتح الفم (Mouth Level)</span>
+              <span class="mono" id="mouthLevelLabel">0 / 3</span>
+            </div>
+            <input type="range" id="mouthSlider" min="0" max="3" step="1" value="0" />
+          </div>
+
+          <div class="field-row" style="margin-top:16px;">
+            <div class="field-label">
+              <span>تجربة الكلام وحركة الفم المتزامنة</span>
+              <span class="mono" id="ttsStatusLabel">جاهز</span>
+            </div>
+            <input type="text" id="speakText" value="أهلاً بيك! أنا أفاتار نيبولا المولّد بنموذج GAGAvatar وجاهز أتكلم معاك." />
+          </div>
+
+          <div class="row-2" style="margin-top:12px;">
+            <button class="btn btn-primary" id="btnSpeakReal" type="button">🔊 نطق بالصوت المستنسخ + فم حي</button>
+            <button class="btn btn-cyan" id="btnSimulateLipSync" type="button">🗣️ محاكاة حركة الفم فوراً</button>
+          </div>
+          <audio id="voiceAudio" crossorigin="anonymous" style="width:100%; margin-top:12px; display:none;" controls></audio>
+        </div>
+
+        <!-- Upload Photo & Generate -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">📸 رفع صورة جديدة وتوليد أفاتار GAGAvatar</div>
+          </div>
+          <form id="createForm" class="stack">
+            <div class="row-2">
+              <div class="field-row">
+                <label class="field-label" for="avatarNameInput">اسم الشخصية</label>
+                <input type="text" id="avatarNameInput" value="mazen" placeholder="مثال: مازن" />
+              </div>
+              <div class="field-row">
+                <label class="field-label" for="avatarStyleSelect">النمط (Style)</label>
+                <select id="avatarStyleSelect">
+                  <option value="realistic">realistic (واقعي 3D)</option>
+                  <option value="studio_3d">studio_3d (استوديو 3D)</option>
+                  <option value="stylized">stylized (سينمائي)</option>
+                </select>
+              </div>
+            </div>
+            <div class="field-row">
+              <label class="field-label" for="photoFileInput">صورة وجه أمامية واضحة (JPG / PNG)</label>
+              <input type="file" id="photoFileInput" accept="image/png,image/jpeg,image/webp" required />
+            </div>
+            <button class="btn btn-primary" id="btnCreateAvatar" type="submit">✨ تحويل الصورة بـ GAGAvatar</button>
+          </form>
+        </div>
+
+        <!-- Telemetry -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">📊 بيانات المحرك والتتبع (Telemetry)</div>
+          </div>
+          <div class="telemetry-grid" id="telemetryGrid"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+
+  <script>
+    const EXPRESSIONS = [
+      { key: 'neutral', emoji: '😐', ar: 'طبيعي' },
+      { key: 'happy', emoji: '😊', ar: 'سعيد' },
+      { key: 'laugh', emoji: '😂', ar: 'ضحك' },
+      { key: 'love', emoji: '😍', ar: 'حب' },
+      { key: 'sad', emoji: '😢', ar: 'حزين' },
+      { key: 'surprised', emoji: '😮', ar: 'مندهش' },
+      { key: 'angry', emoji: '😡', ar: 'غاضب' },
+      { key: 'thinking', emoji: '🤔', ar: 'تفكير' },
+      { key: 'wink', emoji: '😉', ar: 'غمزة' },
+      { key: 'sleepy', emoji: '😴', ar: 'نعسان' },
+      { key: 'wave', emoji: '👋', ar: 'تحية' },
+      { key: 'like', emoji: '👍', ar: 'إعجاب' },
+    ];
+
+    const state = {
+      avatars: [],
+      selected: null,
+      expression: 'neutral',
+      mouthLevel: 0,
+      isBlinking: false,
+      showSourceCompare: false,
+      preloadCache: new Map(),
+      simTimer: null,
+      blinkTimer: null,
+      audioCtx: null,
+      analyser: null,
+      rafId: null,
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function showToast(msg) {
+      const el = $('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(el._t);
+      el._t = setTimeout(() => el.classList.remove('show'), 3200);
+    }
+
+    function updateMouthMeter(level, energy = 0) {
+      const heights = [6, 10, 15, 20];
+      for (let i = 0; i < 4; i++) {
+        const bar = $(`bar${i}`);
+        if (!bar) continue;
+        const active = i <= level || (energy > 0.15 && i === 0);
+        bar.style.height = active ? `${heights[i]}px` : '4px';
+        bar.style.opacity = active ? '1' : '0.35';
+      }
+    }
+
+    function getCurrentFrameUrl() {
+      const av = state.selected;
+      if (!av) return '';
+      if (state.isBlinking && av.blink_sprite_url) {
+        return av.blink_sprite_url;
+      }
+      const mouthList = (av.mouth_frames && av.mouth_frames[state.expression]) || [];
+      if (state.mouthLevel > 0 && mouthList[state.mouthLevel]) {
+        return mouthList[state.mouthLevel];
+      }
+      if (av.sprites && av.sprites[state.expression]) {
+        return av.sprites[state.expression];
+      }
+      return av.preview_url || '';
+    }
+
+    function renderStageFrame() {
+      const av = state.selected;
+      if (!av) return;
+      const url = getCurrentFrameUrl();
+      if (url) {
+        $('avatarMainImg').src = url;
+      }
+      $('frameTag').textContent = state.isBlinking
+        ? `avatar #${av.id} • blink`
+        : `avatar #${av.id} • expr=${state.expression} • mouth=${state.mouthLevel}`;
+      $('mouthLevelLabel').textContent = `${state.mouthLevel} / 3`;
+      $('mouthSlider').value = String(state.mouthLevel);
+      updateMouthMeter(state.mouthLevel);
+    }
+
+    function preloadAvatarFrames(av) {
+      if (!av) return;
+      const urls = new Set();
+      if (av.preview_url) urls.add(av.preview_url);
+      if (av.blink_sprite_url) urls.add(av.blink_sprite_url);
+      if (av.sprites) Object.values(av.sprites).forEach((u) => urls.add(u));
+      if (av.mouth_frames) {
+        Object.values(av.mouth_frames).forEach((arr) => {
+          if (Array.isArray(arr)) arr.forEach((u) => urls.add(u));
+        });
+      }
+      urls.forEach((u) => {
+        if (!state.preloadCache.has(u)) {
+          const im = new Image();
+          im.src = u;
+          state.preloadCache.set(u, im);
+        }
+      });
+    }
+
+    function selectAvatar(av) {
+      state.selected = av;
+      preloadAvatarFrames(av);
+
+      $('selectedAvatarTitle').textContent = `#${av.id} • ${av.name || 'Nebula Avatar'}`;
+      const badge = $('selectedStatusBadge');
+      if (av.is_active) {
+        badge.className = 'badge badge-active';
+        badge.textContent = 'active';
+      } else if (av.status === 'rejected') {
+        badge.className = 'badge badge-rejected';
+        badge.textContent = 'rejected';
+      } else {
+        badge.className = 'badge badge-pending';
+        badge.textContent = av.status || 'pending_review';
+      }
+
+      $('sourcePhotoImg').src = av.source_photo_url || '';
+      $('btnApprove').disabled = Boolean(av.is_active);
+      $('gifPanel').classList.remove('visible');
+
+      renderStrip();
+      renderStageFrame();
+      renderTelemetry(av);
+    }
+
+    function renderTelemetry(av) {
+      const mouthCount = Object.values(av.mouth_frames || {}).reduce(
+        (acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0),
+        0
+      );
+      const spriteCount = Object.keys(av.sprites || {}).length;
+      const items = [
+        ['ID / Attempt', `#${av.id} (try #${av.attempt_number || 1})`],
+        ['Engine', av.engine || 'unknown'],
+        ['Style', av.style || 'realistic'],
+        ['Status / Active', `${av.status} (${av.is_active ? 'true' : 'false'})`],
+        ['Sprites Loaded', `${spriteCount} expressions`],
+        ['Neural Mouth Frames', `${mouthCount} frames`],
+        ['Preview URL', av.preview_url || '—'],
+      ];
+      $('telemetryGrid').innerHTML = items
+        .map(([k, v]) => `<div class="kv-box"><div class="kv-k">${k}</div><div class="kv-v">${v}</div></div>`)
+        .join('');
+    }
+
+    function renderStrip() {
+      const strip = $('avatarStrip');
+      if (!state.avatars.length) {
+        strip.innerHTML = '<div style="color:var(--text-muted); font-size:0.86rem;">لا توجد أفاتارات بعد — ارفع صورة بالأسفل لإنشاء أول GAGAvatar.</div>';
+        return;
+      }
+      strip.innerHTML = '';
+      state.avatars.forEach((av) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'avatar-chip' + (state.selected && state.selected.id === av.id ? ' selected' : '');
+        const badgeClass = av.is_active ? 'badge-active' : (av.status === 'rejected' ? 'badge-rejected' : 'badge-pending');
+        const badgeText = av.is_active ? 'ACTIVE' : (av.status || 'draft');
+        btn.innerHTML = `
+          <img src="${av.preview_url}" alt="Avatar #${av.id}" />
+          <div class="chip-meta">
+            <div class="chip-name">
+              <span>#${av.id} ${av.name || 'Avatar'}</span>
+              <span class="badge ${badgeClass}">${badgeText}</span>
+            </div>
+            <div class="chip-sub">${av.engine} • ${av.style}</div>
+          </div>
+        `;
+        btn.addEventListener('click', () => selectAvatar(av));
+        strip.appendChild(btn);
+      });
+    }
+
+    function renderExpressionButtons() {
+      const grid = $('emojiGrid');
+      grid.innerHTML = '';
+      EXPRESSIONS.forEach((item) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'expr-btn' + (state.expression === item.key ? ' active' : '');
+        btn.innerHTML = `<span class="expr-emoji">${item.emoji}</span><span class="expr-label">${item.key}</span>`;
+        btn.title = `${item.ar} (${item.key})`;
+        btn.addEventListener('click', () => {
+          state.expression = item.key;
+          renderExpressionButtons();
+          renderStageFrame();
+        });
+        grid.appendChild(btn);
+      });
+    }
+
+    async function loadEngineStatus() {
+      try {
+        const r = await fetch('/api/v1/avatar/status');
+        const d = await r.json();
+        const ready = Boolean(d.local_gagavatar_available || d.remote_healthy);
+        $('engineDot').className = 'dot ' + (ready ? 'ready' : 'error');
+        const gpu = d.cuda_device ? ` (${d.cuda_device})` : '';
+        $('engineStatusText').textContent = ready
+          ? `${d.preferred_engine}${gpu}`
+          : 'GAGAvatar unavailable';
+      } catch (e) {
+        $('engineDot').className = 'dot error';
+        $('engineStatusText').textContent = 'Status check failed';
+      }
+    }
+
+    async function loadAvatars(preferId = null) {
+      try {
+        const r = await fetch('/api/v1/avatar/list');
+        const d = await r.json();
+        const list = Array.isArray(d.avatars) ? d.avatars : [];
+        state.avatars = list;
+        $('avatarCountBadge').textContent = String(list.length);
+
+        let chosen = null;
+        if (preferId != null) {
+          chosen = list.find((a) => a.id === preferId) || null;
+        }
+        if (!chosen) {
+          // Prefer newest gagavatar (so newly generated pending_review drafts are shown right away)
+          chosen = list.find((a) => a.engine && a.engine.startsWith('gagavatar') && a.status === 'pending_review')
+            || list.find((a) => a.engine && a.engine.startsWith('gagavatar') && a.is_active)
+            || list.find((a) => a.engine && a.engine.startsWith('gagavatar'))
+            || list[0]
+            || null;
+        }
+        if (chosen) {
+          selectAvatar(chosen);
+        } else {
+          renderStrip();
+        }
+      } catch (e) {
+        showToast('تعذر تحميل قائمة الأفاتارات');
+      }
+    }
+
+    function triggerBlink() {
+      if (!state.selected || !state.selected.blink_sprite_url) {
+        showToast('لا يتوفر إطار رمشة لهذا الأفاتار');
+        return;
+      }
+      state.isBlinking = true;
+      renderStageFrame();
+      clearTimeout(state.blinkTimer);
+      state.blinkTimer = setTimeout(() => {
+        state.isBlinking = false;
+        renderStageFrame();
+      }, 170);
+    }
+
+    function stopSimSpeech() {
+      if (state.simTimer) {
+        clearInterval(state.simTimer);
+        state.simTimer = null;
+      }
+      if (state.rafId) {
+        cancelAnimationFrame(state.rafId);
+        state.rafId = null;
+      }
+      state.mouthLevel = 0;
+      $('ttsStatusLabel').textContent = 'جاهز';
+      renderStageFrame();
+    }
+
+    function simulateLipSync() {
+      if (!state.selected) return;
+      stopSimSpeech();
+      const pattern = [1, 2, 3, 2, 1, 3, 2, 0, 2, 3, 1, 2, 1, 0];
+      let step = 0;
+      $('ttsStatusLabel').textContent = 'محاكاة حية للفم...';
+      state.simTimer = setInterval(() => {
+        if (step >= 26) {
+          stopSimSpeech();
+          return;
+        }
+        state.mouthLevel = pattern[step % pattern.length];
+        renderStageFrame();
+        step++;
+      }, 115);
+    }
+
+    async function speakWithClonedVoice() {
+      const text = $('speakText').value.trim();
+      if (!text) return showToast('اكتب نصاً أولاً');
+      if (!state.selected) return;
+
+      stopSimSpeech();
+      const audio = $('voiceAudio');
+      audio.style.display = 'block';
+      $('ttsStatusLabel').textContent = 'جاري توليد الصوت...';
+      $('btnSpeakReal').disabled = true;
+
+      try {
+        const pid = state.selected.personality_id || 1;
+        const useStream = text.length > 75;
+        const url = `/api/v1/voice-clone/synthesize?text=${encodeURIComponent(text)}&personality_id=${pid}&num_steps=14&guidance_scale=2.1&speed=1.0&stream=${useStream}`;
+        if (useStream) {
+          audio.src = url;
+        } else {
+          const resp = await fetch(url);
+          if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}`);
+          }
+          const blob = await resp.blob();
+          const objUrl = URL.createObjectURL(blob);
+          audio.src = objUrl;
+        }
+
+        if (!state.audioCtx) {
+          state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (state.audioCtx.state === 'suspended') {
+          await state.audioCtx.resume();
+        }
+        if (!audio._sourceNode) {
+          audio._sourceNode = state.audioCtx.createMediaElementSource(audio);
+          state.analyser = state.audioCtx.createAnalyser();
+          state.analyser.fftSize = 256;
+          audio._sourceNode.connect(state.analyser);
+          state.analyser.connect(state.audioCtx.destination);
+        }
+
+        const dataArr = new Uint8Array(state.analyser.frequencyBinCount);
+        const tick = () => {
+          if (audio.paused || audio.ended) {
+            stopSimSpeech();
+            return;
+          }
+          state.analyser.getByteTimeDomainData(dataArr);
+          let sum = 0;
+          for (let i = 0; i < dataArr.length; i++) {
+            const v = (dataArr[i] - 128) / 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / dataArr.length);
+          const nextLevel = rms >= 0.14 ? 3 : (rms >= 0.08 ? 2 : (rms >= 0.03 ? 1 : 0));
+          if (nextLevel !== state.mouthLevel) {
+            state.mouthLevel = nextLevel;
+            renderStageFrame();
+          }
+          state.rafId = requestAnimationFrame(tick);
+        };
+
+        audio.onplay = () => {
+          $('ttsStatusLabel').textContent = 'يتحدث الآن';
+          tick();
+        };
+        audio.onended = stopSimSpeech;
+        await audio.play();
+      } catch (err) {
+        showToast('تعذر جلب الصوت المستنسخ — تشغيل محاكاة حركة الفم بدلاً منه');
+        simulateLipSync();
+      } finally {
+        $('btnSpeakReal').disabled = false;
+      }
+    }
+
+    async function approveSelected() {
+      const av = state.selected;
+      if (!av) return;
+      $('btnApprove').disabled = true;
+      try {
+        const r = await fetch(`/api/v1/avatar/${av.id}/approve`, { method: 'POST' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        showToast(d.message || 'تم اعتماد الأفاتار وتفعيله كشخصية رئيسية');
+        await loadAvatars(av.id);
+      } catch (e) {
+        showToast('فشل اعتماد الأفاتار');
+        $('btnApprove').disabled = false;
+      }
+    }
+
+    async function recreateSelected() {
+      const av = state.selected;
+      if (!av) return;
+      $('btnRecreate').disabled = true;
+      showToast('جاري إعادة التوليد عبر GAGAvatar...');
+      try {
+        const fd = new FormData();
+        fd.append('style', av.style === 'realistic' ? 'studio_3d' : 'realistic');
+        fd.append('reason', 'طلب المستخدم نسخة جديدة من واجهة المعاينة');
+        const r = await fetch(`/api/v1/avatar/${av.id}/recreate`, { method: 'POST', body: fd });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        showToast(d.message || 'تم إنشاء نسخة جديدة');
+        await loadAvatars(d.avatar.id);
+      } catch (e) {
+        showToast(`تعذر إعادة الإنشاء: ${e.message}`);
+      } finally {
+        $('btnRecreate').disabled = false;
+      }
+    }
+
+    async function renderAnimatedGif() {
+      const av = state.selected;
+      if (!av) return;
+      $('btnRenderGif').disabled = true;
+      showToast(`جاري توليد حركة GIF للتعبير ${state.expression}...`);
+      try {
+        const r = await fetch(`/api/v1/avatar/${av.id}/render`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expression: state.expression,
+            mouth_open: Math.max(0.35, state.mouthLevel / 3),
+            duration_ms: 1200,
+            format: 'gif',
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        $('renderedGifImg').src = `${d.render_url}?t=${Date.now()}`;
+        $('renderedGifMeta').textContent = `${d.engine} | expr=${d.expression} | ${d.render_url}`;
+        $('gifPanel').classList.add('visible');
+        showToast('تم توليد ملف الحركة GIF بنجاح');
+      } catch (e) {
+        showToast(`فشل توليد الحركة: ${e.message}`);
+      } finally {
+        $('btnRenderGif').disabled = false;
+      }
+    }
+
+    async function createAvatarSubmit(ev) {
+      ev.preventDefault();
+      const fileInput = $('photoFileInput');
+      if (!fileInput.files || !fileInput.files[0]) {
+        return showToast('اختر صورة أولاً');
+      }
+      $('btnCreateAvatar').disabled = true;
+      $('btnCreateAvatar').textContent = '⏳ جاري المعالجة على GPU (GAGAvatar)...';
+      try {
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        fd.append('name', $('avatarNameInput').value.trim() || 'User');
+        fd.append('style', $('avatarStyleSelect').value);
+        const r = await fetch('/api/v1/avatar/create', { method: 'POST', body: fd });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        showToast(d.message || 'تم توليد الأفاتار بنجاح!');
+        await loadAvatars(d.avatar.id);
+      } catch (e) {
+        showToast(`فشل توليد الأفاتار: ${e.message}`);
+      } finally {
+        $('btnCreateAvatar').disabled = false;
+        $('btnCreateAvatar').textContent = '✨ تحويل الصورة بـ GAGAvatar';
+      }
+    }
+
+    // Event Bindings
+    $('btnRefresh').addEventListener('click', () => loadAvatars(state.selected ? state.selected.id : null));
+    $('btnBlink').addEventListener('click', triggerBlink);
+    $('btnCompareToggle').addEventListener('click', () => {
+      state.showSourceCompare = !state.showSourceCompare;
+      $('sourcePhotoBox').style.display = state.showSourceCompare ? 'grid' : 'none';
+      $('stageCompare').classList.toggle('dual', state.showSourceCompare);
+    });
+    $('mouthSlider').addEventListener('input', (e) => {
+      state.mouthLevel = Number(e.target.value);
+      renderStageFrame();
+    });
+    $('btnApprove').addEventListener('click', approveSelected);
+    $('btnRenderGif').addEventListener('click', renderAnimatedGif);
+    $('btnRecreate').addEventListener('click', recreateSelected);
+    $('btnSpeakReal').addEventListener('click', speakWithClonedVoice);
+    $('btnSimulateLipSync').addEventListener('click', simulateLipSync);
+    $('createForm').addEventListener('submit', createAvatarSubmit);
+
+    // Periodic automatic natural eye-blink every 4 seconds
+    setInterval(() => {
+      if (state.selected && state.selected.blink_sprite_url && !state.simTimer) {
+        triggerBlink();
+      }
+    }, 4200);
+
+    // Boot
+    renderExpressionButtons();
+    loadEngineStatus();
+    loadAvatars();
+  </script>
+</body>
+</html>
+

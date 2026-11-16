@@ -294,6 +294,39 @@ async def serve_avatar_sprite(
     return FileResponse(str(sprite_path), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
+@router.get("/{avatar_id}/mouth/{expression}/{level}", summary="Serve GAGAvatar neural mouth-open frame PNG")
+async def serve_avatar_mouth_frame(
+    avatar_id: int,
+    expression: str,
+    level: int,
+    db: AsyncSession = Depends(get_db),
+    svc: GAGAvatarService = Depends(get_avatar_service),
+):
+    avatar = await svc.get_avatar(avatar_id, db)
+    if not avatar or not avatar.sprites_dir:
+        raise HTTPException(status_code=404, detail="ملفات حركات فم الأفاتار غير موجودة.")
+
+    safe_expr = Path(expression).name
+    safe_level = max(0, min(int(level), 3))
+    avatar_dir = Path(avatar.avatar_preview_path).parent
+
+    if safe_level == 0:
+        frame_path = Path(avatar.sprites_dir) / f"{safe_expr}.png"
+    else:
+        frame_path = avatar_dir / "mouth" / f"{safe_expr}_{safe_level}.png"
+
+    if not frame_path.exists():
+        sprite_fallback = Path(avatar.sprites_dir) / f"{safe_expr}.png"
+        if sprite_fallback.exists():
+            frame_path = sprite_fallback
+        elif Path(avatar.avatar_preview_path).exists():
+            frame_path = Path(avatar.avatar_preview_path)
+        else:
+            raise HTTPException(status_code=404, detail="إطار حركة الفم غير موجود.")
+
+    return FileResponse(str(frame_path), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
 @router.get("/{avatar_id}/render-file/{filename}", summary="Serve generated animation GIF/PNG")
 async def serve_render_artifact(
     avatar_id: int,

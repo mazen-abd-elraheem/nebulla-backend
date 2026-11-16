@@ -44,17 +44,18 @@ def main():
     print(f"⚡ 4-bit QLoRA:          {args.use_4bit}")
     print("=" * 70)
 
+    # Optional GPU training dependencies (handled gracefully below if not installed locally)
     try:
         import torch
-        from datasets import load_dataset
+        from datasets import load_dataset  # pyrefly: ignore [missing-import]
         from transformers import (
             AutoModelForCausalLM,
             AutoTokenizer,
             BitsAndBytesConfig,
             TrainingArguments,
         )
-        from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-        from trl import SFTTrainer
+        from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training  # pyrefly: ignore [missing-import]
+        from trl import SFTTrainer  # pyrefly: ignore [missing-import]
     except ImportError as e:
         print(f"\n❌ يلزم تثبيت حزم التدريب:")
         print("   pip install torch transformers datasets trl peft bitsandbytes accelerate")
@@ -139,9 +140,9 @@ def main():
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.learning_rate,
         lr_scheduler_type="cosine",
-        warmup_ratio=0.1,
+        warmup_steps=0.1,
         logging_steps=5,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         fp16=torch.cuda.is_available(),
         optim="paged_adamw_8bit" if torch.cuda.is_available() else "adamw_torch",

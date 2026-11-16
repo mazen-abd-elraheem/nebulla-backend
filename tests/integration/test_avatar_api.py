@@ -1,7 +1,7 @@
 """Integration tests for GAGAvatar REST APIs & Chat Face-Emoji + Cloned Voice pipeline."""
 
 import io
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -19,15 +19,51 @@ def _fake_photo_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _mock_gagavatar_engine() -> MagicMock:
+    engine = MagicMock()
+    engine.probe.return_value = (
+        True,
+        None,
+        {"cuda_available": True, "cuda_device": "Mock CUDA GPU"},
+    )
+
+    def _track_and_generate(src_pil, style, expressions, avatar_key):
+        sprites = {
+            expr: Image.new("RGB", (512, 512), color=(50 + i * 8, 125, 200))
+            for i, expr in enumerate(expressions)
+        }
+        sprites["blink"] = Image.new("RGB", (512, 512), color=(70, 125, 195))
+        mouth_pil = {
+            expr: [Image.new("RGB", (512, 512), color=(80 + lvl * 20, 130, 205)) for lvl in (1, 2, 3)]
+            for expr in expressions
+        }
+        return {
+            "engine": "gagavatar",
+            "portrait_pil": sprites.get("neutral", next(iter(sprites.values()))).copy(),
+            "sprites_pil": sprites,
+            "mouth_pil": mouth_pil,
+            "landmarks": GAGAvatarService._default_landmarks(),
+            "tracked_feature": {"shapecode": [0.0], "expcode": [0.0]},
+        }
+
+    engine.track_and_generate_avatar.side_effect = _track_and_generate
+    engine.render_expression_frame.return_value = Image.new("RGB", (512, 512), color=(90, 145, 215))
+    engine.render_animation_frames.return_value = [
+        Image.new("RGB", (512, 512), color=(85 + i * 12, 140, 210)) for i in range(6)
+    ]
+    return engine
+
+
 @pytest.mark.asyncio
 async def test_avatar_api_create_preview_recreate_approve_render_and_chat(tmp_path):
     await init_db()
     test_svc = GAGAvatarService(output_dir=str(tmp_path / "api_avatars"))
+    mock_engine = _mock_gagavatar_engine()
 
     with (
         patch("app.api.v1.endpoints.avatar.get_avatar_service", return_value=test_svc),
         patch("app.services.avatar.gagavatar_service.GAGAvatarService.get_instance", return_value=test_svc),
-        patch.object(test_svc, "_detect_face_and_landmarks", return_value=((60, 50, 240, 250), None)),
+        patch("app.services.avatar.gagavatar_service.get_gagavatar_engine", return_value=mock_engine),
     ):
         app.dependency_overrides.clear()
         from app.api.v1.endpoints.avatar import get_avatar_service as dep_get_svc
@@ -43,7 +79,10 @@ async def test_avatar_api_create_preview_recreate_approve_render_and_chat(tmp_pa
 
                 r_status = await client.get("/api/v1/avatar/status")
                 assert r_status.status_code == 200
-                assert "preferred_engine" in r_status.json()
+                status_payload = r_status.json()
+                assert status_payload["preferred_engine"] == "gagavatar"
+                assert status_payload["strict_gagavatar_only"] is True
+                assert status_payload["local_fallback_enabled"] is False
 
                 # 2. Upload photo -> creates pending_review draft #1
                 r_create = await client.post(
@@ -56,9 +95,12 @@ async def test_avatar_api_create_preview_recreate_approve_render_and_chat(tmp_pa
                 assert body1["status"] == "pending_review"
                 avatar1 = body1["avatar"]
                 avatar1_id = avatar1["id"]
+                assert avatar1["engine"] == "gagavatar"
                 assert avatar1["is_active"] is False
+                assert avatar1["blink_sprite_url"] == f"/api/v1/avatar/{avatar1_id}/sprite/blink"
+                assert len(avatar1["mouth_frames"]["happy"]) == 4
 
-                # Fetch preview image & sprite PNG
+                # Fetch preview image, sprite PNG, blink sprite, and mouth levels 0..3
                 r_prev = await client.get(avatar1["preview_url"])
                 assert r_prev.status_code == 200
                 assert r_prev.headers["content-type"] == "image/png"
@@ -67,6 +109,15 @@ async def test_avatar_api_create_preview_recreate_approve_render_and_chat(tmp_pa
                 r_sprite = await client.get(avatar1["sprites"]["happy"])
                 assert r_sprite.status_code == 200
                 assert r_sprite.content[:4] == b"\x89PNG"
+
+                r_blink = await client.get(avatar1["blink_sprite_url"])
+                assert r_blink.status_code == 200
+                assert r_blink.content[:4] == b"\x89PNG"
+
+                for mouth_url in avatar1["mouth_frames"]["happy"]:
+                    r_mouth = await client.get(mouth_url)
+                    assert r_mouth.status_code == 200
+                    assert r_mouth.content[:4] == b"\x89PNG"
 
                 # 3. User doesn't like draft #1 -> recreate draft #2
                 r_recreate = await client.post(
@@ -124,4 +175,14 @@ async def test_avatar_api_create_preview_recreate_approve_render_and_chat(tmp_pa
                     assert chat_data["avatar_action"]["speak_mouth"] is True
         finally:
             app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_avatar_studio_ui_route_serves_html():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/avatar-ui")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers.get("content-type", "")
+        assert "/api/v1/avatar/list" in resp.text
+        assert "GAGAvatar" in resp.text
 

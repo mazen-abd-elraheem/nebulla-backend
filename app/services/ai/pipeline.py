@@ -132,8 +132,8 @@ class StreamingThinkFilter:
 
 
 def clean_text_for_tts(text: str) -> str:
-    """Preprocess text with Egyptian Masri dialect normalizer before sending to TTS."""
-    return clean_llm_output_for_speech(text)
+    """Preprocess text with Egyptian Masri dialect normalizer before sending to VoiceTut-TTS."""
+    return clean_llm_output_for_speech(text, for_voicetut=True)
 
 
 def _extract_emotion(text: str) -> str:

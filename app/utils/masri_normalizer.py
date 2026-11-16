@@ -27,7 +27,12 @@ from app.services.avatar.emoji_actions import strip_emojis_for_speech
 # --------------------------------------------------------------------------- Core regex patterns
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _ACTION_TAG_RE = re.compile(r"\[(?:action:|gesture:|cmd:)?([\w\u0600-\u06FF]+)(?::([^\]]+))?\]", re.IGNORECASE)
-_BRACKET_TAG_RE = re.compile(r"\[[\w\u0600-\u06FF\s:_\-]+\]")
+_BRACKET_CONTROL_TAG_RE = re.compile(
+    r"\[(?:action|gesture|cmd|emotion|sfx|mood|stage)\s*:[^\]]*\]"
+    r"|\[(?:happy|sad|wave|nod|smile|laugh|chuckle|sigh|pause|beat|excited|angry|surprised|thinking|confused|wink|blush|cry|gasp|applause|shrug|clap|cheer|neutral|serious|warm|calm|proud|curious|playful|friendly)\]",
+    re.IGNORECASE,
+)
+_ANY_BRACKET_RE = re.compile(r"\[([^\]]+)\]")
 _TATWEEL_RE = re.compile(r"\u0640+")
 _DIACRITICS_RE = re.compile(r"[\u064B-\u065F\u0670]")
 _MULTISPACE_RE = re.compile(r"\s+")
@@ -233,31 +238,365 @@ _MORPHO_SYNTACTIC_TRANSFORMS: List[Tuple[re.Pattern, str]] = [
 # --------------------------------------------------------------------------- Selective Phonetic Disambiguation
 # Tashkeel applied only to phonetically ambiguous Masri vocabulary for natural TTS pronunciation
 _MASRI_PHONETIC_DISAMBIGUATION: List[Tuple[re.Pattern, str]] = [
-    (re.compile(r"\bعلشان\b"), "عَلَشانْ"),
-    (re.compile(r"\bعشان\b"), "عَشانْ"),
-    (re.compile(r"\bدلوقتي\b"), "دِلوَقْتي"),
-    (re.compile(r"\bدلوقت\b"), "دِلوَقْت"),
+    (re.compile(r"\bعلشان\b"), "عَلَشَان"),
+    (re.compile(r"\bعشان\b"), "عَشَان"),
+    (re.compile(r"\bدلوقتي\b"), "دِلْوَقْتِي"),
+    (re.compile(r"\bدلوقت\b"), "دِلْوَقْت"),
     (re.compile(r"\bإزاي\b|\bازاي\b"), "إِزَّاي"),
-    (re.compile(r"\bإيه\b|\bايه\b"), "إيهْ"),
-    (re.compile(r"\bليه\b"), "ليهْ"),
-    (re.compile(r"\bفين\b"), "فينْ"),
-    (re.compile(r"\bكده\b|\bكدة\b"), "كِدهْ"),
-    (re.compile(r"\bعايز\b|\bعاوز\b"), "عايِزْ"),
-    (re.compile(r"\bعايزة\b|\bعاوزة\b"), "عايْزَة"),
+    (re.compile(r"\bإيه\b|\bايه\b"), "إِيه"),
+    (re.compile(r"\bليه\b"), "لِيه"),
+    (re.compile(r"\bفين\b"), "فِين"),
+    (re.compile(r"\bكده\b|\bكدة\b"), "كِدَه"),
+    (re.compile(r"\bعايز\b|\bعاوز\b"), "عَايِز"),
+    (re.compile(r"\bعايزة\b|\bعاوزة\b"), "عَايْزَة"),
     (re.compile(r"\bأوي\b|\bاوي\b"), "أَوِي"),
     (re.compile(r"\bشوية\b"), "شُوَيَّة"),
     (re.compile(r"\bبكرة\b"), "بُكْرَة"),
-    (re.compile(r"\bإمبارح\b|\bامبارح\b"), "إِمْبارِح"),
-    (re.compile(r"\bالنهاردة\b"), "النَّهارْدَة"),
-    (re.compile(r"\bكويس\b"), "كُوَيِّسْ"),
+    (re.compile(r"\bإمبارح\b|\bامبارح\b"), "إِمْبَارِح"),
+    (re.compile(r"\bالنهاردة\b"), "النَّهَارْدَة"),
+    (re.compile(r"\bكويس\b"), "كُوَيِّس"),
     (re.compile(r"\bكويسة\b"), "كُوَيِّسَة"),
-    (re.compile(r"\bبص\b"), "بُصْ"),
-    (re.compile(r"\bشوف\b"), "شُوفْ"),
+    (re.compile(r"\bبص\b"), "بُصّ"),
+    (re.compile(r"\bشوف\b"), "شُوف"),
     (re.compile(r"\bتمام\b"), "تَمامْ"),
-    (re.compile(r"\bماشي\b"), "ماشِي"),
-    (re.compile(r"\bحاضر\b"), "حاضِرْ"),
+    (re.compile(r"\bماشي\b"), "مَاشِي"),
+    (re.compile(r"\bحاضر\b"), "حَاضِر"),
     (re.compile(r"\bيعني\b"), "يَعْنِي"),
 ]
+
+_BASE_MASRI_DIACRITICS_LEXICON: Dict[str, str] = {
+    # Pronouns, demonstratives & discourse markers
+    "أنا": "أَنَا",
+    "إنت": "إِنْتَ",
+    "أنت": "إِنْتَ",
+    "إنتي": "إِنْتِي",
+    "أنتي": "إِنْتِي",
+    "إنتم": "إِنْتُم",
+    "إنتو": "إِنْتُو",
+    "إنتوا": "إِنْتُوا",
+    "إحنا": "إِحْنَا",
+    "أحنا": "إِحْنَا",
+    "هو": "هُوَّ",
+    "هي": "هِيَّ",
+    "هم": "هُمَّ",
+    "هما": "هُمَّا",
+    "ده": "دَه",
+    "دي": "دِي",
+    "دول": "دُول",
+    "كده": "كِدَه",
+    "كدة": "كِدَه",
+    "يا": "يَا",
+    "يلا": "يَلَّا",
+    "طب": "طَب",
+    "طيب": "طَيِّب",
+    "بس": "بَسّ",
+    "كمان": "كَمَان",
+    "برضو": "بَرْضُو",
+    "برضه": "بَرْضُه",
+    "خالص": "خَالِص",
+    "جداً": "جِدًّا",
+    "جدا": "جِدًّا",
+    "أوي": "أَوِي",
+    "قوي": "قَوِي",
+    "بجد": "بِجَدّ",
+    "والله": "وَاللّٰه",
+    "يعني": "يَعْنِي",
+    "أكيد": "أَكِيد",
+    "فعلاً": "فِعْلًا",
+    "فعلا": "فِعْلًا",
+    "أيوه": "أَيْوَة",
+    "ايوة": "أَيْوَة",
+    "أه": "آه",
+    "آه": "آه",
+    "لأ": "لَأ",
+    "كله": "كُلُّه",
+    "كلها": "كُلَّهَا",
+    "كلهم": "كُلُّهُم",
+    "تاني": "تَانِي",
+    "هنا": "هِنَا",
+    "هناك": "هِنَاك",
+    # Question words & time expressions
+    "إيه": "إِيه",
+    "ليه": "لِيه",
+    "فين": "فِين",
+    "إزاي": "إِزَّاي",
+    "إزيك": "إِزَّيَّك",
+    "إزيكم": "إِزَّيُّكُم",
+    "إمتى": "إِمْتَى",
+    "مين": "مِين",
+    "علشان": "عَلَشَان",
+    "عشان": "عَشَان",
+    "دلوقتي": "دِلْوَقْتِي",
+    "دلوقت": "دِلْوَقْت",
+    "دحين": "دِلْوَقْتِي",  # Override built-in Gulf CSV entry so speech stays Masri
+    "شوية": "شُوَيَّة",
+    "ثواني": "ثَوَانِي",
+    "دقيقة": "دِقِيقَة",
+    "بكرة": "بُكْرَة",
+    "إمبارح": "إِمْبَارِح",
+    "النهاردة": "النَّهَارْدَة",
+    "النهارده": "النَّهَارْدَة",
+    "الوقت": "الوَقْت",
+    "لسه": "لِسَّه",
+    "خلاص": "خَلَاص",
+    # Negations, modals & common Egyptian verbs
+    "مش": "مِش",
+    "مفيش": "مَفِيش",
+    "مافيش": "مَفِيش",
+    "مبقاش": "مَبَقَاش",
+    "محدش": "مَحَدِّش",
+    "ملوش": "مَلُوش",
+    "ملهاش": "مَلْهَاش",
+    "معنديش": "مَعَنْدِيش",
+    "معندكش": "مَعَنْدَكْش",
+    "معندوش": "مَعَنْدُوش",
+    "معندناش": "مَعَنْدِنَاش",
+    "ماعرفش": "مَاعْرَفْش",
+    "معرفش": "مَعْرَفْش",
+    "ماقصدش": "مَقْصُدْش",
+    "ماتقلقش": "مَاتِقْلَقْش",
+    "متقلقش": "مَتِقْلَقْش",
+    "ماتقولش": "مَتْقُولْش",
+    "متقولش": "مَتْقُولْش",
+    "ماينفعش": "مَيِنْفَعْش",
+    "مينفعش": "مَيِنْفَعْش",
+    "مايهمكش": "مَيِهِمَّكْش",
+    "معلش": "مَعْلِشّ",
+    "معليش": "مَعْلِشّ",
+    "عادي": "عَادِي",
+    "لازم": "لَازِم",
+    "ممكن": "مُمْكِن",
+    "ينفع": "يِنْفَع",
+    "عايز": "عَايِز",
+    "عايزة": "عَايْزَة",
+    "عايزين": "عَايْزِين",
+    "عاوز": "عَاوِز",
+    "عاوزة": "عَاوْزَة",
+    "عاوزين": "عَاوْزِين",
+    "عاوزك": "عَاوْزَك",
+    "عايزك": "عَايْزَك",
+    "محتاج": "مِحْتَاج",
+    "محتاجة": "مِحْتَاجَة",
+    "عارف": "عَارِف",
+    "عارفة": "عَارْفَة",
+    "فاهم": "فَاهِم",
+    "فاهمة": "فَاهْمَة",
+    "فاكر": "فَاكِر",
+    "فاكرة": "فَاكْرَة",
+    "أقدر": "أَقْدَر",
+    "تقدر": "تِقْدَر",
+    "نقدر": "نِقْدَر",
+    "هقدر": "هَقْدَر",
+    "هتقدر": "هَتِقْدَر",
+    "هنقدر": "هَنِقْدَر",
+    "هيقدر": "هَيِقْدَر",
+    "أعمل": "أَعْمِل",
+    "تعمل": "تِعْمِل",
+    "نعمل": "نِعْمِل",
+    "هعمل": "هَعْمِل",
+    "بتعمل": "بِتِعْمِل",
+    "بنعمل": "بِنِعْمِل",
+    "اتعمل": "اتْعَمَل",
+    "هيتعمل": "هَيِتْعَمَل",
+    "أعرف": "أَعْرَف",
+    "أعرفك": "أَعْرَفَك",
+    "أعرفكم": "أَعْرَفْكُم",
+    "أعرفكو": "أَعْرَفْكُو",
+    "أعرفكوا": "أَعْرَفْكُوا",
+    "أشوف": "أَشُوف",
+    "نشوف": "نِشُوف",
+    "هشوف": "هَشُوف",
+    "هنشوف": "هَنْشُوف",
+    "هساعدك": "هَسَاعْدَك",
+    "هيكون": "هَيِكُون",
+    "هتكون": "هَتْكُون",
+    "بقولك": "بَقُولَّك",
+    "بقولكم": "بَقُولُّكُم",
+    "بقولكو": "بَقُولُّكُو",
+    "بقولكوا": "بَقُولُّكُوا",
+    "قول": "قُول",
+    "قولي": "قُولِّي",
+    "قوللي": "قُولِّي",
+    "قالي": "قَالِّي",
+    "قاللي": "قَالِّي",
+    "بص": "بُصّ",
+    "شوف": "شُوف",
+    "حاسب": "حَاسِب",
+    "خلي": "خَلِّي",
+    "خليك": "خَلِّيك",
+    "خليكي": "خَلِّيكِي",
+    "بالك": "بَالَك",
+    "لأعورك": "لَأَعَوَّرَك",
+    "لاعورك": "لَأَعَوَّرَك",
+    "هعورك": "هَعَوَّرَك",
+    "يتكلم": "يِتْكَلِّم",
+    "بيتكلم": "بِيِتْكَلِّم",
+    "بتتكلم": "بِتِتْكَلِّم",
+    "مية": "مَيَّة",
+    "المية": "المَيَّة",
+    "في": "فِي",
+    "من": "مِن",
+    "على": "عَلَى",
+    "عن": "عَن",
+    "مصري": "مَصْرِي",
+    "المصري": "المَصْرِي",
+    "مصرية": "مَصْرِيَّة",
+    "طبيعي": "طَبِيعِي",
+    "بوضوح": "بِوُضُوح",
+    "حرف": "حَرْف",
+    "يقع": "يُقَع",
+    "تقع": "تُقَع",
+    "إستنى": "اِسْتَنَّى",
+    "استنى": "اِسْتَنَّى",
+    "مستني": "مِسْتَنِّي",
+    "مستنية": "مِسْتَنِّيَّة",
+    "تعالى": "تَعَالَى",
+    "خد": "خُد",
+    "هات": "هَات",
+    # Prepositions & pronominal suffixes
+    "عندي": "عَنْدِي",
+    "عندك": "عَنْدَك",
+    "عنده": "عَنْدُه",
+    "عندها": "عَنْدَهَا",
+    "عندنا": "عَنْدِنَا",
+    "عندكم": "عَنْدُكُم",
+    "معايا": "مَعَايَا",
+    "معاك": "مَعَاك",
+    "معاكي": "مَعَاكِي",
+    "معاه": "مَعَاه",
+    "معانا": "مَعَانَا",
+    "معاكم": "مَعَاكُم",
+    "عليا": "عَلَيَّا",
+    "عليك": "عَلِيك",
+    "عليه": "عَلِيه",
+    "عليها": "عَلِيهَا",
+    "علينا": "عَلِينَا",
+    "عليكم": "عَلِيكُم",
+    "فيا": "فِيَّا",
+    "فيك": "فِيك",
+    "فيه": "فِيه",
+    "فيها": "فِيهَا",
+    "فينا": "فِينَا",
+    "فيكم": "فِيكُم",
+    "فيهم": "فِيهُم",
+    "ليا": "لِيَّا",
+    "ليك": "لِيك",
+    "ليكي": "لِيكِي",
+    "لينا": "لِينَا",
+    "ليكم": "لِيكُم",
+    "بيك": "بِيك",
+    "بينا": "بِينَا",
+    "بيكم": "بِيكُم",
+    "مني": "مِنِّي",
+    "منك": "مِنَّك",
+    "منه": "مِنُّه",
+    "مننا": "مِنِّنَا",
+    "منكم": "مِنْكُم",
+    "بتاع": "بِتَاع",
+    "بتاعت": "بِتَاعِت",
+    "بتاعي": "بِتَاعِي",
+    "بتاعتي": "بِتَاعْتِي",
+    "بتاعك": "بِتَاعَك",
+    # Common Egyptian nouns, adjectives & greetings
+    "أهلاً": "أَهْلًا",
+    "أهلا": "أَهْلًا",
+    "منور": "مِنَوَّر",
+    "منورة": "مِنَوَّرَة",
+    "غالي": "غَالِي",
+    "صاحبي": "صَاحْبِي",
+    "صديقي": "صَدِيقِي",
+    "حبيبي": "حَبِيبِي",
+    "حبيبتي": "حَبِيبْتِي",
+    "يا عم": "يَا عَمّ",
+    "عم": "عَمّ",
+    "باشا": "بَاشَا",
+    "جدعان": "جِدْعَان",
+    "أولاد": "أَوْلَاد",
+    "ولاد": "وِلَاد",
+    "الكلب": "الكَلْب",
+    "حاضر": "حَاضِر",
+    "ماشي": "مَاشِي",
+    "تمام": "تَمَام",
+    "شغال": "شَغَّال",
+    "شغالة": "شَغَّالَة",
+    "جاهز": "جَاهِز",
+    "جاهزة": "جَاهْزَة",
+    "كويس": "كُوَيِّس",
+    "كويسة": "كُوَيِّسَة",
+    "كويسين": "كُوَيِّسِين",
+    "حلو": "حِلْو",
+    "حلوة": "حِلْوَة",
+    "حلوين": "حِلْوِين",
+    "وحش": "وِحِش",
+    "جامد": "جَامِد",
+    "جامدة": "جَامْدَة",
+    "بايظ": "بَايِظ",
+    "بايظة": "بَايْظَة",
+    "غلط": "غَلَط",
+    "صح": "صَحّ",
+    "جديد": "جَدِيد",
+    "جديدة": "جَدِيدَة",
+    "قديم": "قَدِيم",
+    "كبيرة": "كِبِيرَة",
+    "صغير": "صُغَيَّر",
+    "صغيرة": "صُغَيَّرَة",
+    "أكتر": "أَكْتَر",
+    "كتير": "كِتِير",
+    "حاجة": "حَاجَة",
+    "حاجات": "حَاجَات",
+    "الدنيا": "الدُّنْيَا",
+    "الناس": "النَّاس",
+    "البيت": "البِيت",
+    "الشغل": "الشُّغْل",
+    "تجربة": "تَجْرُبَة",
+    "عملية": "عَمَلِيَّة",
+    "مستنسخ": "مُسْتَنْسَخ",
+    "الروبوت": "الرُّوبُوت",
+    "توأمك": "تَوْأَمَك",
+    "ربنا": "رَبِّنَا",
+    "تسلم": "تِسْلَم",
+    "مبروك": "مَبْرُوك",
+    "تيم": "تِيم",
+    "مازن": "مَازِن",
+    "مصطفى": "مُصْطَفَى",
+    "نيبولا": "نِيبُولَا",
+}
+
+
+def _expand_masri_lexicon(base: Dict[str, str]) -> Dict[str, str]:
+    """Expand base lexicon across hamza-less alif, taa-marbouta/ha, and alif-maqsura variants."""
+    expanded: Dict[str, str] = {}
+    for k, v in base.items():
+        clean_k = _DIACRITICS_RE.sub("", k).strip()
+        if clean_k:
+            expanded[clean_k] = v
+        # Exact hamza-stripped variant (VoiceTut strips harakat before lookup, keeping hamza intact)
+        alef_var = re.sub(r"[أإآ]", "ا", clean_k)
+        if alef_var:
+            expanded.setdefault(alef_var, v)
+        if clean_k.endswith("ة"):
+            expanded.setdefault(clean_k[:-1] + "ه", v)
+            expanded.setdefault(alef_var[:-1] + "ه", v)
+        elif clean_k.endswith("ه") and len(clean_k) > 2 and clean_k not in ("ده", "ليه", "ايه", "إيه", "عليه", "فيه", "منه", "عنده", "كله"):
+            expanded.setdefault(clean_k[:-1] + "ة", v)
+            expanded.setdefault(alef_var[:-1] + "ة", v)
+        if clean_k.endswith("ى"):
+            expanded.setdefault(clean_k[:-1] + "ي", v)
+            expanded.setdefault(alef_var[:-1] + "ي", v)
+    return expanded
+
+
+# Unified Masri lexicon registered directly into VoiceTutTTS.add_lexicon()
+# so VoiceTut's internal ArabicNormalizer retains these Egyptian harakat
+# instead of stripping them prior to tokenization.
+MASRI_DIACRITICS_LEXICON: Dict[str, str] = _expand_masri_lexicon(_BASE_MASRI_DIACRITICS_LEXICON)
+
+MASRI_CUSTOM_NAMES: Dict[str, str] = {
+    "nebula": "نِيبُولَا",
+    "nebulla": "نِيبُولَا",
+    "voicetut": "فُويس تُوت",
+    "qwencleo": "كْوِين كِلْيُو",
+}
 
 
 # --------------------------------------------------------------------------- Shielding Engine
@@ -305,7 +644,12 @@ class MasriNormalizer:
     def __init__(self):
         pass
 
-    def normalize(self, text: str) -> str:
+    def normalize(
+        self,
+        text: str,
+        apply_phonetic_tashkeel: bool = True,
+        insert_codeswitch_pause: bool = True,
+    ) -> str:
         if not text or not text.strip():
             return ""
 
@@ -382,24 +726,24 @@ class MasriNormalizer:
         # Detach Arabic prefixes (ال, بال, لل, فال, وال) from English terms (e.g. 'الID' -> 'ال ID', 'بالـAPI' -> 'بال API')
         text = re.sub(r"(^|\s)([وفلب]?ال|لل)ـ?([a-zA-Z]+)", r"\1\2 \3", text)
 
-        # Step 10: Code-Switching Natural Transition Pause
-        # Insert micro-pause (Arabic comma '،') when transitioning from English back to Arabic,
-        # but NEVER insert commas between two adjacent English words.
-        text = re.sub(r"([a-zA-Z0-9]+)\s+([\u0600-\u06FF])", r"\1، \2", text)
+        # Optional transition pause when not delegating directly to VoiceTut's native code-switcher
+        if insert_codeswitch_pause:
+            text = re.sub(r"([a-zA-Z0-9]+)\s+([\u0600-\u06FF])", r"\1، \2", text)
 
-        # Step 11: Contextual Morpho-Syntactic Transforms
+        # Step 10: Contextual Morpho-Syntactic Transforms
         for pattern, replacement in _MORPHO_SYNTACTIC_TRANSFORMS:
             text = pattern.sub(replacement, text)
 
-        # Step 12: Selective Phonetic Disambiguation for VoiceTuT
-        for pattern, replacement in _MASRI_PHONETIC_DISAMBIGUATION:
-            text = pattern.sub(replacement, text)
+        # Step 11: Selective Phonetic Disambiguation (when VoiceTut normalizer isn't handling it directly)
+        if apply_phonetic_tashkeel:
+            for pattern, replacement in _MASRI_PHONETIC_DISAMBIGUATION:
+                text = pattern.sub(replacement, text)
 
-        # Step 13: Restore shielded elements
+        # Step 12: Restore shielded elements
         text = shield.restore(text)
 
-        # Step 14: Clean up spacing and punctuation
-        text = re.sub(r"\s+([،,.!?])", r"\1", text)
+        # Step 13: Clean up spacing and punctuation
+        text = re.sub(r"\s+([،,.!?؟])", r"\1", text)
         text = _MULTISPACE_RE.sub(" ", text).strip()
         return text
 
@@ -419,12 +763,16 @@ def normalize_masri_orthography(text: str) -> str:
     return _MULTISPACE_RE.sub(" ", text).strip().lower()
 
 
-def clean_llm_output_for_speech(text: str) -> str:
+def clean_llm_output_for_speech(
+    text: str,
+    apply_phonetic_tashkeel: bool = True,
+    for_voicetut: bool = False,
+) -> str:
     """
     Extracts speech-ready text from LLM response:
     - Removes internal chain-of-thought (<think>...</think>)
     - Removes gesture and action markers ([action:nod], [happy], etc.)
-    - Removes corrupted unicode glyphs (e.g. random CJK)
+    - Removes corrupted unicode glyphs (e.g. random CJK) and markdown emphasis
     - Applies complete Egyptian Arabic Normalization & Code-Switching pipeline
     """
     if not text:
@@ -433,17 +781,26 @@ def clean_llm_output_for_speech(text: str) -> str:
     # 1. Strip thinking tags
     cleaned = _THINK_RE.sub("", text)
 
-    # 2. Strip action and gesture bracket tags
-    cleaned = _BRACKET_TAG_RE.sub("", cleaned)
+    # 2. Strip known action/gesture/emotion control bracket tags,
+    #    then unwrap any remaining square-bracketed spoken text so nothing spoken is lost.
+    cleaned = _BRACKET_CONTROL_TAG_RE.sub("", cleaned)
+    cleaned = _ANY_BRACKET_RE.sub(r"\1", cleaned)
 
     # 3. Strip face/gesture Unicode emojis (used for avatar expression, never read aloud)
     cleaned = strip_emojis_for_speech(cleaned)
 
-    # 4. Strip stray non-Arabic, non-Latin, non-punctuation symbols (e.g. CJK chars)
+    # 4. Strip markdown emphasis & stray non-Arabic/non-Latin symbols (e.g. CJK chars)
     cleaned = re.sub(r"[\u4e00-\u9fff]", "", cleaned)
+    cleaned = re.sub(r"[*_`#~]+", " ", cleaned)
 
     # 5. Apply Masri normalization + code-switching pipeline
-    cleaned = _NORMALIZER.normalize(cleaned)
+    use_tashkeel = False if for_voicetut else apply_phonetic_tashkeel
+    use_cs_pause = not for_voicetut
+    cleaned = _NORMALIZER.normalize(
+        cleaned,
+        apply_phonetic_tashkeel=use_tashkeel,
+        insert_codeswitch_pause=use_cs_pause,
+    )
 
     return cleaned
 

@@ -160,6 +160,7 @@ async def conversations_llm_voice_clone_post(
         speed=body.speed,
         guidance_scale=body.guidance_scale,
         num_steps=body.num_steps,
+        studio_hq=body.studio_hq,
         user=_user,
     )
 
@@ -173,9 +174,10 @@ async def conversations_llm_voice_clone_get(
     text: str | None = Query(None, description="نص رد الـ LLM"),
     personality_id: int | None = Query(None, description="معرف الشخصية"),
     return_json: bool = Query(False, description="إرجاع كائن JSON"),
-    speed: float | None = Query(1.15, description="سرعة النطق"),
-    guidance_scale: float | None = Query(2.6, description="مطابقة نبرة الصوت المرجعي"),
-    num_steps: int | None = Query(48, description="عدد خطوات التوليد"),
+    speed: float | None = Query(1.0, description="سرعة النطق"),
+    guidance_scale: float | None = Query(2.1, description="مطابقة نبرة الصوت المرجعي"),
+    num_steps: int | None = Query(14, description="عدد خطوات التوليد (الافتراضي السريع: 14)"),
+    studio_hq: bool = Query(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً"),
     _user: str | None = Depends(get_optional_user),
 ):
     """
@@ -189,6 +191,7 @@ async def conversations_llm_voice_clone_get(
         speed=speed,
         guidance_scale=guidance_scale,
         num_steps=num_steps,
+        studio_hq=studio_hq,
         _user=_user,
     )
 

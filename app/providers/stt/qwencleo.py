@@ -13,7 +13,9 @@ Optimised with:
 
 import asyncio
 import concurrent.futures
+import functools
 import gc
+import inspect
 import io
 import json
 import os
@@ -190,21 +192,263 @@ def _release_torch_memory() -> None:
         pass
 
 
+_qwen_compat_lock = threading.Lock()
+_qwen_compat_applied = False
+
+
+def _register_auto_class(auto_cls, key, target) -> None:
+    """Register a custom Transformers auto mapping without colliding on exist_ok."""
+    orig_reg = auto_cls.register
+    if "exist_ok" in inspect.signature(orig_reg).parameters:
+        orig_reg(key, target, exist_ok=True)
+    else:
+        orig_reg(key, target)
+
+
+def _ensure_qwen_asr_transformers_compat() -> None:
+    """
+    Shim breaking changes between transformers >=5.x and qwen_asr (built for 4.57.x)
+    strictly in-process without modifying global site-packages.
+    """
+    global _qwen_compat_applied
+    if _qwen_compat_applied:
+        return
+
+    with _qwen_compat_lock:
+        if _qwen_compat_applied:
+            return
+
+        import torch
+        import transformers.modeling_rope_utils as mru
+        import transformers.utils as tu
+        import transformers.utils.generic as tug
+        from transformers import (
+            AutoConfig,
+            AutoModel,
+            AutoModelForSpeechSeq2Seq,
+            AutoProcessor,
+        )
+
+        # 1. transformers 5.x requires check_model_inputs(func) rather than 0-arg @check_model_inputs()
+        orig_cmi = getattr(tug, "check_model_inputs", None)
+        if orig_cmi is not None and not getattr(orig_cmi, "_qwen_compat_patched", False):
+            cmi_params = inspect.signature(orig_cmi).parameters
+            if any(p.default is inspect.Parameter.empty for p in cmi_params.values()):
+                @functools.wraps(orig_cmi)
+                def _compat_check_model_inputs(*args, **kwargs):
+                    if args and callable(args[0]) and len(args) == 1 and not kwargs:
+                        return orig_cmi(args[0])
+
+                    def _decorator(fn):
+                        return orig_cmi(fn)
+
+                    return _decorator
+
+                setattr(_compat_check_model_inputs, "_qwen_compat_patched", True)
+                tug.check_model_inputs = _compat_check_model_inputs  # type: ignore[assignment]
+                if hasattr(tu, "check_model_inputs"):
+                    tu.check_model_inputs = _compat_check_model_inputs  # type: ignore[assignment]
+
+        # 2. transformers 5.x removed 'default' from ROPE_INIT_FUNCTIONS
+        rope_fns = getattr(mru, "ROPE_INIT_FUNCTIONS", None)
+        if isinstance(rope_fns, dict) and "default" not in rope_fns:
+            def _compute_default_rope(config, device=None, seq_len=None, **kwargs):
+                rope_params = getattr(config, "rope_parameters", None) or {}
+                base = getattr(config, "rope_theta", None) or rope_params.get("rope_theta", 10000.0)
+                head_dim = getattr(config, "head_dim", None) or (
+                    config.hidden_size // config.num_attention_heads
+                )
+                dim = int(head_dim * getattr(config, "partial_rotary_factor", 1.0))
+                inv_freq = 1.0 / (
+                    base
+                    ** (
+                        torch.arange(0, dim, 2, dtype=torch.int64).to(
+                            device=device, dtype=torch.float
+                        )
+                        / dim
+                    )
+                )
+                return inv_freq, 1.0
+
+            rope_fns["default"] = _compute_default_rope
+
+        # 3. qwen_asr runs Auto*.register("qwen3_asr", ...) at import time without exist_ok=True
+        saved_registers = []
+        auto_classes = (AutoConfig, AutoModel, AutoModelForSpeechSeq2Seq, AutoProcessor)
+        try:
+            for auto_cls in auto_classes:
+                orig_reg = auto_cls.register
+                saved_registers.append((auto_cls, orig_reg))
+                if "exist_ok" in inspect.signature(orig_reg).parameters:
+                    def _make_reg(orig):
+                        @functools.wraps(orig)
+                        def _compat_reg(*args, **kwargs):
+                            kwargs.setdefault("exist_ok", True)
+                            return orig(*args, **kwargs)
+
+                        return _compat_reg
+
+                    auto_cls.register = _make_reg(orig_reg)  # type: ignore[method-assign]
+
+            import qwen_asr  # noqa: F401  # type: ignore
+            from qwen_asr.core.transformers_backend import (  # type: ignore
+                Qwen3ASRConfig,
+                Qwen3ASRForConditionalGeneration,
+            )
+            from qwen_asr.core.transformers_backend.configuration_qwen3_asr import (  # type: ignore
+                Qwen3ASRTextConfig,
+                Qwen3ASRThinkerConfig,
+            )
+            import qwen_asr.core.transformers_backend.modeling_qwen3_asr as mq  # type: ignore
+            from qwen_asr.core.transformers_backend.modeling_qwen3_asr import (  # type: ignore
+                Qwen3ASRThinkerForConditionalGeneration,
+            )
+        finally:
+            for auto_cls, orig_reg in saved_registers:
+                auto_cls.register = orig_reg  # type: ignore[method-assign]
+
+        # 4. PreTrainedConfig.__init__ validates token IDs via get_text_config() before thinker_config exists
+        orig_get_text_cfg = getattr(Qwen3ASRConfig, "get_text_config", None)
+        if orig_get_text_cfg is not None and not getattr(orig_get_text_cfg, "_qwen_compat_patched", False):
+            @functools.wraps(orig_get_text_cfg)
+            def _compat_get_text_config(self, decoder=False, **kwargs):
+                if not hasattr(self, "thinker_config") or self.thinker_config is None:
+                    return self
+                return orig_get_text_cfg(self, decoder=decoder)
+
+            setattr(_compat_get_text_config, "_qwen_compat_patched", True)
+            Qwen3ASRConfig.get_text_config = _compat_get_text_config
+
+        # 5. transformers 5.x PretrainedConfig.__getattribute__ rejects unset pad_token_id & tie_word_embeddings
+        for cfg_cls in (Qwen3ASRThinkerConfig, Qwen3ASRTextConfig):
+            orig_cfg_init = cfg_cls.__init__
+            if not getattr(orig_cfg_init, "_qwen_compat_patched", False):
+                def _make_cfg_init(orig, propagate_tie: bool):
+                    @functools.wraps(orig)
+                    def _compat_cfg_init(self, *args, **kwargs):
+                        orig(self, *args, **kwargs)
+                        if not hasattr(self, "pad_token_id"):
+                            self.pad_token_id = None
+                        if propagate_tie and not hasattr(self, "tie_word_embeddings"):
+                            text_cfg = getattr(self, "text_config", None)
+                            self.tie_word_embeddings = bool(
+                                getattr(text_cfg, "tie_word_embeddings", True)
+                            )
+
+                    return _compat_cfg_init
+
+                wrapped_init = _make_cfg_init(orig_cfg_init, cfg_cls is Qwen3ASRThinkerConfig)
+                setattr(wrapped_init, "_qwen_compat_patched", True)
+                cfg_cls.__init__ = wrapped_init
+
+        # 5b. transformers 5.x expects _tied_weights_keys as {target: source} dict instead of 4.x list
+        from transformers.modeling_utils import PreTrainedModel
+
+        if hasattr(PreTrainedModel, "get_expanded_tied_weights_keys") and isinstance(
+            getattr(Qwen3ASRThinkerForConditionalGeneration, "_tied_weights_keys", None), list
+        ):
+            Qwen3ASRThinkerForConditionalGeneration._tied_weights_keys = {  # type: ignore[assignment]
+                "lm_head.weight": "model.embed_tokens.weight"
+            }
+
+        # 6. transformers 5.x create_causal_mask renamed input_embeds -> inputs_embeds and dropped cache_position
+        orig_ccm = getattr(mq, "create_causal_mask", None)
+        if orig_ccm is not None and not getattr(orig_ccm, "_qwen_compat_patched", False):
+            ccm_params = inspect.signature(orig_ccm).parameters
+
+            @functools.wraps(orig_ccm)
+            def _compat_create_causal_mask(*args, **kwargs):
+                if "input_embeds" in kwargs and "input_embeds" not in ccm_params and "inputs_embeds" in ccm_params:
+                    kwargs["inputs_embeds"] = kwargs.pop("input_embeds")
+                filtered = {k: v for k, v in kwargs.items() if k in ccm_params}
+                return orig_ccm(*args, **filtered)
+
+            setattr(_compat_create_causal_mask, "_qwen_compat_patched", True)
+            mq.create_causal_mask = _compat_create_causal_mask
+
+        # 7. transformers 5.x _prefill/_decode omit cache_position when calling prepare_inputs_for_generation
+        orig_prep = Qwen3ASRThinkerForConditionalGeneration.prepare_inputs_for_generation
+        if not getattr(orig_prep, "_qwen_compat_patched", False):
+            @functools.wraps(orig_prep)
+            def _compat_prepare_inputs_for_generation(
+                self,
+                input_ids,
+                past_key_values=None,
+                attention_mask=None,
+                inputs_embeds=None,
+                cache_position=None,
+                position_ids=None,
+                use_cache=True,
+                input_features=None,
+                feature_attention_mask=None,
+                **kwargs,
+            ):
+                if feature_attention_mask is None and "input_features_mask" in kwargs:
+                    feature_attention_mask = kwargs.pop("input_features_mask")
+
+                effective_cp = cache_position
+                if effective_cp is None:
+                    past_len = (
+                        past_key_values.get_seq_length()
+                        if past_key_values is not None and hasattr(past_key_values, "get_seq_length")
+                        else 0
+                    )
+                    next_seq_len = kwargs.get("next_sequence_length")
+                    seq_len = next_seq_len if next_seq_len is not None else input_ids.shape[1]
+                    effective_cp = torch.arange(past_len, past_len + seq_len, device=input_ids.device)
+
+                return orig_prep(
+                    self,
+                    input_ids,
+                    past_key_values=past_key_values,
+                    attention_mask=attention_mask,
+                    inputs_embeds=inputs_embeds,
+                    cache_position=effective_cp,
+                    position_ids=position_ids,
+                    use_cache=use_cache,
+                    input_features=input_features,
+                    feature_attention_mask=feature_attention_mask,
+                    **kwargs,
+                )
+
+            setattr(_compat_prepare_inputs_for_generation, "_qwen_compat_patched", True)
+            Qwen3ASRThinkerForConditionalGeneration.prepare_inputs_for_generation = (
+                _compat_prepare_inputs_for_generation
+            )
+
+        # 8. Built-in transformers Qwen3ASRProcessor yields input_features_mask; qwen_asr expects feature_attention_mask
+        orig_gen = Qwen3ASRForConditionalGeneration.generate
+        if not getattr(orig_gen, "_qwen_compat_patched", False):
+            @functools.wraps(orig_gen)
+            def _compat_generate(self, *args, **kwargs):
+                if "feature_attention_mask" not in kwargs and "input_features_mask" in kwargs:
+                    kwargs["feature_attention_mask"] = kwargs.pop("input_features_mask")
+                return orig_gen(self, *args, **kwargs)
+
+            setattr(_compat_generate, "_qwen_compat_patched", True)
+            Qwen3ASRForConditionalGeneration.generate = _compat_generate
+
+        _qwen_compat_applied = True
+
+
 def _load_qwencleo_streaming(model_path: str, torch_dtype, device_idx: int, gpu_budget_mib: int):
     """
     Zero-mmap streaming safetensors loader for Qwen3ASRModel.
     Avoids Windows os error 1455 (pagefile commit ceiling from safetensors mmap)
     by reading tensors sequentially via standard file I/O into GPU/CPU devices.
     """
+    _ensure_qwen_asr_transformers_compat()
+
     import torch
     from accelerate import dispatch_model, infer_auto_device_map, init_empty_weights
     from accelerate.utils import set_module_tensor_to_device
     from huggingface_hub import hf_hub_download
-    from transformers import AutoProcessor, GenerationConfig
+    from transformers import GenerationConfig
     from qwen_asr import Qwen3ASRModel
     from qwen_asr.core.transformers_backend import (
         Qwen3ASRConfig,
         Qwen3ASRForConditionalGeneration,
+        Qwen3ASRProcessor,
     )
 
     dtype_map = {k: getattr(torch, v) for k, v in _SAFETENSORS_DTYPE_NAMES.items()}
@@ -310,9 +554,9 @@ def _load_qwencleo_streaming(model_path: str, torch_dtype, device_idx: int, gpu_
 
     gc.collect()
     try:
-        processor = AutoProcessor.from_pretrained(model_path, fix_mistral_regex=True, local_files_only=True)
+        processor = Qwen3ASRProcessor.from_pretrained(model_path, fix_mistral_regex=True, local_files_only=True)
     except Exception:
-        processor = AutoProcessor.from_pretrained(model_path, fix_mistral_regex=True)
+        processor = Qwen3ASRProcessor.from_pretrained(model_path, fix_mistral_regex=True)
 
     return Qwen3ASRModel(
         backend="transformers",
@@ -354,7 +598,8 @@ class QwenCleoProvider(BaseSTTProvider):
 
             import torch
 
-            # 1. Ensure Qwen3-ASR architecture is registered with Transformers
+            # 1. Apply transformers >=5.x compatibility shims and register Qwen3-ASR architecture
+            _ensure_qwen_asr_transformers_compat()
             try:
                 import qwen_asr  # noqa: F401  # type: ignore
                 from qwen_asr.core.transformers_backend import (  # type: ignore
@@ -369,10 +614,10 @@ class QwenCleoProvider(BaseSTTProvider):
                     AutoProcessor,
                 )
 
-                AutoConfig.register("qwen3_asr", Qwen3ASRConfig)
-                AutoModel.register(Qwen3ASRConfig, Qwen3ASRForConditionalGeneration)
-                AutoModelForSpeechSeq2Seq.register(Qwen3ASRConfig, Qwen3ASRForConditionalGeneration)
-                AutoProcessor.register(Qwen3ASRConfig, Qwen3ASRProcessor)
+                _register_auto_class(AutoConfig, "qwen3_asr", Qwen3ASRConfig)
+                _register_auto_class(AutoModel, Qwen3ASRConfig, Qwen3ASRForConditionalGeneration)
+                _register_auto_class(AutoModelForSpeechSeq2Seq, Qwen3ASRConfig, Qwen3ASRForConditionalGeneration)
+                _register_auto_class(AutoProcessor, Qwen3ASRConfig, Qwen3ASRProcessor)
             except Exception as reg_err:
                 logger.debug(f"Qwen3ASR auto-registration note: {reg_err}")
 
