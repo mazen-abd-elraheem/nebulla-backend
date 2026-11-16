@@ -152,6 +152,17 @@ async def init_db() -> None:
                 if "user_id" not in cols:
                     connection.execute(text("ALTER TABLE action_logs ADD COLUMN user_id INTEGER REFERENCES users(id)"))
 
+            if "tracking" in tables:
+                cols = [c["name"] for c in inspector.get_columns("tracking")]
+                if "face_detected" not in cols:
+                    connection.execute(text("ALTER TABLE tracking ADD COLUMN face_detected BOOLEAN DEFAULT 0"))
+                if "gaze_x" not in cols:
+                    connection.execute(text("ALTER TABLE tracking ADD COLUMN gaze_x FLOAT DEFAULT 0.0"))
+                if "gaze_y" not in cols:
+                    connection.execute(text("ALTER TABLE tracking ADD COLUMN gaze_y FLOAT DEFAULT 0.0"))
+                if "created_at" not in cols:
+                    connection.execute(text("ALTER TABLE tracking ADD COLUMN created_at DATETIME"))
+
             if "speakers" in tables:
                 cols = [c["name"] for c in inspector.get_columns("speakers")]
                 if "verification_id" not in cols:
