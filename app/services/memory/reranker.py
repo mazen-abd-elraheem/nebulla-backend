@@ -30,13 +30,22 @@ _RERANK_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
 class CrossReranker:
     """
     Two-stage Re-ranker with Multithreaded Parallel Candidate Scoring:
-    1. Uses local neural Cross-Encoder model if available.
-    2. Deep Alignment Cross-Scorer (exact phrase, positional proximity, keyword density) as zero-latency local cross-scorer.
+    1. Uses local neural Cross-Encoder model if available (for English text).
+    2. Deep Alignment Cross-Scorer (exact phrase, positional proximity, keyword density) for Arabic and zero-latency local cross-scoring.
     """
 
     _neural_model = None
     _init_attempted = False
     _model_lock = threading.Lock()
+
+    QUESTION_STOPWORDS = {
+        "فين", "اين", "أين", "ايه", "إيه", "ما", "ماذا", "مين", "من", "ليه", "لماذا",
+        "ازاي", "إزاي", "كيف", "كام", "كم", "متى", "امتى", "إمتى", "هل", "هو", "هي",
+        "هم", "هما", "عن", "في", "على", "علي", "مع", "من", "إلى", "الي", "بتاع",
+        "بتاعة", "بتاعت", "بتاعتي", "بتاعك", "بتاعه", "بتاعها", "كان", "يكون", "يا",
+        "لو", "سمحت", "من", "فضلك", "ممكن", "تقولي", "مكان", "مكانها", "مكانه",
+        "where", "what", "who", "when", "why", "how", "is", "are", "the", "a", "an", "in", "on", "at"
+    }
 
     @classmethod
     def _get_neural_model(cls):
@@ -77,9 +86,12 @@ class CrossReranker:
         else:
             phrase_bonus = 0.0
 
-        # 2. Tokenize and extract significant terms
-        q_tokens = [w for w in re.findall(r"[\w\d]+", q_clean) if len(w) >= 2]
+        # 2. Tokenize and extract significant terms (filtering question stopwords)
+        q_raw_tokens = [w for w in re.findall(r"[\w\d]+", q_clean) if len(w) >= 2]
         d_tokens = [w for w in re.findall(r"[\w\d]+", d_clean) if len(w) >= 2]
+
+        q_content_tokens = [w for w in q_raw_tokens if w not in cls.QUESTION_STOPWORDS]
+        q_tokens = q_content_tokens if q_content_tokens else q_raw_tokens
 
         if not q_tokens or not d_tokens:
             return phrase_bonus
@@ -106,13 +118,16 @@ class CrossReranker:
             proximity_score = max(0.0, 1.0 - (avg_span / max(len(d_tokens), 10)))
 
         # Composite score
-        final_score = (coverage * 0.5) + (proximity_score * 0.25) + phrase_bonus
+        final_score = (coverage * 0.6) + (proximity_score * 0.2) + phrase_bonus
         return min(1.0, final_score)
 
     @classmethod
     def _score_single_candidate(cls, query: str, init_score: float, item: Any, text: str) -> Tuple[float, Any, str]:
         align_score = cls.compute_alignment_score(query, text)
-        combined = (align_score * 0.6) + (init_score * 0.4)
+        if align_score == 0.0:
+            combined = 0.0
+        else:
+            combined = (align_score * 0.7) + (init_score * 0.3)
         return (combined, item, text)
 
     @classmethod
@@ -131,12 +146,19 @@ class CrossReranker:
         neural = cls._get_neural_model()
         reranked: List[Tuple[float, Any, str]] = []
 
-        if neural is not None:
+        is_arabic = bool(re.search(r"[\u0600-\u06FF]", query))
+        # ms-marco-MiniLM-L-6-v2 is an English-only model.
+        # Running it on Arabic tokens ([UNK]) produces random false-positive scores!
+        if neural is not None and not is_arabic:
             try:
                 pairs = [[query, text] for _, _, text in candidates]
                 scores = neural.predict(pairs)
                 for (init_score, item, text), n_score in zip(candidates, scores):
-                    combined = (float(n_score) * 0.7) + (init_score * 0.3)
+                    align_score = cls.compute_alignment_score(query, text)
+                    if align_score == 0.0:
+                        combined = 0.0
+                    else:
+                        combined = (float(n_score) * 0.7) + (init_score * 0.3)
                     reranked.append((combined, item, text))
             except Exception as e:
                 logger.warning(f"Neural reranker prediction failed: {e}. Falling back to alignment cross-scorer.")

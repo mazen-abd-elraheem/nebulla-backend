@@ -360,14 +360,101 @@ async def chat_with_llm(
             llm.model = body.model
     t_start = time.perf_counter()
 
+    # ── Conversational In-Chat Memory Ingestion (حفظ الذكريات التلقائي من الشات) ────
+    from app.services.memory.chat_memory_extractor import ChatMemoryExtractor
+    actor_name = getattr(grounding, "faces", {}).get("active_person") if hasattr(grounding, "faces") else None
+    if not actor_name and isinstance(grounding, dict):
+        actor_name = grounding.get("faces", {}).get("active_person")
+    memory_extraction = ChatMemoryExtractor.extract_fact(body.message, user_name=actor_name or (_user if _user != "dev_user" else None))
+    if memory_extraction:
+        extracted_fact, reply = memory_extraction
+        auth_uid = None
+        if _user and _user != "dev_user":
+            try:
+                from app.models.user import User
+                u_res = await db.execute(select(User.id).where((User.username == _user) | (User.email == _user)).limit(1))
+                auth_uid = u_res.scalar_one_or_none()
+            except Exception:
+                pass
+
+        try:
+            await _rag_service.add_memory(
+                content=extracted_fact,
+                personality_id=active_pid,
+                user_id=auth_uid,
+                source="chat",
+                importance=8,
+                db=db,
+            )
+        except Exception as e:
+            logger.warning(f"Could not persist chat memory: {e}")
+
+        cleaned_reply = clean_text_for_tts(reply)
+        emotion = "happy"
+
+        user_msg = Message(
+            conversation_id=conv_id,
+            role="user",
+            content=body.message,
+        )
+        robot_msg = Message(
+            conversation_id=conv_id,
+            role="assistant",
+            content=reply,
+            llm_latency_ms=5.0,
+            total_latency_ms=5.0,
+            emotion=emotion,
+        )
+        db.add_all([user_msg, robot_msg])
+        await db.commit()
+
+        if body.stream and "application/json" not in request.headers.get("accept", ""):
+            async def memory_saved_stream():
+                yield reply
+            return StreamingResponse(
+                memory_saved_stream(),
+                media_type="text/plain; charset=utf-8",
+                headers={"X-Memories-Used": urllib.parse.quote(json.dumps([extracted_fact], ensure_ascii=False))},
+            )
+
+        active_model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or settings.LLM_MODEL
+        audio_b64, audio_url, has_sample, voice_notice = (None, None, True, None)
+        if body.return_audio:
+            audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(reply, active_pid)
+        avatar_action = await _build_and_broadcast_avatar_action(reply, active_pid, audio_url, has_sample)
+
+        return ChatResponse(
+            reply=reply,
+            cleaned_reply=cleaned_reply,
+            response=reply,
+            session_id=session_id,
+            conversation_id=conv_id,
+            emotion=emotion,
+            face_emoji=avatar_action["face_emoji"],
+            expression=avatar_action["expression"],
+            avatar_action=avatar_action,
+            llm_latency_ms=5.0,
+            latency={"llm_ms": 5.0, "total_ms": 5.0},
+            retrieved_memories=[extracted_fact],
+            llm_model=str(active_model_name),
+            llm_provider=str(target_provider),
+            memories_used=[extracted_fact],
+            personality_id=active_pid,
+            grounding=grounding,
+            audio_base64=audio_b64,
+            audio_url=audio_url,
+            has_voice_sample=has_sample,
+            voice_notice=voice_notice,
+        )
+
     # ── Strict Zero-Hallucination & Sub-10ms Speed Optimization ───────────────
     refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
     has_memories = bool(memories)
     is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
-    is_sensitive = FactVerifier.is_sensitive_or_private_inquiry(body.message) or _is_unrecorded_secret_trap(body.message)
+    is_factual_or_sensitive = FactVerifier.is_factual_personal_inquiry(body.message) or _is_unrecorded_secret_trap(body.message)
 
-    # Fast refusal only when context is empty for sensitive/private/credential inquiries
-    if not has_memories and not is_greeting_persona and is_sensitive:
+    # Fast refusal only when context is empty for factual/personal/sensitive inquiries
+    if not has_memories and not is_greeting_persona and is_factual_or_sensitive:
         reply = refusal_reply
         cleaned_reply = clean_text_for_tts(reply)
         emotion = "wave"
@@ -500,6 +587,14 @@ async def chat_with_llm(
         system_prompt=system_prompt,
         history=history,
     )
+    # Strict deterministic fact verification against retrieved context
+    reply = FactVerifier.verify_and_sanitize(
+        query=body.message,
+        response=reply,
+        retrieved_memories=memories,
+        is_greeting=is_greeting_persona,
+        has_action=bool(getattr(grounding, "action", {}).get("has_action", False)),
+    )
     llm_ms = (time.perf_counter() - t_start) * 1000
     cleaned_reply = clean_text_for_tts(reply)
     emotion = _extract_emotion(reply)
@@ -605,13 +700,74 @@ async def chat_stream(
     # Commit read transaction to release all SQLite locks before LLM generation
     await db.commit()
 
+    # ── Conversational In-Chat Memory Ingestion (SSE Stream) ─────────────
+    from app.services.memory.chat_memory_extractor import ChatMemoryExtractor
+    actor_name = getattr(grounding, "faces", {}).get("active_person") if hasattr(grounding, "faces") else None
+    if not actor_name and isinstance(grounding, dict):
+        actor_name = grounding.get("faces", {}).get("active_person")
+    memory_extraction = ChatMemoryExtractor.extract_fact(body.message, user_name=actor_name or (_user if _user != "dev_user" else None))
+    if memory_extraction:
+        extracted_fact, reply = memory_extraction
+        auth_uid = None
+        if _user and _user != "dev_user":
+            try:
+                from app.models.user import User
+                u_res = await db.execute(select(User.id).where((User.username == _user) | (User.email == _user)).limit(1))
+                auth_uid = u_res.scalar_one_or_none()
+            except Exception:
+                pass
+
+        try:
+            await _rag_service.add_memory(
+                content=extracted_fact,
+                personality_id=active_pid,
+                user_id=auth_uid,
+                source="chat",
+                importance=8,
+                db=db,
+            )
+        except Exception as e:
+            logger.warning(f"Could not persist chat memory: {e}")
+
+        async def memory_saved_sse():
+            import json
+            yield f"data: {json.dumps({'type': 'context', 'memories': [extracted_fact]}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'token', 'content': reply}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+            try:
+                async with AsyncSessionLocal() as session:
+                    user_msg = Message(
+                        conversation_id=conv_id,
+                        role="user",
+                        content=body.message,
+                    )
+                    robot_msg = Message(
+                        conversation_id=conv_id,
+                        role="robot",
+                        content=reply,
+                        llm_latency_ms=5.0,
+                        total_latency_ms=5.0,
+                        emotion="happy",
+                    )
+                    session.add_all([user_msg, robot_msg])
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to persist chat memory messages: {e}")
+
+        encoded_mems = urllib.parse.quote(json.dumps([extracted_fact], ensure_ascii=False))
+        return StreamingResponse(
+            memory_saved_sse(),
+            media_type="text/event-stream; charset=utf-8",
+            headers={"X-Memories-Used": encoded_mems},
+        )
+
     # ── Strict Zero-Hallucination & Speed Optimization (SSE Stream) ───────────
     refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
     has_memories = bool(memories)
     is_greeting_persona = is_greeting_or_persona_inquiry(body.message)
-    is_sensitive = FactVerifier.is_sensitive_or_private_inquiry(body.message) or _is_unrecorded_secret_trap(body.message)
+    is_factual_or_sensitive = FactVerifier.is_factual_personal_inquiry(body.message) or _is_unrecorded_secret_trap(body.message)
 
-    if not has_memories and not is_greeting_persona and is_sensitive:
+    if not has_memories and not is_greeting_persona and is_factual_or_sensitive:
         async def fast_refusal_sse():
             import json
             yield f"data: {json.dumps({'type': 'context', 'memories': []}, ensure_ascii=False)}\n\n"

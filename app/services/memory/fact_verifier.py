@@ -40,6 +40,21 @@ class FactVerifier:
         "عنوان", "غير مسجل", "غير مسجلة",
     ]
 
+    QUESTION_STOPWORDS = {
+        "فين", "اين", "أين", "ايه", "إيه", "ما", "ماذا", "مين", "من", "ليه", "لماذا",
+        "ازاي", "إزاي", "كيف", "كام", "كم", "متى", "امتى", "إمتى", "هل", "هو", "هي",
+        "هم", "هما", "عن", "في", "على", "علي", "مع", "من", "إلى", "الي", "بتاع",
+        "بتاعة", "بتاعت", "بتاعتي", "بتاعك", "بتاعه", "بتاعها", "كان", "يكون", "يا",
+        "لو", "سمحت", "من", "فضلك", "ممكن", "تقولي", "مكان", "مكانها", "مكانه",
+        "where", "what", "who", "when", "why", "how", "is", "are", "the", "a", "an", "in", "on", "at"
+    }
+
+    FACTUAL_INQUIRY_SIGNALS = [
+        "فين", "مكان", "شغال", "بيشتغل", "تخصص", "معاد", "ميعاد", "ساعة", "كام", "امتى", "إمتى", "متى",
+        "رقم", "تليفون", "موبايل", "باسورد", "عنوان", "ساكن", "عايش", "مع مين", "بيحب", "بتحب",
+        "where", "when", "who is", "what is", "work", "job", "location", "address"
+    ]
+
     @classmethod
     def is_sensitive_or_private_inquiry(cls, query: str) -> bool:
         """
@@ -50,6 +65,18 @@ class FactVerifier:
             return False
         q_norm = normalize_masri_orthography(query).lower()
         return any(term in q_norm for term in cls.SENSITIVE_INQUIRY_TERMS)
+
+    @classmethod
+    def is_factual_personal_inquiry(cls, query: str) -> bool:
+        """
+        Determines whether the user's query is asking for a specific personal/factual detail
+        (e.g. item location 'الكاب فين؟', job, schedule, phone number, address) which requires
+        recorded memories to answer accurately.
+        """
+        if not query:
+            return False
+        q_norm = normalize_masri_orthography(query).lower()
+        return any(term in q_norm for term in cls.FACTUAL_INQUIRY_SIGNALS) or cls.is_sensitive_or_private_inquiry(query)
 
     @classmethod
     def verify_and_sanitize(
@@ -126,11 +153,14 @@ class FactVerifier:
         has_refusal = any(m in norm_response for m in refusal_markers)
 
         # Check keyword presence from query in context
-        q_words = [w for w in re.findall(r"[\w\d]+", normalize_masri_orthography(query).lower()) if len(w) > 3]
+        q_words = [
+            w for w in re.findall(r"[\w\d]+", normalize_masri_orthography(query).lower())
+            if len(w) >= 2 and w not in cls.QUESTION_STOPWORDS
+        ]
         if q_words and not has_refusal:
             overlap_with_ctx = any(w in norm_context for w in q_words)
-            if not overlap_with_ctx and not is_greeting and not has_action and cls.is_sensitive_or_private_inquiry(query):
-                logger.info("FactVerifier: Query terms not found in context and model did not refuse -> Enforcing refusal.")
+            if not overlap_with_ctx and not is_greeting and not has_action:
+                logger.info(f"FactVerifier: Query content terms {q_words} not found in retrieved context and model did not refuse -> Enforcing refusal.")
                 return default_refusal
 
         return response
