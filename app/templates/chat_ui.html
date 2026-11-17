@@ -1181,7 +1181,7 @@
           const player = document.getElementById("clonedAudioPlayer");
           const downloadLink = document.getElementById("synthDownloadLink");
           const latencyText = document.getElementById("synthLatencyText");
-          const streamUrl = `/api/v1/voice-clone/synthesize/stream?text=${encodeURIComponent(cleaned)}&personality_id=${activeVoicePersonalityId}&num_steps=14&guidance_scale=2.1&speed=1.0`;
+          const streamUrl = `/api/v1/voice-clone/synthesize/stream?text=${encodeURIComponent(cleaned)}&personality_id=${activeVoicePersonalityId}&num_steps=6&guidance_scale=2.1&speed=1.0`;
 
           await new Promise((resolve, reject) => {
             const cleanup = () => {
@@ -1218,7 +1218,7 @@
           body: JSON.stringify({
             text: cleaned,
             personality_id: activeVoicePersonalityId,
-            num_steps: 14,
+            num_steps: 6,
             guidance_scale: 2.1,
             speed: 1.0,
             language: "arz"

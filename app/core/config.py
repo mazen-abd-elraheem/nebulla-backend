@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     VOICETUT_PREFER_MICROSERVICE: bool = False  # Run in-process by default (eliminates 1.5s/call dead probe)
     VOICETUT_SPEAKER: str = "mazen"
     # Balanced sub-second / low-latency VoiceTut defaults preserving vocal likeness & Egyptian accent
-    VOICETUT_NUM_STEPS: int = 14
+    VOICETUT_NUM_STEPS: int = 6
     VOICETUT_MAX_STEPS: int = 20
     VOICETUT_GUIDANCE_SCALE: float = 2.1
     VOICETUT_SPEED: float = 1.0

@@ -176,7 +176,7 @@ async def conversations_llm_voice_clone_get(
     return_json: bool = Query(False, description="إرجاع كائن JSON"),
     speed: float | None = Query(1.0, description="سرعة النطق"),
     guidance_scale: float | None = Query(2.1, description="مطابقة نبرة الصوت المرجعي"),
-    num_steps: int | None = Query(14, description="عدد خطوات التوليد (الافتراضي السريع: 14)"),
+    num_steps: int | None = Query(6, description="عدد خطوات التوليد (الافتراضي السريع: 6)"),
     studio_hq: bool = Query(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً"),
     _user: str | None = Depends(get_optional_user),
 ):

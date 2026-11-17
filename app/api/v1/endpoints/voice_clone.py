@@ -216,11 +216,11 @@ async def delete_sample(
 
 class SynthesizeRequest(BaseModel):
     text: str = Field(..., description="النص العربي المراد تحويله إلى صوت")
-    voice_id: int | str | None = Field(1, description="معرف الصوت المستنسخ (مثال: 1)")
+    voice_id: int | str | None = Field(None, description="معرف الصوت المستنسخ (مثال: 1)")
     personality_id: int | None = Field(None, description="معرف الشخصية (اختياري)")
     language: str = Field("arz", description="اللهجة (arz للمصري)")
     ref_text: str | None = Field(None, description="نص العينة المرجعية (اختياري، يتم جلبه تلقائياً)")
-    num_steps: int | None = Field(14, description="عدد خطوات التوليد (14 التوازن السريع الموصى به، بحد أقصى 20 ما لم يتم تفعيل studio_hq)")
+    num_steps: int | None = Field(6, description="عدد خطوات التوليد (6 التوازن السريع الموصى به، بحد أقصى 20 ما لم يتم تفعيل studio_hq)")
     guidance_scale: float | None = Field(2.1, description="مقياس مطابقة نبرة الصوت المرجعي بدقة (2.0 - 2.3)")
     speed: float | None = Field(1.0, description="سرعة الكلام الطبيعية المطابقة للصوت الأصلي (1.0)")
     studio_hq: bool = Field(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً")
@@ -233,7 +233,7 @@ def _resolve_steps_and_params(
     studio_hq: bool = False,
 ) -> tuple[int, float, float]:
     """Resolve VoiceTut synthesis params and enforce `VOICETUT_MAX_STEPS` unless `studio_hq=True`."""
-    default_steps = int(getattr(settings, "VOICETUT_NUM_STEPS", 14))
+    default_steps = int(getattr(settings, "VOICETUT_NUM_STEPS", 6))
     max_steps = int(getattr(settings, "VOICETUT_MAX_STEPS", 20))
     steps = int(num_step) if (num_step is not None and int(num_step) > 0) else default_steps
     if not studio_hq:
@@ -256,7 +256,9 @@ async def _resolve_target_pid(
 ) -> int:
     """Resolve target personality_id consistently across sync/stream/LLM endpoints."""
     target_pid: int | None = None
-    if voice_id is not None:
+    if personality_id is not None and personality_id > 0:
+        target_pid = personality_id
+    elif voice_id is not None:
         v_str = str(voice_id).strip().lower()
         if v_str.isdigit():
             target_pid = int(v_str)
@@ -272,9 +274,6 @@ async def _resolve_target_pid(
                 target_pid = int(v_str)
             except Exception:
                 target_pid = None
-
-    if target_pid is None and personality_id is not None and personality_id > 0:
-        target_pid = personality_id
 
     if target_pid is None and user:
         try:
@@ -356,9 +355,11 @@ async def synthesize(
             detail="معرفناش نستنسخ الصوت ونطلع مقطع صوت سليم.",
         )
 
-    # Cache latest audio to disk and memory for immediate browser playback
+    # Cache latest audio to disk and memory for immediate browser playback per personality
     try:
         LATEST_WAV_FILE.write_bytes(wav_bytes)
+        pid_wav = CACHE_DIR / f"latest_synthesized_p{target_pid}.wav"
+        pid_wav.write_bytes(wav_bytes)
     except Exception:
         pass
 
@@ -390,7 +391,7 @@ async def synthesize_get(
     text: str | None = Query(None, description="النص المراد نطقه بالصوت المستنسخ"),
     voice_id: int | None = Query(None, description="معرف الصوت المستنسخ (ID مثل 1)"),
     personality_id: int | None = Query(None, description="معرف الشخصية (ID مثل 1)"),
-    num_steps: int | None = Query(14, description="عدد خطوات التوليد (الافتراضي السريع: 14، بحد أقصى 20)"),
+    num_steps: int | None = Query(6, description="عدد خطوات التوليد (الافتراضي السريع: 6، بحد أقصى 20)"),
     speed: float | None = Query(1.0, description="سرعة الكلام (الافتراضي: 1.0 المطابق لنبرة الصوت الأصلي)"),
     guidance_scale: float | None = Query(2.1, description="مطابقة نبرة الصوت المستنسخ (الافتراضي: 2.1)"),
     stream: bool = Query(False, description="تفعيل البث المتدفق السريع جملة بجملة (Streaming Audio)"),
@@ -401,7 +402,7 @@ async def synthesize_get(
     """
     GET endpoint for `/synthesize`:
     1. If called without text (e.g. by Swagger UI embedded <audio> tag or browser),
-       it immediately serves the latest synthesized audio clip with byte-range support.
+       it immediately serves the latest synthesized audio clip for the specified personality.
     2. If text is provided, it generates speech in the cloned voice (or streams sentence-by-sentence when stream=true).
     """
     if text and text.strip():
@@ -437,16 +438,12 @@ async def synthesize_get(
         )
         return await synthesize(req, _user=_user, svc=svc)
 
-    if LATEST_WAV_FILE.exists() and LATEST_WAV_FILE.stat().st_size > 0:
-        return FileResponse(
-            path=str(LATEST_WAV_FILE),
-            media_type="audio/wav",
-            content_disposition_type="inline",
-            filename="cloned_voice.wav",
-        )
+    target_pid = await _resolve_target_pid(
+        svc, voice_id=voice_id, personality_id=personality_id, user=_user
+    )
 
-    pid = personality_id or (int(voice_id) if voice_id else 1)
-    cached = _last_synthesized_audio.get(pid) or _last_synthesized_audio.get("latest")
+    # 1. Check in-memory synthesized audio for this specific personality
+    cached = _last_synthesized_audio.get(target_pid)
     if cached:
         return Response(
             content=cached,
@@ -454,20 +451,55 @@ async def synthesize_get(
             headers={
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(len(cached)),
-                "Content-Disposition": 'inline; filename="cloned_voice.wav"',
+                "Content-Disposition": f'inline; filename="cloned_voice_p{target_pid}.wav"',
             },
         )
 
-    # Default preview request
-    steps, cfg, spd = _resolve_steps_and_params(None, None, None, False)
-    req = SynthesizeRequest(
-        text="أهلاً بيك يا صديقي! الصوت المصري المستنسخ شغال وجاهز تماماً.",
-        personality_id=pid,
-        num_steps=steps,
-        guidance_scale=cfg,
-        speed=spd,
+    # 2. Check disk file for this specific personality
+    pid_wav = CACHE_DIR / f"latest_synthesized_p{target_pid}.wav"
+    if pid_wav.exists() and pid_wav.stat().st_size > 0:
+        return FileResponse(
+            path=str(pid_wav),
+            media_type="audio/wav",
+            content_disposition_type="inline",
+            filename=f"cloned_voice_p{target_pid}.wav",
+        )
+
+    # 3. Check for pre-cached greeting audio for this personality
+    greet_wav = CACHE_DIR / f"greeting_personality_{target_pid}.wav"
+    if greet_wav.exists() and greet_wav.stat().st_size > 0:
+        return FileResponse(
+            path=str(greet_wav),
+            media_type="audio/wav",
+            content_disposition_type="inline",
+            filename=f"greeting_p{target_pid}.wav",
+        )
+
+    # 4. If target personality has sample, generate quick preview with its voice
+    if svc.has_voice_sample(target_pid):
+        steps, cfg, spd = _resolve_steps_and_params(num_steps, guidance_scale, speed, studio_hq)
+        req = SynthesizeRequest(
+            text="أهلاً بيك يا صديقي! الصوت المصري المستنسخ شغال وجاهز تماماً.",
+            personality_id=target_pid,
+            num_steps=steps,
+            guidance_scale=cfg,
+            speed=spd,
+        )
+        return await synthesize(req, _user=_user, svc=svc)
+
+    # 5. Global latest only if neither personality_id nor voice_id was explicitly requested
+    if personality_id is None and voice_id is None and LATEST_WAV_FILE.exists() and LATEST_WAV_FILE.stat().st_size > 0:
+        return FileResponse(
+            path=str(LATEST_WAV_FILE),
+            media_type="audio/wav",
+            content_disposition_type="inline",
+            filename="cloned_voice.wav",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"الشخصية رقم {target_pid} ملهاش بصمة صوت مسجلة حتى الآن. يرجى رفع عينة صوت للشخصية أولاً لتفعيل الرد الصوتي.",
     )
-    return await synthesize(req, _user=_user, svc=svc)
 
 
 @router.post(
@@ -520,7 +552,7 @@ async def synthesize_stream_get(
     text: str = Query(..., description="النص المراد نطقه وبثه متدفقاً بالصوت المستنسخ"),
     voice_id: int | None = Query(None, description="معرف الصوت المستنسخ"),
     personality_id: int | None = Query(None, description="معرف الشخصية"),
-    num_steps: int | None = Query(14, description="عدد خطوات التوليد (الافتراضي السريع: 14، بحد أقصى 20)"),
+    num_steps: int | None = Query(6, description="عدد خطوات التوليد (الافتراضي السريع: 6، بحد أقصى 20)"),
     speed: float | None = Query(1.0, description="سرعة النطق الطبيعية (الافتراضي: 1.0)"),
     guidance_scale: float | None = Query(2.1, description="مقياس مطابقة نبرة الصوت (الافتراضي: 2.1)"),
     studio_hq: bool = Query(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً"),
@@ -593,7 +625,7 @@ class LLMVoiceCloneRequest(BaseModel):
     return_json: bool = Field(False, description="إذا كان True يرجع كائن JSON مع audio_base64، وإذا كان False يرجع ملف صوتي مباشر audio/wav")
     speed: float | None = Field(1.0, description="سرعة نطق الصوت الطبيعية (افتراضياً 1.0 لمطابقة النبرة الأصلية)")
     guidance_scale: float | None = Field(2.1, description="مقياس تطابق نبرة الصوت المرجعي بدقة (افتراضياً 2.1)")
-    num_steps: int | None = Field(14, description="عدد خطوات التوليد لموديل VoiceTut (افتراضياً 14 التوازن السريع، بحد أقصى 20)")
+    num_steps: int | None = Field(6, description="عدد خطوات التوليد لموديل VoiceTut (افتراضياً 6 خطوات التوازن السريع، بحد أقصى 20)")
     studio_hq: bool = Field(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً")
 
     model_config = {
@@ -604,7 +636,7 @@ class LLMVoiceCloneRequest(BaseModel):
                 "return_json": False,
                 "speed": 1.0,
                 "guidance_scale": 2.1,
-                "num_steps": 14,
+                "num_steps": 6,
                 "studio_hq": False,
             }
         }
@@ -802,7 +834,7 @@ async def llm_voice_clone_get(
     return_json: bool = Query(False, description="إرجاع كائن JSON بدلاً من الملف الصوتي المباشر"),
     speed: float | None = Query(1.0, description="سرعة النطق الطبيعية"),
     guidance_scale: float | None = Query(2.1, description="مطابقة نبرة الصوت المرجعي"),
-    num_steps: int | None = Query(14, description="عدد خطوات التوليد (الافتراضي السريع: 14، بحد أقصى 20)"),
+    num_steps: int | None = Query(6, description="عدد خطوات التوليد (الافتراضي السريع: 6، بحد أقصى 20)"),
     studio_hq: bool = Query(False, description="تجاوز حد السرعة (20 خطوة) واستخدام خطوات أعلى يدوياً"),
     _user: str | None = Depends(get_optional_user),
     svc: VoiceCloneService = Depends(_svc),

@@ -663,6 +663,13 @@ class XTTSProvider(BaseTTSProvider):
 
                 if device == "cpu":
                     target_dtype = "float32"
+                    try:
+                        import torch
+                        num_cpus = os.cpu_count() or 4
+                        # Optimal CPU multi-threading: dedicate up to 8 threads without thrashing
+                        torch.set_num_threads(max(1, min(num_cpus, 8)))
+                    except Exception:
+                        pass
                 elif dtype_pref in ("float16", "bfloat16", "float32"):
                     target_dtype = dtype_pref
                 else:
@@ -856,9 +863,8 @@ class XTTSProvider(BaseTTSProvider):
 
         target_wav = ref_audio or self._reference_wav
         if not target_wav or not os.path.exists(target_wav):
-            p1 = Path("data/voice_samples/personality_1.wav")
-            if p1.exists():
-                target_wav = str(p1.resolve())
+            logger.warning(f"Voice reference audio not found on disk: {target_wav} (Strict Zero Fallback)")
+            return None, None
 
         if target_wav and os.path.exists(target_wav):
             import soundfile as sf
@@ -999,7 +1005,7 @@ class XTTSProvider(BaseTTSProvider):
         language: Optional[str],
     ) -> tuple[int, float, float, float, str]:
         """Resolve generation defaults cleanly without clobbering explicit 0.0 guidance values."""
-        steps = int(num_step if num_step is not None else getattr(settings, "VOICETUT_NUM_STEPS", 14))
+        steps = int(num_step if num_step is not None else getattr(settings, "VOICETUT_NUM_STEPS", 6))
         cfg = float(
             guidance_scale if guidance_scale is not None else getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.1)
         )
@@ -1151,6 +1157,13 @@ class XTTSProvider(BaseTTSProvider):
             if XTTSProvider._shared_device == "cpu" and hasattr(tts, "model"):
                 try:
                     tts.model.float()
+                except Exception:
+                    pass
+                try:
+                    num_cpus = os.cpu_count() or 4
+                    threads = max(1, min(num_cpus, 8))
+                    if torch.get_num_threads() != threads:
+                        torch.set_num_threads(threads)
                 except Exception:
                     pass
 

@@ -428,6 +428,11 @@ class VoiceCloneService:
                 is_valid_wav = False
 
         if not is_valid_wav:
+            if personality_id is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"الشخصية رقم {personality_id} ملهاش بصمة صوت صالحة مسجلة حتى الآن. يرجى رفع أو تسجيل عينة صوت للشخصية أولاً لتفعيل الرد الصوتي الخاص بيها.",
+                )
             default_built_in = Path("models/voicetut-tts/reference_speakers/ahmed.wav")
             if default_built_in.exists():
                 wav_path = str(default_built_in.resolve())
@@ -447,7 +452,7 @@ class VoiceCloneService:
                 except Exception:
                     pass
 
-        steps = int(num_step if num_step is not None else getattr(settings, "VOICETUT_NUM_STEPS", 14))
+        steps = int(num_step if num_step is not None else getattr(settings, "VOICETUT_NUM_STEPS", 6))
         cfg = float(
             guidance_scale if guidance_scale is not None else getattr(settings, "VOICETUT_GUIDANCE_SCALE", 2.1)
         )
