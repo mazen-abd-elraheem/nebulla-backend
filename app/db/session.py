@@ -78,6 +78,10 @@ async def init_db() -> None:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN updated_at DATETIME"))
                 if "greeting" not in cols:
                     connection.execute(text("ALTER TABLE personalities ADD COLUMN greeting VARCHAR(256)"))
+                if "image_path" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN image_path VARCHAR(256)"))
+                if "tone" not in cols:
+                    connection.execute(text("ALTER TABLE personalities ADD COLUMN tone VARCHAR(128) DEFAULT 'ودود وعفوي ومباشر'"))
                 try:
                     connection.execute(text("DROP INDEX IF EXISTS ix_personalities_name"))
                 except Exception as e:
@@ -147,6 +151,17 @@ async def init_db() -> None:
                 cols = [c["name"] for c in inspector.get_columns("action_logs")]
                 if "user_id" not in cols:
                     connection.execute(text("ALTER TABLE action_logs ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+
+            if "tracking" in tables:
+                cols = [c["name"] for c in inspector.get_columns("tracking")]
+                if "face_detected" not in cols:
+                    connection.execute(text("ALTER TABLE tracking ADD COLUMN face_detected BOOLEAN DEFAULT 0"))
+                if "gaze_x" not in cols:
+                    connection.execute(text("ALTER TABLE tracking ADD COLUMN gaze_x FLOAT DEFAULT 0.0"))
+                if "gaze_y" not in cols:
+                    connection.execute(text("ALTER TABLE tracking ADD COLUMN gaze_y FLOAT DEFAULT 0.0"))
+                if "created_at" not in cols:
+                    connection.execute(text("ALTER TABLE tracking ADD COLUMN created_at DATETIME"))
 
             if "speakers" in tables:
                 cols = [c["name"] for c in inspector.get_columns("speakers")]
