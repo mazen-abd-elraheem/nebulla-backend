@@ -10,6 +10,7 @@ import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/locale_service.dart';
+import '../widgets/interactive_animated_avatar.dart';
 import '../widgets/nebula_side_menu.dart';
 
 class PersonaProfileData {
@@ -2470,50 +2471,19 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
     }
 
     if (isAcademic) {
-      return Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: const Color(0xFFE0F2FE),
-          border: Border.all(color: const Color(0xFF7DD3FC)),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(11),
-          child: Image.asset(
-            'assets/images/avatar_male.jpg',
-            fit: BoxFit.cover,
-            alignment: Alignment.topCenter,
-            errorBuilder: (_, _, _) => const Icon(
-              Icons.smart_toy_rounded,
-              color: Color(0xFF0284C7),
-            ),
-          ),
-        ),
+      return const ActiveAvatarThumb(
+        size: 44,
+        radius: 12,
+        showBorder: true,
+        borderColor: Color(0xFF7DD3FC),
       );
     }
 
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: const Color(0xFFF1F5F9),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(13),
-        child: Image.asset(
-          'assets/images/avatar_female.png',
-          fit: BoxFit.cover,
-          alignment: Alignment.topCenter,
-          errorBuilder: (_, _, _) => const Icon(
-            Icons.face_3_rounded,
-            size: 23,
-            color: Color(0xFF94A3B8),
-          ),
-        ),
-      ),
+    return const ActiveAvatarThumb(
+      size: 44,
+      radius: 14,
+      showBorder: true,
+      borderColor: Color(0xFFE2E8F0),
     );
   }
 

@@ -96,3 +96,22 @@ def test_contextual_verbal_negations_and_modals():
     assert "هساعدك" in norm.normalize("سوف أساعدك حالا")
     assert "لازم" in norm.normalize("يجب أن ترتاح")
 
+
+def test_bracketed_arabic_preserved_and_expanded_masri_lexicon():
+    """Control tags strip cleanly while spoken Arabic inside brackets is unwrapped and preserved."""
+    from app.utils.masri_normalizer import MASRI_DIACRITICS_LEXICON
+
+    cleaned = clean_llm_output_for_speech(
+        "[happy] [بقولكم ايه] [wave] حاسب لاعورك",
+        for_voicetut=True,
+    )
+    assert "[happy]" not in cleaned
+    assert "[wave]" not in cleaned
+    assert "بقولكم ايه" in cleaned
+    assert "حاسب لاعورك" in cleaned
+
+    for word in ("مش", "ده", "دي", "بقولكم", "اعرفكوا", "اولاد", "حاسب", "لاعورك", "أهلا", "اهلا"):
+        assert word in MASRI_DIACRITICS_LEXICON
+    assert MASRI_DIACRITICS_LEXICON["دحين"] == "دِلْوَقْتِي"
+
+

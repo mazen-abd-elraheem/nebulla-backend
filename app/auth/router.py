@@ -649,20 +649,30 @@ async def save_onboarding_answers(
     target_pid = 1  # Default primary persona
     for mem_text in memories_to_add:
         try:
-            m = Memory(
-                personality_id=target_pid,
+            await rag.add_memory(
                 content=mem_text,
+                personality_id=target_pid,
                 source="onboarding",
                 importance=8,
+                db=db,
             )
-            db.add(m)
             saved_count += 1
+        except Exception as rag_err:
+            logger.debug(f"RAG vector index notice: {rag_err}")
             try:
-                await rag.add_memory(personality_id=target_pid, text=mem_text)
-            except Exception as rag_err:
-                logger.debug(f"RAG vector index notice: {rag_err}")
-        except Exception as e:
-            logger.warning(f"Error persisting onboarding memory: {e}")
+                await db.rollback()
+                m = Memory(
+                    personality_id=target_pid,
+                    content=mem_text,
+                    source="onboarding",
+                    importance=8,
+                )
+                db.add(m)
+                await db.commit()
+                saved_count += 1
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"Error persisting onboarding memory: {e}")
 
     await db.commit()
     logger.info(f"Persisted {saved_count} onboarding memory items for user {current_user.email if current_user else 'guest'}")

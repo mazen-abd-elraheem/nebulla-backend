@@ -4,6 +4,7 @@ SQLAlchemy ORM models package for Nebula Backend.
 
 from app.models import (
     action_log,
+    avatar_profile,
     calibration,
     contact,
     conversation,
@@ -20,6 +21,7 @@ from app.models import (
     speaker,
 )
 from app.models.action_log import ActionLog
+from app.models.avatar_profile import AvatarProfile
 from app.models.calibration import ServoCalibration
 from app.models.contact import Contact
 from app.models.conversation import Conversation, Message
@@ -37,6 +39,7 @@ from app.models.speaker import Speaker
 
 __all__ = [
     "action_log",
+    "avatar_profile",
     "calibration",
     "contact",
     "conversation",
@@ -58,6 +61,7 @@ __all__ = [
     "user",
     "voiceprint",
     "ActionLog",
+    "AvatarProfile",
     "Contact",
     "Reminder",
     "Voiceprint",

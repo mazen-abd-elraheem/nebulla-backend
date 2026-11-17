@@ -26,7 +26,21 @@ class CameraFrameMsg(BaseModel):
 class EyesMoodMsg(BaseModel):
     t: Literal["eyes"] = "eyes"
     mood: str  # "happy" | "surprised" | "sad" | "neutral" | "thinking"
+    face_emoji: Optional[str] = None
     audio_url: Optional[str] = None  # URL of TTS audio chunk
+
+
+class AvatarActionMsg(BaseModel):
+    t: Literal["avatar_action"] = "avatar_action"
+    face_emoji: str = "😐"
+    expression: str = "neutral"
+    mouth_preset: str = "neutral"
+    speak_mouth: bool = True
+    voice_mode: str = "cloned"
+    avatar_id: Optional[int] = None
+    personality_id: Optional[int] = None
+    audio_url: Optional[str] = None
+    flame_params: Optional[Dict[str, float]] = None
 
 
 class GazeMsg(BaseModel):

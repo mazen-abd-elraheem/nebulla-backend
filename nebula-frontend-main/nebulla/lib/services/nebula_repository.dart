@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../core/constants.dart';
+import '../models/avatar_profile.dart';
 import '../models/models.dart';
 import 'api_service.dart';
 import 'storage_service.dart';
@@ -602,5 +603,116 @@ class NebulaRepository {
         await enrollSpeaker(speakerName: name, audioFile: voiceSample);
       } catch (_) {}
     }
+  }
+
+  // ── GAGAvatar Creation, Review & Expressions ──────────────────────────────
+
+  String resolveAvatarMediaUrl(String pathOrUrl) => _api.resolveUrl(pathOrUrl);
+
+  Future<AvatarProfileModel> createAvatarFromPhoto({
+    required File photoFile,
+    String? name,
+    int? personalityId,
+    String style = 'realistic',
+  }) async {
+    final fields = <String, String>{'style': style};
+    if (name != null && name.trim().isNotEmpty) {
+      fields['name'] = name.trim();
+    }
+    if (personalityId != null) {
+      fields['personality_id'] = personalityId.toString();
+    }
+    final data = await _api.postMultipart(
+      AppConstants.avatarCreate,
+      fields,
+      photoFile,
+      'file',
+    );
+    final rawAvatar = (data is Map<String, dynamic> && data['avatar'] is Map<String, dynamic>)
+        ? data['avatar'] as Map<String, dynamic>
+        : (data as Map<String, dynamic>);
+    return AvatarProfileModel.fromJson(rawAvatar);
+  }
+
+  Future<AvatarProfileModel> approveAvatar(int avatarId) async {
+    final data = await _api.post(AppConstants.avatarApprove(avatarId));
+    final rawAvatar = (data is Map<String, dynamic> && data['avatar'] is Map<String, dynamic>)
+        ? data['avatar'] as Map<String, dynamic>
+        : (data as Map<String, dynamic>);
+    return AvatarProfileModel.fromJson(rawAvatar);
+  }
+
+  Future<AvatarProfileModel> rejectAvatar(int avatarId, {String? reason}) async {
+    final data = await _api.post(
+      AppConstants.avatarReject(avatarId),
+      reason != null ? {'reason': reason} : null,
+    );
+    final rawAvatar = (data is Map<String, dynamic> && data['avatar'] is Map<String, dynamic>)
+        ? data['avatar'] as Map<String, dynamic>
+        : (data as Map<String, dynamic>);
+    return AvatarProfileModel.fromJson(rawAvatar);
+  }
+
+  Future<AvatarProfileModel> recreateAvatar(
+    int avatarId, {
+    File? newPhotoFile,
+    String? style,
+    String? reason,
+  }) async {
+    final fields = <String, String>{};
+    if (style != null) fields['style'] = style;
+    if (reason != null) fields['reason'] = reason;
+    final data = await _api.postMultipartOptionalFile(
+      AppConstants.avatarRecreate(avatarId),
+      fields,
+      file: newPhotoFile,
+      fileField: 'file',
+    );
+    final rawAvatar = (data is Map<String, dynamic> && data['avatar'] is Map<String, dynamic>)
+        ? data['avatar'] as Map<String, dynamic>
+        : (data as Map<String, dynamic>);
+    return AvatarProfileModel.fromJson(rawAvatar);
+  }
+
+  Future<AvatarProfileModel?> getActiveAvatar({int? personalityId}) async {
+    try {
+      final params = <String, dynamic>{};
+      if (personalityId != null) params['personality_id'] = personalityId;
+      final data = await _api.get(AppConstants.avatarActive, params);
+      if (data is Map<String, dynamic> &&
+          data['has_avatar'] == true &&
+          data['avatar'] is Map<String, dynamic>) {
+        return AvatarProfileModel.fromJson(data['avatar'] as Map<String, dynamic>);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> renderAvatarExpression({
+    required int avatarId,
+    String? expression,
+    String? faceEmoji,
+    double mouthOpen = 0.45,
+  }) async {
+    final payload = <String, dynamic>{
+      'mouth_open': mouthOpen,
+      'format': 'gif',
+    };
+    if (expression != null) payload['expression'] = expression;
+    if (faceEmoji != null) payload['face_emoji'] = faceEmoji;
+    final data = await _api.post(AppConstants.avatarRender(avatarId), payload);
+    return data is Map<String, dynamic> ? data : {};
+  }
+
+  Future<List<Map<String, dynamic>>> getEmojiActionMap() async {
+    try {
+      final data = await _api.get(AppConstants.avatarEmojis);
+      if (data is Map<String, dynamic> && data['emojis'] is List) {
+        return List<Map<String, dynamic>>.from(data['emojis'] as List);
+      }
+    } catch (_) {}
+    return [];
   }
 }

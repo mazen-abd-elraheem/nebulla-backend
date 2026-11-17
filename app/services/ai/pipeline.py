@@ -37,6 +37,7 @@ from app.services.memory.rag_service import RAGService
 from app.services.memory.fact_verifier import FactVerifier
 from app.services.motion.signal_planner import SignalPlanner
 from app.services.voice_clone.voice_clone_service import VoiceCloneService
+from app.services.avatar.emoji_actions import extract_emoji_and_emotion
 from app.services.phone_action import ActionOutcome, get_phone_action_service
 from app.services.voice_verification.speaker_service import (
     VerificationResult,
@@ -131,42 +132,13 @@ class StreamingThinkFilter:
 
 
 def clean_text_for_tts(text: str) -> str:
-    """Preprocess text with Egyptian Masri dialect normalizer before sending to TTS."""
-    return clean_llm_output_for_speech(text)
+    """Preprocess text with Egyptian Masri dialect normalizer before sending to VoiceTut-TTS."""
+    return clean_llm_output_for_speech(text, for_voicetut=True)
 
 
 def _extract_emotion(text: str) -> str:
-    """Extract emotion marker from LLM response (supports [tags] and keywords)."""
-    text_lower = text.lower()
-    tags = _TAG_RE.findall(text)
-    for tag in tags:
-        t_clean = tag.strip("[]").lower()
-        if t_clean in ("happy", "فرحان", "smile", "joy", "سعيد"):
-            return "happy"
-        if t_clean in ("sad", "حزين"):
-            return "sad"
-        if t_clean in ("surprised", "متفاجئ", "shocked"):
-            return "surprised"
-        if t_clean in ("wave", "لوح", "سلام", "باي"):
-            return "wave"
-        if t_clean in ("like", "اعجاب", "تمام", "عاش", "ممتاز"):
-            return "like"
-        if t_clean in ("love", "حب", "قلب"):
-            return "love"
-        if t_clean in ("neutral", "طبيعي"):
-            return "neutral"
-
-    if any(w in text_lower for w in ["happy", "فرحان", "😊"]):
-        return "happy"
-    if any(w in text_lower for w in ["sad", "حزين", "😢"]):
-        return "sad"
-    if any(w in text_lower for w in ["surprised", "متفاجئ", "😲"]):
-        return "surprised"
-    if any(w in text_lower for w in ["wave", "👋", "سلام", "باي"]):
-        return "wave"
-    if any(w in text_lower for w in ["like", "👍", "عاش"]):
-        return "like"
-    return "neutral"
+    """Extract emotion/expression marker from LLM response (supports face emojis, [tags], and keywords)."""
+    return str(extract_emoji_and_emotion(text)["expression"])
 
 
 def _is_micro_chunk_ready(text: str, is_first_chunk: bool = False) -> bool:
@@ -423,8 +395,23 @@ class AIPipeline:
     async def speak(self, text: str, mood: Optional[str] = None) -> None:
         """Speak `text` on the phone with the active personality's voice (used by phone actions)."""
         pid, _ = await self._get_active_personality()
-        if mood:
-            await manager.send_to_phone({"t": "eyes", "mood": mood})
+        action_spec = extract_emoji_and_emotion(text or (f"[{mood}]" if mood else ""))
+        effective_mood = mood or action_spec["ws_mood"]
+        await manager.send_to_phone({
+            "t": "eyes",
+            "mood": effective_mood,
+            "face_emoji": action_spec["face_emoji"],
+        })
+        await manager.send_to_phone({
+            "t": "avatar_action",
+            "face_emoji": action_spec["face_emoji"],
+            "expression": action_spec["expression"],
+            "mouth_preset": action_spec["mouth_preset"],
+            "speak_mouth": True,
+            "voice_mode": "cloned",
+            "personality_id": pid,
+            "flame_params": action_spec["flame_params"],
+        })
         audio_out = await self._generate_tts(clean_text_for_tts(text), pid)
         await manager.send_to_phone(audio_out)
 
@@ -809,9 +796,29 @@ class AIPipeline:
         # ── 4. Non-blocking physical motion dispatch for any remaining gestures ─────────
         self._dispatch_actuator_async(full_response)
 
-        # Update final emotion on phone display
-        emotion = _extract_emotion(full_response)
-        await manager.send_to_phone({"t": "eyes", "mood": emotion})
+        # Update final emotion & face-emoji avatar action on phone + desk display
+        action_spec = extract_emoji_and_emotion(
+            full_response,
+            voice_mode="cloned" if cloned_wav_path else "default",
+        )
+        emotion = str(action_spec["expression"])
+        await manager.send_to_phone({
+            "t": "eyes",
+            "mood": action_spec["ws_mood"],
+            "face_emoji": action_spec["face_emoji"],
+        })
+        avatar_ws_payload = {
+            "t": "avatar_action",
+            "face_emoji": action_spec["face_emoji"],
+            "expression": action_spec["expression"],
+            "mouth_preset": action_spec["mouth_preset"],
+            "speak_mouth": True,
+            "voice_mode": action_spec["voice_mode"],
+            "personality_id": active_pid,
+            "flame_params": action_spec["flame_params"],
+        }
+        await manager.send_to_phone(avatar_ws_payload)
+        await manager.broadcast_to_desks(avatar_ws_payload)
 
         # ── 6. Final text token + total latency broadcast ─────────────────
         total_ms = (time.perf_counter() - t_start) * 1000
@@ -1096,9 +1103,19 @@ class AIPipeline:
         llm_ms = (t_llm - t_llm_start) * 1000
         total_ms = (time.perf_counter() - t_start) * 1000
 
-        # Strict Fact Verification against retrieved memories
-        full_response = self._rag.verify_response(text, full_response, memories, is_greeting=is_greeting_persona, has_action=has_action)
-        emotion = _extract_emotion(full_response)
+        # Strict Fact Verification against retrieved memories (No Fallback Model)
+        full_response = self._rag.verify_response(
+            text,
+            full_response,
+            memories,
+            is_greeting=is_greeting_persona,
+            has_action=has_action,
+        )
+        action_spec = extract_emoji_and_emotion(full_response)
+        emotion = str(action_spec["expression"])
+
+        # Voice Synthesis & Delivery via VoiceCloneService (No Fallback Model)
+        audio_bytes = await self._synthesize_and_dispatch_audio(full_response, pid, broadcast_to_clients)
 
         if broadcast_to_clients:
             await manager.broadcast_to_desks({
@@ -1106,15 +1123,30 @@ class AIPipeline:
                 "token": "",
                 "is_final": True,
                 "response": full_response,
+                "face_emoji": action_spec["face_emoji"],
+                "expression": action_spec["expression"],
                 "latency": {"llm_ms": round(llm_ms), "total_ms": round(total_ms)},
             })
-            await manager.send_to_phone({"t": "eyes", "mood": emotion})
+            await manager.send_to_phone({
+                "t": "eyes",
+                "mood": action_spec["ws_mood"],
+                "face_emoji": action_spec["face_emoji"],
+            })
+            avatar_ws_payload = {
+                "t": "avatar_action",
+                "face_emoji": action_spec["face_emoji"],
+                "expression": action_spec["expression"],
+                "mouth_preset": action_spec["mouth_preset"],
+                "speak_mouth": True,
+                "voice_mode": "cloned" if audio_bytes else "none",
+                "personality_id": pid,
+                "flame_params": action_spec["flame_params"],
+            }
+            await manager.send_to_phone(avatar_ws_payload)
+            await manager.broadcast_to_desks(avatar_ws_payload)
 
         # Physical motion dispatch
         self._dispatch_actuator_async(full_response)
-
-        # Voice Synthesis & Delivery via VoiceCloneService (No Fallback Model)
-        audio_bytes = await self._synthesize_and_dispatch_audio(full_response, pid, broadcast_to_clients)
 
         # Save turn to DB
         asyncio.create_task(
@@ -1159,6 +1191,9 @@ class AIPipeline:
             "retrieved_memories": memories,
             "personality_id": pid,
             "emotion": emotion,
+            "face_emoji": action_spec["face_emoji"],
+            "expression": action_spec["expression"],
+            "avatar_action": action_spec,
             "audio_bytes": audio_bytes,
             "latency": {
                 "llm_ms": round(llm_ms, 2),

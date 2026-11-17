@@ -13,13 +13,17 @@ def main():
     parser.add_argument("--base", type=str, default="Qwen/Qwen2.5-3B-Instruct", help="Base model ID or path")
     parser.add_argument("--lora", type=str, default="models/nebula_rag_lora", help="Path to LoRA adapter")
     parser.add_argument("--out", type=str, default="models/nebula_rag_merged", help="Output merged model path")
-    args = parse_args() if "parse_args" in dir() else parser.parse_args()
+    args = parser.parse_args()
 
     print(f"🔄 جاري دمج الموديل {args.base} مع أوزان LoRA من {args.lora}...")
 
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    from peft import PeftModel
+    try:
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from peft import PeftModel  # pyrefly: ignore [missing-import]
+    except ImportError as e:
+        print(f"❌ يلزم تثبيت حزم الدمج (pip install torch transformers peft accelerate): {e}")
+        return
 
     tokenizer = AutoTokenizer.from_pretrained(args.base, trust_remote_code=True)
     base_model = AutoModelForCausalLM.from_pretrained(

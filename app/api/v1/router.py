@@ -17,11 +17,13 @@ from app.api.v1.endpoints import (
     faces,
     phone_actions,
     speakers,
+    avatar,
 )
 
 api_router = APIRouter()
 
 api_router.include_router(auth_router)
+api_router.include_router(avatar.router,         prefix="/avatar",         tags=["avatar"])
 api_router.include_router(faces.router,          prefix="/faces",          tags=["faces"])
 api_router.include_router(speakers.router,       prefix="/speakers",       tags=["speakers"])
 api_router.include_router(devices.router,        prefix="/devices",        tags=["devices"])
