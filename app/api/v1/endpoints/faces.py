@@ -313,7 +313,8 @@ async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
     if not profile.photo_path or not os.path.exists(profile.photo_path):
         raise HTTPException(status_code=404, detail=f"Photo for '{name}' does not exist on disk.")
 
-    return FileResponse(profile.photo_path, media_type="image/jpeg")
+    media_type = "image/png" if profile.photo_path.lower().endswith(".png") else "image/jpeg"
+    return FileResponse(profile.photo_path, media_type=media_type)
 
 
 @router.delete(
@@ -364,7 +365,8 @@ async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
     if not profile.photo_path or not os.path.exists(profile.photo_path):
         raise HTTPException(status_code=404, detail=f"Photo for '{name}' does not exist on disk.")
 
-    return FileResponse(profile.photo_path, media_type="image/jpeg")
+    media_type = "image/png" if profile.photo_path.lower().endswith(".png") else "image/jpeg"
+    return FileResponse(profile.photo_path, media_type=media_type)
 
 
 @router.delete(

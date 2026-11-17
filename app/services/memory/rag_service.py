@@ -418,16 +418,26 @@ class RAGService:
 
         top_score = scored[0][0]
         # Require confident topic relevance (disregard noise/unrecorded queries)
-        if top_score < 0.35:
+        if top_score < 0.45:
             return []
 
-        # Selective margin cutoff: only retain memories within 75% of the top match
-        cutoff = max(0.35, top_score * 0.75)
-        top_k = top_k or settings.MEMORY_TOP_K
+        atomic_subs = QueryDecomposer.get_atomic_subqueries(query)
+        effective_top_k = top_k or max(len(atomic_subs), 2)
+        effective_top_k = min(effective_top_k, 6)
+
+        # For composite/multi-part questions, use a balanced margin threshold
+        # so secondary valid sub-queries are retained while unrelated noise (< 0.52) is strictly filtered.
+        if len(atomic_subs) > 1:
+            cutoff = max(0.52, top_score * 0.70)
+        else:
+            cutoff = max(0.50, top_score * 0.85)
+
         seen_contents: set[str] = set()
         unique_top: list[Memory] = []
 
         for score, mem in scored:
+            if score < cutoff:
+                break
             norm_content = self._normalize_for_dedup(mem.content)
             if norm_content in seen_contents:
                 continue
@@ -437,7 +447,7 @@ class RAGService:
             if not is_conflicted:
                 seen_contents.add(norm_content)
                 unique_top.append(mem)
-                if len(unique_top) >= top_k:
+                if len(unique_top) >= effective_top_k:
                     break
 
         if unique_top:
@@ -462,20 +472,29 @@ class RAGService:
             return []
 
         top_score = scored[0][0]
-        if top_score < 0.35:
+        if top_score < 0.45:
             return []
 
-        cutoff = max(0.35, top_score * 0.75)
-        top_k = top_k or settings.MEMORY_TOP_K
+        atomic_subs = QueryDecomposer.get_atomic_subqueries(query)
+        effective_top_k = top_k or max(len(atomic_subs), 2)
+        effective_top_k = min(effective_top_k, 6)
+
+        if len(atomic_subs) > 1:
+            cutoff = max(0.52, top_score * 0.70)
+        else:
+            cutoff = max(0.50, top_score * 0.85)
+
         seen_contents: set[str] = set()
         unique_scored: list[tuple[float, Memory]] = []
 
         for score, mem in scored:
+            if score < cutoff:
+                break
             norm_content = self._normalize_for_dedup(mem.content)
             if norm_content not in seen_contents:
                 seen_contents.add(norm_content)
                 unique_scored.append((score, mem))
-                if len(unique_scored) >= top_k:
+                if len(unique_scored) >= effective_top_k:
                     break
 
         if unique_scored:
@@ -842,6 +861,60 @@ class RAGService:
                 return False
 
         return True
+
+    async def find_matching_memory_for_action(
+        self,
+        query: str,
+        personality_id: int | None = None,
+        db: AsyncSession | None = None,
+    ) -> Optional[Memory]:
+        """
+        Finds the single best existing memory in the database matching a target subject/phrase
+        for in-chat modification or deletion.
+        """
+        if not query or not query.strip():
+            return None
+
+        if db is not None:
+            stmt = select(Memory)
+            if personality_id is not None:
+                stmt = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
+            res = await db.execute(stmt)
+            memories = list(res.scalars().all())
+        else:
+            memories = self._load_memories_sync(personality_id)
+
+        if not memories:
+            return None
+
+        norm_q = self._normalize_arabic(query).lower()
+        stopwords = {
+            "في", "على", "علي", "ان", "إن", "هو", "هي", "من", "عن", "بتاع",
+            "بتاعة", "معلومة", "معلومه", "حاجة", "حاجه", "مكان", "مكانها", "مكانه",
+            "شغال", "كان", "بقى", "بقت", "اصبح", "اصبحت", "خليها", "خليه", "مش", "ده", "دي", "اللي"
+        }
+        q_tokens = set(re.findall(r"[\w\d]+", norm_q)) - stopwords
+        if not q_tokens:
+            q_tokens = set(re.findall(r"[\w\d]+", norm_q))
+
+        best_mem: Optional[Memory] = None
+        best_score = 0.0
+
+        for m in memories:
+            norm_m = self._normalize_arabic(m.content).lower()
+            m_tokens = set(re.findall(r"[\w\d]+", norm_m)) - stopwords
+            overlap = q_tokens & m_tokens
+            if overlap:
+                score = len(overlap) / max(len(q_tokens), 1)
+                if norm_q in norm_m or norm_m in norm_q:
+                    score += 0.3
+                if score > best_score:
+                    best_score = score
+                    best_mem = m
+
+        if best_mem and best_score >= 0.25:
+            return best_mem
+        return None
 
     async def update_memory(
         self,

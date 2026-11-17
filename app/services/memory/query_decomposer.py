@@ -19,6 +19,7 @@ class QueryDecomposer:
         r"\s+(?:مقارنة بـ|مقارنة مع|وقارن بين|وقارن مع)\s+",
         r"\s+(?:وفي نفس الوقت|ويا ريت تقولي عن|واحكيلي عن|وإيه كمان عن)\s+",
         r"[،,\?؟]\s*و\s*",
+        r"\s+و\s*(?=[^\s]+(?:\s+[^\s]+){0,4}\s*(?:ايه|إيه|مين|فين|ازاي|إزاي|كام|متى|ليه|شغال|بيشتغل|مكان)\b)",
         r"\s+و(?=إيه|مين|فين|ازاي|كام|متى|ليه|هل)\b",
     ]
 
@@ -81,4 +82,34 @@ class QueryDecomposer:
             sub_queries.insert(0, clean_q)
 
         return sub_queries
+
+    @classmethod
+    def get_atomic_subqueries(cls, query: str) -> List[str]:
+        """
+        Returns atomic sub-queries if composite; if atomic, returns [query].
+        Unlike decompose(), does NOT include the composite original query.
+        """
+        subs = cls.decompose(query)
+        if not subs:
+            return []
+        clean_q = query.strip()
+        atomic = [s for s in subs if s.strip() != clean_q]
+        return atomic if atomic else [clean_q]
+
+    @classmethod
+    def clean_subject(cls, sq: str) -> str:
+        """
+        Extracts the core entity or subject from an atomic sub-query by removing
+        interrogative pronouns, conjunctions, and punctuation.
+        """
+        s = re.sub(r'^(?:و|كمان|وكذلك|يا|طب|طيب|and|also|as well as)\s+', '', sq.strip(), flags=re.IGNORECASE)
+        s = re.sub(
+            r'\s*\b(?:فين|ايه|إيه|مين|كام|متى|امتى|إمتى|ازاي|إزاي|ليه|هل|شغال ايه|بيشتغل ايه|مكانها فين|مكانه فين|مكان فين|where|what|who|when|why|how|is|are)\b\s*',
+            ' ',
+            s,
+            flags=re.IGNORECASE,
+        )
+        s = re.sub(r'[؟\?.,،!\s]+$', '', s).strip()
+        return s if s else sq.strip()
+
 

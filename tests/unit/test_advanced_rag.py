@@ -201,3 +201,97 @@ def test_selective_person_augmentation():
     assert rag._should_augment_with_person("بيحب يأكل إيه؟", "مازن") is True
     assert rag._should_augment_with_person("شغال في إيه؟", "مازن") is True
 
+
+def test_fact_verifier_compound_question_partial_refusal():
+    query = "احمد شغال ايه و مصعب شغال ايه؟"
+    model_response = "احمد شغال دكتور. [happy]"
+    context = ["احمد شغال دكتور"]
+
+    verified = FactVerifier.verify_and_sanitize(query, model_response, retrieved_memories=context)
+    assert "احمد شغال دكتور" in verified
+    assert "بخصوص مصعب" in verified
+    assert "مش مسجلة" in verified
+
+
+def test_fact_verifier_compound_question_sanitizes_hallucination():
+    query = "احمد شغال ايه و مصعب شغال ايه؟"
+    model_response = "احمد شغال دكتور ومصعب شغال مهندس برمجة. [happy]"
+    context = ["احمد شغال دكتور"]
+
+    verified = FactVerifier.verify_and_sanitize(query, model_response, retrieved_memories=context)
+    assert "مهندس برمجة" not in verified
+    assert "احمد شغال دكتور" in verified
+    assert "بخصوص مصعب" in verified
+    assert "مش مسجلة" in verified
+
+
+def test_fact_verifier_compound_question_both_known():
+    query = "احمد شغال ايه و مصعب شغال ايه؟"
+    model_response = "احمد شغال دكتور ومصعب لاعب كورة تنس. [happy]"
+    context = ["احمد شغال دكتور", "مصعب لاعب كورة تنس"]
+
+    verified = FactVerifier.verify_and_sanitize(query, model_response, retrieved_memories=context)
+    assert "مش مسجلة" not in verified
+    assert "احمد شغال دكتور" in verified
+    assert "مصعب لاعب كورة تنس" in verified
+
+
+def test_fact_verifier_completes_omitted_facts():
+    query = "مصعب شغال ايه وعمر شغال ايه وطارق شغال ايه؟"
+    model_response = "طارق شغال مهندس ديكور، وعمر شغال سواق. [happy]"
+    context = ["طارق شغال مهندس ديكور", "عمر شغال سواق", "مصعب شغال لاعب كورة تنس"]
+
+    verified = FactVerifier.verify_and_sanitize(query, model_response, retrieved_memories=context)
+    assert "طارق شغال مهندس ديكور" in verified
+    assert "عمر شغال سواق" in verified
+    assert "مصعب شغال لاعب كورة تنس" in verified
+
+
+
+# ── 9. In-Chat Memory Actions & Dynamic Top-K Tests ─────────────────────────
+
+def test_chat_memory_extractor_save_update_delete():
+    from app.services.memory.chat_memory_extractor import ChatMemoryExtractor
+
+    # Save
+    save_res = ChatMemoryExtractor.process_message("احفظ عندك ان مفتاح العربية في الدرج")
+    assert save_res is not None
+    assert save_res["action"] == "save"
+    assert save_res["fact"] == "مفتاح العربية في الدرج"
+    assert save_res["is_shared"] is True
+
+    # Save persona specific
+    save_persona = ChatMemoryExtractor.process_message("احفظ عندك يا مازن ان صوتك عالي")
+    assert save_persona is not None
+    assert save_persona["action"] == "save"
+    assert save_persona["is_shared"] is False
+
+    # Update
+    update_res = ChatMemoryExtractor.process_message("عدل عندك: مفتاح العربية بقى في الصالة")
+    assert update_res is not None
+    assert update_res["action"] == "update"
+    assert "مفتاح العربية" in update_res["target"] or "مفتاح العربية" in update_res["new_fact"]
+    assert update_res["is_shared"] is True
+
+    # Delete
+    del_res = ChatMemoryExtractor.process_message("امسح معلومة ان مصعب لاعب كورة تنس")
+    assert del_res is not None
+    assert del_res["action"] == "delete"
+    assert "مصعب" in del_res["target"]
+
+
+@pytest.mark.asyncio
+async def test_find_matching_memory_for_action():
+    rag = RAGService()
+    mem1 = Memory(id=801, content="مفتاح العربية في الدرج", personality_id=None)
+    mem2 = Memory(id=802, content="مصعب لاعب كورة تنس", personality_id=1)
+    rag._vstore.add_or_update(mem1)
+    rag._vstore.add_or_update(mem2)
+
+    # Search in memory list
+    match = await rag.find_matching_memory_for_action("مفتاح العربية")
+    assert match is not None
+    assert "مفتاح العربية" in match.content
+
+
+

@@ -285,6 +285,21 @@ async def _build_and_broadcast_avatar_action(
     return action
 
 
+def _strip_robotic_prefaces(text: str) -> str:
+    """Strips mechanical repetitive prefixes like 'بناءً على المعلومات المسجلة عندي:' from LLM output."""
+    if not text:
+        return text
+    patterns = [
+        r"^(?:بناءً|بناء)\s+على\s+(?:المعلومات\s+المسجلة\s+عندي|الذاكرة|المعلومات\s+المتاحة|ما\s+هو\s+مسجل)\s*[:،,\-]\s*",
+        r"^(?:وفقاً|وفقا)\s+لـ?(?:المعلومات\s+المسجلة|الذاكرة|السياق)\s*[:،,\-]\s*",
+        r"^(?:حسب\s+المسجل|حسب\s+الذاكرة|حسب\s+المعلومات\s+المسجلة\s+عندي)\s*[:،,\-]\s*",
+    ]
+    cleaned = text.strip()
+    for p in patterns:
+        cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE).strip()
+    return cleaned
+
+
 @router.post("/chat", summary="Chat with the LLM via REST API", response_model=ChatResponse)
 async def chat_with_llm(
     request: Request,
@@ -360,14 +375,17 @@ async def chat_with_llm(
             llm.model = body.model
     t_start = time.perf_counter()
 
-    # ── Conversational In-Chat Memory Ingestion (حفظ الذكريات التلقائي من الشات) ────
+    # ── Conversational In-Chat Memory Ingestion, Update & Deletion ───────────
     from app.services.memory.chat_memory_extractor import ChatMemoryExtractor
     actor_name = getattr(grounding, "faces", {}).get("active_person") if hasattr(grounding, "faces") else None
     if not actor_name and isinstance(grounding, dict):
         actor_name = grounding.get("faces", {}).get("active_person")
-    memory_extraction = ChatMemoryExtractor.extract_fact(body.message, user_name=actor_name or (_user if _user != "dev_user" else None))
-    if memory_extraction:
-        extracted_fact, reply = memory_extraction
+    memory_action = ChatMemoryExtractor.process_message(body.message, user_name=actor_name or (_user if _user != "dev_user" else None))
+    if memory_action:
+        act_kind = memory_action.get("action")
+        reply = memory_action.get("reply", "تمام. [eyes:happy] [nod]")
+        mem_used: list[str] = []
+
         auth_uid = None
         if _user and _user != "dev_user":
             try:
@@ -377,20 +395,73 @@ async def chat_with_llm(
             except Exception:
                 pass
 
-        try:
-            await _rag_service.add_memory(
-                content=extracted_fact,
-                personality_id=active_pid,
-                user_id=auth_uid,
-                source="chat",
-                importance=8,
-                db=db,
-            )
-        except Exception as e:
-            logger.warning(f"Could not persist chat memory: {e}")
+        if act_kind == "save":
+            fact = memory_action["fact"]
+            is_shared = memory_action.get("is_shared", True)
+            target_pid = None if is_shared else active_pid
+            target_pname = memory_action.get("target_persona")
+            if target_pname:
+                p_res = await db.execute(select(Personality.id).where(Personality.name.ilike(f"%{target_pname}%")).limit(1))
+                found_pid = p_res.scalar_one_or_none()
+                if found_pid is not None:
+                    target_pid = found_pid
+            try:
+                await _rag_service.add_memory(
+                    content=fact,
+                    personality_id=target_pid,
+                    user_id=auth_uid,
+                    source="chat",
+                    importance=8,
+                    db=db,
+                )
+                mem_used = [fact]
+            except Exception as e:
+                logger.warning(f"Could not persist chat memory: {e}")
+
+        elif act_kind == "update":
+            new_fact = memory_action["new_fact"]
+            target_q = memory_action.get("target") or new_fact
+            is_shared = memory_action.get("is_shared", True)
+            target_pid = None if is_shared else active_pid
+            try:
+                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=active_pid, db=db)
+                if matched:
+                    await _rag_service.update_memory(
+                        matched.id,
+                        content=new_fact,
+                        personality_id=target_pid,
+                        db=db,
+                    )
+                    mem_used = [new_fact]
+                    reply = memory_action.get("reply") or f"تمام، عدلت المعلومة في الذاكرة: {new_fact}. [eyes:happy] [nod]"
+                else:
+                    await _rag_service.add_memory(
+                        content=new_fact,
+                        personality_id=target_pid,
+                        user_id=auth_uid,
+                        source="chat",
+                        importance=8,
+                        db=db,
+                    )
+                    mem_used = [new_fact]
+                    reply = f"تمام، سجلت في الذاكرة: {new_fact}. [eyes:happy] [nod]"
+            except Exception as e:
+                logger.warning(f"Could not update chat memory: {e}")
+
+        elif act_kind == "delete":
+            target_q = memory_action["target"]
+            try:
+                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=active_pid, db=db)
+                if matched:
+                    await _rag_service.delete_memory(matched.id, db=db)
+                    reply = memory_action.get("reply") or "تمام، مسحت المعلومة دي من الذاكرة بنجاح. [eyes:happy] [nod]"
+                else:
+                    reply = "المعلومة دي مش موجودة عندي في الذاكرة عشان أمسحها. [wave]"
+            except Exception as e:
+                logger.warning(f"Could not delete chat memory: {e}")
 
         cleaned_reply = clean_text_for_tts(reply)
-        emotion = "happy"
+        emotion = _extract_emotion(reply)
 
         user_msg = Message(
             conversation_id=conv_id,
@@ -414,7 +485,7 @@ async def chat_with_llm(
             return StreamingResponse(
                 memory_saved_stream(),
                 media_type="text/plain; charset=utf-8",
-                headers={"X-Memories-Used": urllib.parse.quote(json.dumps([extracted_fact], ensure_ascii=False))},
+                headers={"X-Memories-Used": urllib.parse.quote(json.dumps(mem_used, ensure_ascii=False))},
             )
 
         active_model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or settings.LLM_MODEL
@@ -435,10 +506,93 @@ async def chat_with_llm(
             avatar_action=avatar_action,
             llm_latency_ms=5.0,
             latency={"llm_ms": 5.0, "total_ms": 5.0},
-            retrieved_memories=[extracted_fact],
+            retrieved_memories=mem_used,
             llm_model=str(active_model_name),
             llm_provider=str(target_provider),
-            memories_used=[extracted_fact],
+            memories_used=mem_used,
+            personality_id=active_pid,
+            grounding=grounding,
+            audio_base64=audio_b64,
+            audio_url=audio_url,
+            has_voice_sample=has_sample,
+            voice_notice=voice_notice,
+        )
+
+    # ── Universal Action Execution Path (أوامر الأكشن والأجهزة والشاشة) ──────
+    act_data = getattr(grounding, "action", {}) if hasattr(grounding, "action") else (grounding.get("action", {}) if isinstance(grounding, dict) else {})
+    if act_data.get("has_action"):
+        if act_data.get("execution_payload"):
+            try:
+                payload = act_data["execution_payload"]
+                await manager.broadcast_to_desks(payload)
+                await manager.send_to_phone(payload)
+            except Exception as ex:
+                logger.debug(f"Action execution broadcast notice: {ex}")
+
+        action_reply = act_data.get("suggested_speech")
+        if not action_reply:
+            if act_data.get("decision") == "unverified_speaker":
+                action_reply = "الطلب ده محتاج أتأكد من بصمة صوتك الأول. [wave]"
+            elif act_data.get("decision") == "needs_confirm":
+                action_reply = f"متأكد إنك عاوز تنفذ {act_data.get('action')}؟ [nod]"
+            else:
+                action_reply = "حاضر، بنفذ طلبك فوراً. [nod]"
+
+        if "[" not in action_reply:
+            action_tag = act_data.get("action_tag") or "[nod]"
+            action_reply = f"{action_reply} {action_tag}"
+
+        reply = action_reply
+        cleaned_reply = clean_text_for_tts(reply)
+        emotion = _extract_emotion(reply)
+
+        user_msg = Message(
+            conversation_id=conv_id,
+            role="user",
+            content=body.message,
+        )
+        robot_msg = Message(
+            conversation_id=conv_id,
+            role="assistant",
+            content=reply,
+            llm_latency_ms=2.0,
+            total_latency_ms=2.0,
+            emotion=emotion,
+        )
+        db.add_all([user_msg, robot_msg])
+        await db.commit()
+
+        if body.stream and "application/json" not in request.headers.get("accept", ""):
+            async def action_fast_stream():
+                yield reply
+            return StreamingResponse(
+                action_fast_stream(),
+                media_type="text/plain; charset=utf-8",
+                headers={"X-Memories-Used": urllib.parse.quote("[]")},
+            )
+
+        active_model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or settings.LLM_MODEL
+        audio_b64, audio_url, has_sample, voice_notice = (None, None, True, None)
+        if body.return_audio:
+            audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(reply, active_pid)
+        avatar_action = await _build_and_broadcast_avatar_action(reply, active_pid, audio_url, has_sample)
+
+        return ChatResponse(
+            reply=reply,
+            cleaned_reply=cleaned_reply,
+            response=reply,
+            session_id=session_id,
+            conversation_id=conv_id,
+            emotion=emotion,
+            face_emoji=avatar_action["face_emoji"],
+            expression=avatar_action["expression"],
+            avatar_action=avatar_action,
+            llm_latency_ms=2.0,
+            latency={"llm_ms": 2.0, "total_ms": 2.0},
+            retrieved_memories=[],
+            llm_model=str(active_model_name),
+            llm_provider=str(target_provider),
+            memories_used=[],
             personality_id=active_pid,
             grounding=grounding,
             audio_base64=audio_b64,
@@ -595,6 +749,7 @@ async def chat_with_llm(
         is_greeting=is_greeting_persona,
         has_action=bool(getattr(grounding, "action", {}).get("has_action", False)),
     )
+    reply = _strip_robotic_prefaces(reply)
     llm_ms = (time.perf_counter() - t_start) * 1000
     cleaned_reply = clean_text_for_tts(reply)
     emotion = _extract_emotion(reply)
@@ -621,6 +776,16 @@ async def chat_with_llm(
     if body.return_audio:
         audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(reply, active_pid)
     avatar_action = await _build_and_broadcast_avatar_action(reply, active_pid, audio_url, has_sample)
+
+    # Broadcast action execution payload to connected desktop screens or phones if action is present
+    act_data = getattr(grounding, "action", {}) if hasattr(grounding, "action") else (grounding.get("action", {}) if isinstance(grounding, dict) else {})
+    if act_data.get("has_action") and act_data.get("execution_payload"):
+        try:
+            payload = act_data["execution_payload"]
+            await manager.broadcast_to_desks(payload)
+            await manager.send_to_phone(payload)
+        except Exception as ex:
+            logger.debug(f"Action execution broadcast notice: {ex}")
 
     return ChatResponse(
         reply=reply,
@@ -700,14 +865,17 @@ async def chat_stream(
     # Commit read transaction to release all SQLite locks before LLM generation
     await db.commit()
 
-    # ── Conversational In-Chat Memory Ingestion (SSE Stream) ─────────────
+    # ── Conversational In-Chat Memory Ingestion, Update & Deletion (SSE Stream) ──
     from app.services.memory.chat_memory_extractor import ChatMemoryExtractor
     actor_name = getattr(grounding, "faces", {}).get("active_person") if hasattr(grounding, "faces") else None
     if not actor_name and isinstance(grounding, dict):
         actor_name = grounding.get("faces", {}).get("active_person")
-    memory_extraction = ChatMemoryExtractor.extract_fact(body.message, user_name=actor_name or (_user if _user != "dev_user" else None))
-    if memory_extraction:
-        extracted_fact, reply = memory_extraction
+    memory_action = ChatMemoryExtractor.process_message(body.message, user_name=actor_name or (_user if _user != "dev_user" else None))
+    if memory_action:
+        act_kind = memory_action.get("action")
+        reply = memory_action.get("reply", "تمام. [eyes:happy] [nod]")
+        mem_used: list[str] = []
+
         auth_uid = None
         if _user and _user != "dev_user":
             try:
@@ -717,21 +885,74 @@ async def chat_stream(
             except Exception:
                 pass
 
-        try:
-            await _rag_service.add_memory(
-                content=extracted_fact,
-                personality_id=active_pid,
-                user_id=auth_uid,
-                source="chat",
-                importance=8,
-                db=db,
-            )
-        except Exception as e:
-            logger.warning(f"Could not persist chat memory: {e}")
+        if act_kind == "save":
+            fact = memory_action["fact"]
+            is_shared = memory_action.get("is_shared", True)
+            target_pid = None if is_shared else active_pid
+            target_pname = memory_action.get("target_persona")
+            if target_pname:
+                p_res = await db.execute(select(Personality.id).where(Personality.name.ilike(f"%{target_pname}%")).limit(1))
+                found_pid = p_res.scalar_one_or_none()
+                if found_pid is not None:
+                    target_pid = found_pid
+            try:
+                await _rag_service.add_memory(
+                    content=fact,
+                    personality_id=target_pid,
+                    user_id=auth_uid,
+                    source="chat",
+                    importance=8,
+                    db=db,
+                )
+                mem_used = [fact]
+            except Exception as e:
+                logger.warning(f"Could not persist chat memory: {e}")
+
+        elif act_kind == "update":
+            new_fact = memory_action["new_fact"]
+            target_q = memory_action.get("target") or new_fact
+            is_shared = memory_action.get("is_shared", True)
+            target_pid = None if is_shared else active_pid
+            try:
+                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=active_pid, db=db)
+                if matched:
+                    await _rag_service.update_memory(
+                        matched.id,
+                        content=new_fact,
+                        personality_id=target_pid,
+                        db=db,
+                    )
+                    mem_used = [new_fact]
+                    reply = memory_action.get("reply") or f"تمام، عدلت المعلومة في الذاكرة: {new_fact}. [eyes:happy] [nod]"
+                else:
+                    await _rag_service.add_memory(
+                        content=new_fact,
+                        personality_id=target_pid,
+                        user_id=auth_uid,
+                        source="chat",
+                        importance=8,
+                        db=db,
+                    )
+                    mem_used = [new_fact]
+                    reply = f"تمام، سجلت في الذاكرة: {new_fact}. [eyes:happy] [nod]"
+            except Exception as e:
+                logger.warning(f"Could not update chat memory: {e}")
+
+        elif act_kind == "delete":
+            target_q = memory_action["target"]
+            try:
+                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=active_pid, db=db)
+                if matched:
+                    await _rag_service.delete_memory(matched.id, db=db)
+                    reply = memory_action.get("reply") or "تمام، مسحت المعلومة دي من الذاكرة بنجاح. [eyes:happy] [nod]"
+                else:
+                    reply = "المعلومة دي مش موجودة عندي في الذاكرة عشان أمسحها. [wave]"
+            except Exception as e:
+                logger.warning(f"Could not delete chat memory: {e}")
 
         async def memory_saved_sse():
             import json
-            yield f"data: {json.dumps({'type': 'context', 'memories': [extracted_fact]}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'context', 'memories': mem_used}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'token', 'content': reply}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
             try:
@@ -747,18 +968,77 @@ async def chat_stream(
                         content=reply,
                         llm_latency_ms=5.0,
                         total_latency_ms=5.0,
-                        emotion="happy",
+                        emotion=_extract_emotion(reply),
                     )
                     session.add_all([user_msg, robot_msg])
                     await session.commit()
             except Exception as e:
                 logger.error(f"Failed to persist chat memory messages: {e}")
 
-        encoded_mems = urllib.parse.quote(json.dumps([extracted_fact], ensure_ascii=False))
+        encoded_mems = urllib.parse.quote(json.dumps(mem_used, ensure_ascii=False))
         return StreamingResponse(
             memory_saved_sse(),
             media_type="text/event-stream; charset=utf-8",
             headers={"X-Memories-Used": encoded_mems},
+        )
+
+    # ── Universal Action Execution Path (SSE Stream) ────────────────────────
+    act_data = getattr(grounding, "action", {}) if hasattr(grounding, "action") else (grounding.get("action", {}) if isinstance(grounding, dict) else {})
+    if act_data.get("has_action"):
+        if act_data.get("execution_payload"):
+            try:
+                payload = act_data["execution_payload"]
+                await manager.broadcast_to_desks(payload)
+                await manager.send_to_phone(payload)
+            except Exception as ex:
+                logger.debug(f"Action execution broadcast notice: {ex}")
+
+        action_reply = act_data.get("suggested_speech")
+        if not action_reply:
+            if act_data.get("decision") == "unverified_speaker":
+                action_reply = "الطلب ده محتاج أتأكد من بصمة صوتك الأول. [wave]"
+            elif act_data.get("decision") == "needs_confirm":
+                action_reply = f"متأكد إنك عاوز تنفذ {act_data.get('action')}؟ [nod]"
+            else:
+                action_reply = "حاضر، بنفذ طلبك فوراً. [nod]"
+
+        if "[" not in action_reply:
+            action_tag = act_data.get("action_tag") or "[nod]"
+            action_reply = f"{action_reply} {action_tag}"
+
+        async def action_sse():
+            import json
+            yield f"data: {json.dumps({'type': 'context', 'memories': []}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'token', 'content': action_reply}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+            try:
+                async with AsyncSessionLocal() as session:
+                    user_msg = Message(
+                        conversation_id=conv_id,
+                        role="user",
+                        content=body.message,
+                    )
+                    robot_msg = Message(
+                        conversation_id=conv_id,
+                        role="robot",
+                        content=action_reply,
+                        llm_latency_ms=2.0,
+                        total_latency_ms=2.0,
+                        emotion=_extract_emotion(action_reply),
+                    )
+                    session.add_all([user_msg, robot_msg])
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to persist SSE action message: {e}")
+
+        return StreamingResponse(
+            action_sse(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     # ── Strict Zero-Hallucination & Speed Optimization (SSE Stream) ───────────

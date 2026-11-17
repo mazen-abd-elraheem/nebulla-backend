@@ -534,6 +534,29 @@ async def build_grounding_context(
                 action_meta["contact_slug"] = action_eval.params.get("slug")
                 action_meta["is_allowlisted"] = (action_eval.decision != "unknown_contact")
                 action_meta["requires_confirmation"] = (action_eval.decision == "needs_confirm")
+            elif action_eval.action == "show_person_photo":
+                p_target = action_eval.target or rag_person
+                p_prof = await PersonImageRetriever.get_person_profile(p_target, db=db) if p_target else None
+                if p_prof and p_prof.get("has_photo"):
+                    p_url = p_prof.get("photo_url") or f"/api/v1/faces/{p_target}/photo"
+                    action_meta["execution_payload"] = {
+                        "t": "screen_action",
+                        "action": "show_person_photo",
+                        "name": p_target,
+                        "url": p_url,
+                    }
+                    action_meta["suggested_speech"] = f"بعرض صورة {p_target} على الشاشة حالاً."
+                    action_meta["decision"] = "ready"
+                    action_meta["status"] = "ready"
+                    if not person_profile:
+                        person_profile = p_prof
+                else:
+                    action_meta["execution_payload"] = None
+                    action_meta["decision"] = "no_photo"
+                    action_meta["status"] = "no_photo"
+                    action_meta["suggested_speech"] = f"معنديش صورة مسجلة لـ {p_target} حالياً. [wave]"
+                    action_meta["action_tag"] = "[wave]"
+                    action_meta["directive"] = f"لا توجد صورة مسجلة لـ '{p_target}' في النظام. أخبر المستخدم بأدب بعدم وجود صورة مسجلة له حالياً."
     except Exception as e:
         logger.debug(f"Universal action planning in context_builder notice: {e}")
 
@@ -554,21 +577,50 @@ async def build_grounding_context(
     voice_str = voice_info["voice_sample_path"]
 
     # 7. Formulate Unified System Prompt in Authentic Egyptian Arabic (arz) with Strict RAG Grounding
-    if memories:
+    if action_meta.get("has_action"):
+        action_kind = action_meta.get("kind")
+        action_target = action_meta.get("target") or ""
+        action_directive = action_meta.get("directive") or ""
+        suggested_speech = action_meta.get("suggested_speech") or ""
+
+        grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
+{persona_extra}
+توجيه الاستجابة وتأكيد تنفيذ الأمر المطلوب (Action Execution Directive):
+المستخدم يطلب منك أمراً مباشراً: {action_kind} لـ '{action_target}'.
+- توجيه الرد: {action_directive}
+- أسلوب الرد: أجب مباشرة وبجملة واحدة ودودة وموجزة بالعامية المصرية القاهرية تؤكد تنفيذ هذا الأمر فوراً (مثال: "{suggested_speech or f'حاضر، بعرض صورة {action_target} حالاً.'}").
+- يُمنع منعاً باتاً استبدال هذا الأمر بسرد أي معلومات أو ذكريات أخرى لا علاقة لها بما طلبه المستخدم.
+- اختم ردك دائماً وبشكل إلزامي بوسم مشاعر مثل [nod] أو [happy] أو [like] لتحريك ملامح الأفاتار وفمه.
+"""
+        # When an action is being executed, clear unrelated factual memories so they don't hijack the action confirmation
+        memories = []
+    elif memories:
         mem_bullets = "\n".join(f"[المصدر {idx}]: {m.strip()}" for idx, m in enumerate(memories, 1))
         grounded_system_prompt = f"""أنت "{robot_name}" (Nebula)، {robot_desc}، صممه وطوره {creator_name}.
 {persona_extra}
 توجيهات التشغيل والاستناد الصارم للذاكرة (Strict RAG Grounding & Zero-Hallucination):
-1. استخرج الإجابة حصراً وبدقة متناهية من سياق الذاكرة المعتمدة أدناه. ممنوع منعاً باتاً تخمين، تأليف، أو افتراض أي وقائع أو ذكريات أو تفاصيل لم تُذكر صراحة في المصادر.
-2. إذا كان السؤال يطلب تفصيلة أو رقماً غير موجود نصاً في الذاكرة أدناه (مثل أرقام الهواتف الشخصية، كلمات السر، أو البيانات المالية)، يجب الرد حصراً بعبارة:
+1. أجب حصراً وبدقة متناهية على السؤال المطلوب فقط، واستخرج الإجابة فقط من سياق الذاكرة المعتمدة أدناه. ممنوع منعاً باتاً تخمين، تأليف، أو افتراض أي وقائع أو ذكريات أو تفاصيل لم تُذكر صراحة في المصادر.
+2. إذا كان السؤال يطلب تفصيلة أو شخصاً أو شيئاً غير موجود نصاً في الذاكرة أدناه، يجب الرد حصراً بعبارة:
    "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"
-3. أسلوب الرد: أجب بجملة واحدة مباشرة أو جملتين كحد أقصى بالعامية المصرية القاهرية المهذبة لتناسب النطق الصوتي (TTS)، وبدون أي جداول أو علامات نجمية أو روابط.
+3. أسلوب الرد المباشر: أجب بإيجاز مباشر بالعامية المصرية القاهرية على قدر السؤال فقط دون حشو. يُمنع منعاً باتاً استخدام أي مقدمات ميكانيكية مكررة مثل "بناءً على المعلومات المسجلة عندي" أو "وفقاً للذاكرة" أو "حسب المسجل"؛ ادخل في الإجابة مباشرة، ولا تسرد ذكريات أخرى مسجلة لم يسأل عنها المستخدم (مثلاً إذا سأل عن وظيفة شخص، أجب بوظيفته فقط ولا تذكر ماذا يركب أو تفاصيل جانبية أخرى).
 4. وسم المشاعر وإيموجي الأفاتار: اختم إجابتك دائماً وبشكل إلزامي بإيموجي وجه معبّر (😊 😂 😍 😢 😮 😡 🤔 😉 😐) أو وسم مشاعر واحد فقط في النهاية مثل: [happy] أو [wave] أو [like] أو [neutral] أو [sad] لتحريك ملامح الأفاتار وفمه أثناء التحدث.
+5. في الأسئلة المركبة (السؤال عن أكثر من شخص أو شيء):
+   - يجب عليك الإجابة عن كل شخص أو شيء سأل عنه المستخدم بالترتيب وبشكل كامل دون إهمال أو إسقاط أي واحد منهم طالما معلومته مسجلة في المصادر (مثال: إذا سأل عن وظيفة 3 أشخاص، اذكر وظيفة الثلاثة جميعاً).
+   - إذا كانت إحدى المعلومات متوفرة والأخرى غير مسجلة: أجب عن المعلومة المتوفرة واذكر صراحة أن المعلومة الأخرى غير مسجلة.
 
 أمثلة توضيحية لأسلوب الإجابة المباشر ومنع التأليف:
 - المصدر المعتمد: [المصدر 1]: أحمد مهندس برمجيات مقيم في حلوان.
   سؤال: أحمد شغال إيه؟
   إجابة: أحمد شغال مهندس برمجيات في حلوان. 😊
+- المصدر المعتمد: [المصدر 1]: أحمد مهندس برمجيات مقيم في حلوان.
+  سؤال: الكاب فين؟
+  إجابة: المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]
+- المصادر المعتمدة: [المصدر 1]: مصعب شغال لاعب كورة تنس. [المصدر 2]: عمر شغال سواق. [المصدر 3]: طارق شغال مهندس ديكور.
+  سؤال: مصعب شغال إيه وعمر شغال إيه وطارق شغال إيه؟
+  إجابة: مصعب شغال لاعب كورة تنس، وعمر شغال سواق، وطارق شغال مهندس ديكور. 😊
+- المصدر المعتمد: [المصدر 1]: أحمد شغال دكتور.
+  سؤال: أحمد شغال إيه ومصعب شغال إيه؟
+  إجابة: أحمد شغال دكتور، لكن بخصوص مصعب فالمعلومة دي مش مسجلة عندي في الذاكرة حالياً. 😊
 - المصدر المعتمد: [المصدر 1]: أحمد مهندس برمجيات مقيم في حلوان.
   سؤال: ممكن تديني رقم تليفون أحمد الشخصي؟
   إجابة: المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]
@@ -622,6 +674,9 @@ async def build_grounding_context(
         )
     if person_profile and person_profile.get("photo_url"):
         sys_status_block += f"- شاشة العرض والصور: صورة {person_profile['name']} مسجلة في النظام ومتاحة للعرض على الشاشة.\n"
+        faces_info["person_profile"] = person_profile
+        faces_info["photo_url"] = person_profile.get("photo_url")
+        faces_info["photo_path"] = person_profile.get("photo_path")
     if trusted_contacts:
         sys_status_block += f"- جهات الاتصال المسموحة (أسماء فقط): {', '.join(trusted_contacts)}.\n"
     if active_reminders_list:
