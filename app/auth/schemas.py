@@ -186,7 +186,22 @@ class UserResponse(BaseModel):
     is_active: bool
     has_biometric: bool = False
     personalities_count: int = 0
+    avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    organization: Optional[str] = None
     created_at: datetime
+
+
+class UserUpdateRequest(BaseModel):
+    """Schema for updating user profile data."""
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    organization: Optional[str] = None
+    avatar_url: Optional[str] = None
+
 
 
 class AuthTokenResponse(BaseModel):

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/avatar_profile.dart';
@@ -22,12 +23,12 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  String _fullName = 'امير';
-  String _email = 'amer.mercer@futuremind.ai';
-  final String _phone = '+966 50 123 4567';
-  final String _location = 'الرياض، المملكة العربية السعودية';
-  final String _organization = 'مركز الأبحاث المتقدمة والتقنيات الحيوية';
-  final String _joinDate = 'مارس 2023';
+  String _fullName = 'المستخدم';
+  String _email = 'user@nebula.local';
+  String _phone = '+20 10 1234 5678';
+  String _location = 'القاهرة، مصر';
+  String _organization = 'فريق أبحاث نيبولا للذكاء الاصطناعي';
+  String _joinDate = 'مارس 2024';
 
   @override
   void initState() {
@@ -89,6 +90,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         if (user.fullName.isNotEmpty) _fullName = user.fullName;
         if (user.email.isNotEmpty) _email = user.email;
+        if (user.phone != null && user.phone!.isNotEmpty) _phone = user.phone!;
+        if (user.location != null && user.location!.isNotEmpty) _location = user.location!;
+        if (user.organization != null && user.organization!.isNotEmpty) _organization = user.organization!;
+        if (user.createdAt != null && user.createdAt!.isNotEmpty) _joinDate = user.createdAt!;
       });
     }
     // Fetch live fresh profile from backend
@@ -97,81 +102,223 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           if (remoteUser.fullName.isNotEmpty) _fullName = remoteUser.fullName;
           if (remoteUser.email.isNotEmpty) _email = remoteUser.email;
+          if (remoteUser.phone != null && remoteUser.phone!.isNotEmpty) _phone = remoteUser.phone!;
+          if (remoteUser.location != null && remoteUser.location!.isNotEmpty) _location = remoteUser.location!;
+          if (remoteUser.organization != null && remoteUser.organization!.isNotEmpty) _organization = remoteUser.organization!;
         });
       }
     }).catchError((_) {});
   }
 
-  void _showEditProfileDialog() {
+  Widget _buildProfileAvatar() {
+    final avatarPath = StorageService.instance.getUserAvatarPath();
+    final avatarUrl = StorageService.instance.getUserAvatarUrl();
+
+    if (avatarPath != null && File(avatarPath).existsSync()) {
+      return Image.file(
+        File(avatarPath),
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+      );
+    } else if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      final base = StorageService.instance.getBaseUrl();
+      final fullUrl = avatarUrl.startsWith('http') ? avatarUrl : '$base$avatarUrl';
+      return Image.network(
+        fullUrl,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+        errorBuilder: (context, error, stackTrace) => _profileInitialFallback(),
+      );
+    } else {
+      final avatar = AvatarAudioService.instance.activeAvatar.value;
+      if (avatar != null && avatar.previewUrl.isNotEmpty) {
+        return Image.network(
+          ApiService.instance.resolveUrl(avatar.previewUrl),
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _profileInitialFallback(),
+        );
+      }
+      return _profileInitialFallback();
+    }
+  }
+
+  Widget _profileInitialFallback() {
+    final initial = _fullName.trim().isNotEmpty ? _fullName.trim()[0].toUpperCase() : 'U';
+    return Container(
+      color: const Color(0xFFE0F2FE),
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(
+            fontFamily: 'Cairo',
+            fontSize: 34,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF006677),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditProfileDialog({String? focusField}) {
     final nameCtrl = TextEditingController(text: _fullName);
     final emailCtrl = TextEditingController(text: _email);
+    final phoneCtrl = TextEditingController(text: _phone);
+    final locationCtrl = TextEditingController(text: _location);
+    final orgCtrl = TextEditingController(text: _organization);
+    bool saving = false;
 
     showDialog(
       context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          title: const Text(
-            'تعديل البيانات الشخصية',
-            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: InputDecoration(
-                  labelText: 'الاسم الكامل',
-                  labelStyle: const TextStyle(fontFamily: 'Cairo'),
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0F2FE),
+                    borderRadius: BorderRadius.circular(8),
                   ),
+                  child: const Icon(Icons.edit_rounded, color: Color(0xFF00B4D8), size: 18),
                 ),
+                const SizedBox(width: 8),
+                const Text(
+                  'تعديل البيانات الشخصية',
+                  style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    autofocus: focusField == 'name',
+                    decoration: InputDecoration(
+                      labelText: 'الاسم الكامل',
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF00B4D8)),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    autofocus: focusField == 'email',
+                    decoration: InputDecoration(
+                      labelText: 'البريد الإلكتروني',
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      prefixIcon: const Icon(Icons.alternate_email_rounded, color: Color(0xFF00B4D8)),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    textDirection: TextDirection.ltr,
+                    autofocus: focusField == 'phone',
+                    decoration: InputDecoration(
+                      labelText: 'رقم الهاتف',
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      prefixIcon: const Icon(Icons.phone_outlined, color: Color(0xFF00B4D8)),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: locationCtrl,
+                    autofocus: focusField == 'location',
+                    decoration: InputDecoration(
+                      labelText: 'الموقع الجغرافي',
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      prefixIcon: const Icon(Icons.location_on_outlined, color: Color(0xFF00B4D8)),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: orgCtrl,
+                    autofocus: focusField == 'org',
+                    decoration: InputDecoration(
+                      labelText: 'المؤسسة والجهة',
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      prefixIcon: const Icon(Icons.domain_rounded, color: Color(0xFF00B4D8)),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailCtrl,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'البريد الإلكتروني',
-                  labelStyle: const TextStyle(fontFamily: 'Cairo'),
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B))),
+              ),
+              ElevatedButton(
+                onPressed: saving
+                    ? null
+                    : () async {
+                        setDialogState(() => saving = true);
+                        try {
+                          final updatedUser = await NebulaRepository.instance.updateProfile(
+                            fullName: nameCtrl.text.trim(),
+                            email: emailCtrl.text.trim(),
+                            phone: phoneCtrl.text.trim(),
+                            location: locationCtrl.text.trim(),
+                            organization: orgCtrl.text.trim(),
+                          );
+                          if (mounted) {
+                            setState(() {
+                              _fullName = updatedUser.fullName;
+                              _email = updatedUser.email;
+                              if (updatedUser.phone != null) _phone = updatedUser.phone!;
+                              if (updatedUser.location != null) _location = updatedUser.location!;
+                              if (updatedUser.organization != null) _organization = updatedUser.organization!;
+                            });
+                            if (ctx.mounted) Navigator.of(ctx).pop();
+                            if (context.mounted) {
+                              showSuccessSnackbar(context, 'تم حفظ وتحديث بياناتك في السيرفر بنجاح ✨');
+                            }
+                          }
+                        } catch (e) {
+                          setDialogState(() => saving = false);
+                          if (context.mounted) showErrorSnackbar(context, 'تعذر حفظ البيانات: $e');
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00B4D8),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
+                child: saving
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('حفظ في السيرفر', style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _fullName = nameCtrl.text.trim();
-                  _email = emailCtrl.text.trim();
-                });
-                Navigator.of(ctx).pop();
-                showSuccessSnackbar(context, 'تم تحديث البيانات بنجاح!');
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF006677),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text('حفظ',
-                  style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
-            ),
-          ],
         ),
       ),
     );
@@ -332,25 +479,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ],
                             ),
                             child: ClipOval(
-                              child: ValueListenableBuilder<AvatarProfileModel?>(
-                                valueListenable: AvatarAudioService.instance.activeAvatar,
-                                builder: (context, avatar, _) {
-                                  if (avatar != null && avatar.previewUrl.isNotEmpty) {
-                                    return Image.network(
-                                      ApiService.instance.resolveUrl(avatar.previewUrl),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) => Image.asset(
-                                        'assets/images/cyborg_bg.jpg',
-                                        fit: BoxFit.cover,
-                                      ),
-                                    );
-                                  }
-                                  return Image.asset(
-                                    'assets/images/cyborg_bg.jpg',
-                                    fit: BoxFit.cover,
-                                  );
-                                },
-                              ),
+                              child: _buildProfileAvatar(),
                             ),
                           ),
                           // Online green dot
@@ -407,6 +536,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           Icons.verified_rounded,
                           size: 18,
                           color: Color(0xFF0284C7),
+                        ),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => _showEditProfileDialog(focusField: 'name'),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE0F2FE),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFBAE6FD)),
+                            ),
+                            child: const Icon(
+                              Icons.edit_rounded,
+                              size: 15,
+                              color: Color(0xFF0284C7),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -538,6 +685,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       value: _email,
                       icon: Icons.alternate_email_rounded,
                       badge: 'مؤكد',
+                      onEdit: () => _showEditProfileDialog(),
                       onCopy: () {
                         Clipboard.setData(ClipboardData(text: _email));
                         showSuccessSnackbar(context, 'تم نسخ البريد الإلكتروني.');
@@ -551,6 +699,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       value: _phone,
                       subValue: 'رئيسي',
                       icon: Icons.phone_outlined,
+                      onEdit: () => _showEditProfileDialog(),
                     ),
                     const Divider(color: Color(0xFFF1F5F9), height: 18),
 
@@ -559,6 +708,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       label: 'الموقع الجغرافي',
                       value: _location,
                       icon: Icons.location_on_outlined,
+                      onEdit: () => _showEditProfileDialog(),
                     ),
                     const Divider(color: Color(0xFFF1F5F9), height: 18),
 
@@ -567,6 +717,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       label: 'المؤسسة والجهة',
                       value: _organization,
                       icon: Icons.domain_rounded,
+                      onEdit: () => _showEditProfileDialog(),
                     ),
                     const Divider(color: Color(0xFFF1F5F9), height: 18),
 
@@ -705,9 +856,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required IconData icon,
     String? badge,
     VoidCallback? onCopy,
+    VoidCallback? onEdit,
   }) {
     return Row(
       children: [
+        if (onEdit != null) ...[
+          InkWell(
+            onTap: onEdit,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE0F2FE),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.edit_rounded,
+                size: 14,
+                color: Color(0xFF0284C7),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
         if (onCopy != null)
           IconButton(
             icon: const Icon(Icons.copy_rounded,
@@ -802,7 +973,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.arrow_back_ios_rounded,
+            const Icon(Icons.arrow_forward_ios_rounded,
                 size: 13, color: Color(0xFF94A3B8)),
             if (endText != null) ...[
               const SizedBox(width: 6),

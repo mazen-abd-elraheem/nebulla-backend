@@ -229,20 +229,22 @@ class EgyptianFastPathCache:
         # Check identity inquiries
         for pat in cls._IDENTITY_PATTERNS:
             if pat.search(msg):
-                if is_menna:
-                    reply = "أنا نيبولا (Nebula)، التوأم الرقمي الذكي والمساعد الشخصي للمهندسة منه محمد. [action:nod] [happy]"
+                clean_target = p_name.replace(" - التوأم الرقمي", "").replace(" (Digital Twin)", "").strip()
+                if clean_target and clean_target != "نيبولا" and clean_target != "Nebula":
+                    reply = f"أنا نيبولا (Nebula)، الروبوت الذكي والتوأم الرقمي لـ {clean_target}. [action:nod] [happy]"
                 else:
-                    reply = "أنا نيبولا (Nebula)، الروبوت الذكي والتوأم الرقمي الفيزيائي للمهندس مازن عبد الرحيم. [action:nod] [happy]"
+                    reply = "أنا نيبولا (Nebula)، روبوت الذكاء الاصطناعي وتوأمك الرقمي التفاعلي. [action:nod] [happy]"
                 emotion = _extract_emotion(reply)
                 return reply, emotion
 
         # Check creator inquiries
         for pat in cls._CREATOR_PATTERNS:
             if pat.search(msg):
-                if is_menna:
-                    reply = "صممتني وبرمجتني وطورتني المهندسة منه محمد، مطورة نظام نيبولا للذكاء الاصطناعي. [action:nod] [like]"
+                clean_target = p_name.replace(" - التوأم الرقمي", "").replace(" (Digital Twin)", "").strip()
+                if clean_target and clean_target != "نيبولا" and clean_target != "Nebula":
+                    reply = f"أنا التوأم الرقمي والمساعد المخصص لـ {clean_target} بنظام نيبولا للذكاء الاصطناعي. [action:nod] [like]"
                 else:
-                    reply = "صممني وبرمجني وطورني المهندس مازن عبد الرحيم، رئيس ومطور مشروع نيبولا للتوأم الرقمي. [action:nod] [like]"
+                    reply = "أنا المساعد الذكي والتوأم الرقمي المتطور لنظام نيبولا. [action:nod] [like]"
                 emotion = _extract_emotion(reply)
                 return reply, emotion
 
