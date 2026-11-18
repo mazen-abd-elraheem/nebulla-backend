@@ -132,9 +132,10 @@ class ApiService {
 
   String resolveUrl(String pathOrUrl) {
     if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
-      return pathOrUrl;
+      return pathOrUrl.replaceAll('localhost', '127.0.0.1');
     }
-    final base = _base.endsWith('/') ? _base.substring(0, _base.length - 1) : _base;
+    final rawBase = _base.replaceAll('localhost', '127.0.0.1');
+    final base = rawBase.endsWith('/') ? rawBase.substring(0, rawBase.length - 1) : rawBase;
     final cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl : '/$pathOrUrl';
     return '$base$cleanPath';
   }

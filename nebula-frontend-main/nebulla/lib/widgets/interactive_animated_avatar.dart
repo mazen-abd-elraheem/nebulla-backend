@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
@@ -6,6 +7,7 @@ import '../models/avatar_profile.dart';
 import '../services/api_service.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/audio_viseme_analyzer.dart';
+import '../services/storage_service.dart';
 
 /// Interactive neural avatar powered solely by xg-chu/GAGAvatar.
 ///
@@ -20,6 +22,7 @@ class InteractiveAnimatedAvatar extends StatefulWidget {
   final double? height;
   final VoidCallback? onAvatarTapped;
   final VoidCallback? onAvatarDoubleTapped;
+  final VoidCallback? onAvatarLongPress;
 
   const InteractiveAnimatedAvatar({
     super.key,
@@ -30,6 +33,7 @@ class InteractiveAnimatedAvatar extends StatefulWidget {
     this.height,
     this.onAvatarTapped,
     this.onAvatarDoubleTapped,
+    this.onAvatarLongPress,
   });
 
   @override
@@ -223,6 +227,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
             }
           },
           onDoubleTap: widget.onAvatarDoubleTapped,
+          onLongPress: widget.onAvatarLongPress,
           child: AnimatedBuilder(
             animation: Listenable.merge([
               _breathingAnimation!,
@@ -399,8 +404,39 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   Widget _buildNoAvatarPlaceholder(Color auraColor) {
-    // When no custom backend avatar has been uploaded yet, render the cyborg character
-    // exactly matching the reference design in media_1795028136616_f37656e6.png
+    // 1. If user previously uploaded a personal photo or avatar, render it seamlessly
+    final userAvatarPath = StorageService.instance.getUserAvatarPath();
+    if (userAvatarPath != null && File(userAvatarPath).existsSync()) {
+      return ColoredBox(
+        color: Colors.white,
+        child: Image.file(
+          File(userAvatarPath),
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+          errorBuilder: (_, _, _) => _buildAssetCyborg(),
+        ),
+      );
+    }
+
+    final userAvatarUrl = StorageService.instance.getUserAvatarUrl();
+    if (userAvatarUrl != null && userAvatarUrl.isNotEmpty) {
+      final resolved = ApiService.instance.resolveUrl(userAvatarUrl);
+      return ColoredBox(
+        color: Colors.white,
+        child: Image.network(
+          resolved,
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+          errorBuilder: (_, _, _) => _buildAssetCyborg(),
+        ),
+      );
+    }
+
+    // 2. Default initial clean cyborg design matching the reference mockup
+    return _buildAssetCyborg();
+  }
+
+  Widget _buildAssetCyborg() {
     return ColoredBox(
       color: Colors.white,
       child: Image.asset(

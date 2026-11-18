@@ -402,6 +402,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               fullScreen: true,
               onAvatarTapped: _onAvatarTapped,
               onAvatarDoubleTapped: _showAvatarOptionsSheet,
+              onAvatarLongPress: _showAvatarOptionsSheet,
             ),
           ),
 

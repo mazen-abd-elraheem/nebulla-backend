@@ -2,9 +2,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
+import '../services/avatar_audio_service.dart';
 import '../services/storage_service.dart';
 import '../services/locale_service.dart';
 import '../services/nebula_repository.dart';
+import '../utils/avatar_photo_picker.dart';
 import '../widgets/common_widgets.dart';
 import 'language_appearance_screen.dart';
 import 'notification_preferences_screen.dart';
@@ -20,6 +22,7 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  bool _uploadingAvatar = false;
   String _fullName = 'المستخدم';
   String _email = 'user@nebula.local';
   String _phone = '+20 10 1234 5678';
@@ -99,6 +102,150 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showChangeAvatarSheet() async {
+    final t = LocaleService.instance.tr;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Directionality(
+        textDirection: LocaleService.instance.textDirection,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  t('تغيير الصورة الشخصية والأفاتار', 'Change Profile Photo & Avatar'),
+                  style: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  t(
+                    'سيتم إرسال صورتك إلى الخادم وتحويلها لأفاتار ناطق متفاعل على الصفحة الرئيسية',
+                    'Your photo will be sent to the backend and converted to your speaking avatar on the Home screen',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 12,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFEFF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.camera_alt_rounded,
+                      color: Color(0xFF00B4D8),
+                    ),
+                  ),
+                  title: Text(
+                    t('التقاط بالكاميرا', 'Take Photo with Camera'),
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _pickAndUploadAvatar(preferCamera: true);
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.photo_library_rounded,
+                      color: Color(0xFF3B82F6),
+                    ),
+                  ),
+                  title: Text(
+                    t('اختيار من المعرض', 'Choose from Gallery'),
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _pickAndUploadAvatar(preferCamera: false);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadAvatar({bool preferCamera = false}) async {
+    try {
+      final file = await pickAvatarPhotoFile(preferCamera: preferCamera);
+      if (file == null || !mounted) return;
+      setState(() => _uploadingAvatar = true);
+
+      try {
+        await NebulaRepository.instance.generateAvatar(file);
+        await StorageService.instance.setUserAvatarPath(file.path);
+        await AvatarAudioService.instance.loadActiveAvatar(force: true);
+        if (!mounted) return;
+        setState(() => _uploadingAvatar = false);
+        showSuccessSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تم تحويل صورتك إلى أفاتار ناطق وتحديث ملفك بنجاح ✨',
+            'Your photo was transformed into your speaking avatar ✨',
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _uploadingAvatar = false);
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تعذر تحويل الصورة إلى أفاتار، يرجى المحاولة مرة أخرى.',
+            'Could not transform photo into avatar. Please try again.',
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
   }
 
   String _tr(String ar, String en) => LocaleService.instance.tr(ar, en);
@@ -489,25 +636,68 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        Container(
-                          width: 86,
-                          height: 86,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFF006677).withValues(alpha: 0.2),
-                              width: 3,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.08),
-                                blurRadius: 16,
-                                offset: const Offset(0, 4),
+                        GestureDetector(
+                          onTap: _uploadingAvatar ? null : _showChangeAvatarSheet,
+                          child: Container(
+                            width: 86,
+                            height: 86,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF006677).withValues(alpha: 0.2),
+                                width: 3,
                               ),
-                            ],
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ClipOval(
+                              child: _uploadingAvatar
+                                  ? const Center(
+                                      child: SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: Color(0xFF00B4D8),
+                                        ),
+                                      ),
+                                    )
+                                  : _buildProfileAvatar(),
+                            ),
                           ),
-                          child: ClipOval(
-                            child: _buildProfileAvatar(),
+                        ),
+                        // Camera upload badge button
+                        Positioned(
+                          bottom: -2,
+                          right: -2,
+                          child: GestureDetector(
+                            onTap: _uploadingAvatar ? null : _showChangeAvatarSheet,
+                            child: Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00B4D8),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.15),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.camera_alt_rounded,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
                         ),
                         // Online green dot
