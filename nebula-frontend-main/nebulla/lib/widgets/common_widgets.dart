@@ -273,6 +273,60 @@ class LoadingOverlay extends StatelessWidget {
   }
 }
 
+/// Clean inline field error badge displayed directly above or below input fields
+/// instead of displaying floating snackbars / toasts.
+class InlineFieldError extends StatelessWidget {
+  final String message;
+  final EdgeInsetsGeometry margin;
+
+  const InlineFieldError({
+    super.key,
+    required this.message,
+    this.margin = const EdgeInsets.only(bottom: 8),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (message.trim().isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: margin,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFECACA), width: 1.2),
+      ),
+      child: Directionality(
+        textDirection: LocaleService.instance.textDirection,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: Color(0xFFEF4444),
+              size: 16,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFB91C1C),
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Convert any raw technical, plugin, or server error string into a clean,
 /// human-friendly UI/UX message in the active language.
 String sanitizeUiErrorMessage(String raw) {

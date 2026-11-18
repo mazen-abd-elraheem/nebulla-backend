@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/api_service.dart';
 import '../services/nebula_repository.dart';
 import '../services/storage_service.dart';
 import '../widgets/common_widgets.dart';
@@ -21,6 +22,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
 
+  String? _emailError;
+  String? _passwordError;
+  String? _generalError;
+
   bool _loading = false;
   bool _biometricLoading = false;
   bool _rememberMe = true;
@@ -32,6 +37,14 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _loadSavedPreferences();
+    _emailCtrl.addListener(() {
+      if (_emailError != null) setState(() => _emailError = null);
+      if (_generalError != null) setState(() => _generalError = null);
+    });
+    _passwordCtrl.addListener(() {
+      if (_passwordError != null) setState(() => _passwordError = null);
+      if (_generalError != null) setState(() => _generalError = null);
+    });
   }
 
   void _loadSavedPreferences() {
@@ -53,13 +66,39 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _loading = true);
+    final email = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text;
+
+    String? emailErr;
+    String? passErr;
+
+    if (email.isEmpty) {
+      emailErr = 'يرجى إدخال البريد الإلكتروني أو المعرّف للمتابعة.';
+    }
+    if (password.isEmpty) {
+      passErr = 'يرجى إدخال كلمة المرور.';
+    }
+
+    if (emailErr != null || passErr != null) {
+      setState(() {
+        _emailError = emailErr;
+        _passwordError = passErr;
+        _generalError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _emailError = null;
+      _passwordError = null;
+      _generalError = null;
+    });
 
     try {
       final user = await NebulaRepository.instance.login(
-        email: _emailCtrl.text.trim(),
-        password: _passwordCtrl.text,
+        email: email,
+        password: password,
         rememberMe: _rememberMe,
       );
 
@@ -82,7 +121,29 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      showErrorSnackbar(context, 'مش عارفين ندخلك: $e');
+      final msg = e is ApiException ? e.message : e.toString();
+      final lower = msg.toLowerCase();
+
+      // Show error directly above email / password without floating snackbar
+      if (lower.contains('credential') ||
+          lower.contains('invalid') ||
+          lower.contains('not found') ||
+          lower.contains('غير صحيحة') ||
+          lower.contains('غير موجود') ||
+          lower.contains('401') ||
+          lower.contains('404')) {
+        setState(() {
+          _emailError =
+              'البريد الإلكتروني أو كلمة المرور غير صحيحة، يرجى التأكد والمحاولة ثانية.';
+          _generalError = null;
+        });
+        return;
+      }
+
+      setState(() {
+        _generalError =
+            'تعذر تسجيل الدخول حالياً، يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.';
+      });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -440,6 +501,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                         color: Color(0xFF334155),
                                       ),
                                     ),
+                                    if (_emailError != null) ...[
+                                      const SizedBox(height: 6),
+                                      InlineFieldError(message: _emailError!),
+                                    ],
                                     const SizedBox(height: 7),
                                     TextFormField(
                                       controller: _emailCtrl,
@@ -510,6 +575,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                         color: Color(0xFF334155),
                                       ),
                                     ),
+                                    if (_passwordError != null) ...[
+                                      const SizedBox(height: 6),
+                                      InlineFieldError(message: _passwordError!),
+                                    ],
                                     const SizedBox(height: 7),
                                     TextFormField(
                                       controller: _passwordCtrl,
@@ -636,6 +705,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ],
                                     ),
                                     const SizedBox(height: 22),
+
+                                    if (_generalError != null) ...[
+                                      InlineFieldError(message: _generalError!),
+                                      const SizedBox(height: 14),
+                                    ],
 
                                     // Primary Button: Dark Navy [← تسجيل الدخول]
                                     InkWell(

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/locale_service.dart';
 import '../services/nebula_repository.dart';
@@ -109,175 +110,246 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final locationCtrl = TextEditingController(text: _location);
     final orgCtrl = TextEditingController(text: _organization);
     bool saving = false;
+    String? nameError;
+    String? emailError;
+    String? generalError;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => Directionality(
-          textDirection: LocaleService.instance.textDirection,
-          child: AlertDialog(
-            backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE0F2FE),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.edit_rounded, color: Color(0xFF00B4D8), size: 18),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _tr('تعديل البيانات الشخصية', 'Edit Personal Info'),
-                  style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A)),
-                ),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+        builder: (ctx, setDialogState) {
+          nameCtrl.addListener(() {
+            if (nameError != null) setDialogState(() => nameError = null);
+            if (generalError != null) setDialogState(() => generalError = null);
+          });
+          emailCtrl.addListener(() {
+            if (emailError != null) setDialogState(() => emailError = null);
+            if (generalError != null) setDialogState(() => generalError = null);
+          });
+
+          return Directionality(
+            textDirection: LocaleService.instance.textDirection,
+            child: AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+              title: Row(
                 children: [
-                  TextField(
-                    controller: nameCtrl,
-                    autofocus: focusField == 'name',
-                    cursorColor: const Color(0xFF00B4D8),
-                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                    decoration: InputDecoration(
-                      labelText: _tr('الاسم الكامل', 'Full Name'),
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
-                      prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF00B4D8)),
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2FE),
+                      borderRadius: BorderRadius.circular(8),
                     ),
+                    child: const Icon(Icons.edit_rounded, color: Color(0xFF00B4D8), size: 18),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    autofocus: focusField == 'email',
-                    cursorColor: const Color(0xFF00B4D8),
-                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                    decoration: InputDecoration(
-                      labelText: _tr('البريد الإلكتروني', 'Email Address'),
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
-                      prefixIcon: const Icon(Icons.alternate_email_rounded, color: Color(0xFF00B4D8)),
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: phoneCtrl,
-                    keyboardType: TextInputType.phone,
-                    textDirection: TextDirection.ltr,
-                    autofocus: focusField == 'phone',
-                    cursorColor: const Color(0xFF00B4D8),
-                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                    decoration: InputDecoration(
-                      labelText: _tr('رقم الهاتف', 'Phone Number'),
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
-                      prefixIcon: const Icon(Icons.phone_outlined, color: Color(0xFF00B4D8)),
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: locationCtrl,
-                    autofocus: focusField == 'location',
-                    cursorColor: const Color(0xFF00B4D8),
-                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                    decoration: InputDecoration(
-                      labelText: _tr('الموقع الجغرافي', 'Location'),
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
-                      prefixIcon: const Icon(Icons.location_on_outlined, color: Color(0xFF00B4D8)),
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: orgCtrl,
-                    autofocus: focusField == 'org',
-                    cursorColor: const Color(0xFF00B4D8),
-                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                    decoration: InputDecoration(
-                      labelText: _tr('المؤسسة والجهة', 'Organization'),
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
-                      prefixIcon: const Icon(Icons.domain_rounded, color: Color(0xFF00B4D8)),
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
-                    ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _tr('تعديل البيانات الشخصية', 'Edit Personal Info'),
+                    style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A)),
                   ),
                 ],
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text(_tr('إلغاء', 'Cancel'), style: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B))),
-              ),
-              ElevatedButton(
-                onPressed: saving
-                    ? null
-                    : () async {
-                        setDialogState(() => saving = true);
-                        try {
-                          final updatedUser = await NebulaRepository.instance.updateProfile(
-                            fullName: nameCtrl.text.trim(),
-                            email: emailCtrl.text.trim(),
-                            phone: phoneCtrl.text.trim(),
-                            location: locationCtrl.text.trim(),
-                            organization: orgCtrl.text.trim(),
-                          );
-                          if (mounted) {
-                            setState(() {
-                              _fullName = updatedUser.fullName;
-                              _email = updatedUser.email;
-                              if (updatedUser.phone != null) _phone = updatedUser.phone!;
-                              if (updatedUser.location != null) _location = updatedUser.location!;
-                              if (updatedUser.organization != null) _organization = updatedUser.organization!;
-                            });
-                            if (ctx.mounted) Navigator.of(ctx).pop();
-                            showSuccessSnackbar(
-                              context,
-                              _tr('تم حفظ وتحديث بياناتك بنجاح ✨', 'Profile updated successfully ✨'),
-                            );
-                          }
-                        } catch (e) {
-                          setDialogState(() => saving = false);
-                          if (mounted) {
-                            showErrorSnackbar(
-                              context,
-                              _tr('تعذر حفظ البيانات: $e', 'Could not save profile: $e'),
-                            );
-                          }
-                        }
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00B4D8),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (nameError != null) ...[
+                      InlineFieldError(message: nameError!),
+                      const SizedBox(height: 6),
+                    ],
+                    TextField(
+                      controller: nameCtrl,
+                      autofocus: focusField == 'name',
+                      cursorColor: const Color(0xFF00B4D8),
+                      style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                      decoration: InputDecoration(
+                        labelText: _tr('الاسم الكامل', 'Full Name'),
+                        labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
+                        prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF00B4D8)),
+                        filled: true,
+                        fillColor: nameError != null ? const Color(0xFFFFF5F5) : const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: nameError != null ? const Color(0xFFEF4444) : const Color(0xFFE2E8F0))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: nameError != null ? const Color(0xFFEF4444) : const Color(0xFF00B4D8), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (emailError != null) ...[
+                      InlineFieldError(message: emailError!),
+                      const SizedBox(height: 6),
+                    ],
+                    TextField(
+                      controller: emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      autofocus: focusField == 'email',
+                      cursorColor: const Color(0xFF00B4D8),
+                      style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                      decoration: InputDecoration(
+                        labelText: _tr('البريد الإلكتروني', 'Email Address'),
+                        labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
+                        prefixIcon: const Icon(Icons.alternate_email_rounded, color: Color(0xFF00B4D8)),
+                        filled: true,
+                        fillColor: emailError != null ? const Color(0xFFFFF5F5) : const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: emailError != null ? const Color(0xFFEF4444) : const Color(0xFFE2E8F0))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: emailError != null ? const Color(0xFFEF4444) : const Color(0xFF00B4D8), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      textDirection: TextDirection.ltr,
+                      autofocus: focusField == 'phone',
+                      cursorColor: const Color(0xFF00B4D8),
+                      style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                      decoration: InputDecoration(
+                        labelText: _tr('رقم الهاتف', 'Phone Number'),
+                        labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
+                        prefixIcon: const Icon(Icons.phone_outlined, color: Color(0xFF00B4D8)),
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: locationCtrl,
+                      autofocus: focusField == 'location',
+                      cursorColor: const Color(0xFF00B4D8),
+                      style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                      decoration: InputDecoration(
+                        labelText: _tr('الموقع الجغرافي', 'Location'),
+                        labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
+                        prefixIcon: const Icon(Icons.location_on_outlined, color: Color(0xFF00B4D8)),
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: orgCtrl,
+                      autofocus: focusField == 'org',
+                      cursorColor: const Color(0xFF00B4D8),
+                      style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                      decoration: InputDecoration(
+                        labelText: _tr('المؤسسة والجهة', 'Organization'),
+                        labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
+                        prefixIcon: const Icon(Icons.domain_rounded, color: Color(0xFF00B4D8)),
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5)),
+                      ),
+                    ),
+                    if (generalError != null) ...[
+                      const SizedBox(height: 12),
+                      InlineFieldError(message: generalError!),
+                    ],
+                  ],
                 ),
-                child: saving
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(_tr('حفظ في السيرفر', 'Save Changes'), style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
               ),
-            ],
-          ),
-        ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(_tr('إلغاء', 'Cancel'), style: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B))),
+                ),
+                ElevatedButton(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final name = nameCtrl.text.trim();
+                          final email = emailCtrl.text.trim();
+
+                          String? nErr;
+                          String? eErr;
+
+                          if (name.isEmpty) {
+                            nErr = _tr('يرجى إدخال الاسم بالكامل', 'Please enter your name');
+                          }
+
+                          final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+                          if (email.isEmpty) {
+                            eErr = _tr('يرجى إدخال البريد الإلكتروني', 'Please enter your email');
+                          } else if (!emailRegex.hasMatch(email)) {
+                            eErr = _tr('صيغة البريد الإلكتروني غير صحيحة', 'Invalid email format');
+                          }
+
+                          if (nErr != null || eErr != null) {
+                            setDialogState(() {
+                              nameError = nErr;
+                              emailError = eErr;
+                              generalError = null;
+                            });
+                            return;
+                          }
+
+                          setDialogState(() {
+                            saving = true;
+                            nameError = null;
+                            emailError = null;
+                            generalError = null;
+                          });
+
+                          try {
+                            final updatedUser = await NebulaRepository.instance.updateProfile(
+                              fullName: name,
+                              email: email,
+                              phone: phoneCtrl.text.trim(),
+                              location: locationCtrl.text.trim(),
+                              organization: orgCtrl.text.trim(),
+                            );
+                            if (mounted) {
+                              setState(() {
+                                _fullName = updatedUser.fullName;
+                                _email = updatedUser.email;
+                                if (updatedUser.phone != null) _phone = updatedUser.phone!;
+                                if (updatedUser.location != null) _location = updatedUser.location!;
+                                if (updatedUser.organization != null) _organization = updatedUser.organization!;
+                              });
+                              if (ctx.mounted) Navigator.of(ctx).pop();
+                              showSuccessSnackbar(
+                                context,
+                                _tr('تم حفظ وتحديث بياناتك بنجاح ✨', 'Profile updated successfully ✨'),
+                              );
+                            }
+                          } catch (e) {
+                            setDialogState(() => saving = false);
+                            final msg = e is ApiException ? e.message : e.toString();
+                            final lower = msg.toLowerCase();
+
+                            if (lower.contains('email') ||
+                                lower.contains('بريد') ||
+                                lower.contains('already') ||
+                                lower.contains('exists') ||
+                                lower.contains('taken') ||
+                                lower.contains('مسجل') ||
+                                lower.contains('موجود')) {
+                              setDialogState(() {
+                                emailError = _tr('هذا البريد الإلكتروني مسجل مسبقاً، يرجى استخدام بريد آخر.', 'This email is already in use.');
+                              });
+                              return;
+                            }
+
+                            setDialogState(() {
+                              generalError = _tr('تعذر حفظ البيانات حالياً، يرجى المحاولة مرة أخرى.', 'Could not save profile. Please try again.');
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00B4D8),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: saving
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Text(_tr('حفظ في السيرفر', 'Save Changes'), style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

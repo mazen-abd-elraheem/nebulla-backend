@@ -40,6 +40,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
+  // Step 0 Field Errors (Inline validation above fields)
+  String? _fullNameError;
+  String? _emailError;
+  String? _passwordError;
+  String? _confirmPasswordError;
+  String? _step0GeneralError;
+
   // Step 1: Avatar Image
   File? _profileImage;
   bool _isGeneratingAvatar = false;
@@ -68,6 +75,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void initState() {
     super.initState();
     _currentStep = widget.initialStep.clamp(0, 3);
+    _fullNameCtrl.addListener(() {
+      if (_fullNameError != null) setState(() => _fullNameError = null);
+    });
+    _emailCtrl.addListener(() {
+      if (_emailError != null) setState(() => _emailError = null);
+    });
+    _passwordCtrl.addListener(() {
+      if (_passwordError != null) setState(() => _passwordError = null);
+    });
+    _confirmPasswordCtrl.addListener(() {
+      if (_confirmPasswordError != null) {
+        setState(() => _confirmPasswordError = null);
+      }
+    });
   }
 
   @override
@@ -84,19 +105,65 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // ── Step 0: Register Credentials ──────────────────────────────────────────
 
   Future<void> _submitStep0() async {
-    if (!_formKey.currentState!.validate()) return;
-
     final fullName = _fullNameCtrl.text.trim();
     final email = _emailCtrl.text.trim().toLowerCase();
     final password = _passwordCtrl.text;
     final confirmPassword = _confirmPasswordCtrl.text;
 
-    if (password != confirmPassword) {
-      showErrorSnackbar(context, 'كلمة المرور وتأكيدها غير متطابقين.');
+    String? nameErr;
+    String? emailErr;
+    String? passErr;
+    String? confirmErr;
+
+    if (fullName.isEmpty) {
+      nameErr = 'يرجى إدخال اسمك الكامل للمتابعة.';
+    } else if (fullName.length < 3) {
+      nameErr = 'الاسم يجب ألا يقل عن 3 أحرف.';
+    }
+
+    final emailRegex =
+        RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    if (email.isEmpty) {
+      emailErr = 'يرجى إدخال البريد الإلكتروني للمتابعة.';
+    } else if (!emailRegex.hasMatch(email)) {
+      emailErr =
+          'صيغة البريد الإلكتروني غير صحيحة، يرجى كتابة بريد صحيح (مثال: name@domain.com)';
+    }
+
+    if (password.isEmpty) {
+      passErr = 'يرجى إدخال كلمة المرور.';
+    } else if (password.length < 8) {
+      passErr = 'كلمة المرور يجب أن تكون 8 خانات على الأقل وبها أحرف وأرقام.';
+    }
+
+    if (confirmPassword.isEmpty) {
+      confirmErr = 'يرجى تأكيد كلمة المرور.';
+    } else if (password != confirmPassword) {
+      confirmErr = 'كلمة المرور وتأكيدها غير متطابقين.';
+    }
+
+    if (nameErr != null ||
+        emailErr != null ||
+        passErr != null ||
+        confirmErr != null) {
+      setState(() {
+        _fullNameError = nameErr;
+        _emailError = emailErr;
+        _passwordError = passErr;
+        _confirmPasswordError = confirmErr;
+        _step0GeneralError = null;
+      });
       return;
     }
 
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _fullNameError = null;
+      _emailError = null;
+      _passwordError = null;
+      _confirmPasswordError = null;
+      _step0GeneralError = null;
+    });
 
     try {
       final user = await NebulaRepository.instance.register(
@@ -117,11 +184,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      final readableMsg = e is ApiException
-          ? e.message
-          : 'تعذر إنشاء الحساب، تأكد من الاتصال بالخادم وحاول مرة أخرى.';
-      showErrorSnackbar(context, readableMsg);
       setState(() => _loading = false);
+
+      final msg = e is ApiException ? e.message : e.toString();
+      final lower = msg.toLowerCase();
+
+      // Check for email conflicts or invalid email from backend
+      if (lower.contains('email') ||
+          lower.contains('بريد') ||
+          lower.contains('already registered') ||
+          lower.contains('already exists') ||
+          lower.contains('taken') ||
+          lower.contains('مسجل') ||
+          lower.contains('موجود')) {
+        setState(() {
+          _emailError =
+              'هذا البريد الإلكتروني مسجل مسبقاً، يرجى استخدام بريد آخر أو تسجيل الدخول.';
+          _step0GeneralError = null;
+        });
+        return;
+      }
+
+      if (lower.contains('password') || lower.contains('كلمة المرور')) {
+        setState(() {
+          _passwordError =
+              'كلمة المرور غير مقبولة من الخادم، يرجى اختيار كلمة مرور أقوى.';
+          _step0GeneralError = null;
+        });
+        return;
+      }
+
+      if (lower.contains('name') || lower.contains('اسم')) {
+        setState(() {
+          _fullNameError = 'الاسم المدخل غير صالح.';
+          _step0GeneralError = null;
+        });
+        return;
+      }
+
+      // Connection / Server issue: displayed inline above button, NOT as a floating snackbar
+      setState(() {
+        _step0GeneralError =
+            'تعذر الاتصال بالخادم حالياً، يرجى التأكد من اتصال الإنترنت والمحاولة مرة أخرى.';
+      });
     }
   }
 
@@ -695,6 +800,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             title: 'الاسم كامل',
             icon: Icons.person_outline_rounded,
           ),
+          if (_fullNameError != null) ...[
+            const SizedBox(height: 6),
+            InlineFieldError(message: _fullNameError!),
+          ],
           const SizedBox(height: 6),
           TextFormField(
             controller: _fullNameCtrl,
@@ -706,6 +815,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             decoration: _buildInputDecoration(
               hintText: 'الاسم كامل (مثال: أحمد محمد)',
               suffixIcon: Icons.badge_outlined,
+              hasError: _fullNameError != null,
             ),
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
@@ -724,6 +834,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             title: 'البريد الإلكتروني',
             icon: Icons.alternate_email_rounded,
           ),
+          if (_emailError != null) ...[
+            const SizedBox(height: 6),
+            InlineFieldError(message: _emailError!),
+          ],
           const SizedBox(height: 6),
           TextFormField(
             controller: _emailCtrl,
@@ -736,6 +850,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             decoration: _buildInputDecoration(
               hintText: 'mazen@example.com',
               suffixIcon: Icons.mail_outline_rounded,
+              hasError: _emailError != null,
             ),
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
@@ -754,6 +869,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             title: 'كلمة المرور',
             icon: Icons.lock_outline_rounded,
           ),
+          if (_passwordError != null) ...[
+            const SizedBox(height: 6),
+            InlineFieldError(message: _passwordError!),
+          ],
           const SizedBox(height: 6),
           TextFormField(
             controller: _passwordCtrl,
@@ -770,6 +889,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               onToggleObscure: () {
                 setState(() => _obscurePassword = !_obscurePassword);
               },
+              hasError: _passwordError != null,
             ),
             validator: (v) {
               if (v == null || v.isEmpty) return 'يرجى إدخال كلمة المرور';
@@ -790,6 +910,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             title: 'تأكيد كلمة المرور',
             icon: Icons.lock_reset_rounded,
           ),
+          if (_confirmPasswordError != null) ...[
+            const SizedBox(height: 6),
+            InlineFieldError(message: _confirmPasswordError!),
+          ],
           const SizedBox(height: 6),
           TextFormField(
             controller: _confirmPasswordCtrl,
@@ -808,12 +932,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   () => _obscureConfirmPassword = !_obscureConfirmPassword,
                 );
               },
+              hasError: _confirmPasswordError != null,
             ),
             validator: (v) {
               if (v != _passwordCtrl.text) return 'كلمة المرور غير متطابقة';
               return null;
             },
           ),
+          if (_step0GeneralError != null) ...[
+            const SizedBox(height: 14),
+            InlineFieldError(message: _step0GeneralError!),
+          ],
           const SizedBox(height: 24),
 
           // Next Button
@@ -1758,7 +1887,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
     bool isPassword = false,
     bool obscure = false,
     VoidCallback? onToggleObscure,
+    bool hasError = false,
   }) {
+    final borderColor =
+        hasError ? const Color(0xFFEF4444) : const Color(0xFFE2E8F0);
+    final focusColor =
+        hasError ? const Color(0xFFEF4444) : const Color(0xFF0284C7);
+    final fillColor =
+        hasError ? const Color(0xFFFFF5F5) : const Color(0xFFF8FAFC);
+
     return InputDecoration(
       hintText: hintText,
       hintStyle: TextStyle(
@@ -1768,7 +1905,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         color: const Color(0xFF94A3B8),
       ),
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
+      fillColor: fillColor,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       prefixIcon: isPassword
           ? IconButton(
@@ -1776,26 +1913,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 obscure
                     ? Icons.visibility_off_outlined
                     : Icons.visibility_outlined,
-                color: const Color(0xFF94A3B8),
+                color: hasError ? const Color(0xFFEF4444) : const Color(0xFF94A3B8),
                 size: 20,
               ),
               onPressed: onToggleObscure,
             )
           : null,
       suffixIcon: suffixIcon != null
-          ? Icon(suffixIcon, color: const Color(0xFF94A3B8), size: 20)
+          ? Icon(
+              suffixIcon,
+              color: hasError ? const Color(0xFFEF4444) : const Color(0xFF94A3B8),
+              size: 20,
+            )
           : null,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
+        borderSide: BorderSide(color: borderColor, width: hasError ? 1.5 : 1),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
+        borderSide: BorderSide(color: borderColor, width: hasError ? 1.5 : 1),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFF0284C7), width: 1.5),
+        borderSide: BorderSide(color: focusColor, width: 1.5),
       ),
     );
   }
