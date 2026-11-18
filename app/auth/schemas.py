@@ -216,3 +216,43 @@ class MessageResponse(BaseModel):
     """Generic status response."""
     message: str
     details: Optional[dict[str, Any]] = None
+
+
+class SecuritySessionItem(BaseModel):
+    """Active device/session item shown in Security & 2FA screen."""
+    id: str
+    device_name: str
+    platform: str
+    device_type: str = "desktop"  # desktop, mobile, robot, web
+    is_current: bool = False
+    status_label: str = "نشط الآن"
+
+
+class SecuritySettingsResponse(BaseModel):
+    """User security & 2FA state."""
+    two_factor_enabled: bool = True
+    biometric_enabled: bool = True
+    has_biometric: bool = False
+    security_level: str = "high"  # high, medium, basic
+    backup_codes: list[str] = Field(default_factory=list)
+    password_updated_at: Optional[datetime] = None
+    active_sessions: list[SecuritySessionItem] = Field(default_factory=list)
+
+
+class SecuritySettingsUpdateRequest(BaseModel):
+    """Update 2FA and biometric settings."""
+    two_factor_enabled: Optional[bool] = None
+    biometric_enabled: Optional[bool] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    """Authenticated user password update."""
+    current_password: str = Field(..., min_length=1, description="كلمة المرور الحالية")
+    new_password: str = Field(..., min_length=6, max_length=72, description="كلمة المرور الجديدة")
+    confirm_password: str = Field(..., description="تأكيد كلمة المرور الجديدة")
+
+    @model_validator(mode="after")
+    def validate_match(self) -> "ChangePasswordRequest":
+        if self.new_password != self.confirm_password:
+            raise ValueError("كلمة المرور الجديدة وتأكيدها غير متطابقين.")
+        return self

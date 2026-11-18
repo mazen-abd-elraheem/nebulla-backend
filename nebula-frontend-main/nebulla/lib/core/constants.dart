@@ -23,6 +23,10 @@ class AppConstants {
   static const String authForgotPassword = '/api/v1/auth/forgot-password';
   static const String authResetPassword = '/api/v1/auth/reset-password';
   static const String authMe = '/api/v1/auth/me';
+  static const String authSecurity = '/api/v1/auth/security';
+  static const String authSecurityRegenerateCodes =
+      '/api/v1/auth/security/backup-codes/regenerate';
+  static const String authChangePassword = '/api/v1/auth/change-password';
   static const String deviceStatus = '/api/v1/devices/status';
   static const String devices = '/api/v1/devices/';
   static const String personalities = '/api/v1/personalities/';
@@ -56,6 +60,7 @@ class AppConstants {
   static const String facesRegister = '/api/v1/faces/register';
   static const String actionContacts = '/api/v1/actions/contacts';
   static const String actionContactsSync = '/api/v1/actions/contacts/sync';
+  static const String actionReminders = '/api/v1/actions/reminders';
   static const String avatarCreate = '/api/v1/avatar/create';
   static const String avatarActive = '/api/v1/avatar/active';
   static const String avatarList = '/api/v1/avatar/list';

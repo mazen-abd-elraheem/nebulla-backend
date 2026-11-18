@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import imageio.v2 as imageio
 import httpx
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageOps
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,7 @@ from app.services.avatar.emoji_actions import (
     resolve_expression_spec,
 )
 from app.services.avatar.gagavatar_engine import get_gagavatar_engine
+from app.services.avatar.local_face_animator import get_local_face_animator
 
 logger = get_logger(__name__)
 
@@ -92,7 +93,7 @@ class GAGAvatarService:
         preferred_engine = (
             "gagavatar_remote"
             if remote_healthy
-            else ("gagavatar" if local_ok else "unavailable")
+            else ("gagavatar" if local_ok else "local_face_3d")
         )
         return {
             "preferred_engine": preferred_engine,
@@ -102,9 +103,10 @@ class GAGAvatarService:
             "remote_detail": remote_detail,
             "local_gagavatar_available": local_ok,
             "local_gagavatar_error": local_err,
+            "local_animator_available": True,
             "cuda_available": self._local_gag_info.get("cuda_available", False),
             "cuda_device": self._local_gag_info.get("cuda_device"),
-            "local_fallback_enabled": False,
+            "local_fallback_enabled": True,
             "output_dir": str(self.output_dir),
         }
 
@@ -120,6 +122,7 @@ class GAGAvatarService:
         style: str = "realistic",
         attempt_number: int = 1,
         require_face: bool = True,
+        allow_local_animator: bool = False,
     ) -> AvatarProfile:
         """Create a draft avatar (`status='pending_review'`, `is_active=False`) from a user photo."""
         if not image_bytes:
@@ -149,6 +152,7 @@ class GAGAvatarService:
             expressions=expressions_list,
             avatar_key=avatar_uid,
             require_face=require_face,
+            allow_local_animator=allow_local_animator,
         )
 
         # Persist portrait, expression sprites (including natural blink), mouth frames & tracked FLAME feature
@@ -211,6 +215,7 @@ class GAGAvatarService:
         expressions: List[str],
         avatar_key: str,
         require_face: bool = True,
+        allow_local_animator: bool = False,
     ) -> Dict[str, Any]:
         # 1. Try remote GAGAvatar GPU microservice if configured
         remote_url = (settings.GAGAVATAR_SERVICE_URL or "").strip()
@@ -227,20 +232,33 @@ class GAGAvatarService:
             except Exception as exc:
                 logger.warning(f"Remote GAGAvatar service failed ({exc}); checking local GAGAvatar engine")
 
-        # 2. Local xg-chu/GAGAvatar CUDA runtime (sole local avatar engine; zero non-GAGAvatar fallback)
+        # 2. Local xg-chu/GAGAvatar CUDA runtime
         local_ok, local_err = self._probe_local_gagavatar()
-        if not local_ok:
-            raise RuntimeError(
-                f"GAGAvatar engine is unavailable ({local_err or 'CUDA or weights missing'}). "
-                "Local CPU/OpenCV fallback is disabled."
+        if local_ok:
+            return await asyncio.to_thread(
+                self._generate_via_local_gagavatar,
+                src_pil,
+                style,
+                expressions,
+                avatar_key,
             )
 
-        return await asyncio.to_thread(
-            self._generate_via_local_gagavatar,
-            src_pil,
-            style,
-            expressions,
-            avatar_key,
+        # 3. CPU UniFace + OpenCV Landmark Facial Animator (same 13 sprites + 3-level mouth contract)
+        if allow_local_animator or settings.AVATAR_ALLOW_LOCAL_FALLBACK or not settings.GAGAVATAR_STRICT_ONLY:
+            logger.info(
+                f"GAGAvatar CUDA unavailable ({local_err}); generating animated avatar via LocalFaceAnimator."
+            )
+            return await asyncio.to_thread(
+                get_local_face_animator().track_and_generate_avatar,
+                src_pil,
+                style,
+                expressions,
+                avatar_key,
+            )
+
+        raise RuntimeError(
+            f"GAGAvatar engine is unavailable ({local_err or 'CUDA or weights missing'}). "
+            "Local CPU/OpenCV fallback is disabled."
         )
 
     async def _generate_via_remote_service(
@@ -392,61 +410,97 @@ class GAGAvatarService:
 
         if not rendered_remote:
             local_ok, local_err = self._probe_local_gagavatar()
-            if not local_ok:
-                raise RuntimeError(
-                    f"GAGAvatar CUDA runtime is unavailable for rendering ({local_err}). "
-                    "Local OpenCV/CPU fallback is disabled."
-                )
+            if local_ok:
+                engine = get_gagavatar_engine()
+                feat_path = avatar_dir / "tracked_feature.pt"
 
-            engine = get_gagavatar_engine()
-            feat_path = avatar_dir / "tracked_feature.pt"
+                def _load_or_track_feature() -> Dict[str, Any]:
+                    import torch
 
-            def _load_or_track_feature() -> Dict[str, Any]:
-                import torch
+                    if feat_path.exists():
+                        return torch.load(feat_path, map_location="cpu", weights_only=False)
+                    src_path = Path(avatar.source_photo_path)
+                    if not src_path.exists():
+                        raise FileNotFoundError(f"Source portrait not found: {src_path}")
+                    with Image.open(src_path) as im:
+                        src_pil = im.convert("RGB")
+                    with engine._gpu_lock:
+                        feat = engine._track_pil_image(src_pil, f"{avatar_dir.name}.png")
+                    torch.save(feat, feat_path)
+                    return feat
 
-                if feat_path.exists():
-                    return torch.load(feat_path, map_location="cpu", weights_only=False)
+                tracked_feature = await asyncio.to_thread(_load_or_track_feature)
+
+                if fmt == "png":
+                    frame_pil = await asyncio.to_thread(
+                        engine.render_expression_frame,
+                        tracked_feature=tracked_feature,
+                        expression=expr,
+                        mouth_open=mouth_open,
+                        avatar_id=f"avatar_{avatar.id}",
+                        style=style,
+                    )
+                    await asyncio.to_thread(frame_pil.save, str(out_path), "PNG")
+                else:
+                    frames_pil = await asyncio.to_thread(
+                        engine.render_animation_frames,
+                        tracked_feature=tracked_feature,
+                        expression=expr,
+                        mouth_open=mouth_open,
+                        duration_ms=duration_ms,
+                        avatar_id=f"avatar_{avatar.id}",
+                        style=style,
+                    )
+                    frames_rgb = [np.asarray(im.convert("RGB"), dtype=np.uint8) for im in frames_pil]
+                    await asyncio.to_thread(
+                        imageio.mimsave,
+                        str(out_path),
+                        frames_rgb,
+                        format="GIF",
+                        duration=0.10,
+                        loop=0,
+                    )
+            else:
+                # Render animated PNG/GIF via LocalFaceAnimator on CPU
                 src_path = Path(avatar.source_photo_path)
                 if not src_path.exists():
-                    raise FileNotFoundError(f"Source portrait not found: {src_path}")
-                with Image.open(src_path) as im:
-                    src_pil = im.convert("RGB")
-                with engine._gpu_lock:
-                    feat = engine._track_pil_image(src_pil, f"{avatar_dir.name}.png")
-                torch.save(feat, feat_path)
-                return feat
+                    src_path = Path(avatar.avatar_preview_path)
+                if not src_path.exists():
+                    raise FileNotFoundError(f"Source portrait not found for avatar #{avatar.id}")
 
-            tracked_feature = await asyncio.to_thread(_load_or_track_feature)
+                def _render_local() -> None:
+                    animator = get_local_face_animator()
+                    with Image.open(src_path) as im:
+                        src_pil = im.convert("RGB")
+                    lm = self.parse_landmarks(avatar)
+                    if fmt == "png":
+                        base_rgb, detected = animator.detect_and_frame(src_pil, style=style)
+                        use_lm = lm if lm.get("face_detected") else detected
+                        frame = animator.render_frame(
+                            base_rgb, use_lm, expression=expr, mouth_open=mouth_open
+                        )
+                        frame.save(str(out_path), "PNG")
+                    else:
+                        frames_pil = animator.render_animation_frames(
+                            src_pil=src_pil,
+                            landmarks=lm if lm.get("face_detected") else None,
+                            expression=expr,
+                            mouth_open=mouth_open,
+                            duration_ms=duration_ms,
+                            style=style,
+                        )
+                        frames_rgb = [
+                            np.asarray(im.convert("RGB"), dtype=np.uint8) for im in frames_pil
+                        ]
+                        imageio.mimsave(
+                            str(out_path),
+                            frames_rgb,
+                            format="GIF",
+                            duration=0.10,
+                            loop=0,
+                        )
 
-            if fmt == "png":
-                frame_pil = await asyncio.to_thread(
-                    engine.render_expression_frame,
-                    tracked_feature=tracked_feature,
-                    expression=expr,
-                    mouth_open=mouth_open,
-                    avatar_id=f"avatar_{avatar.id}",
-                    style=style,
-                )
-                await asyncio.to_thread(frame_pil.save, str(out_path), "PNG")
-            else:
-                frames_pil = await asyncio.to_thread(
-                    engine.render_animation_frames,
-                    tracked_feature=tracked_feature,
-                    expression=expr,
-                    mouth_open=mouth_open,
-                    duration_ms=duration_ms,
-                    avatar_id=f"avatar_{avatar.id}",
-                    style=style,
-                )
-                frames_rgb = [np.asarray(im.convert("RGB"), dtype=np.uint8) for im in frames_pil]
-                await asyncio.to_thread(
-                    imageio.mimsave,
-                    str(out_path),
-                    frames_rgb,
-                    format="GIF",
-                    duration=0.10,
-                    loop=0,
-                )
+                await asyncio.to_thread(_render_local)
 
         return {
             "avatar_id": avatar.id,
@@ -515,6 +569,7 @@ class GAGAvatarService:
         reason: Optional[str] = None,
         user_id: Optional[int] = None,
         require_face: bool = True,
+        allow_local_animator: bool = False,
     ) -> AvatarProfile:
         prior = await self._require_avatar(avatar_id, db, user_id=user_id)
         prior.status = "rejected"
@@ -540,6 +595,7 @@ class GAGAvatarService:
             style=next_style,
             attempt_number=(prior.attempt_number or 1) + 1,
             require_face=require_face,
+            allow_local_animator=allow_local_animator,
         )
 
     async def get_active_avatar(
@@ -620,6 +676,156 @@ class GAGAvatarService:
             except Exception:
                 pass
         return cls._default_landmarks()
+
+    async def create_and_activate_user_avatar(
+        self,
+        image_bytes: bytes,
+        db: AsyncSession,
+        user_id: Optional[int] = None,
+        personality_id: Optional[int] = None,
+        name: Optional[str] = None,
+        style: str = "realistic",
+    ) -> AvatarProfile:
+        """
+        End-to-end user avatar pipeline:
+        Uses full GAGAvatar (remote GPU / local CUDA) when available, or
+        LocalFaceAnimator (UniFace 5-point landmarks + OpenCV expression/blink/mouth
+        displacement frames) on CPU machines, approves & activates it, and binds
+        it directly to the user's personal Personality.
+        """
+        from app.models.personality import Personality
+
+        # Resolve user's personal Personality if not explicitly provided
+        target_pid = personality_id
+        user_persona: Optional[Personality] = None
+        if target_pid is not None:
+            user_persona = await db.get(Personality, target_pid)
+        if user_persona is None and user_id is not None:
+            p_res = await db.execute(
+                select(Personality).where(Personality.user_id == user_id).limit(1)
+            )
+            user_persona = p_res.scalar_one_or_none()
+            if user_persona is not None:
+                target_pid = user_persona.id
+
+        draft = await self.create_avatar_from_photo(
+            image_bytes=image_bytes,
+            db=db,
+            user_id=user_id,
+            personality_id=target_pid,
+            name=name or (user_persona.name if user_persona else "المستخدم"),
+            style=style,
+            require_face=False,
+            allow_local_animator=True,
+        )
+        approved = await self.approve_avatar(draft.id, db=db, user_id=user_id)
+        if user_persona is not None:
+            user_persona.image_path = approved.avatar_preview_path
+            user_persona.is_active = True
+            db.add(user_persona)
+            await db.commit()
+        return approved
+
+    async def upgrade_legacy_avatar_if_needed(
+        self,
+        avatar: AvatarProfile,
+        db: AsyncSession,
+    ) -> AvatarProfile:
+        """Upgrade older flat `user_portrait` avatars (without mouth/blink warps) in-place."""
+        try:
+            raw_expr = json.loads(avatar.expressions_json or "{}")
+        except Exception:
+            raw_expr = {}
+
+        has_mouth = isinstance(raw_expr.get("_mouth"), dict) and len(raw_expr["_mouth"]) > 0
+        if has_mouth and avatar.engine != "user_portrait":
+            return avatar
+
+        src_path = Path(avatar.source_photo_path or "")
+        if not src_path.exists():
+            src_path = Path(avatar.avatar_preview_path or "")
+        if not src_path.exists():
+            return avatar
+
+        try:
+            src_pil = self._decode_image_pil(src_path.read_bytes())
+            expressions_list = list(FACE_EMOJI_ACTIONS.keys())
+            gen_result = await asyncio.to_thread(
+                get_local_face_animator().track_and_generate_avatar,
+                src_pil,
+                avatar.style or "realistic",
+                expressions_list,
+                f"upgrade_{avatar.id}",
+            )
+
+            avatar_dir = Path(avatar.avatar_preview_path).parent
+            sprites_dir = Path(avatar.sprites_dir or (avatar_dir / "sprites"))
+            mouth_dir = avatar_dir / "mouth"
+            sprites_dir.mkdir(parents=True, exist_ok=True)
+            mouth_dir.mkdir(parents=True, exist_ok=True)
+
+            gen_result["portrait_pil"].save(avatar.avatar_preview_path, format="PNG")
+            expr_files: Dict[str, Any] = {}
+            for expr_key, sprite_pil in (gen_result.get("sprites_pil") or {}).items():
+                fname = f"{expr_key}.png"
+                sprite_pil.save(sprites_dir / fname, format="PNG")
+                expr_files[expr_key] = fname
+
+            mouth_manifest: Dict[str, List[int]] = {}
+            for expr_key, mouth_imgs in (gen_result.get("mouth_pil") or {}).items():
+                levels: List[int] = [0]
+                for lvl_idx, mouth_img in enumerate(mouth_imgs, start=1):
+                    mouth_img.save(mouth_dir / f"{expr_key}_{lvl_idx}.png", format="PNG")
+                    levels.append(lvl_idx)
+                mouth_manifest[expr_key] = levels
+            if mouth_manifest:
+                expr_files["_mouth"] = mouth_manifest
+
+            avatar.engine = gen_result["engine"]
+            avatar.sprites_dir = str(sprites_dir)
+            avatar.expressions_json = json.dumps(expr_files, ensure_ascii=False)
+            avatar.landmarks_json = json.dumps(gen_result["landmarks"])
+            avatar.attempt_number = (avatar.attempt_number or 1) + 1
+            db.add(avatar)
+            await db.commit()
+            await db.refresh(avatar)
+            logger.info(
+                f"Upgraded legacy AvatarProfile id={avatar.id} to full animated local_face_3d "
+                f"(sprites={len(expr_files) - 1}, mouth_sets={len(mouth_manifest)})"
+            )
+        except Exception as exc:
+            logger.warning(f"Legacy avatar upgrade notice for id={avatar.id}: {exc}")
+        return avatar
+
+    async def ensure_active_avatar_from_user(
+        self,
+        user: Any,
+        db: AsyncSession,
+    ) -> Optional[AvatarProfile]:
+        """Auto-hydrate or upgrade an active animated AvatarProfile from the user's photo."""
+        existing = await self.get_active_avatar(db=db, user_id=user.id)
+        if existing is not None:
+            return await self.upgrade_legacy_avatar_if_needed(existing, db=db)
+
+        avatar_url = getattr(user, "avatar_url", None) or ""
+        if "/avatar/file/" in avatar_url:
+            fname = avatar_url.rsplit("/", 1)[-1]
+            candidate = self.output_dir / fname
+            if candidate.exists():
+                try:
+                    profile = await self.create_and_activate_user_avatar(
+                        image_bytes=candidate.read_bytes(),
+                        db=db,
+                        user_id=user.id,
+                        name=user.full_name,
+                    )
+                    user.avatar_url = f"/api/v1/avatar/{profile.id}/preview"
+                    db.add(user)
+                    await db.commit()
+                    return profile
+                except Exception as exc:
+                    logger.debug(f"Auto-hydrate avatar notice for user {user.id}: {exc}")
+        return None
 
     @classmethod
     def serialize_avatar(cls, avatar: AvatarProfile) -> Dict[str, Any]:

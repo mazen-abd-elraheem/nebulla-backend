@@ -406,5 +406,123 @@ class ContactBulkSyncItem {
         'requires_confirmation': requiresConfirmation,
         'required_level': requiredLevel,
         'notify_on_missed': notifyOnMissed,
-      };
+    };
+}
+
+class SecuritySessionItem {
+  final String id;
+  final String deviceName;
+  final String platform;
+  final String deviceType;
+  final bool isCurrent;
+  final String statusLabel;
+
+  SecuritySessionItem({
+    required this.id,
+    required this.deviceName,
+    required this.platform,
+    this.deviceType = 'desktop',
+    this.isCurrent = false,
+    this.statusLabel = 'نشط الآن',
+  });
+
+  factory SecuritySessionItem.fromJson(Map<String, dynamic> json) =>
+      SecuritySessionItem(
+        id: json['id'] as String? ?? 'session',
+        deviceName: json['device_name'] as String? ?? 'الجهاز الحالي',
+        platform: json['platform'] as String? ?? 'متصل بالخادم',
+        deviceType: json['device_type'] as String? ?? 'desktop',
+        isCurrent: json['is_current'] as bool? ?? false,
+        statusLabel: json['status_label'] as String? ?? 'نشط الآن',
+      );
+}
+
+class SecuritySettingsModel {
+  final bool twoFactorEnabled;
+  final bool biometricEnabled;
+  final bool hasBiometric;
+  final String securityLevel;
+  final List<String> backupCodes;
+  final DateTime? passwordUpdatedAt;
+  final List<SecuritySessionItem> activeSessions;
+
+  SecuritySettingsModel({
+    required this.twoFactorEnabled,
+    required this.biometricEnabled,
+    required this.hasBiometric,
+    required this.securityLevel,
+    required this.backupCodes,
+    this.passwordUpdatedAt,
+    required this.activeSessions,
+  });
+
+  factory SecuritySettingsModel.fromJson(Map<String, dynamic> json) {
+    DateTime? parsedDate;
+    final rawDate = json['password_updated_at'] as String?;
+    if (rawDate != null && rawDate.isNotEmpty) {
+      parsedDate = DateTime.tryParse(rawDate);
+    }
+    return SecuritySettingsModel(
+      twoFactorEnabled: json['two_factor_enabled'] as bool? ?? true,
+      biometricEnabled: json['biometric_enabled'] as bool? ?? true,
+      hasBiometric: json['has_biometric'] as bool? ?? false,
+      securityLevel: json['security_level'] as String? ?? 'high',
+      backupCodes: (json['backup_codes'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
+      passwordUpdatedAt: parsedDate,
+      activeSessions: (json['active_sessions'] as List<dynamic>? ?? [])
+          .map((e) => SecuritySessionItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+class ReminderNoteItem {
+  final int id;
+  final String title;
+  final String? description;
+  final String reminderType; // task | medicine | appointment | note
+  final DateTime targetTime;
+  final String recurrence; // once | daily | weekly
+  final String status; // pending | announced | acknowledged | escalated | cancelled | note
+  final bool isActive;
+  final DateTime createdAt;
+
+  ReminderNoteItem({
+    required this.id,
+    required this.title,
+    this.description,
+    required this.reminderType,
+    required this.targetTime,
+    this.recurrence = 'once',
+    this.status = 'pending',
+    this.isActive = true,
+    required this.createdAt,
+  });
+
+  bool get isNote => reminderType == 'note';
+  bool get isCompleted => status == 'acknowledged';
+
+  factory ReminderNoteItem.fromJson(Map<String, dynamic> json) {
+    DateTime parseUtc(dynamic raw) {
+      if (raw is String && raw.isNotEmpty) {
+        final s = raw.endsWith('Z') || raw.contains('+') ? raw : '${raw}Z';
+        return DateTime.tryParse(s)?.toLocal() ?? DateTime.now();
+      }
+      return DateTime.now();
+    }
+
+    return ReminderNoteItem(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      title: (json['title'] as String?) ?? '',
+      description: json['description'] as String?,
+      reminderType: (json['reminder_type'] as String?) ?? 'task',
+      targetTime: parseUtc(json['target_time']),
+      recurrence: (json['recurrence'] as String?) ?? 'once',
+      status: (json['status'] as String?) ?? 'pending',
+      isActive: (json['is_active'] as bool?) ?? true,
+      createdAt: parseUtc(json['created_at']),
+    );
+  }
 }

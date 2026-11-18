@@ -17,6 +17,9 @@ class LocaleService extends ChangeNotifier {
   TextDirection get textDirection =>
       isArabic ? TextDirection.rtl : TextDirection.ltr;
 
+  /// Inline bilingual helper: returns [ar] in Arabic mode, [en] in English mode.
+  String tr(String ar, String en) => isArabic ? ar : en;
+
   Future<void> init() async {
     try {
       final prefs = await SharedPreferences.getInstance();

@@ -18,24 +18,36 @@ class PhoneActionsService {
 
   // ── Permissions ─────────────────────────────────────────────────────────────
 
+  /// Device address-book plugins (`flutter_contacts` / `permission_handler`)
+  /// are only supported on Android & iOS mobile devices.
+  bool get supportsDeviceContacts =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   /// Check whether contacts permission is already granted
   Future<bool> hasContactsPermission() async {
-    if (kIsWeb) return false;
-    final status = await Permission.contacts.status;
-    return status.isGranted;
+    if (!supportsDeviceContacts) return false;
+    try {
+      final status = await Permission.contacts.status;
+      return status.isGranted;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Request contacts and phone permissions
   Future<bool> requestContactsPermission() async {
-    if (kIsWeb) return false;
-
-    // Use FlutterContacts permission flow or PermissionHandler
-    final permission = await FlutterContacts.requestPermission(readonly: false);
-    if (!permission) {
-      final status = await Permission.contacts.request();
-      return status.isGranted;
+    if (!supportsDeviceContacts) return false;
+    try {
+      final permission =
+          await FlutterContacts.requestPermission(readonly: false);
+      if (!permission) {
+        final status = await Permission.contacts.request();
+        return status.isGranted;
+      }
+      return true;
+    } catch (_) {
+      return false;
     }
-    return true;
   }
 
   /// Request phone calling permission

@@ -142,15 +142,30 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Initial state: ONLY the welcome greeting message is present at start!
+  String _cleanPersonaName(String raw) {
+    final user = StorageService.instance.getUser();
+    var cleaned = raw
+        .replaceAll(' - التوأم الرقمي', '')
+        .replaceAll('- التوأم الرقمي', '')
+        .replaceAll('(Digital Twin)', '')
+        .trim();
+    if (user != null &&
+        user.fullName.trim().isNotEmpty &&
+        (cleaned.isEmpty || cleaned == 'التوأم الرقمي' || cleaned == 'نيبولا')) {
+      cleaned = user.fullName.trim();
+    }
+    return cleaned.isNotEmpty ? cleaned : 'المستخدم';
+  }
+
   /// No fake questions or answers, exactly as requested: "المسج تبقى في الاول بس ولما اعمل حاجه جديده تتغير وتمشي"
   void _seedInitialWelcomeMessage() {
     final user = StorageService.instance.getUser();
-    final displayName = user != null && user.fullName.isNotEmpty
-        ? user.fullName
+    final displayName = user != null && user.fullName.trim().isNotEmpty
+        ? user.fullName.trim()
         : 'صديقي';
-    final assistantTitle = user != null && user.fullName.isNotEmpty
-        ? '${user.fullName} - التوأم الرقمي'
-        : 'التوأم الرقمي';
+    final assistantTitle = user != null && user.fullName.trim().isNotEmpty
+        ? user.fullName.trim()
+        : 'المستخدم';
     _assistantName = assistantTitle;
 
     _messages.clear();
@@ -190,10 +205,7 @@ class _ChatScreenState extends State<ChatScreen> {
       active ??= personalities.where((p) => p.isActive).firstOrNull ??
           personalities.firstOrNull;
       if (active != null && mounted) {
-        var name = active.name;
-        if (user != null && user.fullName.isNotEmpty && (name == 'التوأم الرقمي' || name == 'نيبولا')) {
-          name = '${user.fullName} - التوأم الرقمي';
-        }
+        final name = _cleanPersonaName(active.name);
         setState(() {
           _assistantName = name;
           _activePersonalityId = active!.id;
@@ -466,12 +478,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
 
-                // 4. Bottom Modern Floating Input Bar with pure white input field matching mockup 100%
+                // 4. Bottom Modern Floating Input Bar cleanly positioned above the footer
                 _buildModernInputBar(),
 
-                // Spacing to keep input bar cleanly above bottom navigation bar
+                // Spacing to keep input bar completely clear above GlobalNebulaFooter
                 SizedBox(
-                  height: MediaQuery.of(context).viewInsets.bottom > 0 ? 8 : 84,
+                  height: MediaQuery.of(context).viewInsets.bottom > 0 ? 10 : 106,
                 ),
               ],
             ),
@@ -702,7 +714,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(width: 6),
 
-            // 3-dots Menu placed directly beside the session button as requested
+            // 3-dots Menu: جلسة جديدة + مسح الرسائل
             PopupMenuButton<String>(
               icon: Container(
                 width: 32,
@@ -723,33 +735,21 @@ class _ChatScreenState extends State<ChatScreen> {
                 borderRadius: BorderRadius.circular(16),
               ),
               onSelected: (val) {
-                if (val == 'switch_persona') _showPersonalitySwitchDialog();
                 if (val == 'new') _startNewSession();
-                if (val == 'clear') setState(() => _messages.clear());
+                if (val == 'clear') {
+                  setState(() {
+                    _messages.clear();
+                    _sessionId = null;
+                  });
+                  showSuccessSnackbar(
+                    context,
+                    LocaleService.instance.isArabic
+                        ? 'تم مسح الرسائل بنجاح'
+                        : 'Messages cleared',
+                  );
+                }
               },
               itemBuilder: (ctx) => [
-                PopupMenuItem(
-                  value: 'switch_persona',
-                  child: Directionality(
-                    textDirection: LocaleService.instance.textDirection,
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.switch_account_rounded,
-                          size: 18,
-                          color: Color(0xFF00B4D8),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          LocaleService.instance.isArabic
-                              ? 'تبديل الشخصية'
-                              : 'Switch Personality',
-                          style: const TextStyle(fontFamily: 'Cairo'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
                 PopupMenuItem(
                   value: 'new',
                   child: Directionality(
@@ -798,20 +798,86 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(width: 6),
 
-            // Filter icon button
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+            // Settings / Tune icon button: تبديل الشخصيات + الشخصيات
+            PopupMenuButton<String>(
+              tooltip: LocaleService.instance.isArabic
+                  ? 'إعدادات الشخصيات'
+                  : 'Persona Settings',
+              icon: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: const Icon(
+                  Icons.tune_rounded,
+                  size: 16,
+                  color: Color(0xFF475569),
+                ),
               ),
-              child: const Icon(
-                Icons.tune_rounded,
-                size: 16,
-                color: Color(0xFF475569),
+              padding: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
+              onSelected: (val) {
+                if (val == 'switch_persona') {
+                  _showPersonalitySwitchDialog();
+                } else if (val == 'personas') {
+                  if (widget.onNavigate != null) {
+                    widget.onNavigate!(0);
+                  } else {
+                    MainShell.navigateTo(context, 0);
+                  }
+                }
+              },
+              itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'switch_persona',
+                  child: Directionality(
+                    textDirection: LocaleService.instance.textDirection,
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.switch_account_rounded,
+                          size: 18,
+                          color: Color(0xFF00B4D8),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          LocaleService.instance.isArabic
+                              ? 'تبديل الشخصيات'
+                              : 'Switch Personas',
+                          style: const TextStyle(fontFamily: 'Cairo'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'personas',
+                  child: Directionality(
+                    textDirection: LocaleService.instance.textDirection,
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.groups_rounded,
+                          size: 18,
+                          color: Color(0xFF9333EA),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          LocaleService.instance.isArabic
+                              ? 'الشخصيات'
+                              : 'Personas',
+                          style: const TextStyle(fontFamily: 'Cairo'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -917,7 +983,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           ),
                           title: Text(
-                            p.name,
+                            _cleanPersonaName(p.name),
                             style: TextStyle(
                               fontFamily: 'Cairo',
                               fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
@@ -950,21 +1016,30 @@ class _ChatScreenState extends State<ChatScreen> {
 
 
   Future<void> _selectPersonality(Personality p) async {
+    final cleanName = _cleanPersonaName(p.name);
     setState(() {
       _activePersonalityId = p.id;
-      _assistantName = p.name;
+      _assistantName = cleanName;
+      _sessionId = null;
     });
+
+    AvatarAudioService.instance.activePersonalityId.value = p.id;
+    AvatarAudioService.instance.setPersonaName(cleanName);
 
     try {
       await _repo.activatePersonality(p.id);
+      await AvatarAudioService.instance.loadActiveAvatar(
+        force: true,
+        personalityId: p.id,
+      );
     } catch (_) {}
 
     if (!mounted) return;
     showSuccessSnackbar(
       context,
       LocaleService.instance.isArabic
-          ? 'تم التحويل إلى شخصية "${p.name}" بنجاح ✨'
-          : 'Switched to persona "${p.name}" ✨',
+          ? 'تم التحويل إلى شخصية "$cleanName" بنجاح ✨'
+          : 'Switched to persona "$cleanName" ✨',
     );
   }
 
@@ -1606,68 +1681,74 @@ class _ChatScreenState extends State<ChatScreen> {
   /// - Vibrant cyan circular send button on far left
   Widget _buildModernInputBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors
-          .transparent, // Transparent bar background so the white pill floats beautifully
+      margin: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: const Color(0xFF00B4D8).withValues(alpha: 0.45),
+          width: 1.6,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 5),
+          ),
+          BoxShadow(
+            color: const Color(0xFF00B4D8).withValues(alpha: 0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Directionality(
         textDirection: TextDirection.rtl,
         child: Row(
           children: [
-            // 1. Far Right: Circular Attachment Button (White Circle)
+            // 1. Far Right: Circular Attachment Button (Clear Sky-Blue Circle)
             Container(
-              width: 46,
-              height: 46,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white,
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF0F172A).withValues(alpha: 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                color: const Color(0xFFE0F2FE),
+                border: Border.all(color: const Color(0xFF7DD3FC), width: 1.2),
               ),
               child: IconButton(
                 icon: const Icon(
                   Icons.attach_file_rounded,
-                  color: Color(0xFF475569),
-                  size: 22,
+                  color: Color(0xFF0369A1),
+                  size: 20,
                 ),
                 onPressed: _pickAttachment,
                 tooltip: 'إرفاق ملف',
+                padding: EdgeInsets.zero,
               ),
             ),
 
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
 
-            // 2. Center: Input Field Pill with Pure White Background (الجزئية التي نكتب فيها بيضاء)
+            // 2. Center: Crisp High-Contrast Input Field Pill
             Expanded(
               child: Container(
-                height: 46,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white, // PURE WHITE as requested
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF0F172A).withValues(alpha: 0.04),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
                 ),
                 child: Row(
                   children: [
-                    // Text Field (in RTL starts from right) - Explicit Pure White Theme
+                    // Text Field (in RTL starts from right)
                     Expanded(
                       child: Theme(
                         data: ThemeData.light().copyWith(
                           inputDecorationTheme: const InputDecorationTheme(
-                            fillColor: Colors.white,
-                            filled: true,
+                            fillColor: Colors.transparent,
+                            filled: false,
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
@@ -1681,21 +1762,20 @@ class _ChatScreenState extends State<ChatScreen> {
                           style: const TextStyle(
                             fontFamily: 'Cairo',
                             fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             color: Color(0xFF0F172A),
                           ),
                           textInputAction: TextInputAction.send,
-                          cursorColor: const Color(0xFF0096C7),
+                          cursorColor: const Color(0xFF0284C7),
                           decoration: const InputDecoration(
-                            hintText: '...اكتب رسالتك هنا',
+                            hintText: 'اكتب رسالتك هنا...',
                             hintStyle: TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF94A3B8),
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF475569),
                             ),
-                            filled: true,
-                            fillColor: Colors.white,
+                            filled: false,
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
@@ -1710,39 +1790,54 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
 
-                    // Mic Icon inside the white pill on the left
-                    IconButton(
-                      icon: const Icon(
-                        Icons.mic_none_rounded,
-                        color: Color(0xFF64748B),
-                        size: 21,
+                    // Mic Icon inside the pill on the left
+                    InkWell(
+                      onTap: _recordAudioPrompt,
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFE0F2FE),
+                        ),
+                        child: const Icon(
+                          Icons.mic_rounded,
+                          color: Color(0xFF0284C7),
+                          size: 19,
+                        ),
                       ),
-                      onPressed: _recordAudioPrompt,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
                     ),
                   ],
                 ),
               ),
             ),
 
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
 
-            // 3. Far Left: Vibrant Cyan Send Circle Button
+            // 3. Far Left: Vibrant Gradient Cyan-Blue Send Circle Button
             Material(
-              color: const Color(0xFF00E5FF),
+              color: Colors.transparent,
               shape: const CircleBorder(),
               child: InkWell(
                 onTap: _sending ? null : () => _sendMessage(),
                 customBorder: const CircleBorder(),
                 child: Container(
-                  width: 48,
-                  height: 48,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFF00B4D8),
+                        Color(0xFF0284C7),
+                      ],
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF00E5FF).withValues(alpha: 0.45),
+                        color: const Color(0xFF00B4D8).withValues(alpha: 0.45),
                         blurRadius: 10,
                         offset: const Offset(0, 3),
                       ),
@@ -1761,7 +1856,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         : const Icon(
                             Icons.send_rounded,
                             color: Colors.white,
-                            size: 22,
+                            size: 20,
                           ),
                   ),
                 ),

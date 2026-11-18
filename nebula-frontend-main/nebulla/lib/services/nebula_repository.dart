@@ -3,6 +3,7 @@ import '../core/constants.dart';
 import '../models/avatar_profile.dart';
 import '../models/models.dart';
 import 'api_service.dart';
+import 'avatar_audio_service.dart';
 import 'storage_service.dart';
 
 class NebulaRepository {
@@ -43,6 +44,10 @@ class NebulaRepository {
     } else {
       user = await getMe();
     }
+    if (user.fullName.trim().isNotEmpty) {
+      AvatarAudioService.instance.setPersonaName(user.fullName.trim());
+    }
+    AvatarAudioService.instance.loadActiveAvatar(force: true);
     return user;
   }
 
@@ -146,6 +151,47 @@ class NebulaRepository {
     return map['message'] as String? ?? 'تمت إعادة تعيين كلمة المرور بنجاح.';
   }
 
+  // ── Security & 2FA ────────────────────────────────────────────────────────
+
+  Future<SecuritySettingsModel> getSecuritySettings() async {
+    final data = await _api.get(AppConstants.authSecurity);
+    return SecuritySettingsModel.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<SecuritySettingsModel> updateSecuritySettings({
+    bool? twoFactorEnabled,
+    bool? biometricEnabled,
+  }) async {
+    final payload = <String, dynamic>{};
+    if (twoFactorEnabled != null) {
+      payload['two_factor_enabled'] = twoFactorEnabled;
+    }
+    if (biometricEnabled != null) {
+      payload['biometric_enabled'] = biometricEnabled;
+    }
+    final data = await _api.put(AppConstants.authSecurity, payload);
+    return SecuritySettingsModel.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<SecuritySettingsModel> regenerateBackupCodes() async {
+    final data = await _api.post(AppConstants.authSecurityRegenerateCodes);
+    return SecuritySettingsModel.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<String> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    final data = await _api.post(AppConstants.authChangePassword, {
+      'current_password': currentPassword,
+      'new_password': newPassword,
+      'confirm_password': confirmPassword,
+    });
+    final map = data as Map<String, dynamic>;
+    return map['message'] as String? ?? 'تم تحديث كلمة المرور بنجاح.';
+  }
+
   /// Legacy pairing code login for backwards compatibility with hardware devices
   Future<TokenResponse> loginWithPairingCode(String pairingCode) async {
     final data = await _api.post(AppConstants.authToken, {
@@ -208,7 +254,28 @@ class NebulaRepository {
       imageFile,
       'file',
     );
-    return data is Map<String, dynamic> ? data : {};
+    await _store.setUserAvatarPath(imageFile.path);
+    final map = data is Map<String, dynamic> ? data : <String, dynamic>{};
+
+    final avatarUrl = map['avatar_url'] as String?;
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      await _store.setUserAvatarUrl(avatarUrl);
+    }
+
+    if (map['avatar'] is Map<String, dynamic>) {
+      final profile = AvatarProfileModel.fromJson(
+        map['avatar'] as Map<String, dynamic>,
+      );
+      AvatarAudioService.instance.setActiveAvatar(profile);
+      if (profile.personalityId != null) {
+        AvatarAudioService.instance.activePersonalityId.value =
+            profile.personalityId!;
+      }
+    } else {
+      await AvatarAudioService.instance.loadActiveAvatar(force: true);
+    }
+
+    return map;
   }
 
   // ── Devices ───────────────────────────────────────────────────────────────
@@ -736,5 +803,73 @@ class NebulaRepository {
       }
     } catch (_) {}
     return [];
+  }
+
+  // ── Notes & Task Reminders ────────────────────────────────────────────────
+
+  Future<List<ReminderNoteItem>> getReminders({
+    bool activeOnly = true,
+    String? reminderType,
+  }) async {
+    final params = <String, dynamic>{
+      'active_only': activeOnly.toString(),
+      'reminder_type': ?reminderType,
+    };
+    final data = await _api.get(AppConstants.actionReminders, params);
+    final list = data is List ? data : const [];
+    return list
+        .map((e) => ReminderNoteItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<ReminderNoteItem> createReminder({
+    required String title,
+    String? description,
+    String reminderType = 'task',
+    DateTime? targetTime,
+    String recurrence = 'once',
+  }) async {
+    final payload = <String, dynamic>{
+      'title': title.trim(),
+      'reminder_type': reminderType,
+      'recurrence': recurrence,
+      if (description != null && description.trim().isNotEmpty)
+        'description': description.trim(),
+      if (targetTime != null) 'target_time': targetTime.toUtc().toIso8601String(),
+    };
+    final data = await _api.post(AppConstants.actionReminders, payload);
+    return ReminderNoteItem.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<ReminderNoteItem> updateReminder({
+    required int id,
+    String? title,
+    String? description,
+    String? reminderType,
+    DateTime? targetTime,
+    String? recurrence,
+    String? status,
+  }) async {
+    final payload = <String, dynamic>{};
+    if (title != null) payload['title'] = title.trim();
+    if (description != null) payload['description'] = description.trim();
+    if (reminderType != null) payload['reminder_type'] = reminderType;
+    if (targetTime != null) {
+      payload['target_time'] = targetTime.toUtc().toIso8601String();
+    }
+    if (recurrence != null) payload['recurrence'] = recurrence;
+    if (status != null) payload['status'] = status;
+    final data = await _api.put('${AppConstants.actionReminders}/$id', payload);
+    return ReminderNoteItem.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<ReminderNoteItem> acknowledgeReminder(int id) async {
+    final data =
+        await _api.patch('${AppConstants.actionReminders}/$id/acknowledge', {});
+    return ReminderNoteItem.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteReminder(int id) async {
+    await _api.delete('${AppConstants.actionReminders}/$id');
   }
 }

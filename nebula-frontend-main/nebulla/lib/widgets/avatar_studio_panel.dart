@@ -55,18 +55,32 @@ class _AvatarStudioPanelState extends State<AvatarStudioPanel> {
       if (!mounted) return;
       setState(() => _isGenerating = true);
 
-      final draft = await _repo.createAvatarFromPhoto(
-        photoFile: file,
-        name: widget.defaultName,
-        personalityId: widget.personalityId,
-        style: _selectedStyle,
-      );
-      if (!mounted) return;
-      setState(() {
-        _previewAvatar = draft;
-        _isGenerating = false;
-      });
-      showSuccessSnackbar(context, 'تم إنشاء الأفاتار! راجع شكله ولو مش عاجبك اعمل واحد جديد.');
+      try {
+        final draft = await _repo.createAvatarFromPhoto(
+          photoFile: file,
+          name: widget.defaultName,
+          personalityId: widget.personalityId,
+          style: _selectedStyle,
+        );
+        if (!mounted) return;
+        setState(() {
+          _previewAvatar = draft;
+          _isGenerating = false;
+        });
+        showSuccessSnackbar(context, 'تم إنشاء الأفاتار! راجع شكله ولو مش عاجبك اعمل واحد جديد.');
+      } catch (_) {
+        await _repo.generateAvatar(file);
+        if (!mounted) return;
+        final active = _audioService.activeAvatar.value;
+        setState(() {
+          _previewAvatar = active;
+          _isGenerating = false;
+        });
+        if (active != null) {
+          widget.onAvatarApproved?.call(active);
+        }
+        showSuccessSnackbar(context, 'تم تحويل صورتك لأفاتار متحرك وتفعيله بنجاح ✨');
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isGenerating = false);
@@ -139,18 +153,6 @@ class _AvatarStudioPanelState extends State<AvatarStudioPanel> {
         showErrorSnackbar(context, 'تعذر اعتماد الأفاتار: $e');
       }
     }
-  }
-
-  void _testEmojiSpeech(Map<String, String> item) {
-    final emoji = item['emoji']!;
-    final expr = item['expr']!;
-    final sample = item['sample']!;
-    _audioService.speak(
-      '$sample $emoji',
-      faceEmoji: emoji,
-      expression: expr,
-      personalityId: widget.personalityId ?? _audioService.activePersonalityId.value,
-    );
   }
 
   @override
@@ -395,38 +397,6 @@ class _AvatarStudioPanelState extends State<AvatarStudioPanel> {
               ],
             ),
           ],
-
-          // Face Emoji Expression + Voice Test Strip
-          const SizedBox(height: 14),
-          Text(
-            'جرّب تعبيرات الوش بالإيموجي مع الصوت المستنسخ:',
-            style: TextStyle(fontFamily: 'Cairo', fontSize: 11, color: subColor),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 6,
-            runSpacing: 6,
-            children: kAvatarEmojiTests.map((item) {
-              return InkWell(
-                onTap: () => _testEmojiSpeech(item),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: surfaceColor,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: borderColor),
-                  ),
-                  child: Text(
-                    item['emoji']!,
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
         ],
       ),
     );

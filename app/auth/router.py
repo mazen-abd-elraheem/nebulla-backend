@@ -6,12 +6,13 @@ Password Recovery, and Profile Management endpoints.
 import asyncio
 from datetime import datetime, timedelta, timezone
 import io
+import json
 import pathlib
 import secrets
 from typing import Any, Optional
 
 import numpy as np
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select, and_
@@ -27,9 +28,13 @@ from app.auth.jwt import (
 )
 from app.auth.schemas import (
     AuthTokenResponse,
+    ChangePasswordRequest,
     ForgotPasswordRequest,
     MessageResponse,
     ResetPasswordRequest,
+    SecuritySessionItem,
+    SecuritySettingsResponse,
+    SecuritySettingsUpdateRequest,
     UserLogin,
     UserRegister,
     UserResponse,
@@ -165,7 +170,7 @@ async def register(
     # Automatically create user's personal digital twin persona
     twin_persona = Personality(
         user_id=new_user.id,
-        name=f"{new_user.full_name} - التوأم الرقمي",
+        name=new_user.full_name,
         description=f"التوأم الرقمي الرسمي لـ {new_user.full_name}",
         system_prompt=f"أنت {new_user.full_name}، التوأم الرقمي المصري الذكي. بتتكلم بالمصري العامي العفوي وبنبرتك الطبيعية وبتعبر عن شخصية وتفضيلات {new_user.full_name}.",
         dialect="cairo",
@@ -250,7 +255,7 @@ async def login(
     if not twin:
         db.add(Personality(
             user_id=user.id,
-            name=f"{user.full_name} - التوأم الرقمي",
+            name=user.full_name,
             description=f"التوأم الرقمي الرسمي لـ {user.full_name}",
             system_prompt=f"أنت {user.full_name}، التوأم الرقمي المصري الذكي. بتتكلم بالمصري العامي وبنبرتك الطبيعية وبتعبر عن شخصية وتفضيلات {user.full_name}.",
             dialect="cairo",
@@ -616,13 +621,13 @@ async def update_profile(
         )
         twin = res.scalar_one_or_none()
         if twin:
-            twin.name = f"{current_user.full_name} - التوأم الرقمي"
+            twin.name = current_user.full_name
             twin.description = f"التوأم الرقمي الرسمي لـ {current_user.full_name}"
             twin.system_prompt = f"أنت {current_user.full_name}، التوأم الرقمي المصري الذكي. بتتكلم بالمصري العامي العفوي وبنبرتك الطبيعية وبتعبر عن شخصية وتفضيلات {current_user.full_name}."
         else:
             db.add(Personality(
                 user_id=current_user.id,
-                name=f"{current_user.full_name} - التوأم الرقمي",
+                name=current_user.full_name,
                 description=f"التوأم الرقمي الرسمي لـ {current_user.full_name}",
                 system_prompt=f"أنت {current_user.full_name}، التوأم الرقمي المصري الذكي.",
                 dialect="cairo",
@@ -757,34 +762,44 @@ async def save_onboarding_answers(
     rag = RAGService()
 
     saved_count = 0
-    target_pid = 1  # Default primary persona
     uid = current_user.id if current_user else None
+    target_pid = 1
+    if uid is not None:
+        p_res = await db.execute(
+            select(Personality.id).where(Personality.user_id == uid).limit(1)
+        )
+        user_pid = p_res.scalar_one_or_none()
+        if user_pid is not None:
+            target_pid = user_pid
+
     for mem_text in memories_to_add:
         try:
-            m = Memory(
-                user_id=uid,
-                personality_id=target_pid,
+            await rag.add_memory(
                 content=mem_text,
+                personality_id=target_pid,
                 source="onboarding",
                 importance=8,
+                user_id=uid,
+                db=db,
             )
-            db.add(m)
-            await db.commit()
             saved_count += 1
+        except Exception as rag_err:
+            logger.debug(f"RAG vector index fallback notice: {rag_err}")
             try:
-                await rag.add_memory(
-                    content=mem_text,
+                await db.rollback()
+                m = Memory(
+                    user_id=uid,
                     personality_id=target_pid,
+                    content=mem_text,
                     source="onboarding",
                     importance=8,
-                    user_id=uid,
-                    db=db,
                 )
-            except Exception as rag_err:
-                logger.debug(f"RAG vector index notice: {rag_err}")
-        except Exception as e:
-            await db.rollback()
-            logger.warning(f"Error persisting onboarding memory: {e}")
+                db.add(m)
+                await db.commit()
+                saved_count += 1
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"Error persisting onboarding memory: {e}")
 
     await db.commit()
     logger.info(f"Persisted {saved_count} onboarding memory items for user {current_user.email if current_user else 'guest'}")
@@ -851,6 +866,24 @@ async def generate_user_avatar(
         logger.debug(f"Face biometric auto-enroll notice: {e}")
 
     avatar_url = f"/api/v1/auth/avatar/file/{filename}"
+    serialized_avatar: Optional[dict[str, Any]] = None
+
+    # Create & activate animated AvatarProfile in backend and link directly to user's Personality
+    try:
+        from app.services.avatar.gagavatar_service import get_avatar_service
+        avatar_svc = get_avatar_service()
+        profile = await avatar_svc.create_and_activate_user_avatar(
+            image_bytes=content,
+            db=db,
+            user_id=current_user.id if current_user else None,
+            name=current_user.full_name if current_user else None,
+            style="realistic",
+        )
+        serialized_avatar = avatar_svc.serialize_avatar(profile)
+        avatar_url = serialized_avatar["preview_url"]
+    except Exception as avatar_err:
+        logger.warning(f"Animated avatar profile pipeline notice: {avatar_err}")
+
     if current_user:
         try:
             current_user.avatar_url = avatar_url
@@ -863,8 +896,9 @@ async def generate_user_avatar(
     return {
         "success": True,
         "avatar_url": avatar_url,
+        "avatar": serialized_avatar,
         "file_name": filename,
-        "message": "تم تحويل صورتك إلى أفاتار رقمي بنجاح",
+        "message": "تم تحويل صورتك إلى أفاتار متحرك وربطه بشخصيتك بنجاح",
     }
 
 
@@ -878,4 +912,227 @@ async def get_avatar_file(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="الأفاتار غير موجود")
     return FileResponse(file_path)
+
+
+# ── 10. Security, 2FA, Backup Codes, Sessions & Change Password ──────────────
+
+def _generate_backup_codes(count: int = 6) -> list[str]:
+    codes: list[str] = []
+    for _ in range(count):
+        raw = secrets.token_hex(4).upper()
+        codes.append(f"{raw[:4]}-{raw[4:]}")
+    return codes
+
+
+def _load_or_init_backup_codes(user: User) -> tuple[list[str], bool]:
+    raw = getattr(user, "backup_codes_json", None)
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list) and parsed:
+                return [str(c) for c in parsed], False
+        except Exception:
+            pass
+    codes = _generate_backup_codes(6)
+    user.backup_codes_json = json.dumps(codes)
+    return codes, True
+
+
+def _build_security_response(
+    user: User,
+    codes: list[str],
+    request: Request,
+) -> SecuritySettingsResponse:
+    two_fa = bool(getattr(user, "two_factor_enabled", True))
+    bio = bool(getattr(user, "biometric_enabled", True))
+    has_bio = user.face_profile_id is not None
+
+    if two_fa and bio:
+        level = "high"
+    elif two_fa or bio:
+        level = "medium"
+    else:
+        level = "basic"
+
+    # Detect current device from client headers or User-Agent
+    device_name = request.headers.get("X-Device-Name", "").strip()
+    device_platform = request.headers.get("X-Device-Platform", "").strip()
+    device_type = request.headers.get("X-Device-Type", "").strip().lower()
+    ua = (request.headers.get("user-agent") or "").lower()
+
+    if not device_type:
+        if "android" in ua or "iphone" in ua or "ipad" in ua:
+            device_type = "mobile"
+        elif "mozilla" in ua and "dart" not in ua:
+            device_type = "web"
+        else:
+            device_type = "desktop"
+
+    if not device_name:
+        if device_type == "mobile":
+            device_name = "الجهاز المحمول (هذا الجهاز)"
+        elif device_type == "web":
+            device_name = "متصفح الويب (هذا الجهاز)"
+        else:
+            device_name = "جهاز الكمبيوتر (هذا الجهاز)"
+
+    if not device_platform:
+        if "windows" in ua or device_type == "desktop":
+            device_platform = "ويندوز / تطبيق سطح المكتب • متصل بالخادم"
+        elif "android" in ua:
+            device_platform = "أندرويد • متصل بالخادم"
+        elif "iphone" in ua or "ios" in ua:
+            device_platform = "iOS • متصل بالخادم"
+        else:
+            device_platform = "متصل بالخادم الآن"
+
+    sessions = [
+        SecuritySessionItem(
+            id="current_session",
+            device_name=device_name,
+            platform=device_platform,
+            device_type=device_type,
+            is_current=True,
+            status_label="نشط الآن",
+        )
+    ]
+
+    # Include live connected WebSocket channels if active
+    try:
+        from app.websocket.manager import manager
+        ws_status = manager.status()
+        if ws_status.get("esp32"):
+            sessions.append(
+                SecuritySessionItem(
+                    id="esp32_robot",
+                    device_name="روبوت نيبولا (ESP32)",
+                    platform="وحدة التحكم المدمجة • متصل عبر WebSocket",
+                    device_type="robot",
+                    is_current=False,
+                    status_label="متصل",
+                )
+            )
+        if ws_status.get("phone") and device_type != "mobile":
+            sessions.append(
+                SecuritySessionItem(
+                    id="ws_phone",
+                    device_name="تطبيق الجوال المربوط",
+                    platform="واجهة الوجه الصوتي • متصل عبر WebSocket",
+                    device_type="mobile",
+                    is_current=False,
+                    status_label="متصل",
+                )
+            )
+    except Exception:
+        pass
+
+    return SecuritySettingsResponse(
+        two_factor_enabled=two_fa,
+        biometric_enabled=bio,
+        has_biometric=has_bio,
+        security_level=level,
+        backup_codes=codes,
+        password_updated_at=getattr(user, "password_updated_at", None) or user.updated_at or user.created_at,
+        active_sessions=sessions,
+    )
+
+
+@router.get(
+    "/security",
+    response_model=SecuritySettingsResponse,
+    summary="Get user security, 2FA, backup codes, and active sessions",
+)
+async def get_security_settings(
+    request: Request,
+    current_user: User = Depends(get_current_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    codes, mutated = _load_or_init_backup_codes(current_user)
+    if mutated:
+        db.add(current_user)
+        await db.commit()
+        await db.refresh(current_user)
+    return _build_security_response(current_user, codes, request)
+
+
+@router.put(
+    "/security",
+    response_model=SecuritySettingsResponse,
+    summary="Update user 2FA and biometric security settings",
+)
+async def update_security_settings(
+    payload: SecuritySettingsUpdateRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    if payload.two_factor_enabled is not None:
+        current_user.two_factor_enabled = payload.two_factor_enabled
+    if payload.biometric_enabled is not None:
+        current_user.biometric_enabled = payload.biometric_enabled
+
+    codes, _ = _load_or_init_backup_codes(current_user)
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    logger.info(
+        f"Updated security settings for {current_user.email}: "
+        f"2FA={current_user.two_factor_enabled}, biometric={current_user.biometric_enabled}"
+    )
+    return _build_security_response(current_user, codes, request)
+
+
+@router.post(
+    "/security/backup-codes/regenerate",
+    response_model=SecuritySettingsResponse,
+    summary="Regenerate 6 backup recovery codes",
+)
+async def regenerate_backup_codes(
+    request: Request,
+    current_user: User = Depends(get_current_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    codes = _generate_backup_codes(6)
+    current_user.backup_codes_json = json.dumps(codes)
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    logger.info(f"Regenerated backup codes for {current_user.email}")
+    return _build_security_response(current_user, codes, request)
+
+
+@router.post(
+    "/change-password",
+    response_model=MessageResponse,
+    summary="Change authenticated user's password",
+)
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="كلمة المرور الحالية غير صحيحة.",
+        )
+
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="كلمة المرور الجديدة يجب أن تختلف عن كلمة المرور الحالية.",
+        )
+
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    current_user.password_updated_at = datetime.now(timezone.utc)
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    logger.info(f"Password updated for user: {current_user.email}")
+
+    return MessageResponse(
+        message="تم تحديث كلمة المرور وحفظها بنجاح.",
+        details={"password_updated_at": current_user.password_updated_at.isoformat()},
+    )
+
 

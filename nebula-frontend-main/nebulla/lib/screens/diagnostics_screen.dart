@@ -24,14 +24,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
   // Hardware & sensor state (synced with backend + SharedPreferences)
   final int _batteryPercent = 96;
-  final String _remainingTime = '18h 40m';
   final int _batteryHealth = 100;
   bool _isCharging = true;
 
   // Vision unit
-  final String _visionResolution = '4K HDR';
-  final String _visionFps = '60 FPS';
-  String _tofStatus = 'ACTIVE';
+  bool _tofActive = true;
 
   // Servo matrix
   double _pitchAngle = 45.0;
@@ -43,11 +40,31 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   bool _isMuted = false;
 
   // Microphone / Voice recording unit
-  String _voiceStatusLabel = 'جاهز للتسجيل';
+  String? _voiceCustomLabel;
+  int _voiceSamplesCount = 0;
   bool _uploadingVoice = false;
 
   // Actions loading state
   bool _runningFullScan = false;
+
+  String _tr(String ar, String en) => LocaleService.instance.tr(ar, en);
+
+  String get _displayVoiceStatus {
+    if (_uploadingVoice) return _tr('جاري الرفع...', 'Uploading...');
+    if (_voiceCustomLabel != null &&
+        _voiceCustomLabel!.isNotEmpty &&
+        _voiceCustomLabel != 'جاهز للتسجيل' &&
+        !_voiceCustomLabel!.startsWith('عينة محفوظة')) {
+      return _voiceCustomLabel!;
+    }
+    if (_voiceSamplesCount > 0) {
+      return _tr(
+        'عينة محفوظة ($_voiceSamplesCount)',
+        'Saved ($_voiceSamplesCount)',
+      );
+    }
+    return _tr('جاهز للتسجيل', 'Ready to record');
+  }
 
   static const String _prefsKey = 'nebula_diagnostics_state_v1';
 
@@ -72,8 +89,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         _isMuted = prefs.getBool('${_prefsKey}_muted') ?? false;
         _pitchAngle = prefs.getDouble('${_prefsKey}_pitch') ?? 45.0;
         _yawAngle = prefs.getDouble('${_prefsKey}_yaw') ?? 90.0;
-        _voiceStatusLabel =
-            prefs.getString('${_prefsKey}_voice_label') ?? 'جاهز للتسجيل';
+        _voiceCustomLabel = prefs.getString('${_prefsKey}_voice_label');
       });
     } catch (_) {}
 
@@ -87,7 +103,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       await prefs.setBool('${_prefsKey}_muted', _isMuted);
       await prefs.setDouble('${_prefsKey}_pitch', _pitchAngle);
       await prefs.setDouble('${_prefsKey}_yaw', _yawAngle);
-      await prefs.setString('${_prefsKey}_voice_label', _voiceStatusLabel);
+      if (_voiceCustomLabel != null) {
+        await prefs.setString('${_prefsKey}_voice_label', _voiceCustomLabel!);
+      }
     } catch (_) {}
   }
 
@@ -121,11 +139,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         }
 
         if (distData['distance'] != null) {
-          _tofStatus = 'ACTIVE';
+          _tofActive = true;
         }
 
-        if (voiceSamples.isNotEmpty && _voiceStatusLabel == 'جاهز للتسجيل') {
-          _voiceStatusLabel = 'عينة محفوظة (${voiceSamples.length})';
+        if (voiceSamples.isNotEmpty) {
+          _voiceSamplesCount = voiceSamples.length;
         }
       });
 
@@ -134,14 +152,20 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       if (!silent && mounted) {
         showSuccessSnackbar(
           context,
-          'تم إكمال فحص المستشعرات الشامل وتحديث حالة الـ Hardware بنجاح',
+          _tr(
+            'تم إكمال فحص المستشعرات الشامل وتحديث حالة الأجهزة بنجاح',
+            'Full sensor diagnostics completed and hardware status updated',
+          ),
         );
       }
     } catch (e) {
       if (!silent && mounted) {
         showErrorSnackbar(
           context,
-          'تعذر الاتصال الكامل بالخادم أثناء الفحص: $e',
+          _tr(
+            'تعذر الاتصال الكامل بالخادم أثناء الفحص: $e',
+            'Could not complete server scan: $e',
+          ),
         );
       }
     } finally {
@@ -159,7 +183,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) => Directionality(
-          textDirection: TextDirection.rtl,
+          textDirection: LocaleService.instance.textDirection,
           child: AlertDialog(
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.transparent,
@@ -183,10 +207,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'التحكم في مستوى الصوت',
-                    style: TextStyle(
+                    _tr('التحكم في مستوى الصوت', 'Volume Control'),
+                    style: const TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -203,9 +227,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'مستوى صوت السماعات:',
-                      style: TextStyle(
+                    Text(
+                      _tr('مستوى صوت السماعات:', 'Speaker Volume:'),
+                      style: const TextStyle(
                         fontFamily: 'Cairo',
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -213,7 +237,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                       ),
                     ),
                     Text(
-                      tempMuted ? 'مكتوم (0%)' : '$tempVolume%',
+                      tempMuted ? _tr('مكتوم (0%)', 'Muted (0%)') : '$tempVolume%',
                       style: const TextStyle(
                         fontFamily: 'Cairo',
                         fontSize: 16,
@@ -247,9 +271,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   activeThumbColor: const Color(0xFF00B4D8),
-                  title: const Text(
-                    'كتم الصوت مؤقتاً',
-                    style: TextStyle(
+                  title: Text(
+                    _tr('كتم الصوت مؤقتاً', 'Mute Temporarily'),
+                    style: const TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -266,9 +290,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text(
-                  'إلغاء',
-                  style: TextStyle(
+                child: Text(
+                  _tr('إلغاء', 'Cancel'),
+                  style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF64748B),
@@ -294,13 +318,16 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   showSuccessSnackbar(
                     context,
                     tempMuted
-                        ? 'تم كتم صوت السماعات وحفظ الإعداد'
-                        : 'تم ضبط مستوى الصوت على $_volumeLevel% وحفظه',
+                        ? _tr('تم كتم صوت السماعات وحفظ الإعداد', 'Speakers muted and saved')
+                        : _tr(
+                            'تم ضبط مستوى الصوت على $_volumeLevel% وحفظه',
+                            'Volume set to $_volumeLevel% and saved',
+                          ),
                   );
                 },
-                child: const Text(
-                  'حفظ الضبط',
-                  style: TextStyle(
+                child: Text(
+                  _tr('حفظ الضبط', 'Save'),
+                  style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontWeight: FontWeight.w700,
                   ),
@@ -326,36 +353,44 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
       setState(() {
         _uploadingVoice = true;
-        _voiceStatusLabel = 'جاري الرفع...';
       });
 
       try {
         await _repo.uploadVoiceSampleDefault(file);
         if (!mounted) return;
         setState(() {
-          _voiceStatusLabel = fileName;
+          _voiceCustomLabel = fileName;
         });
         await _persistLocalState();
         if (!mounted) return;
         showSuccessSnackbar(
           context,
-          'تم رفع وحفظ تسجيل صوتك "$fileName" في الباك-إند بنجاح',
+          _tr(
+            'تم رفع وحفظ تسجيل صوتك "$fileName" بنجاح',
+            'Voice recording "$fileName" uploaded and saved',
+          ),
         );
       } catch (e) {
         if (!mounted) return;
         setState(() {
-          _voiceStatusLabel = fileName;
+          _voiceCustomLabel = fileName;
         });
         await _persistLocalState();
         if (!mounted) return;
         showSuccessSnackbar(
           context,
-          'تم حفظ الملف الصوتي "$fileName" محلياً',
+          _tr(
+            'تم حفظ الملف الصوتي "$fileName" محلياً',
+            'Audio file "$fileName" saved locally',
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        showErrorSnackbar(context, 'تعذر اختيار الملف الصوتي: $e');
+        showErrorSnackbar(
+          context,
+          _tr('تعذر اختيار الملف الصوتي: $e', 'Could not pick audio file: $e'),
+        );
       }
     } finally {
       if (mounted) {
@@ -375,7 +410,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) => Directionality(
-          textDirection: TextDirection.rtl,
+          textDirection: LocaleService.instance.textDirection,
           child: AlertDialog(
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.transparent,
@@ -399,10 +434,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'معايرة زوايا الرأس والسيرفو',
-                    style: TextStyle(
+                    _tr('معايرة زوايا الرأس والسيرفو', 'Head & Servo Calibration'),
+                    style: const TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 15.5,
                       fontWeight: FontWeight.w800,
@@ -421,9 +456,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'محور الإمالة (Pitch):',
-                        style: TextStyle(
+                      Text(
+                        _tr('محور الإمالة:', 'Pitch Axis:'),
+                        style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -454,9 +489,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'محور الالتفاف (Yaw):',
-                        style: TextStyle(
+                      Text(
+                        _tr('محور الالتفاف:', 'Yaw Axis:'),
+                        style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -490,7 +525,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'اختبار مباشر للسيرفو #$selectedServoId:',
+                        _tr(
+                          'اختبار مباشر للسيرفو #$selectedServoId:',
+                          'Direct Test Servo #$selectedServoId:',
+                        ),
                         style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 12.5,
@@ -532,17 +570,23 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                               if (!mounted) return;
                               showSuccessSnackbar(
                                 context,
-                                'تم إرسال أمر الزاوية ${testAngle.toStringAsFixed(0)}° للسيرفو',
+                                _tr(
+                                  'تم إرسال أمر الزاوية ${testAngle.toStringAsFixed(0)}° للسيرفو',
+                                  'Sent angle ${testAngle.toStringAsFixed(0)}° command to servo',
+                                ),
                               );
                             } catch (e) {
                               if (!mounted) return;
-                              showErrorSnackbar(context, 'تعذر التحريك: $e');
+                              showErrorSnackbar(
+                                context,
+                                _tr('تعذر التحريك: $e', 'Move failed: $e'),
+                              );
                             }
                           },
                           icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                          label: const Text(
-                            'تحريك تجريبي',
-                            style: TextStyle(
+                          label: Text(
+                            _tr('تحريك تجريبي', 'Test Move'),
+                            style: const TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -560,17 +604,23 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                               if (!mounted) return;
                               showSuccessSnackbar(
                                 context,
-                                'تمت إعادة جميع محركات السيرفو لزاوية المنتصف (90°)',
+                                _tr(
+                                  'تمت إعادة جميع محركات السيرفو لزاوية المنتصف (90°)',
+                                  'All servos reset to center (90°)',
+                                ),
                               );
                             } catch (e) {
                               if (!mounted) return;
-                              showErrorSnackbar(context, 'خطأ: $e');
+                              showErrorSnackbar(
+                                context,
+                                _tr('خطأ: $e', 'Error: $e'),
+                              );
                             }
                           },
                           icon: const Icon(Icons.home_outlined, size: 18),
-                          label: const Text(
-                            'موضع البيت (90°)',
-                            style: TextStyle(
+                          label: Text(
+                            _tr('موضع المنتصف (90°)', 'Home (90°)'),
+                            style: const TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -586,9 +636,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text(
-                  'إلغاء',
-                  style: TextStyle(
+                child: Text(
+                  _tr('إلغاء', 'Cancel'),
+                  style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF64748B),
@@ -632,12 +682,15 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                         if (!mounted) return;
                         showSuccessSnackbar(
                           context,
-                          'تم حفظ معايرة زوايا الرأس والسيرفو في الباك-إند بنجاح',
+                          _tr(
+                            'تم حفظ معايرة زوايا الرأس والسيرفو بنجاح',
+                            'Head & servo calibration saved successfully',
+                          ),
                         );
                       },
-                child: const Text(
-                  'حفظ المعايرة',
-                  style: TextStyle(
+                child: Text(
+                  _tr('حفظ المعايرة', 'Save Calibration'),
+                  style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontWeight: FontWeight.w700,
                   ),
@@ -655,145 +708,122 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     final size = MediaQuery.of(context).size;
     final isDesktop = size.width > 540;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFEFF6FA),
-      body: Center(
-        child: Container(
-          width: isDesktop ? 460 : double.infinity,
-          height: double.infinity,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF7FAFC),
-            borderRadius: BorderRadius.circular(isDesktop ? 28 : 0),
-            boxShadow: isDesktop
-                ? [
-                    BoxShadow(
-                      color: const Color(0xFF0F172A).withValues(alpha: 0.08),
-                      blurRadius: 36,
-                      offset: const Offset(0, 14),
-                    ),
-                  ]
-                : null,
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
-              // 1. Subtle Top-Left Cyborg Watermark + Cyan Glow matching the mockup
-              Positioned(
-                top: 0,
-                left: 0,
-                width: 240,
-                height: 290,
-                child: Opacity(
-                  opacity: 0.22,
-                  child: Transform.flip(
-                    flipX: true,
-                    child: Image.asset(
-                      'assets/images/cyborg_bg.jpg',
-                      fit: BoxFit.cover,
-                      alignment: Alignment.topRight,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                    ),
-                  ),
-                ),
+    return ListenableBuilder(
+      listenable: LocaleService.instance,
+      builder: (context, _) => Directionality(
+        textDirection: LocaleService.instance.textDirection,
+        child: Scaffold(
+          backgroundColor: const Color(0xFFEFF6FA),
+          body: Center(
+            child: Container(
+              width: isDesktop ? 460 : double.infinity,
+              height: double.infinity,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7FAFC),
+                borderRadius: BorderRadius.circular(isDesktop ? 28 : 0),
+                boxShadow: isDesktop
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+                          blurRadius: 36,
+                          offset: const Offset(0, 14),
+                        ),
+                      ]
+                    : null,
               ),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 310,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        const Color(0xFFCCF2FA).withValues(alpha: 0.65),
-                        const Color(0xFFE6F8FC).withValues(alpha: 0.55),
-                        const Color(0xFFF7FAFC).withValues(alpha: 0.96),
-                        const Color(0xFFF7FAFC),
-                      ],
-                      stops: const [0.0, 0.35, 0.72, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-
-              // 2. Main Scrollable Content
-              SafeArea(
-                bottom: false,
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: Scrollbar(
-                        controller: _scrollController,
-                        thumbVisibility: isDesktop,
-                        thickness: 5,
-                        radius: const Radius.circular(8),
-                        child: SingleChildScrollView(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(
-                            parent: BouncingScrollPhysics(),
-                          ),
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Header Row: "تحليل حالة hardware" + "متصل بالشبكة / LIVE"
-                              _buildPageHeader(),
-                              const SizedBox(height: 14),
-
-                              // Card 1: نسبة طاقة البطارية والمكثفات
-                              _buildBatteryPowerCard(),
-                              const SizedBox(height: 16),
-
-                              // Section Header: مصفوفة الفحص الشامل
-                              _buildMatrixSectionHeader(),
-                              const SizedBox(height: 10),
-
-                              // Matrix Card 1: وحدة الرؤية والعمق البصري
-                              _buildVisionUnitCard(),
-                              const SizedBox(height: 12),
-
-                              // Matrix Card 2: مصفوفة محركات السيرفو
-                              _buildServoMatrixCard(),
-                              const SizedBox(height: 12),
-
-                              // Matrix Card 3: التحكم في مستوى الصوت
-                              _buildAudioVolumeCard(),
-                              const SizedBox(height: 12),
-
-                              // Matrix Card 4: تسجيل صوتك
-                              _buildVoiceRecordCard(),
-                              const SizedBox(height: 16),
-
-                              // Bottom Action 1: معايرة زوايا الرأس والسيرفو
-                              _buildCalibrateAnglesButton(),
-                              const SizedBox(height: 10),
-
-                              // Bottom Action 2: إعادة فحص المستشعرات الشامل
-                              _buildFullSensorRescanButton(),
-                              const SizedBox(height: 14),
-
-                              // Bottom Home Pill Indicator
-                              Center(
-                                child: Container(
-                                  width: 120,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFCBD5E1),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  // 1. Subtle Top-Left Cyborg Watermark + Cyan Glow matching the mockup
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    width: 240,
+                    height: 290,
+                    child: Opacity(
+                      opacity: 0.22,
+                      child: Transform.flip(
+                        flipX: true,
+                        child: Image.asset(
+                          'assets/images/cyborg_bg.jpg',
+                          fit: BoxFit.cover,
+                          alignment: Alignment.topRight,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 310,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            const Color(0xFFCCF2FA).withValues(alpha: 0.65),
+                            const Color(0xFFE6F8FC).withValues(alpha: 0.55),
+                            const Color(0xFFF7FAFC).withValues(alpha: 0.96),
+                            const Color(0xFFF7FAFC),
+                          ],
+                          stops: const [0.0, 0.35, 0.72, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // 2. Main Scrollable Content
+                  SafeArea(
+                    bottom: false,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: Scrollbar(
+                            controller: _scrollController,
+                            thumbVisibility: isDesktop,
+                            thickness: 5,
+                            radius: const Radius.circular(8),
+                            child: SingleChildScrollView(
+                              controller: _scrollController,
+                              physics: const AlwaysScrollableScrollPhysics(
+                                parent: BouncingScrollPhysics(),
+                              ),
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _buildPageHeader(),
+                                  const SizedBox(height: 14),
+                                  _buildBatteryPowerCard(),
+                                  const SizedBox(height: 16),
+                                  _buildMatrixSectionHeader(),
+                                  const SizedBox(height: 10),
+                                  _buildVisionUnitCard(),
+                                  const SizedBox(height: 12),
+                                  _buildServoMatrixCard(),
+                                  const SizedBox(height: 12),
+                                  _buildAudioVolumeCard(),
+                                  const SizedBox(height: 12),
+                                  _buildVoiceRecordCard(),
+                                  const SizedBox(height: 16),
+                                  _buildCalibrateAnglesButton(),
+                                  const SizedBox(height: 10),
+                                  _buildFullSensorRescanButton(),
+                                  const SizedBox(height: 14),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -807,7 +837,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
     final menuBtn = InkWell(
       onTap: () {
-        NebulaSideMenu.show(context, activeIndex: 4);
+        NebulaSideMenu.show(context, activeIndex: 5);
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -866,7 +896,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              isArabic ? 'تحليل الحالة' : 'Diagnostics',
+              _tr('تحليل الحالة', 'Diagnostics'),
               textAlign: isArabic ? TextAlign.right : TextAlign.left,
               style: const TextStyle(
                 fontFamily: 'Cairo',
@@ -903,15 +933,13 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Top Header Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Right (RTL): Title
-              const Flexible(
+              Flexible(
                 child: Text(
-                  'نسبة طاقة البطارية والمكثفات',
-                  style: TextStyle(
+                  _tr('نسبة طاقة البطارية والمكثفات', 'Battery & Power Level'),
+                  style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontSize: 14.5,
                     fontWeight: FontWeight.w800,
@@ -919,8 +947,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   ),
                 ),
               ),
-
-              // Left (RTL): Green pill "⚡ شحن تيار"
               GestureDetector(
                 onTap: () {
                   setState(() => _isCharging = !_isCharging);
@@ -946,7 +972,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                       ),
                       const SizedBox(width: 3),
                       Text(
-                        _isCharging ? 'شحن تيار' : 'تفريغ مستقر',
+                        _isCharging
+                            ? _tr('شحن تيار', 'Charging')
+                            : _tr('تفريغ مستقر', 'Stable'),
                         style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 11,
@@ -963,11 +991,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
           const SizedBox(height: 14),
 
-          // Body Row: Circular Gauge (Right) + Remaining Time (Middle) + Battery Health (Left)
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Right (RTL): 96% Circular Gauge
               SizedBox(
                 width: 86,
                 height: 86,
@@ -1007,7 +1033,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
               const SizedBox(width: 12),
 
-              // Middle: الوقت المتبقي (18h 40m)
+              // Remaining Time
               Expanded(
                 child: Container(
                   constraints: const BoxConstraints(minHeight: 74),
@@ -1022,11 +1048,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const Text(
-                        'الوقت المتبقي',
+                      Text(
+                        _tr('الوقت المتبقي', 'Remaining'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -1034,18 +1060,15 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Directionality(
-                        textDirection: TextDirection.ltr,
-                        child: Text(
-                          _remainingTime,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF0F172A),
-                          ),
+                      Text(
+                        _tr('18 س 40 د', '18h 40m'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
                         ),
                       ),
                     ],
@@ -1055,7 +1078,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
               const SizedBox(width: 10),
 
-              // Left: صحة البطارية (100%)
+              // Battery Health
               Expanded(
                 child: Container(
                   constraints: const BoxConstraints(minHeight: 74),
@@ -1070,11 +1093,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const Text(
-                        'صحة البطارية',
+                      Text(
+                        _tr('صحة البطارية', 'Battery Health'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -1127,9 +1150,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            const Text(
-              'مصفوفة الفحص الشامل',
-              style: TextStyle(
+            Text(
+              _tr('مصفوفة الفحص الشامل', 'Full Diagnostics Matrix'),
+              style: const TextStyle(
                 fontFamily: 'Cairo',
                 fontSize: 15.5,
                 fontWeight: FontWeight.w800,
@@ -1139,7 +1162,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           ],
         ),
 
-        // Quick links to Signals & Face Registration so no sub-pages are lost
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1159,18 +1181,18 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.face_retouching_natural_rounded,
                       size: 13,
                       color: Color(0xFF0096C7),
                     ),
-                    SizedBox(width: 4),
+                    const SizedBox(width: 4),
                     Text(
-                      'بصمة الوجه',
-                      style: TextStyle(
+                      _tr('بصمة الوجه', 'Face ID'),
+                      style: const TextStyle(
                         fontFamily: 'Cairo',
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -1198,18 +1220,18 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.gesture_rounded,
                       size: 13,
                       color: Color(0xFF4F46E5),
                     ),
-                    SizedBox(width: 4),
+                    const SizedBox(width: 4),
                     Text(
-                      'الإشارات',
-                      style: TextStyle(
+                      _tr('الإشارات', 'Signals'),
+                      style: const TextStyle(
                         fontFamily: 'Cairo',
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -1245,7 +1267,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header Row (RTL: Eye Icon on Right + Title)
           Row(
             children: [
               Container(
@@ -1263,10 +1284,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'وحدة الرؤية والعمق البصري',
-                  style: TextStyle(
+                  _tr('وحدة الرؤية والعمق البصري', 'Vision & Depth Unit'),
+                  style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontSize: 14.5,
                     fontWeight: FontWeight.w800,
@@ -1279,21 +1300,20 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
           const SizedBox(height: 12),
 
-          // 3 Metric Boxes Row: الدقة (4K HDR) | معدل الإطارات (60 FPS) | مستشعر ToF (ACTIVE)
           Row(
             children: [
               Expanded(
                 child: _buildMetricSubBox(
-                  label: 'الدقة',
-                  value: _visionResolution,
+                  label: _tr('الدقة', 'Resolution'),
+                  value: _tr('فائقة الوضوح', '4K HDR'),
                   valueColor: const Color(0xFF0F172A),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _buildMetricSubBox(
-                  label: 'معدل الإطارات',
-                  value: _visionFps,
+                  label: _tr('معدل الإطارات', 'Frame Rate'),
+                  value: _tr('60 إطار/ث', '60 FPS'),
                   valueColor: const Color(0xFF0F172A),
                 ),
               ),
@@ -1308,14 +1328,22 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                       showSuccessSnackbar(
                         context,
                         dist != null
-                            ? 'مستشعر العمق نشط — المسافة الحالية: $dist cm'
-                            : 'تم فحص مستشعر العمق البصري بنجاح (ACTIVE)',
+                            ? _tr(
+                                'مستشعر العمق نشط — المسافة الحالية: $dist سم',
+                                'Depth sensor active — distance: $dist cm',
+                              )
+                            : _tr(
+                                'تم فحص مستشعر العمق البصري بنجاح (نشط)',
+                                'Depth sensor check passed (Active)',
+                              ),
                       );
                     } catch (_) {}
                   },
                   child: _buildMetricSubBox(
-                    label: 'مستشعر ToF',
-                    value: _tofStatus,
+                    label: _tr('مستشعر العمق', 'Depth Sensor'),
+                    value: _tofActive
+                        ? _tr('نشط', 'Active')
+                        : _tr('متوقف', 'Inactive'),
                     bgColor: const Color(0xFFECFEFF),
                     borderColor: const Color(0xFFA5F3FC),
                     labelColor: const Color(0xFF0891B2),
@@ -1349,7 +1377,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header Row (RTL: Indigo Gear Icon on Right + Title)
           Row(
             children: [
               Container(
@@ -1367,10 +1394,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'مصفوفة محركات السيرفو',
-                  style: TextStyle(
+                  _tr('مصفوفة محركات السيرفو', 'Servo Motor Matrix'),
+                  style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontSize: 14.5,
                     fontWeight: FontWeight.w800,
@@ -1383,15 +1410,14 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
           const SizedBox(height: 12),
 
-          // 3 Metric Boxes Row: محور الإمالة (Pitch ±45°) | محور الالتفاف (Yaw ±90°) | حرارة السيرفو (34.2 °C)
           Row(
             children: [
               Expanded(
                 child: GestureDetector(
                   onTap: _openServoCalibrationModal,
                   child: _buildMetricSubBox(
-                    label: 'محور الإمالة',
-                    value: 'Pitch ±${_pitchAngle.toStringAsFixed(0)}°',
+                    label: _tr('محور الإمالة', 'Pitch Axis'),
+                    value: '±${_pitchAngle.toStringAsFixed(0)}°',
                     valueColor: const Color(0xFF0F172A),
                   ),
                 ),
@@ -1401,8 +1427,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 child: GestureDetector(
                   onTap: _openServoCalibrationModal,
                   child: _buildMetricSubBox(
-                    label: 'محور الالتفاف',
-                    value: 'Yaw ±${_yawAngle.toStringAsFixed(0)}°',
+                    label: _tr('محور الالتفاف', 'Yaw Axis'),
+                    value: '±${_yawAngle.toStringAsFixed(0)}°',
                     valueColor: const Color(0xFF0F172A),
                   ),
                 ),
@@ -1410,8 +1436,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: _buildMetricSubBox(
-                  label: 'حرارة السيرفو',
-                  value: '${_servoTemp.toStringAsFixed(1)} °C',
+                  label: _tr('حرارة السيرفو', 'Servo Temp'),
+                  value: _tr(
+                    '${_servoTemp.toStringAsFixed(1)} °م',
+                    '${_servoTemp.toStringAsFixed(1)} °C',
+                  ),
                   valueColor: const Color(0xFF10B981),
                 ),
               ),
@@ -1422,7 +1451,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     );
   }
 
-  /// Matrix Card 3: Speaker / Volume Control ("للتحكم في مستوى الصوت")
+  /// Matrix Card 3: Speaker / Volume Control
   Widget _buildAudioVolumeCard() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1441,7 +1470,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Top Row: Speaker Icon Box on Right + Title
           Row(
             children: [
               Container(
@@ -1464,8 +1492,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               Expanded(
                 child: Text(
                   _isMuted
-                      ? 'وحدة الصوت والسماعات (مكتوم)'
-                      : 'وحدة الصوت والسماعات ($_volumeLevel%)',
+                      ? _tr('وحدة الصوت والسماعات (مكتوم)', 'Audio & Speakers (Muted)')
+                      : _tr(
+                          'وحدة الصوت والسماعات ($_volumeLevel%)',
+                          'Audio & Speakers ($_volumeLevel%)',
+                        ),
                   style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontSize: 14,
@@ -1479,23 +1510,20 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
           const SizedBox(height: 12),
 
-          // 3 Boxes Row matching the mockup: Right box | Middle box ("للتحكم في مستوى الصوت") | Left cyan box
           Row(
             children: [
-              // Right Box: Quick Volume + / Level
               Expanded(
                 child: GestureDetector(
                   onTap: _openVolumeControlDialog,
                   child: _buildMetricSubBox(
-                    label: 'مستوى الصوت',
-                    value: _isMuted ? 'MUTE' : '$_volumeLevel%',
+                    label: _tr('مستوى الصوت', 'Volume'),
+                    value: _isMuted ? _tr('مكتوم', 'Muted') : '$_volumeLevel%',
                     valueColor: const Color(0xFF0F172A),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
 
-              // Middle Box: "للتحكم في مستوى الصوت" (matching mockup 100%)
               Expanded(
                 child: GestureDetector(
                   onTap: _openVolumeControlDialog,
@@ -1508,11 +1536,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: const Color(0xFFCBD5E1)),
                     ),
-                    child: const Center(
+                    child: Center(
                       child: Text(
-                        'للتحكم في مستوى\nالصوت',
+                        _tr('للتحكم في مستوى\nالصوت', 'Adjust\nVolume'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
@@ -1526,13 +1554,14 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               ),
               const SizedBox(width: 8),
 
-              // Left Cyan Box
               Expanded(
                 child: GestureDetector(
                   onTap: _openVolumeControlDialog,
                   child: _buildMetricSubBox(
-                    label: 'حالة السماعة',
-                    value: _isMuted ? 'MUTED' : 'ACTIVE',
+                    label: _tr('حالة السماعة', 'Speaker'),
+                    value: _isMuted
+                        ? _tr('مكتوم', 'Muted')
+                        : _tr('نشط', 'Active'),
                     bgColor: const Color(0xFFECFEFF),
                     borderColor: const Color(0xFFA5F3FC),
                     labelColor: const Color(0xFF0891B2),
@@ -1547,7 +1576,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     );
   }
 
-  /// Matrix Card 4: Microphone / Voice Recording ("تسجيل صوتك")
+  /// Matrix Card 4: Microphone / Voice Recording
   Widget _buildVoiceRecordCard() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1566,7 +1595,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Top Row: Green Mic Icon Box on Right + Title
           Row(
             children: [
               Container(
@@ -1584,10 +1612,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'وحدة الميكروفون والبصمة الصوتية',
-                  style: TextStyle(
+                  _tr('وحدة الميكروفون والبصمة الصوتية', 'Microphone & Voiceprint'),
+                  style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
@@ -1600,10 +1628,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
           const SizedBox(height: 12),
 
-          // 3 Boxes Row matching the mockup: Right box ("تسجيل صوتك") | Middle box | Left cyan box
           Row(
             children: [
-              // Right Box: "تسجيل صوتك" (matching mockup 100%)
               Expanded(
                 child: GestureDetector(
                   onTap: _uploadingVoice ? null : _recordOrUploadVoice,
@@ -1626,10 +1652,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                                 color: Color(0xFF10B981),
                               ),
                             )
-                          : const Text(
-                              'تسجيل صوتك',
+                          : Text(
+                              _tr('تسجيل صوتك', 'Record Voice'),
                               textAlign: TextAlign.center,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontFamily: 'Cairo',
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w900,
@@ -1642,26 +1668,24 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               ),
               const SizedBox(width: 8),
 
-              // Middle Box: Status / Uploaded Sample Name
               Expanded(
                 child: GestureDetector(
                   onTap: _uploadingVoice ? null : _recordOrUploadVoice,
                   child: _buildMetricSubBox(
-                    label: 'حالة العينة',
-                    value: _voiceStatusLabel,
+                    label: _tr('حالة العينة', 'Sample Status'),
+                    value: _displayVoiceStatus,
                     valueColor: const Color(0xFF0F172A),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
 
-              // Left Cyan Box
               Expanded(
                 child: GestureDetector(
                   onTap: _uploadingVoice ? null : _recordOrUploadVoice,
                   child: _buildMetricSubBox(
-                    label: 'الميكروفون',
-                    value: 'ACTIVE',
+                    label: _tr('الميكروفون', 'Microphone'),
+                    value: _tr('نشط', 'Active'),
                     bgColor: const Color(0xFFECFEFF),
                     borderColor: const Color(0xFFA5F3FC),
                     labelColor: const Color(0xFF0891B2),
@@ -1707,18 +1731,15 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             ),
           ),
           const SizedBox(height: 2),
-          Directionality(
-            textDirection: TextDirection.ltr,
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: 'Cairo',
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: valueColor,
-              ),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: 'Cairo',
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+              color: valueColor,
             ),
           ),
         ],
@@ -1743,18 +1764,18 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               width: 1.3,
             ),
           ),
-          child: const Row(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
+              const Icon(
                 Icons.tune_rounded,
                 size: 18,
                 color: Color(0xFF475569),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Text(
-                'معايرة زوايا الرأس والسيرفو',
-                style: TextStyle(
+                _tr('معايرة زوايا الرأس والسيرفو', 'Calibrate Head & Servos'),
+                style: const TextStyle(
                   fontFamily: 'Cairo',
                   fontSize: 13.5,
                   fontWeight: FontWeight.w800,
@@ -1799,18 +1820,18 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                         color: Color(0xFF00C7E5),
                       ),
                     )
-                  : const Row(
+                  : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.refresh_rounded,
                           size: 20,
                           color: Color(0xFF00C7E5),
                         ),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Text(
-                          'إعادة فحص المستشعرات الشامل',
-                          style: TextStyle(
+                          _tr('إعادة فحص المستشعرات الشامل', 'Run Full Sensor Scan'),
+                          style: const TextStyle(
                             fontFamily: 'Cairo',
                             fontSize: 14.5,
                             fontWeight: FontWeight.w800,

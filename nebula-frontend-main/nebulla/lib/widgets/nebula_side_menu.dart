@@ -1,13 +1,11 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../models/avatar_profile.dart';
-import '../services/avatar_audio_service.dart';
 import '../services/locale_service.dart';
 import '../services/storage_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 import '../screens/main_shell.dart';
-import 'interactive_animated_avatar.dart';
 
 /// Nebula Side Menu redesigned to match Image 2 reference exactly:
 /// - Clean close button (X) at the top without English switch
@@ -98,7 +96,6 @@ class NebulaSideMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final locale = LocaleService.instance;
     final isArabic = locale.isArabic;
-    final audioService = AvatarAudioService.instance;
 
     return Directionality(
       textDirection: locale.textDirection,
@@ -175,16 +172,53 @@ class NebulaSideMenu extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
 
-                        // 2. Active GAGAvatar & User Profile Header Card
-                        ValueListenableBuilder<AvatarProfileModel?>(
-                          valueListenable: audioService.activeAvatar,
-                          builder: (context, activeAvatar, _) {
-                            final hasGagAvatar =
-                                activeAvatar != null && activeAvatar.isGagAvatar;
+                        // 2. User Profile Header Card (User Name & User Picture)
+                        Builder(
+                          builder: (context) {
                             final user = StorageService.instance.getUser();
-                            final subtitleUser = (user != null && user.fullName.trim().isNotEmpty)
+                            final userName = (user != null && user.fullName.trim().isNotEmpty)
                                 ? user.fullName.trim()
-                                : (user?.email ?? (isArabic ? 'حساب المستخدم' : 'User Account'));
+                                : (isArabic ? 'المستخدم' : 'User');
+                            final userAvatarPath = StorageService.instance.getUserAvatarPath();
+                            final userAvatarUrl = StorageService.instance.getUserAvatarUrl();
+
+                            Widget menuInitialWidget(String name) {
+                              final initial = name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : 'U';
+                              return Container(
+                                color: const Color(0xFFE0F2FE),
+                                child: Center(
+                                  child: Text(
+                                    initial,
+                                    style: const TextStyle(
+                                      fontFamily: 'Cairo',
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF0284C7),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            Widget avatarImageWidget;
+                            if (userAvatarPath != null && File(userAvatarPath).existsSync()) {
+                              avatarImageWidget = Image.file(
+                                File(userAvatarPath),
+                                fit: BoxFit.cover,
+                                alignment: Alignment.topCenter,
+                              );
+                            } else if (userAvatarUrl != null && userAvatarUrl.isNotEmpty) {
+                              final base = StorageService.instance.getBaseUrl();
+                              final fullUrl = userAvatarUrl.startsWith('http') ? userAvatarUrl : '$base$userAvatarUrl';
+                              avatarImageWidget = Image.network(
+                                fullUrl,
+                                fit: BoxFit.cover,
+                                alignment: Alignment.topCenter,
+                                errorBuilder: (context, error, stackTrace) => menuInitialWidget(userName),
+                              );
+                            } else {
+                              avatarImageWidget = menuInitialWidget(userName);
+                            }
 
                             return Container(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -200,130 +234,54 @@ class NebulaSideMenu extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                mainAxisSize: MainAxisSize.min,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            ValueListenableBuilder<String>(
-                                              valueListenable: audioService.activePersonaName,
-                                              builder: (context, name, _) => Text(
-                                                name,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontFamily: 'Cairo',
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 15,
-                                                  color: Color(0xFF1E293B),
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              hasGagAvatar
-                                                  ? (isArabic
-                                                      ? 'GAGAvatar 3D • $subtitleUser'
-                                                      : 'GAGAvatar 3D • $subtitleUser')
-                                                  : (isArabic
-                                                      ? 'GAGAvatar • في انتظار الصورة'
-                                                      : 'GAGAvatar • Upload photo'),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontFamily: 'Cairo',
-                                                fontSize: 11.5,
-                                                fontWeight: FontWeight.w600,
-                                                color: Color(0xFF0284C7),
-                                              ),
-                                            ),
-                                          ],
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          userName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontFamily: 'Cairo',
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 15,
+                                            color: Color(0xFF1E293B),
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Stack(
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          const ActiveAvatarThumb(
-                                            size: 52,
-                                            radius: 14,
-                                            showBorder: true,
-                                            borderColor: Color(0xFF0284C7),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          user?.email ?? (isArabic ? 'حساب المستخدم' : 'User Account'),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontFamily: 'Cairo',
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF64748B),
                                           ),
-                                          Positioned(
-                                            bottom: -4,
-                                            left: -4,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: hasGagAvatar
-                                                    ? const Color(0xFF10B981)
-                                                    : const Color(0xFF0284C7),
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: const Text(
-                                                '3D',
-                                                style: TextStyle(
-                                                  fontFamily: 'Cairo',
-                                                  fontSize: 9,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                  const SizedBox(height: 10),
-                                  InkWell(
-                                    onTap: () => _handleItemTap(context, 2),
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF0284C7).withValues(alpha: 0.08),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: const Color(0xFF0284C7).withValues(alpha: 0.25),
-                                        ),
+                                  const SizedBox(width: 12),
+                                  Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: const Color(0xFF00B4D8),
+                                        width: 1.5,
                                       ),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          const Icon(
-                                            Icons.face_retouching_natural_rounded,
-                                            size: 16,
-                                            color: Color(0xFF0284C7),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            hasGagAvatar
-                                                ? (isArabic
-                                                    ? 'تحديث الأفاتار من الرئيسية'
-                                                    : 'Update Avatar on Home')
-                                                : (isArabic
-                                                    ? 'إنشاء الأفاتار من الرئيسية'
-                                                    : 'Create Avatar on Home'),
-                                            style: const TextStyle(
-                                              fontFamily: 'Cairo',
-                                              fontSize: 11.5,
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(0xFF0284C7),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: avatarImageWidget,
                                     ),
                                   ),
                                 ],
@@ -421,6 +379,20 @@ class NebulaSideMenu extends StatelessWidget {
                                 hasArrow: true,
                                 isActive: activeIndex == 7,
                                 onTap: () => _handleItemTap(context, 7),
+                              ),
+                              const SizedBox(height: 9),
+
+                              // 8: الملاحظات وتذكير المهام (Notes & Reminders - Index 8)
+                              _MenuItemCard(
+                                title: isArabic
+                                    ? 'الملاحظات وتذكير المهام'
+                                    : 'Notes & Reminders',
+                                icon: Icons.event_note_rounded,
+                                iconBoxColor: const Color(0xFFFEF3C7),
+                                iconColor: const Color(0xFFD97706),
+                                hasArrow: true,
+                                isActive: activeIndex == 8,
+                                onTap: () => _handleItemTap(context, 8),
                               ),
                             ],
                           ),

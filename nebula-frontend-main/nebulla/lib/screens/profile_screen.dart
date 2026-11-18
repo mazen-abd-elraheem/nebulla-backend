@@ -1,13 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../models/avatar_profile.dart';
-import '../services/api_service.dart';
-import '../services/avatar_audio_service.dart';
 import '../services/storage_service.dart';
 import '../services/locale_service.dart';
 import '../services/nebula_repository.dart';
-import '../widgets/avatar_studio_panel.dart';
 import '../widgets/common_widgets.dart';
 import 'language_appearance_screen.dart';
 import 'notification_preferences_screen.dart';
@@ -34,54 +30,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _loadUser();
-    AvatarAudioService.instance.loadActiveAvatar();
-  }
-
-  void _openAvatarStudioSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFFF8FAFC),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFCBD5E1),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                AvatarStudioPanel(
-                  darkMode: false,
-                  defaultName: _fullName,
-                  onAvatarApproved: (_) {
-                    if (Navigator.of(ctx).canPop()) {
-                      Navigator.of(ctx).pop();
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   void _loadUser() {
@@ -130,14 +78,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         errorBuilder: (context, error, stackTrace) => _profileInitialFallback(),
       );
     } else {
-      final avatar = AvatarAudioService.instance.activeAvatar.value;
-      if (avatar != null && avatar.previewUrl.isNotEmpty) {
-        return Image.network(
-          ApiService.instance.resolveUrl(avatar.previewUrl),
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _profileInitialFallback(),
-        );
-      }
       return _profileInitialFallback();
     }
   }
@@ -160,6 +100,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  String _tr(String ar, String en) => LocaleService.instance.tr(ar, en);
+
   void _showEditProfileDialog({String? focusField}) {
     final nameCtrl = TextEditingController(text: _fullName);
     final emailCtrl = TextEditingController(text: _email);
@@ -172,7 +114,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => Directionality(
-          textDirection: TextDirection.rtl,
+          textDirection: LocaleService.instance.textDirection,
           child: AlertDialog(
             backgroundColor: Colors.white,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
@@ -187,9 +129,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: const Icon(Icons.edit_rounded, color: Color(0xFF00B4D8), size: 18),
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  'تعديل البيانات الشخصية',
-                  style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16),
+                Text(
+                  _tr('تعديل البيانات الشخصية', 'Edit Personal Info'),
+                  style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A)),
                 ),
               ],
             ),
@@ -200,9 +142,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   TextField(
                     controller: nameCtrl,
                     autofocus: focusField == 'name',
+                    cursorColor: const Color(0xFF00B4D8),
+                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
                     decoration: InputDecoration(
-                      labelText: 'الاسم الكامل',
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      labelText: _tr('الاسم الكامل', 'Full Name'),
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
                       prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF00B4D8)),
                       filled: true,
                       fillColor: const Color(0xFFF8FAFC),
@@ -215,9 +159,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: emailCtrl,
                     keyboardType: TextInputType.emailAddress,
                     autofocus: focusField == 'email',
+                    cursorColor: const Color(0xFF00B4D8),
+                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
                     decoration: InputDecoration(
-                      labelText: 'البريد الإلكتروني',
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      labelText: _tr('البريد الإلكتروني', 'Email Address'),
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
                       prefixIcon: const Icon(Icons.alternate_email_rounded, color: Color(0xFF00B4D8)),
                       filled: true,
                       fillColor: const Color(0xFFF8FAFC),
@@ -231,9 +177,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     keyboardType: TextInputType.phone,
                     textDirection: TextDirection.ltr,
                     autofocus: focusField == 'phone',
+                    cursorColor: const Color(0xFF00B4D8),
+                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
                     decoration: InputDecoration(
-                      labelText: 'رقم الهاتف',
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      labelText: _tr('رقم الهاتف', 'Phone Number'),
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
                       prefixIcon: const Icon(Icons.phone_outlined, color: Color(0xFF00B4D8)),
                       filled: true,
                       fillColor: const Color(0xFFF8FAFC),
@@ -245,9 +193,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   TextField(
                     controller: locationCtrl,
                     autofocus: focusField == 'location',
+                    cursorColor: const Color(0xFF00B4D8),
+                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
                     decoration: InputDecoration(
-                      labelText: 'الموقع الجغرافي',
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      labelText: _tr('الموقع الجغرافي', 'Location'),
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
                       prefixIcon: const Icon(Icons.location_on_outlined, color: Color(0xFF00B4D8)),
                       filled: true,
                       fillColor: const Color(0xFFF8FAFC),
@@ -259,9 +209,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   TextField(
                     controller: orgCtrl,
                     autofocus: focusField == 'org',
+                    cursorColor: const Color(0xFF00B4D8),
+                    style: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
                     decoration: InputDecoration(
-                      labelText: 'المؤسسة والجهة',
-                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
+                      labelText: _tr('المؤسسة والجهة', 'Organization'),
+                      labelStyle: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF475569)),
                       prefixIcon: const Icon(Icons.domain_rounded, color: Color(0xFF00B4D8)),
                       filled: true,
                       fillColor: const Color(0xFFF8FAFC),
@@ -275,7 +227,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B))),
+                child: Text(_tr('إلغاء', 'Cancel'), style: const TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B))),
               ),
               ElevatedButton(
                 onPressed: saving
@@ -299,13 +251,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               if (updatedUser.organization != null) _organization = updatedUser.organization!;
                             });
                             if (ctx.mounted) Navigator.of(ctx).pop();
-                            if (context.mounted) {
-                              showSuccessSnackbar(context, 'تم حفظ وتحديث بياناتك في السيرفر بنجاح ✨');
-                            }
+                            showSuccessSnackbar(
+                              context,
+                              _tr('تم حفظ وتحديث بياناتك بنجاح ✨', 'Profile updated successfully ✨'),
+                            );
                           }
                         } catch (e) {
                           setDialogState(() => saving = false);
-                          if (context.mounted) showErrorSnackbar(context, 'تعذر حفظ البيانات: $e');
+                          if (mounted) {
+                            showErrorSnackbar(
+                              context,
+                              _tr('تعذر حفظ البيانات: $e', 'Could not save profile: $e'),
+                            );
+                          }
                         }
                       },
                 style: ElevatedButton.styleFrom(
@@ -315,7 +273,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: saving
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('حفظ في السيرفر', style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                    : Text(_tr('حفظ في السيرفر', 'Save Changes'), style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -452,71 +410,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 18),
 
-              // 2. Centered User Avatar & Verified Name (tappable to manage GAGAvatar)
+              // 2. Centered User Avatar & Verified Name
               Center(
                 child: Column(
                   children: [
-                    GestureDetector(
-                      onTap: _openAvatarStudioSheet,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            width: 86,
-                            height: 86,
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 86,
+                          height: 86,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFF006677).withValues(alpha: 0.2),
+                              width: 3,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: _buildProfileAvatar(),
+                          ),
+                        ),
+                        // Online green dot
+                        Positioned(
+                          bottom: 2,
+                          left: 4,
+                          child: Container(
+                            width: 14,
+                            height: 14,
                             decoration: BoxDecoration(
+                              color: const Color(0xFF10B981),
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFF006677).withValues(alpha: 0.2),
-                                width: 3,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.08),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: ClipOval(
-                              child: _buildProfileAvatar(),
+                              border: Border.all(color: Colors.white, width: 2),
                             ),
                           ),
-                          // Online green dot
-                          Positioned(
-                            bottom: 2,
-                            left: 4,
-                            child: Container(
-                              width: 14,
-                              height: 14,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF10B981),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
-                              ),
-                            ),
-                          ),
-                          // Subtle avatar studio badge
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              width: 26,
-                              height: 26,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF006677),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
-                              ),
-                              child: const Icon(
-                                Icons.camera_alt_rounded,
-                                color: Colors.white,
-                                size: 13,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 10),
                     Row(
@@ -581,15 +517,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                           ],
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.edit_outlined,
+                            const Icon(Icons.edit_outlined,
                                 color: Colors.white, size: 16),
-                            SizedBox(width: 6),
+                            const SizedBox(width: 6),
                             Text(
-                              'تعديل البيانات',
-                              style: TextStyle(
+                              _tr('تعديل البيانات', 'Edit Profile'),
+                              style: const TextStyle(
                                 fontFamily: 'Cairo',
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
@@ -607,7 +543,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: _email));
                         showSuccessSnackbar(
-                            context, 'تم نسخ بيانات الملف الشخصي إلى الحافظة.');
+                          context,
+                          _tr(
+                            'تم نسخ بيانات الملف الشخصي إلى الحافظة.',
+                            'Profile info copied to clipboard.',
+                          ),
+                        );
                       },
                       child: Container(
                         height: 44,
@@ -615,15 +556,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: const Color(0xFFEEF2FF),
                           borderRadius: BorderRadius.circular(14),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.share_outlined,
+                            const Icon(Icons.share_outlined,
                                 color: Color(0xFF4F46E5), size: 16),
-                            SizedBox(width: 6),
+                            const SizedBox(width: 6),
                             Text(
-                              'مشاركة الملف',
-                              style: TextStyle(
+                              _tr('مشاركة الملف', 'Share Profile'),
+                              style: const TextStyle(
                                 fontFamily: 'Cairo',
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
@@ -639,13 +580,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 24),
 
-              // 4. Section: معلومات الاتصال والجهة (المعلومات الأساسية)
+              // 4. Section: معلومات الاتصال والجهة
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'معلومات الاتصال والجهة',
-                    style: TextStyle(
+                  Text(
+                    _tr('معلومات الاتصال والجهة', 'Contact & Organization'),
+                    style: const TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 14.5,
                       fontWeight: FontWeight.bold,
@@ -653,7 +594,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   Text(
-                    'المعلومات الأساسية',
+                    _tr('المعلومات الأساسية', 'Basic Info'),
                     style: TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 11,
@@ -679,51 +620,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: Column(
                   children: [
-                    // البريد الإلكتروني
                     _buildInfoItem(
-                      label: 'البريد الإلكتروني',
+                      label: _tr('البريد الإلكتروني', 'Email Address'),
                       value: _email,
                       icon: Icons.alternate_email_rounded,
-                      badge: 'مؤكد',
-                      onEdit: () => _showEditProfileDialog(),
+                      badge: _tr('مؤكد', 'Verified'),
+                      onEdit: () => _showEditProfileDialog(focusField: 'email'),
                       onCopy: () {
                         Clipboard.setData(ClipboardData(text: _email));
-                        showSuccessSnackbar(context, 'تم نسخ البريد الإلكتروني.');
+                        showSuccessSnackbar(
+                          context,
+                          _tr('تم نسخ البريد الإلكتروني.', 'Email copied.'),
+                        );
                       },
                     ),
                     const Divider(color: Color(0xFFF1F5F9), height: 18),
 
-                    // رقم الهاتف
                     _buildInfoItem(
-                      label: 'رقم الهاتف',
+                      label: _tr('رقم الهاتف', 'Phone Number'),
                       value: _phone,
-                      subValue: 'رئيسي',
+                      subValue: _tr('رئيسي', 'Primary'),
                       icon: Icons.phone_outlined,
-                      onEdit: () => _showEditProfileDialog(),
+                      onEdit: () => _showEditProfileDialog(focusField: 'phone'),
                     ),
                     const Divider(color: Color(0xFFF1F5F9), height: 18),
 
-                    // الموقع الجغرافي
                     _buildInfoItem(
-                      label: 'الموقع الجغرافي',
+                      label: _tr('الموقع الجغرافي', 'Location'),
                       value: _location,
                       icon: Icons.location_on_outlined,
-                      onEdit: () => _showEditProfileDialog(),
+                      onEdit: () => _showEditProfileDialog(focusField: 'location'),
                     ),
                     const Divider(color: Color(0xFFF1F5F9), height: 18),
 
-                    // المؤسسة والجهة
                     _buildInfoItem(
-                      label: 'المؤسسة والجهة',
+                      label: _tr('المؤسسة والجهة', 'Organization'),
                       value: _organization,
                       icon: Icons.domain_rounded,
-                      onEdit: () => _showEditProfileDialog(),
+                      onEdit: () => _showEditProfileDialog(focusField: 'org'),
                     ),
                     const Divider(color: Color(0xFFF1F5F9), height: 18),
 
-                    // تاريخ الانضمام
                     _buildInfoItem(
-                      label: 'تاريخ الانضمام',
+                      label: _tr('تاريخ الانضمام', 'Member Since'),
                       value: _joinDate,
                       icon: Icons.calendar_today_outlined,
                     ),
@@ -732,13 +671,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 24),
 
-              // 5. Section: التفضيلات والأمان (إعدادات الحساب)
+              // 5. Section: التفضيلات والأمان
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'التفضيلات والأمان',
-                    style: TextStyle(
+                  Text(
+                    _tr('التفضيلات والأمان', 'Preferences & Security'),
+                    style: const TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 14.5,
                       fontWeight: FontWeight.bold,
@@ -746,7 +685,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   Text(
-                    'إعدادات الحساب',
+                    _tr('إعدادات الحساب', 'Account Settings'),
                     style: TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 11,
@@ -757,10 +696,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 10),
 
-              // Item 1: تفضيلات الإشعارات والتنبيهات -> NotificationPreferencesScreen
               _buildNavCard(
-                title: 'تفضيلات الإشعارات والتنبيهات',
-                subtitle: 'البريد، المنصة، التحديثات الدورية',
+                title: _tr('تفضيلات الإشعارات والتنبيهات', 'Notification Preferences'),
+                subtitle: _tr('البريد، المنصة، التحديثات الدورية', 'Email, alerts, periodic updates'),
                 icon: Icons.notifications_active_outlined,
                 onTap: () {
                   Navigator.of(context).push(
@@ -772,12 +710,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 8),
 
-              // Item 2: الأمان والتحقق بخطوتين -> Security2FAScreen
               _buildNavCard(
-                title: 'الأمان والتحقق بخطوتين',
-                subtitle: 'كلمة المرور ومفاتيح الأمان',
+                title: _tr('الأمان والتحقق بخطوتين', 'Security & Two-Factor Auth'),
+                subtitle: _tr('كلمة المرور ومفاتيح الأمان', 'Password & security keys'),
                 icon: Icons.shield_outlined,
-                badge: 'مفعّل',
+                badge: _tr('مفعّل', 'Active'),
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -788,10 +725,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 8),
 
-              // Item 3: إدارة البيانات والخصوصية -> DataPrivacyScreen
               _buildNavCard(
-                title: 'إدارة البيانات والخصوصية',
-                subtitle: 'تصدير السجلات، سياسات التخزين',
+                title: _tr('إدارة البيانات والخصوصية', 'Data & Privacy'),
+                subtitle: _tr('تصدير السجلات، سياسات التخزين', 'Export logs & storage policies'),
                 icon: Icons.history_rounded,
                 onTap: () {
                   Navigator.of(context).push(
@@ -803,12 +739,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 8),
 
-              // Item 4: لغة التطبيق والمظهر -> LanguageAppearanceScreen
               _buildNavCard(
-                title: 'لغة التطبيق والمظهر',
-                subtitle: 'العربية (المملكة) • المظهر الهادئ',
+                title: _tr('لغة التطبيق والمظهر', 'Language & Appearance'),
+                subtitle: _tr(
+                  'العربية • المظهر الهادئ',
+                  'English • Light Theme',
+                ),
                 icon: Icons.translate_rounded,
-                endText: 'العربية',
+                endText: _tr('العربية', 'English'),
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(

@@ -84,6 +84,7 @@ async def create_avatar(
             name=name,
             style=style,
             require_face=require_face,
+            allow_local_animator=True,
         )
         return {
             "status": "pending_review",
@@ -105,6 +106,12 @@ async def get_active_avatar(
 ) -> Dict[str, Any]:
     user_id = await _resolve_authenticated_user_id(sub, db)
     avatar = await svc.get_active_avatar(db=db, user_id=user_id, personality_id=personality_id)
+    if avatar is not None:
+        avatar = await svc.upgrade_legacy_avatar_if_needed(avatar=avatar, db=db)
+    elif user_id is not None:
+        user = await db.get(User, user_id)
+        if user is not None:
+            avatar = await svc.ensure_active_avatar_from_user(user=user, db=db)
     if not avatar:
         return {"has_avatar": False, "avatar": None}
     return {"has_avatar": True, "avatar": svc.serialize_avatar(avatar)}
@@ -146,6 +153,22 @@ async def approve_avatar(
     user_id = await _resolve_authenticated_user_id(sub, db)
     try:
         avatar = await svc.approve_avatar(avatar_id=avatar_id, db=db, user_id=user_id)
+        # Keep user's profile photo & personal Personality synced with the approved avatar
+        if user_id is not None:
+            from app.models.personality import Personality
+
+            user = await db.get(User, user_id)
+            if user is not None:
+                user.avatar_url = f"/api/v1/avatar/{avatar.id}/preview"
+                db.add(user)
+            p_res = await db.execute(
+                select(Personality).where(Personality.user_id == user_id).limit(1)
+            )
+            persona = p_res.scalar_one_or_none()
+            if persona is not None:
+                persona.image_path = avatar.avatar_preview_path
+                db.add(persona)
+            await db.commit()
         return {
             "status": "approved",
             "message": "تم اعتماد الأفاتار وتفعيله بنجاح.",
@@ -202,6 +225,7 @@ async def recreate_avatar(
             reason=reason,
             user_id=user_id,
             require_face=require_face,
+            allow_local_animator=True,
         )
         return {
             "status": "pending_review",

@@ -10,7 +10,7 @@ class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
 
   @override
-  String toString() => 'ApiException($statusCode): $message';
+  String toString() => message;
 }
 
 class ApiService {
@@ -30,8 +30,14 @@ class ApiService {
   }
   String? get _token => StorageService.instance.getToken();
 
+  String get _deviceType {
+    if (Platform.isAndroid || Platform.isIOS) return 'mobile';
+    return 'desktop';
+  }
+
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
+        'X-Device-Type': _deviceType,
         if (_token != null) 'Authorization': 'Bearer $_token',
       };
 
@@ -133,6 +139,90 @@ class ApiService {
     return '$base$cleanPath';
   }
 
+  String _cleanValidationMessage(String raw) {
+    var text = raw.trim();
+    for (final prefix in [
+      'Value error, ',
+      'Value error:',
+      'Assertion failed, ',
+      'Assertion failed:',
+    ]) {
+      if (text.startsWith(prefix)) {
+        text = text.substring(prefix.length).trim();
+      }
+    }
+
+    final lower = text.toLowerCase();
+    if (lower.contains('not a valid email')) {
+      return 'صيغة البريد الإلكتروني غير صحيحة.';
+    }
+    if (lower.contains('at least 8 characters')) {
+      return 'كلمة المرور لازم تكون 8 خانات على الأقل.';
+    }
+    if (lower.contains('at least 6 characters')) {
+      return 'كلمة المرور لازم تكون 6 خانات على الأقل.';
+    }
+    if (lower.contains('at least 2 characters')) {
+      return 'الاسم لازم يكون حرفين على الأقل.';
+    }
+    if (lower.contains('field required')) {
+      return 'يرجى ملء جميع الحقول المطلوبة.';
+    }
+    if (lower.contains('string should have at most')) {
+      return 'النص المدخل أطول من الحد المسموح.';
+    }
+    return text;
+  }
+
+  String _extractReadableError(dynamic detail, int statusCode) {
+    if (detail is String && detail.trim().isNotEmpty) {
+      return _cleanValidationMessage(detail);
+    }
+
+    if (detail is List && detail.isNotEmpty) {
+      final messages = <String>[];
+      for (final item in detail) {
+        if (item is Map) {
+          String? extracted;
+          final ctx = item['ctx'];
+          if (ctx is Map && ctx['error'] != null) {
+            extracted = ctx['error'].toString();
+          } else if (item['msg'] != null) {
+            extracted = item['msg'].toString();
+          }
+          if (extracted != null && extracted.trim().isNotEmpty) {
+            final clean = _cleanValidationMessage(extracted);
+            if (!messages.contains(clean)) {
+              messages.add(clean);
+            }
+          }
+        } else if (item != null) {
+          final clean = _cleanValidationMessage(item.toString());
+          if (clean.isNotEmpty && !messages.contains(clean)) {
+            messages.add(clean);
+          }
+        }
+      }
+      if (messages.isNotEmpty) {
+        return messages.join('\n');
+      }
+    }
+
+    if (statusCode == 401) {
+      return 'انتهت صلاحية الجلسة، يرجى تسجيل الدخول مرة أخرى.';
+    }
+    if (statusCode == 403) {
+      return 'ليس لديك صلاحية لتنفيذ هذا الإجراء.';
+    }
+    if (statusCode == 404) {
+      return 'العنصر المطلوب غير موجود.';
+    }
+    if (statusCode >= 500) {
+      return 'حدث خطأ مؤقت في الخادم، حاول مرة أخرى.';
+    }
+    return 'حدث خطأ غير متوقع، يرجى المحاولة مرة أخرى.';
+  }
+
   dynamic _handle(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (response.body.isEmpty) return null;
@@ -140,10 +230,18 @@ class ApiService {
     }
     String msg;
     try {
-      final body = jsonDecode(response.body);
-      msg = body['detail']?.toString() ?? response.body;
+      final rawText = utf8.decode(response.bodyBytes);
+      final body = jsonDecode(rawText);
+      if (body is Map<String, dynamic>) {
+        msg = _extractReadableError(
+          body['detail'] ?? body['message'],
+          response.statusCode,
+        );
+      } else {
+        msg = _extractReadableError(body, response.statusCode);
+      }
     } catch (_) {
-      msg = response.body;
+      msg = _extractReadableError(null, response.statusCode);
     }
     if (response.statusCode == 401) {
       StorageService.instance.clearToken();

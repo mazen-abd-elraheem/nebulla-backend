@@ -74,9 +74,21 @@ class AvatarProfileModel {
     this.updatedAt,
   });
 
-  bool get isGagAvatar => engine == 'gagavatar' || engine == 'gagavatar_remote';
+  bool get isGagAvatar =>
+      previewUrl.isNotEmpty &&
+      (engine == 'gagavatar' ||
+          engine == 'gagavatar_remote' ||
+          engine == 'local_face_3d' ||
+          engine == 'user_portrait');
 
-  /// Pick the exact GAGAvatar neural frame URL for expression, jaw opening level (0..3), or blink.
+  String withCacheBust(String path) {
+    if (path.isEmpty) return path;
+    final tag = Uri.encodeQueryComponent('${attemptNumber}_${updatedAt ?? id}');
+    final sep = path.contains('?') ? '&' : '?';
+    return '$path${sep}v=$tag';
+  }
+
+  /// Pick the exact backend-rendered frame URL for expression, jaw opening level (0..3), or blink.
   String frameForState({
     required String emotion,
     int mouthLevel = 0,
@@ -84,16 +96,16 @@ class AvatarProfileModel {
   }) {
     if (blinking) {
       final blink = blinkSpriteUrl ?? sprites['blink'];
-      if (blink != null && blink.isNotEmpty) return blink;
+      if (blink != null && blink.isNotEmpty) return withCacheBust(blink);
     }
     if (mouthLevel > 0 && mouthFrames.isNotEmpty) {
       final levels = mouthFrames[emotion] ?? mouthFrames['neutral'];
       if (levels != null && levels.isNotEmpty) {
         final idx = mouthLevel.clamp(0, levels.length - 1);
-        return levels[idx];
+        return withCacheBust(levels[idx]);
       }
     }
-    return sprites[emotion] ?? sprites['neutral'] ?? previewUrl;
+    return withCacheBust(sprites[emotion] ?? sprites['neutral'] ?? previewUrl);
   }
 
   factory AvatarProfileModel.fromJson(Map<String, dynamic> json) {

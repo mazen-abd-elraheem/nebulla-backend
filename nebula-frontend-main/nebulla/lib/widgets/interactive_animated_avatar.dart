@@ -117,11 +117,12 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     _precachedKey = key;
 
     final urls = <String>{
-      if (avatar.previewUrl.isNotEmpty) avatar.previewUrl,
+      if (avatar.previewUrl.isNotEmpty) avatar.withCacheBust(avatar.previewUrl),
       if (avatar.blinkSpriteUrl != null && avatar.blinkSpriteUrl!.isNotEmpty)
-        avatar.blinkSpriteUrl!,
-      ...avatar.sprites.values,
-      for (final list in avatar.mouthFrames.values) ...list,
+        avatar.withCacheBust(avatar.blinkSpriteUrl!),
+      for (final s in avatar.sprites.values) avatar.withCacheBust(s),
+      for (final list in avatar.mouthFrames.values)
+        for (final m in list) avatar.withCacheBust(m),
     };
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -198,25 +199,12 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     final hasGagAvatar =
         avatar != null && avatar.isGagAvatar && avatar.previewUrl.isNotEmpty;
 
-    String? frameUrl;
-    if (hasGagAvatar) {
-      final blinkVal = _blinkAnimation?.value ?? 0.0;
-      final isBlinking =
-          blinkVal > 0.35 && (avatar.blinkSpriteUrl?.isNotEmpty ?? false);
-      final effOpen = isSpeaking ? max(viseme.openness, amplitude * 0.95) : 0.0;
-      final int mouthLevel = !isSpeaking
-          ? 0
-          : (effOpen >= 0.72
-              ? 3
-              : (effOpen >= 0.42 ? 2 : (effOpen >= 0.14 ? 1 : 0)));
-
-      final relPath = avatar.frameForState(
-        emotion: emotion,
-        mouthLevel: mouthLevel,
-        blinking: isBlinking,
-      );
-      frameUrl = ApiService.instance.resolveUrl(relPath);
-    }
+    final effOpen = isSpeaking ? max(viseme.openness, amplitude * 0.95) : 0.0;
+    final int mouthLevel = !isSpeaking
+        ? 0
+        : (effOpen >= 0.65
+            ? 3
+            : (effOpen >= 0.34 ? 2 : (effOpen >= 0.10 ? 1 : 0)));
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -243,11 +231,30 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
               _blinkAnimation!,
             ]),
             builder: (context, _) {
+              String? frameUrl;
+              if (hasGagAvatar) {
+                final blinkVal = _blinkAnimation?.value ?? 0.0;
+                final isBlinking =
+                    !isSpeaking &&
+                    blinkVal > 0.32 &&
+                    (avatar.blinkSpriteUrl?.isNotEmpty ?? false);
+                final relPath = avatar.frameForState(
+                  emotion: emotion,
+                  mouthLevel: mouthLevel,
+                  blinking: isBlinking,
+                );
+                frameUrl = ApiService.instance.resolveUrl(relPath);
+              }
+
               final headT = (_headMotionController?.value ?? 0.5) * 2 * pi;
-              final yaw = sin(headT * 0.7) * 0.018;
-              final pitch = (cos(headT * 0.9) * 0.012) +
-                  (isSpeaking ? sin(headT * 3.5) * 0.006 : 0.0);
-              final roll = sin(headT * 0.5) * 0.007;
+              final breathVal = _breathingAnimation?.value ?? 0.0;
+              final speakBoost = isSpeaking ? (1.0 + amplitude * 0.85) : 1.0;
+              final yaw = sin(headT * 0.7) * 0.045 * speakBoost;
+              final pitch = (cos(headT * 0.9) * 0.025) +
+                  (isSpeaking ? sin(headT * 4.2) * (0.018 + amplitude * 0.022) : 0.0);
+              final roll = sin(headT * 0.5) * 0.018;
+              final floatY = (breathVal - 0.5) * -5.0 -
+                  (isSpeaking ? amplitude * 3.5 : 0.0);
 
               return Center(
                 child: SizedBox(
@@ -258,56 +265,59 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                     clipBehavior: Clip.none,
                     children: [
                       _buildAmbientGlow(auraColor, isSpeaking, amplitude, portraitW, portraitH),
-                      Transform(
-                        alignment: const Alignment(0.0, -0.12), // Pivot on neck base
-                        transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.001)
-                          ..rotateY(yaw)
-                          ..rotateX(pitch)
-                          ..rotateZ(roll),
-                        child: ClipRRect(
-                          borderRadius: widget.fullScreen
-                              ? BorderRadius.zero
-                              : BorderRadius.circular(24),
-                          child: SizedBox(
-                            width: portraitW,
-                            height: portraitH,
-                            child: frameUrl != null
-                                ? Transform.scale(
-                                    scale: 1.0 +
-                                        (0.010 * (_breathingAnimation?.value ?? 0.0)) +
-                                        (isSpeaking ? amplitude * 0.014 : 0.0),
-                                    alignment: const Alignment(0.0, 0.1),
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Image.network(
-                                          frameUrl,
-                                          fit: BoxFit.cover,
-                                          alignment: Alignment.center,
-                                          gaplessPlayback: true,
-                                          errorBuilder: (_, _, _) =>
-                                              _buildNoAvatarPlaceholder(auraColor),
-                                        ),
-                                        if (widget.fullScreen)
-                                          DecoratedBox(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                begin: Alignment.topCenter,
-                                                end: Alignment.bottomCenter,
-                                                colors: [
-                                                  Colors.transparent,
-                                                  Colors.transparent,
-                                                  AppColors.bg.withValues(alpha: 0.88),
-                                                ],
-                                                stops: const [0.0, 0.68, 1.0],
+                      Transform.translate(
+                        offset: Offset(0, floatY),
+                        child: Transform(
+                          alignment: const Alignment(0.0, -0.12), // Pivot on neck base
+                          transform: Matrix4.identity()
+                            ..setEntry(3, 2, 0.0012)
+                            ..rotateY(yaw)
+                            ..rotateX(pitch)
+                            ..rotateZ(roll),
+                          child: ClipRRect(
+                            borderRadius: widget.fullScreen
+                                ? BorderRadius.zero
+                                : BorderRadius.circular(24),
+                            child: SizedBox(
+                              width: portraitW,
+                              height: portraitH,
+                              child: frameUrl != null
+                                  ? Transform.scale(
+                                      scale: 1.02 +
+                                          (0.018 * breathVal) +
+                                          (isSpeaking ? amplitude * 0.022 : 0.0),
+                                      alignment: const Alignment(0.0, 0.1),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          Image.network(
+                                            frameUrl,
+                                            fit: BoxFit.cover,
+                                            alignment: Alignment.center,
+                                            gaplessPlayback: true,
+                                            errorBuilder: (_, _, _) =>
+                                                _buildNoAvatarPlaceholder(auraColor),
+                                          ),
+                                          if (widget.fullScreen)
+                                            DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                gradient: LinearGradient(
+                                                  begin: Alignment.topCenter,
+                                                  end: Alignment.bottomCenter,
+                                                  colors: [
+                                                    Colors.transparent,
+                                                    Colors.transparent,
+                                                    AppColors.bg.withValues(alpha: 0.88),
+                                                  ],
+                                                  stops: const [0.0, 0.68, 1.0],
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                      ],
-                                    ),
-                                  )
-                                : _buildNoAvatarPlaceholder(auraColor),
+                                        ],
+                                      ),
+                                    )
+                                  : _buildNoAvatarPlaceholder(auraColor),
+                            ),
                           ),
                         ),
                       ),

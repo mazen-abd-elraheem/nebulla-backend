@@ -102,18 +102,29 @@ class ContactResponse(BaseModel):
 
 
 class ReminderCreate(BaseModel):
-    title: str = Field(..., min_length=1, max_length=120, description="نص التذكير (مثال: دوا الضغط)")
-    reminder_type: str = Field("task", description="نوع التذكير: medicine | task | appointment")
-    target_time: datetime = Field(..., description="موعد التنبيه (UTC)")
+    title: str = Field(..., min_length=1, max_length=120, description="نص التذكير أو عنوان الملاحظة")
+    description: Optional[str] = Field(None, max_length=1000, description="تفاصيل الملاحظة أو المهمة")
+    reminder_type: str = Field("task", description="نوع التذكير: medicine | task | appointment | note")
+    target_time: Optional[datetime] = Field(None, description="موعد التنبيه (UTC)")
     recurrence: str = Field("once", description="التكرار: once | daily | weekly")
     escalation_contact_id: Optional[int] = Field(None, description="جهة الاتصال للإبلاغ عند عدم الرد")
     escalation_mode: str = Field("msg", description="وسيلة الإبلاغ: msg | call")
+
+
+class ReminderUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=120)
+    description: Optional[str] = Field(None, max_length=1000)
+    reminder_type: Optional[str] = None
+    target_time: Optional[datetime] = None
+    recurrence: Optional[str] = None
+    status: Optional[str] = None
 
 
 class ReminderResponse(BaseModel):
     id: int
     user_id: Optional[int] = None
     title: str
+    description: Optional[str] = None
     reminder_type: str
     target_time: datetime
     recurrence: str
@@ -350,45 +361,43 @@ async def delete_contact(
 
 # ── Reminders Endpoints ───────────────────────────────────────────────────────
 
-@router.get("/reminders", response_model=List[ReminderResponse], summary="List reminders")
+@router.get("/reminders", response_model=List[ReminderResponse], summary="List reminders & notes")
 async def list_reminders(
     active_only: bool = True,
     reminder_type: Optional[str] = None,
     current_user: User = Depends(get_current_user_model),
     db: AsyncSession = Depends(get_db),
 ):
-    """Retrieve active or historical reminders."""
-    stmt = select(Reminder)
-    if not current_user.is_superuser:
-        stmt = stmt.where(or_(Reminder.user_id == current_user.id, Reminder.user_id.is_(None)))
+    """Retrieve active or historical reminders and notes isolated to the current user."""
+    stmt = select(Reminder).where(Reminder.user_id == current_user.id)
     if active_only:
         stmt = stmt.where(Reminder.is_active == True)  # noqa: E712
     if reminder_type:
         stmt = stmt.where(Reminder.reminder_type == reminder_type)
-    stmt = stmt.order_by(Reminder.target_time.asc())
+    stmt = stmt.order_by(Reminder.created_at.desc())
     result = await db.execute(stmt)
     return result.scalars().all()
 
 
-@router.post("/reminders", response_model=ReminderResponse, status_code=status.HTTP_201_CREATED, summary="Create reminder")
+@router.post("/reminders", response_model=ReminderResponse, status_code=status.HTTP_201_CREATED, summary="Create reminder or note")
 async def create_reminder(
     body: ReminderCreate,
     current_user: User = Depends(get_current_user_model),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a new medicine or task reminder with optional family escalation."""
-    # Ensure target_time is UTC naive for SQLite
-    target = body.target_time
+    """Create a new medicine/task reminder or personal note."""
+    target = body.target_time or datetime.now(timezone.utc)
     if target.tzinfo is not None:
         target = target.astimezone(timezone.utc).replace(tzinfo=None)
 
     reminder = Reminder(
         user_id=current_user.id,
         title=body.title.strip(),
+        description=(body.description or "").strip() or None,
         reminder_type=body.reminder_type,
         target_time=target,
         recurrence=body.recurrence,
-        status="pending",
+        status="note" if body.reminder_type == "note" else "pending",
         escalation_contact_id=body.escalation_contact_id,
         escalation_mode=body.escalation_mode,
         is_active=True,
@@ -396,7 +405,47 @@ async def create_reminder(
     db.add(reminder)
     await db.commit()
     await db.refresh(reminder)
-    logger.info(f"Created reminder: '{reminder.title}' at {reminder.target_time} (id={reminder.id})")
+    logger.info(f"Created {reminder.reminder_type}: '{reminder.title}' (id={reminder.id})")
+    return reminder
+
+
+@router.put("/reminders/{reminder_id}", response_model=ReminderResponse, summary="Update reminder or note")
+async def update_reminder(
+    reminder_id: int,
+    body: ReminderUpdate,
+    current_user: User = Depends(get_current_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update title, description, schedule, or status of a note or reminder."""
+    reminder = await db.get(Reminder, reminder_id)
+    if not reminder:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="العنصر غير موجود.")
+    if not current_user.is_superuser and reminder.user_id != current_user.id and reminder.user_id is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ليس لديك صلاحية لتعديل هذا العنصر.")
+
+    if body.title is not None:
+        reminder.title = body.title.strip()
+    if body.description is not None:
+        reminder.description = body.description.strip() or None
+    if body.reminder_type is not None:
+        reminder.reminder_type = body.reminder_type
+    if body.target_time is not None:
+        target = body.target_time
+        if target.tzinfo is not None:
+            target = target.astimezone(timezone.utc).replace(tzinfo=None)
+        reminder.target_time = target
+    if body.recurrence is not None:
+        reminder.recurrence = body.recurrence
+    if body.status is not None:
+        reminder.status = body.status
+        if body.status == "acknowledged":
+            reminder.acknowledged_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        elif body.status == "pending":
+            reminder.acknowledged_at = None
+
+    db.add(reminder)
+    await db.commit()
+    await db.refresh(reminder)
     return reminder
 
 
@@ -406,15 +455,23 @@ async def acknowledge_reminder(
     current_user: User = Depends(get_current_user_model),
     db: AsyncSession = Depends(get_db),
 ):
-    """Acknowledge a reminder («خدت الدوا»), preventing escalation."""
+    """Acknowledge a reminder («تم التنفيذ / خدت الدوا»), preventing escalation."""
     reminder = await db.get(Reminder, reminder_id)
     if not reminder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="التذكير غير موجود.")
     if not current_user.is_superuser and reminder.user_id != current_user.id and reminder.user_id is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ليس لديك صلاحية لتعديل هذا التذكير.")
 
-    svc = get_phone_action_service()
-    await svc.acknowledge_reminder(reminder_id)
+    try:
+        svc = get_phone_action_service()
+        await svc.acknowledge_reminder(reminder_id)
+    except Exception:
+        pass
+
+    reminder.status = "acknowledged"
+    reminder.acknowledged_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.add(reminder)
+    await db.commit()
     await db.refresh(reminder)
     return reminder
 

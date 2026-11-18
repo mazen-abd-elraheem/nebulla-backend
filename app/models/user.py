@@ -59,6 +59,12 @@ class User(Base):
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Security & 2FA settings
+    two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    biometric_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    backup_codes_json: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    password_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 

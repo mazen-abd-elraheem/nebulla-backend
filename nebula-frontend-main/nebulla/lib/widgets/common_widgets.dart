@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
+import '../services/locale_service.dart';
 
 /// Glowing neon card with optional gradient border
 class NebulaCard extends StatelessWidget {
@@ -272,24 +273,204 @@ class LoadingOverlay extends StatelessWidget {
   }
 }
 
-/// Snackbar helpers
+/// Convert any raw technical, plugin, or server error string into a clean,
+/// human-friendly UI/UX message in the active language.
+String sanitizeUiErrorMessage(String raw) {
+  final t = LocaleService.instance.tr;
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) {
+    return t(
+      'حدث خطأ غير متوقع، يرجى المحاولة مرة أخرى.',
+      'Something went wrong. Please try again.',
+    );
+  }
+
+  final lower = trimmed.toLowerCase();
+
+  if (lower.contains('missingpluginexception') ||
+      lower.contains('no implementation found') ||
+      lower.contains('unimplementederror')) {
+    if (lower.contains('contact') || trimmed.contains('جهات الاتصال')) {
+      return t(
+        'مزامنة دليل الموبايل متاحة على الهاتف فقط، يمكنك إضافة جهات الاتصال من زر «جهة جديدة».',
+        'Phone book sync is only available on mobile. Use "New Contact" to add contacts manually.',
+      );
+    }
+    return t(
+      'هذه الميزة غير مدعومة على هذا الجهاز حالياً.',
+      'This feature is not supported on this device.',
+    );
+  }
+
+  if (lower.contains('socketexception') ||
+      lower.contains('connection refused') ||
+      lower.contains('failed host lookup') ||
+      lower.contains('network is unreachable') ||
+      lower.contains('clientexception')) {
+    return t(
+      'تعذر الاتصال حالياً، تأكد من اتصالك بالشبكة وحاول مرة أخرى.',
+      'Unable to connect right now. Please check your network and try again.',
+    );
+  }
+
+  if (lower.contains('timeoutexception') || lower.contains('timed out')) {
+    return t(
+      'استغرق الطلب وقتاً أطول من المعتاد، يرجى المحاولة مرة أخرى.',
+      'The request timed out. Please try again.',
+    );
+  }
+
+  if (lower.contains('unauthorized') || lower.contains('status 401') || lower.contains('(401)')) {
+    return t(
+      'انتهت جلستك الحالية، يرجى تسجيل الدخول مرة أخرى.',
+      'Your session has expired. Please sign in again.',
+    );
+  }
+
+  if (lower.contains('forbidden') || lower.contains('status 403') || lower.contains('(403)')) {
+    return t(
+      'ليست لديك صلاحية لتنفيذ هذا الإجراء.',
+      'You do not have permission to perform this action.',
+    );
+  }
+
+  if (lower.contains('internal server error') ||
+      lower.contains('status 500') ||
+      lower.contains('(500)') ||
+      lower.contains('bad gateway') ||
+      lower.contains('service unavailable')) {
+    return t(
+      'حدث خطأ مؤقت، يرجى المحاولة مرة أخرى بعد قليل.',
+      'A temporary issue occurred. Please try again shortly.',
+    );
+  }
+
+  // Strip raw technical exception tails (e.g. "رسالة: Exception: ...", URLs, channels, Dart errors)
+  final hasTechTokens = RegExp(
+    r'(Exception|Error|Throwable|PlatformException|FormatException|HttpException|ApiException|github\.com/|package:|http://|https://|errno|OS Error|channel\s+\S+|Instance of\s+)',
+    caseSensitive: false,
+  ).hasMatch(trimmed);
+
+  if (hasTechTokens) {
+    final colonIdx = trimmed.indexOf(':');
+    if (colonIdx > 3) {
+      final prefix = trimmed.substring(0, colonIdx).trim();
+      final prefixHasArabic = RegExp(r'[\u0600-\u06FF]').hasMatch(prefix);
+      final prefixIsClean = !RegExp(
+        r'(Exception|Error|http|package|channel)',
+        caseSensitive: false,
+      ).hasMatch(prefix);
+      if (prefixIsClean && (LocaleService.instance.isArabic ? prefixHasArabic : !prefixHasArabic)) {
+        return '$prefix.';
+      }
+    }
+    return t(
+      'تعذر إتمام العملية حالياً، يرجى المحاولة مرة أخرى.',
+      'Could not complete the action right now. Please try again.',
+    );
+  }
+
+  return trimmed;
+}
+
+/// Snackbar helpers — styled to match the light futuristic UI cards
 void showSuccessSnackbar(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(message,
-        style: const TextStyle(fontFamily: 'Cairo', color: AppColors.bg)),
-    backgroundColor: AppColors.success,
-    behavior: SnackBarBehavior.floating,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-  ));
+  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      elevation: 4,
+      backgroundColor: Colors.white,
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 94),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFA7F3D0), width: 1.3),
+      ),
+      content: Directionality(
+        textDirection: LocaleService.instance.textDirection,
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFDF5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.check_circle_rounded,
+                color: Color(0xFF10B981),
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 void showErrorSnackbar(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(message,
-        style:
-            const TextStyle(fontFamily: 'Cairo', color: AppColors.textPrimary)),
-    backgroundColor: AppColors.error,
-    behavior: SnackBarBehavior.floating,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-  ));
+  final cleanMessage = sanitizeUiErrorMessage(message);
+  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      elevation: 4,
+      backgroundColor: Colors.white,
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 94),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFFECACA), width: 1.3),
+      ),
+      content: Directionality(
+        textDirection: LocaleService.instance.textDirection,
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.error_outline_rounded,
+                color: Color(0xFFEF4444),
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                cleanMessage,
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

@@ -79,6 +79,15 @@ class _ContactsScreenState extends State<ContactsScreen>
   }
 
   Future<void> _checkAndLoadDeviceContacts() async {
+    if (!_phoneService.supportsDeviceContacts) {
+      if (mounted) {
+        setState(() {
+          _hasPermission = false;
+          _loadingDevice = false;
+        });
+      }
+      return;
+    }
     setState(() => _loadingDevice = true);
     try {
       final granted = await _phoneService.requestContactsPermission();
@@ -97,19 +106,40 @@ class _ContactsScreenState extends State<ContactsScreen>
           setState(() => _loadingDevice = false);
           showErrorSnackbar(
             context,
-            'يجب منح صلاحية الوصول لجهات الاتصال في الهاتف',
+            LocaleService.instance.tr(
+              'يجب منح صلاحية الوصول لجهات الاتصال في الهاتف',
+              'Contacts permission is required to read your phone book.',
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _loadingDevice = false);
-        showErrorSnackbar(context, 'حدث خطأ أثناء قراءة جهات الاتصال: $e');
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تعذر قراءة جهات الاتصال من الهاتف حالياً.',
+            'Could not read device contacts right now.',
+          ),
+        );
       }
     }
   }
 
   Future<void> _syncAllFromDevice() async {
+    if (!_phoneService.supportsDeviceContacts) {
+      if (mounted) {
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'مزامنة دليل الموبايل متاحة على الهاتف فقط، يمكنك إضافة الأرقام من زر «جهة جديدة».',
+            'Phone book sync is available on mobile only. Use "New Contact" to add numbers manually.',
+          ),
+        );
+      }
+      return;
+    }
     setState(() => _syncing = true);
     try {
       final granted = await _phoneService.requestContactsPermission();
@@ -168,9 +198,7 @@ class _ContactsScreenState extends State<ContactsScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'حذف جهة الاتصال',
           style: TextStyle(
@@ -295,6 +323,7 @@ class _ContactsScreenState extends State<ContactsScreen>
   @override
   Widget build(BuildContext context) {
     final isArabic = LocaleService.instance.isArabic;
+    final t = LocaleService.instance.tr;
 
     // Header buttons
     final menuBtn = GestureDetector(
@@ -316,10 +345,7 @@ class _ContactsScreenState extends State<ContactsScreen>
         decoration: BoxDecoration(
           color: Colors.transparent,
           shape: BoxShape.circle,
-          border: Border.all(
-            color: const Color(0xFFCBD5E1),
-            width: 1.4,
-          ),
+          border: Border.all(color: const Color(0xFFCBD5E1), width: 1.4),
         ),
         child: const Icon(
           Icons.menu_rounded,
@@ -332,22 +358,25 @@ class _ContactsScreenState extends State<ContactsScreen>
     final titleWidget = Expanded(
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: const [
+        children: [
           Text(
-            'جهات الاتصال والتليفون',
+            t('جهات الاتصال والتليفون', 'Contacts & Phone'),
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               fontFamily: 'Cairo',
               fontSize: 16.5,
               fontWeight: FontWeight.w900,
               color: Color(0xFF0F172A),
             ),
           ),
-          SizedBox(height: 1),
+          const SizedBox(height: 1),
           Text(
-            'تحكم في الأرقام التي يتواصل معها نيبولا بصوتك',
+            t(
+              'تحكم في الأرقام التي يتواصل معها نيبولا بصوتك',
+              'Manage contacts Nebula can call by voice',
+            ),
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               fontFamily: 'Cairo',
               fontSize: 11,
               color: Color(0xFF64748B),
@@ -371,10 +400,7 @@ class _ContactsScreenState extends State<ContactsScreen>
             decoration: BoxDecoration(
               color: Colors.transparent,
               shape: BoxShape.circle,
-              border: Border.all(
-                color: const Color(0xFFCBD5E1),
-                width: 1.4,
-              ),
+              border: Border.all(color: const Color(0xFFCBD5E1), width: 1.4),
             ),
             child: _syncing
                 ? const Center(
@@ -411,10 +437,7 @@ class _ContactsScreenState extends State<ContactsScreen>
             decoration: BoxDecoration(
               color: Colors.transparent,
               shape: BoxShape.circle,
-              border: Border.all(
-                color: const Color(0xFFCBD5E1),
-                width: 1.4,
-              ),
+              border: Border.all(color: const Color(0xFFCBD5E1), width: 1.4),
             ),
             child: Icon(
               isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
@@ -438,7 +461,10 @@ class _ContactsScreenState extends State<ContactsScreen>
             children: [
               // 1. Top Header Row (Menu on Left, Title Centered, Actions on Right)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Directionality(
                   textDirection: TextDirection.ltr,
                   child: Row(
@@ -454,48 +480,60 @@ class _ContactsScreenState extends State<ContactsScreen>
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
+                      color: Colors.black.withValues(alpha: 0.03),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                child: TextField(
-                  controller: _searchCtrl,
-                  style: const TextStyle(
-                    color: Color(0xFF0F172A),
-                    fontFamily: 'Cairo',
-                    fontSize: 13.5,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'ابحث بالاسم أو الرقم أو صلة القرابة...',
-                    hintStyle: const TextStyle(
-                      color: Color(0xFF94A3B8),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(15),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    cursorColor: const Color(0xFF00B4D8),
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
                       fontFamily: 'Cairo',
-                      fontSize: 12.5,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
                     ),
-                    prefixIcon: const Icon(
-                      Icons.search_rounded,
-                      color: Color(0xFF00B4D8),
-                      size: 20,
-                    ),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(
-                              Icons.clear_rounded,
-                              color: Color(0xFF94A3B8),
-                              size: 18,
-                            ),
-                            onPressed: () => _searchCtrl.clear(),
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 14,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      hintText: t(
+                        'ابحث بالاسم أو الرقم أو صلة القرابة...',
+                        'Search by name, phone, or relation...',
+                      ),
+                      hintStyle: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontFamily: 'Cairo',
+                        fontSize: 12.5,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        color: Color(0xFF00B4D8),
+                        size: 20,
+                      ),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.clear_rounded,
+                                color: Color(0xFF64748B),
+                                size: 18,
+                              ),
+                              onPressed: () => _searchCtrl.clear(),
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 14,
+                      ),
                     ),
                   ),
                 ),
@@ -550,7 +588,10 @@ class _ContactsScreenState extends State<ContactsScreen>
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            'جهات نيبولا (${_robotContacts.where((c) => c.isAllowlisted).length})',
+                            t(
+                              'جهات نيبولا (${_robotContacts.where((c) => c.isAllowlisted).length})',
+                              'Nebula (${_robotContacts.where((c) => c.isAllowlisted).length})',
+                            ),
                           ),
                         ],
                       ),
@@ -558,14 +599,14 @@ class _ContactsScreenState extends State<ContactsScreen>
                     Tab(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(
+                        children: [
+                          const Icon(
                             Icons.phone_iphone_rounded,
                             size: 16,
                             color: Color(0xFF64748B),
                           ),
-                          SizedBox(width: 6),
-                          Text('دليل الموبايل'),
+                          const SizedBox(width: 6),
+                          Text(t('دليل الموبايل', 'Phone Book')),
                         ],
                       ),
                     ),
@@ -586,20 +627,23 @@ class _ContactsScreenState extends State<ContactsScreen>
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          backgroundColor: const Color(0xFF00B4D8),
-          foregroundColor: Colors.white,
-          elevation: 4,
-          icon: const Icon(Icons.person_add_rounded, size: 20),
-          label: const Text(
-            'جهة جديدة',
-            style: TextStyle(
-              fontFamily: 'Cairo',
-              fontWeight: FontWeight.w800,
-              fontSize: 13.5,
+        floatingActionButton: Padding(
+          padding: const EdgeInsets.only(bottom: 92),
+          child: FloatingActionButton.extended(
+            backgroundColor: const Color(0xFF00B4D8),
+            foregroundColor: Colors.white,
+            elevation: 4,
+            icon: const Icon(Icons.person_add_rounded, size: 20),
+            label: Text(
+              t('جهة جديدة', 'New Contact'),
+              style: const TextStyle(
+                fontFamily: 'Cairo',
+                fontWeight: FontWeight.w800,
+                fontSize: 13.5,
+              ),
             ),
+            onPressed: () => _showAddEditModal(),
           ),
-          onPressed: () => _showAddEditModal(),
         ),
       ),
     );
@@ -697,7 +741,7 @@ class _ContactsScreenState extends State<ContactsScreen>
       backgroundColor: Colors.white,
       onRefresh: _loadRobotContacts,
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 170),
         itemCount: filtered.length,
         separatorBuilder: (_, index) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
@@ -716,6 +760,83 @@ class _ContactsScreenState extends State<ContactsScreen>
   }
 
   Widget _buildDeviceContactsTab() {
+    final t = LocaleService.instance.tr;
+    if (!_phoneService.supportsDeviceContacts) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 140),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0F2FE),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFBAE6FD)),
+                ),
+                child: const Icon(
+                  Icons.phone_iphone_rounded,
+                  size: 36,
+                  color: Color(0xFF0284C7),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                t('دليل الموبايل متاح على الهاتف فقط', 'Phone Book Available on Mobile'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                t(
+                  'أنت تستخدم التطبيق على الكمبيوتر حالياً. يمكنك إضافة وتنظيم كل جهات الاتصال بسهولة من الزر بالأسفل.',
+                  'You are currently on desktop. You can add and organize all your contacts easily using the button below.',
+                ),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 13,
+                  color: Color(0xFF64748B),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00B4D8),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: () => _showAddEditModal(),
+                icon: const Icon(Icons.person_add_rounded, size: 18),
+                label: Text(
+                  t('إضافة جهة اتصال يدوياً', 'Add Contact Manually'),
+                  style: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (!_hasPermission) {
       return Center(
         child: Padding(
@@ -875,7 +996,7 @@ class _ContactsScreenState extends State<ContactsScreen>
 
         Expanded(
           child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 80),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 170),
             itemCount: filtered.length,
             separatorBuilder: (_, index) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
@@ -1696,7 +1817,8 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                       ),
                       value: _requiresConfirmation,
                       activeThumbColor: const Color(0xFF00B4D8),
-                      onChanged: (v) => setState(() => _requiresConfirmation = v),
+                      onChanged: (v) =>
+                          setState(() => _requiresConfirmation = v),
                     ),
                     const Divider(height: 1, color: Color(0xFFE2E8F0)),
                     SwitchListTile(

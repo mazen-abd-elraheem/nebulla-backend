@@ -25,7 +25,8 @@ class Reminder(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True
     )
     title: Mapped[str] = mapped_column(String(120), nullable=False)
-    # medicine | task | appointment
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # medicine | task | appointment | note
     reminder_type: Mapped[str] = mapped_column(String(16), default="task", nullable=False)
 
     # Stored as naive UTC

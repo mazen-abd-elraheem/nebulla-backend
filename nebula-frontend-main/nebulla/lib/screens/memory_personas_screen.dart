@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +9,7 @@ import '../services/nebula_repository.dart';
 import '../widgets/common_widgets.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/locale_service.dart';
+import '../services/storage_service.dart';
 import '../widgets/interactive_animated_avatar.dart';
 import '../widgets/nebula_side_menu.dart';
 
@@ -35,32 +35,36 @@ class PersonaProfileData {
   });
 
   Map<String, dynamic> toJson() => {
-        'backend_id': backendId,
-        'name': name,
-        'traits': traits,
-        'rules': rules,
-        'sub_tags': subTags,
-        'avatar_path': avatarPath,
-        'is_academic_avatar': isAcademicAvatar,
-        'is_active': isActive,
-      };
+    'backend_id': backendId,
+    'name': name,
+    'traits': traits,
+    'rules': rules,
+    'sub_tags': subTags,
+    'avatar_path': avatarPath,
+    'is_academic_avatar': isAcademicAvatar,
+    'is_active': isActive,
+  };
 
   factory PersonaProfileData.fromJson(Map<String, dynamic> json) {
     return PersonaProfileData(
       backendId: json['backend_id'] as int?,
       name: json['name'] as String? ?? '',
-      traits: (json['traits'] as List?)?.map((e) => e.toString()).toList() ??
+      traits:
+          (json['traits'] as List?)?.map((e) => e.toString()).toList() ??
           <String>[],
-      rules: (json['rules'] as List?)
-              ?.map((e) => {
-                    'tag': (e as Map)['tag']?.toString() ?? '',
-                    'text': e['text']?.toString() ?? '',
-                  })
+      rules:
+          (json['rules'] as List?)
+              ?.map(
+                (e) => {
+                  'tag': (e as Map)['tag']?.toString() ?? '',
+                  'text': e['text']?.toString() ?? '',
+                },
+              )
               .toList() ??
           <Map<String, String>>[],
       subTags:
           (json['sub_tags'] as List?)?.map((e) => e.toString()).toList() ??
-              <String>[],
+          <String>[],
       avatarPath: json['avatar_path'] as String?,
       isAcademicAvatar: json['is_academic_avatar'] as bool? ?? false,
       isActive: json['is_active'] as bool? ?? false,
@@ -85,7 +89,12 @@ class PersonaProfileData {
 
 class MemoryPersonasScreen extends StatefulWidget {
   final ValueChanged<int>? onNavigate;
-  const MemoryPersonasScreen({super.key, this.onNavigate});
+  final bool isActive;
+  const MemoryPersonasScreen({
+    super.key,
+    this.onNavigate,
+    this.isActive = false,
+  });
 
   @override
   State<MemoryPersonasScreen> createState() => _MemoryPersonasScreenState();
@@ -93,219 +102,144 @@ class MemoryPersonasScreen extends StatefulWidget {
 
 class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
   final GlobalKey<ScaffoldState> _memScaffoldKey = GlobalKey<ScaffoldState>();
-  static const String _storageKey = 'nebula_saved_personas_v1';
 
   final _repo = NebulaRepository.instance;
   final _scrollCtrl = ScrollController();
-  final _personaNameCtrl =
-      TextEditingController(text: 'المساعد البحثي الأكاديمي');
+  final _personaNameCtrl = TextEditingController();
   final _newTraitCtrl = TextEditingController();
   final _nameFocusNode = FocusNode();
 
   // Active traits in the editor
-  final List<String> _traits = [
-    'تفكير منطقي تحليلي',
-    'نبرة موضوعية صارمة',
-    'طرح تساؤلات استكشافية',
-    'توقع المخاطر والبدائل',
-  ];
+  final List<String> _traits = [];
 
   // Active custom communication rules in the editor
-  final List<Map<String, String>> _rules = [
-    {
-      'tag': 'نبرة التخاطب',
-      'text': 'موضوعية، تحليلية، مدعمة بالبيانات وبدون انحيازات',
-    },
-    {
-      'tag': 'قيود الاستجابة',
-      'text': 'عدم تقديم افتراضات غير مؤكدة وإرفاق تنويه بالاحتمالات',
-    },
-  ];
+  final List<Map<String, String>> _rules = [];
 
-  // Managed personas list (defaults matching the mockup + any user-created ones)
-  late List<PersonaProfileData> _personas;
-  int _editingPersonaIndex = 0; // index in _personas, or -1 when creating new
+  // Managed personas list loaded strictly from backend (user's own + user-added)
+  List<PersonaProfileData> _personas = [];
+  int _editingPersonaIndex = -1; // index in _personas, or -1 when creating new
   bool _saving = false;
 
-  List<Memory> _backendMemories = [];
-  bool _loadingBackendMemories = false;
-
-  Future<void> _fetchBackendMemories([int? personaId]) async {
-    if (!mounted) return;
-    setState(() => _loadingBackendMemories = true);
-    try {
-      final pid = personaId ??
-          (_editingPersonaIndex >= 0 && _editingPersonaIndex < _personas.length
-              ? (_personas[_editingPersonaIndex].backendId ?? 1)
-              : 1);
-      final mems = await _repo.getMemories(pid);
-      if (mounted) {
-        setState(() {
-          _backendMemories = mems;
-          _loadingBackendMemories = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loadingBackendMemories = false);
-    }
+  String get _avatarMapKey {
+    final uid = StorageService.instance.getUser()?.id ?? 0;
+    return 'nebula_persona_avatars_u_$uid';
   }
 
   @override
   void initState() {
     super.initState();
-    _personas = _defaultPersonas();
     _initBackendAndLocalData();
   }
 
-  List<PersonaProfileData> _defaultPersonas() => [
-        PersonaProfileData(
-          backendId: 1,
-          name: 'مازن (Mazen) - التوأم الرقمي',
-          traits: [
-            'التوأم الرقمي الرسمي لفريق نيبولا',
-            'صوت مازن الطبيعي',
-            'لهجة قاهرية عفوية',
-            'تفكير تحليلي تقني',
-          ],
-          rules: [
-            {
-              'tag': 'نبرة التخاطب',
-              'text': 'عفوية، ذكية، بالمصري العامي مع مصطلحات تقنية',
-            },
-            {
-              'tag': 'قاعدة المعرفة',
-              'text':
-                  'مشروع تخرج نيبولا للذكاء الاصطناعي، الروبوت نيبولا ذو الـ 12 محرك، والذاكرة الشخصية',
-            },
-          ],
-          subTags: const ['توأم رقمي', 'لهجة قاهرية', 'نشط حالياً'],
-          isAcademicAvatar: false,
-          isActive: true,
-        ),
-        PersonaProfileData(
-          name: 'المساعد البحثي الأكاديمي',
-          traits: [
-            'تفكير منطقي تحليلي',
-            'نبرة موضوعية صارمة',
-            'طرح تساؤلات استكشافية',
-            'توقع المخاطر والبدائل',
-          ],
-          rules: [
-            {
-              'tag': 'نبرة التخاطب',
-              'text': 'موضوعية، تحليلية، مدعمة بالبيانات وبدون انحيازات',
-            },
-            {
-              'tag': 'قيود الاستجابة',
-              'text':
-                  'عدم تقديم افتراضات غير مؤكدة وإرفاق تنويه بالاحتمالات',
-            },
-          ],
-          subTags: const ['تحليل أكاديمي', 'موضوعية صارمة'],
-          isAcademicAvatar: true,
-          isActive: false,
-        ),
-        PersonaProfileData(
-          name: 'الرفيق الودي التفاعلي',
-          traits: [
-            'تعبيرات دافئة',
-            'ذكاء عاطفي',
-            'تفاعل ودي مستمر',
-          ],
-          rules: [
-            {
-              'tag': 'نبرة التخاطب',
-              'text': 'ودية، متعاطفة، مشجعة وقريبة من المستخدم',
-            },
-          ],
-          subTags: const ['تعبيرات دافئة', 'ذكاء عاطفي'],
-          isAcademicAvatar: false,
-          isActive: false,
-        ),
-      ];
+  @override
+  void didUpdateWidget(covariant MemoryPersonasScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _initBackendAndLocalData();
+    }
+  }
+
+  String _cleanPersonaName(String raw) {
+    return raw
+        .replaceAll(' - التوأم الرقمي', '')
+        .replaceAll('- التوأم الرقمي', '')
+        .replaceAll('(Digital Twin)', '')
+        .trim();
+  }
+
+  bool _isCurrentUserPersona(PersonaProfileData p) {
+    final user = StorageService.instance.getUser();
+    if (user == null || user.fullName.trim().isEmpty) return false;
+    final uName = user.fullName.trim().toLowerCase();
+    final pName = _cleanPersonaName(p.name).toLowerCase();
+    if (pName == uName) return true;
+    final activeAvatarPid =
+        AvatarAudioService.instance.activeAvatar.value?.personalityId;
+    if (activeAvatarPid != null && p.backendId == activeAvatarPid) {
+      return true;
+    }
+    return false;
+  }
 
   Future<void> _initBackendAndLocalData() async {
+    Map<String, String> savedAvatars = {};
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_storageKey);
-      if (raw != null && raw.isNotEmpty) {
-        final decoded = jsonDecode(raw) as List;
-        final loaded = decoded
-            .map((e) =>
-                PersonaProfileData.fromJson(e as Map<String, dynamic>))
-            .toList();
-        if (loaded.isNotEmpty && mounted) {
-          setState(() {
-            _personas = loaded;
-            final activeIdx = _personas.indexWhere((p) => p.isActive);
-            _editingPersonaIndex = activeIdx >= 0 ? activeIdx : 0;
-            _loadPersonaIntoForm(_personas[_editingPersonaIndex]);
-          });
+      // Remove legacy global mixed cache so old/fake personas never leak back
+      if (prefs.containsKey('nebula_saved_personas_v1')) {
+        await prefs.remove('nebula_saved_personas_v1');
+      }
+      final rawMap = prefs.getString(_avatarMapKey);
+      if (rawMap != null && rawMap.isNotEmpty) {
+        final decoded = jsonDecode(rawMap);
+        if (decoded is Map) {
+          savedAvatars = decoded.map(
+            (k, v) => MapEntry(k.toString(), v.toString()),
+          );
         }
       }
     } catch (_) {}
 
-    // Sync with backend GET /api/v1/personalities/
+    // Fetch strictly from backend GET /api/v1/personalities/
     try {
       final remoteList = await _repo.getPersonalities();
       if (!mounted) return;
-      setState(() {
-        for (final remote in remoteList) {
-          final existingIdx = _personas.indexWhere(
-            (p) => p.backendId == remote.id || p.name == remote.name,
-          );
-          if (existingIdx >= 0) {
-            _personas[existingIdx].backendId = remote.id;
-            if (remote.description != null &&
-                remote.description!.trim().isNotEmpty &&
-                remote.description!.contains('|')) {
-              _personas[existingIdx].traits = remote.description!
+      final built = <PersonaProfileData>[];
+      for (final remote in remoteList) {
+        final cleanName = _cleanPersonaName(remote.name);
+        final parsedTraits =
+            remote.description != null && remote.description!.trim().isNotEmpty
+            ? remote.description!
                   .split('|')
                   .map((s) => s.trim())
                   .where((s) => s.isNotEmpty)
-                  .toList();
-            }
-          } else {
-            _personas.add(
-              PersonaProfileData(
-                backendId: remote.id,
-                name: remote.name,
-                traits: remote.description != null &&
-                        remote.description!.trim().isNotEmpty
-                    ? remote.description!
-                        .split('|')
-                        .map((s) => s.trim())
-                        .where((s) => s.isNotEmpty)
-                        .toList()
-                    : ['شخصية مخصصة'],
-                rules: [
-                  if (remote.systemPrompt.trim().isNotEmpty)
-                    {
-                      'tag': 'تعليمات النظام',
-                      'text': remote.systemPrompt.trim(),
-                    }
-                ],
-                subTags: const ['شخصية محفوظة'],
-                isActive: remote.isActive,
-              ),
-            );
-          }
+                  .toList()
+            : <String>['شخصية مخصصة'];
+        built.add(
+          PersonaProfileData(
+            backendId: remote.id,
+            name: cleanName.isNotEmpty ? cleanName : remote.name,
+            traits: parsedTraits,
+            rules: [
+              if (remote.systemPrompt.trim().isNotEmpty)
+                {'tag': 'تعليمات النظام', 'text': remote.systemPrompt.trim()},
+            ],
+            subTags: remote.isActive
+                ? const ['نشط حالياً']
+                : const ['شخصية محفوظة'],
+            avatarPath: savedAvatars[remote.id.toString()],
+            isActive: remote.isActive,
+          ),
+        );
+      }
+
+      setState(() {
+        _personas = built;
+        if (_personas.isNotEmpty) {
+          final activeIdx = _personas.indexWhere((p) => p.isActive);
+          _editingPersonaIndex = activeIdx >= 0 ? activeIdx : 0;
+          _loadPersonaIntoForm(_personas[_editingPersonaIndex]);
+        } else {
+          _editingPersonaIndex = -1;
         }
       });
-      await _persistLocal();
-      await _fetchBackendMemories();
     } catch (_) {
-      // Backend offline or unreachable in test environment; local state stays intact
+      // Backend unreachable; keep current state without injecting fake personas
     }
   }
 
   Future<void> _persistLocal() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _storageKey,
-        jsonEncode(_personas.map((p) => p.toJson()).toList()),
-      );
+      final avatarMap = <String, String>{};
+      for (final p in _personas) {
+        if (p.backendId != null &&
+            p.avatarPath != null &&
+            p.avatarPath!.isNotEmpty) {
+          avatarMap[p.backendId.toString()] = p.avatarPath!;
+        }
+      }
+      await prefs.setString(_avatarMapKey, jsonEncode(avatarMap));
     } catch (_) {}
   }
 
@@ -317,7 +251,6 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
     _rules
       ..clear()
       ..addAll(p.rules.map((r) => Map<String, String>.from(r)));
-    _fetchBackendMemories(p.backendId);
   }
 
   @override
@@ -432,10 +365,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
               onPressed: () => Navigator.pop(ctx),
               child: const Text(
                 'إلغاء',
-                style: TextStyle(
-                  fontFamily: 'Cairo',
-                  color: Color(0xFF64748B),
-                ),
+                style: TextStyle(fontFamily: 'Cairo', color: Color(0xFF64748B)),
               ),
             ),
             TextButton(
@@ -507,8 +437,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
         profile = _personas[targetIdx];
         profile.name = name;
         profile.traits = List<String>.from(_traits);
-        profile.rules =
-            _rules.map((r) => Map<String, String>.from(r)).toList();
+        profile.rules = _rules.map((r) => Map<String, String>.from(r)).toList();
         profile.subTags = _traits.take(2).toList();
       } else {
         for (final p in _personas) {
@@ -544,8 +473,9 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
         } else {
           // Check if a personality with the same name already exists on backend
           final existingRemote = await _repo.getPersonalities();
-          final match =
-              existingRemote.where((p) => p.name == profile.name).firstOrNull;
+          final match = existingRemote
+              .where((p) => p.name == profile.name)
+              .firstOrNull;
           if (match != null) {
             final updated = await _repo.updatePersonality(match.id, {
               'name': profile.name,
@@ -578,8 +508,9 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
         final memoryFacts = <String>[
           'الشخصية: ${profile.name}',
           ...profile.traits.map((t) => 'سمة في ${profile.name}: $t'),
-          ...profile.rules
-              .map((r) => 'قاعدة تخاطب (${r['tag']}) في ${profile.name}: ${r['text']}'),
+          ...profile.rules.map(
+            (r) => 'قاعدة تخاطب (${r['tag']}) في ${profile.name}: ${r['text']}',
+          ),
         ];
         await _repo.addMemoriesBatch(memoryFacts, backendId, 8);
         await _persistLocal();
@@ -640,14 +571,20 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
 
     // Switch avatar and trigger synced speech greeting
     final isMale = target.isAcademicAvatar;
-    AvatarAudioService.instance.switchAvatar(isMale ? 'male' : 'female', name: target.name);
+    AvatarAudioService.instance.switchAvatar(
+      isMale ? 'male' : 'female',
+      name: target.name,
+    );
     if (target.backendId != null) {
       AvatarAudioService.instance.activePersonalityId.value = target.backendId!;
     }
     final greeting = isMale
         ? 'تم تفعيل شخصية ${target.name}. جاهز لتنفيذ المهام الأكاديمية والتحليلية.'
         : 'تم تفعيل شخصية ${target.name}. سعيدة بمساعدتك اليوم!';
-    AvatarAudioService.instance.speak(greeting, emotion: isMale ? 'confident' : 'happy');
+    AvatarAudioService.instance.speak(
+      greeting,
+      emotion: isMale ? 'confident' : 'happy',
+    );
 
     if (!mounted) return;
     showSuccessSnackbar(context, 'تم تفعيل "${target.name}"');
@@ -655,9 +592,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
 
   Future<void> _pickAvatarForPersona(int index) async {
     try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.image,
-      );
+      final result = await FilePicker.pickFiles(type: FileType.image);
       if (result.isNotEmpty && result.first.path != null) {
         final path = result.first.path!;
         setState(() {
@@ -689,8 +624,10 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
       final file = File(result.first.path!);
       final content = await file.readAsString();
 
-      String importedName =
-          result.first.name.replaceAll(RegExp(r'\.(json|txt)$'), '');
+      String importedName = result.first.name.replaceAll(
+        RegExp(r'\.(json|txt)$'),
+        '',
+      );
       List<String> importedTraits = [];
       List<Map<String, String>> importedRules = [];
 
@@ -705,10 +642,12 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
           }
           if (decoded['rules'] is List) {
             importedRules = (decoded['rules'] as List)
-                .map((e) => {
-                      'tag': (e as Map)['tag']?.toString() ?? 'قاعدة',
-                      'text': e['text']?.toString() ?? '',
-                    })
+                .map(
+                  (e) => {
+                    'tag': (e as Map)['tag']?.toString() ?? 'قاعدة',
+                    'text': e['text']?.toString() ?? '',
+                  },
+                )
                 .toList();
           }
         }
@@ -872,16 +811,23 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                         // Visual Left
                                         if (isArabic)
                                           InkWell(
-                                            onTap: () => _memScaffoldKey.currentState?.openEndDrawer(),
-                                            borderRadius: BorderRadius.circular(12),
+                                            onTap: () => _memScaffoldKey
+                                                .currentState
+                                                ?.openEndDrawer(),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             child: Container(
                                               width: 38,
                                               height: 38,
                                               decoration: BoxDecoration(
                                                 color: Colors.transparent,
-                                                borderRadius: BorderRadius.circular(12),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: const Color(0xFFCBD5E1),
+                                                  color: const Color(
+                                                    0xFFCBD5E1,
+                                                  ),
                                                   width: 1.4,
                                                 ),
                                               ),
@@ -897,24 +843,34 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                             onTap: () {
                                               if (widget.onNavigate != null) {
                                                 widget.onNavigate!(2);
-                                              } else if (Navigator.canPop(context)) {
+                                              } else if (Navigator.canPop(
+                                                context,
+                                              )) {
                                                 Navigator.pop(context);
                                               }
                                             },
-                                            borderRadius: BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             child: Container(
                                               width: 38,
                                               height: 38,
                                               decoration: BoxDecoration(
                                                 color: Colors.transparent,
-                                                borderRadius: BorderRadius.circular(12),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: const Color(0xFFCBD5E1),
+                                                  color: const Color(
+                                                    0xFFCBD5E1,
+                                                  ),
                                                   width: 1.4,
                                                 ),
                                               ),
                                               child: Icon(
-                                                isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
+                                                isArabic
+                                                    ? Icons
+                                                          .arrow_forward_rounded
+                                                    : Icons.arrow_back_rounded,
                                                 size: 20,
                                                 color: const Color(0xFF0F172A),
                                               ),
@@ -925,8 +881,12 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                         // Title
                                         Expanded(
                                           child: Text(
-                                            LocaleService.instance.translate('memory_personas'),
-                                            textAlign: isArabic ? TextAlign.right : TextAlign.left,
+                                            LocaleService.instance.translate(
+                                              'memory_personas',
+                                            ),
+                                            textAlign: isArabic
+                                                ? TextAlign.right
+                                                : TextAlign.left,
                                             style: const TextStyle(
                                               fontFamily: 'Cairo',
                                               fontSize: 19,
@@ -944,19 +904,26 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                             onTap: () {
                                               if (widget.onNavigate != null) {
                                                 widget.onNavigate!(2);
-                                              } else if (Navigator.canPop(context)) {
+                                              } else if (Navigator.canPop(
+                                                context,
+                                              )) {
                                                 Navigator.pop(context);
                                               }
                                             },
-                                            borderRadius: BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             child: Container(
                                               width: 38,
                                               height: 38,
                                               decoration: BoxDecoration(
                                                 color: Colors.transparent,
-                                                borderRadius: BorderRadius.circular(12),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: const Color(0xFFCBD5E1),
+                                                  color: const Color(
+                                                    0xFFCBD5E1,
+                                                  ),
                                                   width: 1.4,
                                                 ),
                                               ),
@@ -969,16 +936,23 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                           )
                                         else
                                           InkWell(
-                                            onTap: () => _memScaffoldKey.currentState?.openEndDrawer(),
-                                            borderRadius: BorderRadius.circular(12),
+                                            onTap: () => _memScaffoldKey
+                                                .currentState
+                                                ?.openEndDrawer(),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             child: Container(
                                               width: 38,
                                               height: 38,
                                               decoration: BoxDecoration(
                                                 color: Colors.transparent,
-                                                borderRadius: BorderRadius.circular(12),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: const Color(0xFFCBD5E1),
+                                                  color: const Color(
+                                                    0xFFCBD5E1,
+                                                  ),
                                                   width: 1.4,
                                                 ),
                                               ),
@@ -993,14 +967,6 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 12),
-
-                                  // 1. RAM & System Memory Card
-                                  _buildRamCard(),
-                                  const SizedBox(height: 10),
-
-                                  // 1B. Backend RAG Memories Card
-                                  _buildBackendRagMemoriesCard(),
-                                  const SizedBox(height: 10),
 
                                   // 2. Add New Persona Card
                                   _buildNewPersonaCard(),
@@ -1037,493 +1003,6 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
         ),
       ),
     );
-  }
-
-  // ─── CARD 1: RAM & SYSTEM MEMORY ───────────────────────────────────────────
-  Widget _buildRamCard() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.03),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Top Header Row: Title on Right, Green "افضل 60%" badge on Left
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Flexible(
-                child: Text(
-                  'ذاكرة الوصول العشوائي',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF5),
-                  borderRadius: BorderRadius.circular(20),
-                  border:
-                      Border.all(color: const Color(0xFFA7F3D0), width: 1.2),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF10B981),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'افضل 60%',
-                      style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF059669),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // Inner Sub-box with Circular Gauge on Right & Bars/Stats on Left
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFF1F5F9)),
-            ),
-            child: Row(
-              children: [
-                // Right in RTL: 60% USED Circular Gauge
-                SizedBox(
-                  width: 62,
-                  height: 62,
-                  child: CustomPaint(
-                    painter: _GaugeArcPainter(
-                      percentage: 0.60,
-                      activeColor: const Color(0xFF06B6D4),
-                      trackColor: const Color(0xFFE2E8F0),
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Text(
-                            '60%',
-                            style: TextStyle(
-                              fontFamily: 'Cairo',
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF0F172A),
-                              height: 1.05,
-                            ),
-                          ),
-                          Text(
-                            'USED',
-                            style: TextStyle(
-                              fontFamily: 'Cairo',
-                              fontSize: 8,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF94A3B8),
-                              letterSpacing: 0.4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-
-                // Left in RTL: Metrics & Linear Bar
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: const [
-                          Flexible(
-                            child: Text(
-                              'الاستهلاك / السعة:',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF64748B),
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: 6),
-                          Text(
-                            '38.4 / 64 GB',
-                            textDirection: TextDirection.ltr,
-                            style: TextStyle(
-                              fontFamily: 'Cairo',
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: const LinearProgressIndicator(
-                          value: 0.60,
-                          minHeight: 6.5,
-                          backgroundColor: Color(0xFFE2E8F0),
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: const [
-                          Flexible(
-                            child: Text(
-                              'نقل البيانات: 800 GB/s',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF334155),
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              'الاستجابة: 0.2ms',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF10B981),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── CARD 1B: BACKEND RAG MEMORIES ─────────────────────────────────────────
-  Widget _buildBackendRagMemoriesCard() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.03),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.memory_rounded,
-                        color: Color(0xFFD97706), size: 18),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'الذاكرة الشخصية (RAG)',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                      Text(
-                        '${_backendMemories.length} حقائق مسجلة في ذاكرتك الشخصية',
-                        style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 11,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00B4D8),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                onPressed: _showAddMemoryDialog,
-                icon: const Icon(Icons.add_rounded, size: 15),
-                label: const Text(
-                  'إضافة حقيقة',
-                  style: TextStyle(fontFamily: 'Cairo', fontSize: 11),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (_loadingBackendMemories)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(12),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF00B4D8),
-                  ),
-                ),
-              ),
-            )
-          else if (_backendMemories.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                'لا توجد حقائق محفوظة بعد. أضف أول حقيقة ليتم تذكرها عبر الباك إند.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 11.5,
-                  color: Color(0xFF64748B),
-                ),
-              ),
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _backendMemories.length,
-              separatorBuilder: (ctx, i) => const SizedBox(height: 6),
-              itemBuilder: (context, idx) {
-                final mem = _backendMemories[idx];
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF00B4D8),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          mem.content,
-                          style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 11.5,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline_rounded,
-                            size: 16, color: Color(0xFF94A3B8)),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () => _deleteBackendMemory(mem.id),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showAddMemoryDialog() async {
-    final textCtrl = TextEditingController();
-    const importance = 5;
-    final pid = _editingPersonaIndex >= 0 && _editingPersonaIndex < _personas.length
-        ? (_personas[_editingPersonaIndex].backendId ?? 1)
-        : 1;
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => Directionality(
-          textDirection: LocaleService.instance.textDirection,
-          child: AlertDialog(
-            backgroundColor: Colors.white,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
-              children: [
-                Icon(Icons.psychology_rounded, color: Color(0xFF00B4D8)),
-                SizedBox(width: 8),
-                Text(
-                  'إضافة معلومة جديدة للذاكرة',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'المعلومة أو الحقيقة التي سيتذكرها الذكاء الاصطناعي:',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 12,
-                    color: Color(0xFF475569),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: textCtrl,
-                  maxLines: 3,
-                  style: const TextStyle(fontFamily: 'Cairo', fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'مثال: مكان مفاتيح البيت في الدرج الأيمن...',
-                    hintStyle: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 11.5,
-                      color: Color(0xFF94A3B8),
-                    ),
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('إلغاء',
-                    style: TextStyle(fontFamily: 'Cairo')),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00B4D8),
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () async {
-                  final text = textCtrl.text.trim();
-                  if (text.isEmpty) return;
-                  Navigator.pop(ctx);
-                  try {
-                    await _repo.addMemory(text, pid, importance);
-                    if (mounted) {
-                      showSuccessSnackbar(
-                          context, 'تمت إضافة المعلومة للذاكرة بالباك إند');
-                      _fetchBackendMemories(pid);
-                    }
-                  } catch (e) {
-                    if (mounted) showErrorSnackbar(context, 'فشل الحفظ: $e');
-                  }
-                },
-                child: const Text('حفظ في الذاكرة',
-                    style: TextStyle(
-                        fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _deleteBackendMemory(int memoryId) async {
-    try {
-      await _repo.deleteMemory(memoryId);
-      if (mounted) {
-        showSuccessSnackbar(context, 'تم حذف المعلومة بنجاح');
-        _fetchBackendMemories();
-      }
-    } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'تعذر الحذف: $e');
-    }
   }
 
   // ─── CARD 2: ADD NEW PERSONA ───────────────────────────────────────────────
@@ -1581,8 +1060,10 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
               GestureDetector(
                 onTap: _startNewPersona,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF0F9FF),
                     borderRadius: BorderRadius.circular(10),
@@ -1824,8 +1305,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                             isDense: true,
                             contentPadding: EdgeInsets.zero,
                             border: InputBorder.none,
-                            hintText:
-                                'أدخل سمة فريدة أو فكرة جوهرية جديدة...',
+                            hintText: 'أدخل سمة فريدة أو فكرة جوهرية جديدة...',
                             hintStyle: TextStyle(
                               fontFamily: 'Cairo',
                               color: Color(0xFF94A3B8),
@@ -1948,8 +1428,9 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFE0F2FE),
                               borderRadius: BorderRadius.circular(8),
-                              border:
-                                  Border.all(color: const Color(0xFFBAE6FD)),
+                              border: Border.all(
+                                color: const Color(0xFFBAE6FD),
+                              ),
                             ),
                             child: Text(
                               rule['tag'] ?? '',
@@ -2012,8 +1493,9 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color:
-                              const Color(0xFF0F172A).withValues(alpha: 0.14),
+                          color: const Color(
+                            0xFF0F172A,
+                          ).withValues(alpha: 0.14),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -2125,8 +1607,10 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF0F9FF),
                     borderRadius: BorderRadius.circular(12),
@@ -2210,8 +1694,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color:
-                isActive ? const Color(0xFF06B6D4) : const Color(0xFFE2E8F0),
+            color: isActive ? const Color(0xFF06B6D4) : const Color(0xFFE2E8F0),
             width: isActive ? 1.8 : 1.2,
           ),
           boxShadow: isActive
@@ -2258,8 +1741,9 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF0F9FF),
                                 borderRadius: BorderRadius.circular(8),
-                                border:
-                                    Border.all(color: const Color(0xFFBAE6FD)),
+                                border: Border.all(
+                                  color: const Color(0xFFBAE6FD),
+                                ),
                               ),
                               child: const Text(
                                 'نشط حالياً',
@@ -2386,8 +1870,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                       label: 'إضافة',
                       icon: Icons.add_rounded,
                       iconColor: const Color(0xFF06B6D4),
-                      onTap: () =>
-                          _addRuleDialog(targetPersonaIndex: index),
+                      onTap: () => _addRuleDialog(targetPersonaIndex: index),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -2452,6 +1935,7 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
   }
 
   Widget _buildPersonaAvatar(PersonaProfileData p, bool isAcademic) {
+    // 1. Custom photo uploaded specifically for this persona
     if (p.avatarPath != null && File(p.avatarPath!).existsSync()) {
       return Container(
         width: 44,
@@ -2465,25 +1949,93 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
           child: Image.file(
             File(p.avatarPath!),
             fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
           ),
         ),
       );
     }
 
-    if (isAcademic) {
+    // 2. User's own personality ONLY gets the user's uploaded photo / ActiveAvatarThumb
+    if (_isCurrentUserPersona(p)) {
+      final userPath = StorageService.instance.getUserAvatarPath();
+      final userUrl = StorageService.instance.getUserAvatarUrl();
+      if (userPath != null && File(userPath).existsSync()) {
+        return Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF00B4D8), width: 1.5),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10.5),
+            child: Image.file(
+              File(userPath),
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+            ),
+          ),
+        );
+      }
+      if (userUrl != null && userUrl.isNotEmpty) {
+        final base = StorageService.instance.getBaseUrl();
+        final fullUrl = userUrl.startsWith('http') ? userUrl : '$base$userUrl';
+        return Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF00B4D8), width: 1.5),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10.5),
+            child: Image.network(
+              fullUrl,
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+              errorBuilder: (_, _, _) => const ActiveAvatarThumb(
+                size: 44,
+                radius: 12,
+                showBorder: false,
+              ),
+            ),
+          ),
+        );
+      }
       return const ActiveAvatarThumb(
         size: 44,
         radius: 12,
         showBorder: true,
-        borderColor: Color(0xFF7DD3FC),
+        borderColor: Color(0xFF00B4D8),
       );
     }
 
-    return const ActiveAvatarThumb(
-      size: 44,
-      radius: 14,
-      showBorder: true,
-      borderColor: Color(0xFFE2E8F0),
+    // 3. Any other custom personality (without its own uploaded image): clean initial badge (NEVER user's photo)
+    final cleanName = _cleanPersonaName(p.name);
+    final initial = cleanName.isNotEmpty ? cleanName[0].toUpperCase() : 'P';
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF3E8FF), Color(0xFFE0F2FE)],
+        ),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(
+            fontFamily: 'Cairo',
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF6D28D9),
+          ),
+        ),
+      ),
     );
   }
 
@@ -2547,52 +2099,3 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
 }
 
 /// Custom painter for the 60% USED open-bottom gauge arc matching the mockup
-class _GaugeArcPainter extends CustomPainter {
-  final double percentage;
-  final Color activeColor;
-  final Color trackColor;
-
-  _GaugeArcPainter({
-    required this.percentage,
-    required this.activeColor,
-    required this.trackColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const strokeWidth = 6.0;
-    final rect = Offset(strokeWidth / 2, strokeWidth / 2) &
-        Size(size.width - strokeWidth, size.height - strokeWidth);
-
-    const startAngle = 135 * math.pi / 180;
-    const sweepTotal = 270 * math.pi / 180;
-
-    final trackPaint = Paint()
-      ..color = trackColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    final activePaint = Paint()
-      ..color = activeColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawArc(rect, startAngle, sweepTotal, false, trackPaint);
-    canvas.drawArc(
-      rect,
-      startAngle,
-      sweepTotal * percentage,
-      false,
-      activePaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _GaugeArcPainter oldDelegate) {
-    return oldDelegate.percentage != percentage ||
-        oldDelegate.activeColor != activeColor ||
-        oldDelegate.trackColor != trackColor;
-  }
-}

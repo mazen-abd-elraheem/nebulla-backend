@@ -62,20 +62,32 @@ async def list_personalities(
     plus custom personalities created by the authenticated user.
     """
     if current_user:
-        stmt = (
+        # Strictly return personalities belonging to this authenticated user
+        user_stmt = (
             select(Personality)
-            .where(or_(Personality.user_id == None, Personality.user_id == current_user.id))  # noqa: E711
-            .order_by(Personality.user_id.is_(None), Personality.id)
+            .where(Personality.user_id == current_user.id)
+            .order_by(Personality.id)
         )
+        r = await db.execute(user_stmt)
+        personalities = list(r.scalars().all())
+        if not personalities:
+            # Fallback to shared defaults only if user has no personal personas yet
+            fallback_stmt = (
+                select(Personality)
+                .where(Personality.user_id == None)  # noqa: E711
+                .order_by(Personality.id)
+            )
+            r2 = await db.execute(fallback_stmt)
+            personalities = list(r2.scalars().all())
     else:
         stmt = (
             select(Personality)
             .where(Personality.user_id == None)  # noqa: E711
             .order_by(Personality.id)
         )
+        r = await db.execute(stmt)
+        personalities = list(r.scalars().all())
 
-    r = await db.execute(stmt)
-    personalities = list(r.scalars().all())
     for p in personalities:
         if "مازن" in p.name:
             p.name = "التوأم الرقمي (Digital Twin)"

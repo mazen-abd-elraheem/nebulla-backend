@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../core/constants.dart';
+import 'avatar_audio_service.dart';
 import 'storage_service.dart';
 import 'phone_actions_service.dart';
 
@@ -106,6 +107,15 @@ class PhoneChannelService {
 
       final type = data['t'] as String?;
       final actionId = data['id'] as int?;
+
+      if (type == 'avatar_action' || type == 'eyes') {
+        AvatarAudioService.instance.applyEmojiAction(
+          faceEmoji: data['face_emoji'] as String?,
+          expression: (data['expression'] ?? data['mood']) as String?,
+          avatarAction: data,
+        );
+        return;
+      }
 
       if (type == 'call' && actionId != null) {
         final number = data['number'] as String? ?? '';

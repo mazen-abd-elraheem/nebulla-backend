@@ -153,6 +153,8 @@ async def init_db() -> None:
                 cols = [c["name"] for c in inspector.get_columns("reminders")]
                 if "user_id" not in cols:
                     connection.execute(text("ALTER TABLE reminders ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+                if "description" not in cols:
+                    connection.execute(text("ALTER TABLE reminders ADD COLUMN description VARCHAR(1000)"))
 
             if "action_logs" in tables:
                 cols = [c["name"] for c in inspector.get_columns("action_logs")]
@@ -167,6 +169,14 @@ async def init_db() -> None:
                     connection.execute(text("ALTER TABLE users ADD COLUMN location VARCHAR(255)"))
                 if "organization" not in cols:
                     connection.execute(text("ALTER TABLE users ADD COLUMN organization VARCHAR(255)"))
+                if "two_factor_enabled" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT 1"))
+                if "biometric_enabled" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN biometric_enabled BOOLEAN DEFAULT 1"))
+                if "backup_codes_json" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN backup_codes_json VARCHAR(1024)"))
+                if "password_updated_at" not in cols:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN password_updated_at DATETIME"))
 
             if "personalities" in tables:
                 cols = [c["name"] for c in inspector.get_columns("personalities")]

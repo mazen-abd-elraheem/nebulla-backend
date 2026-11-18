@@ -26,490 +26,556 @@ class _LanguageAppearanceScreenState extends State<LanguageAppearanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: LocaleService.instance.textDirection,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(
-              Icons.arrow_forward_ios_rounded,
-              textDirection: TextDirection.ltr,
-              color: Color(0xFF1E293B),
-              size: 20,
-            ),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          title: const Text(
-            'لغة التطبيق والمظهر',
-            style: TextStyle(
-              fontFamily: 'Cairo',
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          centerTitle: true,
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(left: 16),
-              child: Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF00E5FF), width: 2),
+    return ListenableBuilder(
+      listenable: LocaleService.instance,
+      builder: (context, _) {
+        final locale = LocaleService.instance;
+        final t = locale.tr;
+
+        return Directionality(
+          textDirection: locale.textDirection,
+          child: Scaffold(
+            backgroundColor: const Color(0xFFF8FAFC),
+            appBar: AppBar(
+              backgroundColor: Colors.white,
+              elevation: 0,
+              leading: IconButton(
+                icon: Icon(
+                  locale.isArabic
+                      ? Icons.arrow_forward_ios_rounded
+                      : Icons.arrow_back_ios_rounded,
+                  color: const Color(0xFF1E293B),
+                  size: 20,
                 ),
-                child: Center(
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              title: Text(
+                t('لغة التطبيق والمظهر', 'Language & Appearance'),
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              centerTitle: true,
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF00E5FF),
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
                       shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF00E5FF),
+                        width: 2,
+                      ),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF00E5FF),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-        body: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          children: [
-            // 1. Top Banner
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFE0F7FA), Color(0xFFF1F5F9)],
-                  begin: Alignment.topRight,
-                  end: Alignment.bottomLeft,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFCCFBF1)),
-              ),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.asset(
-                      'assets/images/cyborg_bg.jpg',
-                      width: 50,
-                      height: 50,
-                      fit: BoxFit.cover,
+            body: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              children: [
+                // 1. Top Banner
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFE0F7FA), Color(0xFFF1F5F9)],
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
                     ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFCCFBF1)),
                   ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.asset(
+                          'assets/images/cyborg_bg.jpg',
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Row(
+                              children: [
+                                Text(
+                                  t(
+                                    'التخصيص والعرض المرئي',
+                                    'Personalization & Display',
+                                  ),
+                                  style: const TextStyle(
+                                    fontFamily: 'Cairo',
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.circle,
+                                  size: 7,
+                                  color: Color(0xFF00E5FF),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
                             Text(
-                              'التخصيص والعرض المرئي',
-                              style: TextStyle(
+                              t(
+                                'تنسيق النقاء اللوني والخطوط البصرية المتطورة',
+                                'Customize colors, typography, and app language',
+                              ),
+                              style: const TextStyle(
                                 fontFamily: 'Cairo',
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF0F172A),
+                                fontSize: 11,
+                                color: Color(0xFF64748B),
                               ),
                             ),
-                            SizedBox(width: 6),
-                            Icon(Icons.circle, size: 7, color: Color(0xFF00E5FF)),
                           ],
                         ),
-                        SizedBox(height: 2),
-                        Text(
-                          'تنسيق النقاء اللوني والخطوط البصرية المتطورة',
-                          style: TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 11,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // 2. Section: Theme
+                _buildSectionHeader(
+                  title: t('المظهر والسمة البصرية', 'Theme & Appearance'),
+                  icon: Icons.palette_outlined,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    _buildThemeCard(
+                      index: 0,
+                      title: t('فاتح نقي', 'Pure Light'),
+                      badgeText: _selectedTheme == 0
+                          ? t('✓ نشط', '✓ Active')
+                          : null,
+                      isActive: _selectedTheme == 0,
+                      previewColor: Colors.white,
+                      borderColor: const Color(0xFF0284C7),
+                      onTap: () => setState(() => _selectedTheme = 0),
+                    ),
+                    const SizedBox(width: 10),
+                    _buildThemeCard(
+                      index: 1,
+                      title: t('داكن', 'Dark'),
+                      badgeText: _selectedTheme == 1
+                          ? t('✓ نشط', '✓ Active')
+                          : t('تفعيل', 'Enable'),
+                      isActive: _selectedTheme == 1,
+                      previewColor: const Color(0xFF1E293B),
+                      borderColor: const Color(0xFF334155),
+                      onTap: () => setState(() => _selectedTheme = 1),
+                    ),
+                    const SizedBox(width: 10),
+                    _buildThemeCard(
+                      index: 2,
+                      title: t('تلقائي', 'Auto'),
+                      badgeText: t('نظام الجهاز', 'System'),
+                      isActive: _selectedTheme == 2,
+                      previewColor: const Color(0xFFE2E8F0),
+                      borderColor: const Color(0xFF94A3B8),
+                      onTap: () => setState(() => _selectedTheme = 2),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Eye Protection Switch
+                _buildSettingCard(
+                  title: t('حماية العين والضوء الهادئ', 'Eye Comfort Mode'),
+                  subtitle: t(
+                    'تقليل الإشعاع الأزرق لتحسين القراءة',
+                    'Reduce blue light for comfortable reading',
+                  ),
+                  icon: Icons.remove_red_eye_outlined,
+                  trailing: Switch(
+                    value: _eyeProtection,
+                    onChanged: (val) => setState(() => _eyeProtection = val),
+                    activeThumbColor: const Color(0xFF006677),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // 3. Section: Font Size
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildSectionHeader(
+                      title: t('الخط وحجم النصوص', 'Font & Text Size'),
+                      icon: Icons.text_fields_rounded,
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE0F2FE),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        t('معاينة فورية', 'Live Preview'),
+                        style: const TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0284C7),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // Font Preview Box
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.smart_toy_outlined,
+                            size: 16,
                             color: Color(0xFF64748B),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // 2. Section: المظهر والسمة البصرية
-            _buildSectionHeader(
-              title: 'المظهر والسمة البصرية',
-              icon: Icons.palette_outlined,
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                _buildThemeCard(
-                  index: 0,
-                  title: 'فاتح نقي',
-                  badgeText: _selectedTheme == 0 ? '✓ نشط' : null,
-                  isActive: _selectedTheme == 0,
-                  previewColor: Colors.white,
-                  borderColor: const Color(0xFF0284C7),
-                  onTap: () => setState(() => _selectedTheme = 0),
-                ),
-                const SizedBox(width: 10),
-                _buildThemeCard(
-                  index: 1,
-                  title: 'داكن',
-                  badgeText: _selectedTheme == 1 ? '✓ نشط' : 'تفعيل',
-                  isActive: _selectedTheme == 1,
-                  previewColor: const Color(0xFF1E293B),
-                  borderColor: const Color(0xFF334155),
-                  onTap: () => setState(() => _selectedTheme = 1),
-                ),
-                const SizedBox(width: 10),
-                _buildThemeCard(
-                  index: 2,
-                  title: 'تلقائي',
-                  badgeText: 'نظام الجهاز',
-                  isActive: _selectedTheme == 2,
-                  previewColor: const Color(0xFFE2E8F0),
-                  borderColor: const Color(0xFF94A3B8),
-                  onTap: () => setState(() => _selectedTheme = 2),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Eye Protection Switch
-            _buildSettingCard(
-              title: 'حماية العين والضوء الهادئ',
-              subtitle: 'تقليل الإشعاع الأزرق لتحسين القراءة',
-              icon: Icons.remove_red_eye_outlined,
-              trailing: Switch(
-                value: _eyeProtection,
-                onChanged: (val) => setState(() => _eyeProtection = val),
-                activeThumbColor: const Color(0xFF006677),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // 3. Section: الخط وحجم النصوص
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildSectionHeader(
-                  title: 'الخط وحجم النصوص',
-                  icon: Icons.text_fields_rounded,
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE0F2FE),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'معاينة فورية',
-                    style: TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF0284C7),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // Font Preview Box
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.smart_toy_outlined,
-                          size: 16, color: Color(0xFF64748B)),
-                      SizedBox(width: 6),
+                          const SizedBox(width: 6),
+                          Text(
+                            t('نص العينة التفاعلي', 'Interactive Sample Text'),
+                            style: const TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
                       Text(
-                        'نص العينة التفاعلي',
+                        t(
+                          'واجهة ذكية ومريحة للعين، مصممة بدقة الخوارزميات الحيوية.',
+                          'A clean, eye-friendly smart interface designed for clarity.',
+                        ),
                         style: TextStyle(
                           fontFamily: 'Cairo',
+                          fontSize: _getFontSize(),
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        t('• الخط الافتراضي', '• Default Font'),
+                        style: const TextStyle(
+                          fontFamily: 'Cairo',
                           fontSize: 11,
-                          color: Color(0xFF64748B),
+                          color: Color(0xFF006677),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'واجهة ذكية ومريحة للعين، مصممة بدقة الخوارزميات الحيوية.',
-                    style: TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: _getFontSize(),
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '• الخط الافتراضي',
-                    style: TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 11,
-                      color: Color(0xFF006677),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
+                ),
+                const SizedBox(height: 10),
 
-            // Font Size Selector Buttons
-            Row(
-              children: [
-                _buildFontSizeButton(label: 'صغير', sub: 'A-', idx: 0),
-                const SizedBox(width: 8),
-                _buildFontSizeButton(label: 'افتراضي', sub: 'A', idx: 1),
-                const SizedBox(width: 8),
-                _buildFontSizeButton(label: 'كبير', sub: 'A+', idx: 2),
-                const SizedBox(width: 8),
-                _buildFontSizeButton(label: 'كبير جداً', sub: 'A++', idx: 3),
-              ],
-            ),
-            const SizedBox(height: 20),
+                // Font Size Selector Buttons
+                Row(
+                  children: [
+                    _buildFontSizeButton(
+                      label: t('صغير', 'Small'),
+                      sub: t('أ-', 'A-'),
+                      idx: 0,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFontSizeButton(
+                      label: t('افتراضي', 'Default'),
+                      sub: t('أ', 'A'),
+                      idx: 1,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFontSizeButton(
+                      label: t('كبير', 'Large'),
+                      sub: t('أ+', 'A+'),
+                      idx: 2,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFontSizeButton(
+                      label: t('كبير جداً', 'X-Large'),
+                      sub: t('أ++', 'A++'),
+                      idx: 3,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
 
-            // 4. Section: لغة التطبيق والواجهة
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+                // 4. Section: Language
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildSectionHeader(
+                      title: t('لغة التطبيق والواجهة', 'App Language'),
+                      icon: Icons.translate_rounded,
+                    ),
+                    Text(
+                      t('من اليمين لليسار', 'LTR / RTL'),
+                      style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 10.5,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // Auto-match switch
+                _buildSettingCard(
+                  title: t('مطابقة لغة الهاتف تلقائياً', 'Match Device Language'),
+                  subtitle: t(
+                    'التبديل التلقائي وفق إعدادات نظام التشغيل',
+                    'Automatically follow your system language',
+                  ),
+                  icon: Icons.sync_rounded,
+                  trailing: Switch(
+                    value: _autoMatchPhoneLang,
+                    onChanged: (v) => setState(() => _autoMatchPhoneLang = v),
+                    activeThumbColor: const Color(0xFF006677),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Arabic option
+                _buildLanguageCard(
+                  title: 'العربية',
+                  subtitle: t('اللغة العربية الكاملة', 'Arabic (RTL)'),
+                  badge: 'ض',
+                  isSelected: locale.isArabic,
+                  onTap: () => LocaleService.instance.setLocale('ar'),
+                ),
+                const SizedBox(height: 8),
+
+                // English option
+                _buildLanguageCard(
+                  title: 'English',
+                  subtitle: t('اللغة الإنجليزية الكاملة', 'English (LTR)'),
+                  badge: 'EN',
+                  isSelected: !locale.isArabic,
+                  onTap: () => LocaleService.instance.setLocale('en'),
+                ),
+                const SizedBox(height: 20),
+
+                // 5. Section: Regional Preferences
                 _buildSectionHeader(
-                  title: 'لغة التطبيق والواجهة',
-                  icon: Icons.translate_rounded,
+                  title: t('التفضيلات الإقليمية والتنسيق', 'Regional & Format'),
+                  icon: Icons.tune_rounded,
                 ),
-                const Text(
-                  'مدعوم RTL',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 10.5,
-                    color: Color(0xFF94A3B8),
+                const SizedBox(height: 10),
+
+                // Calendar Type Card
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.calendar_today_rounded,
+                                size: 16,
+                                color: Color(0xFF64748B),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                t('نوع التقويم المعتمد', 'Calendar Type'),
+                                style: const TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            _calendarType == 0
+                                ? t('الميلادي', 'Gregorian')
+                                : t('الهجري', 'Hijri'),
+                            style: const TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 12,
+                              color: Color(0xFF0284C7),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildChoicePill(
+                              title: t('الميلادي', 'Gregorian'),
+                              isSelected: _calendarType == 0,
+                              onTap: () => setState(() => _calendarType = 0),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _buildChoicePill(
+                              title: t('الهجري', 'Hijri'),
+                              isSelected: _calendarType == 1,
+                              onTap: () => setState(() => _calendarType = 1),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(height: 10),
+
+                // Time Format Card
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.access_time_rounded,
+                                size: 16,
+                                color: Color(0xFF64748B),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                t('تنسيق عرض الوقت', 'Time Format'),
+                                style: const TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            _timeFormat == 0
+                                ? t('12 ساعة (ص/م)', '12-Hour (AM/PM)')
+                                : t('24 ساعة', '24-Hour'),
+                            style: const TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 12,
+                              color: Color(0xFF0284C7),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildChoicePill(
+                              title: t('12 ساعة (02:45 م)', '12h (02:45 PM)'),
+                              isSelected: _timeFormat == 0,
+                              onTap: () => setState(() => _timeFormat = 0),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _buildChoicePill(
+                              title: t('24 ساعة (14:45)', '24h (14:45)'),
+                              isSelected: _timeFormat == 1,
+                              onTap: () => setState(() => _timeFormat = 1),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Footer note
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF00E5FF),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        t(
+                          'تمت مزامنة تفضيلات المظهر واللغة بنجاح',
+                          'Appearance & language preferences synced',
+                        ),
+                        style: const TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 11,
+                          color: Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
               ],
             ),
-            const SizedBox(height: 10),
-
-            // Auto-match switch
-            _buildSettingCard(
-              title: 'مطابقة لغة الهاتف تلقائياً',
-              subtitle: 'التبديل التلقائي وفق إعدادات نظام التشغيل',
-              icon: Icons.sync_rounded,
-              trailing: Switch(
-                value: _autoMatchPhoneLang,
-                onChanged: (v) => setState(() => _autoMatchPhoneLang = v),
-                activeThumbColor: const Color(0xFF006677),
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Arabic option
-            _buildLanguageCard(
-              title: 'العربية',
-              badge: 'ض',
-              isSelected: LocaleService.instance.isArabic,
-              onTap: () {
-                LocaleService.instance.setLocale('ar');
-              },
-            ),
-            const SizedBox(height: 8),
-
-            // English option
-            _buildLanguageCard(
-              title: 'English',
-              subtitle: 'United States (LTR)',
-              badge: 'EN',
-              isSelected: !LocaleService.instance.isArabic,
-              onTap: () {
-                LocaleService.instance.setLocale('en');
-              },
-            ),
-            const SizedBox(height: 20),
-
-            // 5. Section: التفضيلات الإقليمية والتنسيق
-            _buildSectionHeader(
-              title: 'التفضيلات الإقليمية والتنسيق',
-              icon: Icons.tune_rounded,
-            ),
-            const SizedBox(height: 10),
-
-            // Calendar Type Card
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.calendar_today_rounded,
-                              size: 16, color: Color(0xFF64748B)),
-                          SizedBox(width: 8),
-                          Text(
-                            'نوع التقويم المعتمد',
-                            style: TextStyle(
-                              fontFamily: 'Cairo',
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E293B),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        _calendarType == 0 ? 'الميلادي (G)' : 'الهجري (H)',
-                        style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          color: Color(0xFF0284C7),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildChoicePill(
-                          title: 'الميلادي (G)',
-                          isSelected: _calendarType == 0,
-                          onTap: () => setState(() => _calendarType = 0),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _buildChoicePill(
-                          title: 'الهجري (H)',
-                          isSelected: _calendarType == 1,
-                          onTap: () => setState(() => _calendarType = 1),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Time Format Card
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.access_time_rounded,
-                              size: 16, color: Color(0xFF64748B)),
-                          SizedBox(width: 8),
-                          Text(
-                            'تنسيق عرض الوقت',
-                            style: TextStyle(
-                              fontFamily: 'Cairo',
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E293B),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        _timeFormat == 0 ? '12 ساعة (ص/م)' : '24 ساعة',
-                        style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          color: Color(0xFF0284C7),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildChoicePill(
-                          title: '12 ساعة (02:45 م)',
-                          isSelected: _timeFormat == 0,
-                          onTap: () => setState(() => _timeFormat = 0),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _buildChoicePill(
-                          title: '24 ساعة (14:45)',
-                          isSelected: _timeFormat == 1,
-                          onTap: () => setState(() => _timeFormat = 1),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Footer note
-            Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF00E5FF),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'تمت مزامنة تفضيلات المظهر مع السحابة المركزية • الآن',
-                    style: TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 11,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

@@ -6,9 +6,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import '../services/api_service.dart';
+import '../services/avatar_audio_service.dart';
 import '../services/nebula_repository.dart';
 import '../services/storage_service.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/interactive_animated_avatar.dart';
 import 'main_shell.dart';
 import 'login_screen.dart';
 
@@ -114,7 +117,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      showErrorSnackbar(context, 'تعذر إنشاء الحساب: $e');
+      final readableMsg = e is ApiException
+          ? e.message
+          : 'تعذر إنشاء الحساب، تأكد من الاتصال بالخادم وحاول مرة أخرى.';
+      showErrorSnackbar(context, readableMsg);
       setState(() => _loading = false);
     }
   }
@@ -767,7 +773,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             validator: (v) {
               if (v == null || v.isEmpty) return 'يرجى إدخال كلمة المرور';
-              if (v.length < 6) return 'كلمة المرور يجب أن لا تقل عن 6 أحرف';
+              if (v.length < 8) return 'كلمة المرور لازم تكون 8 خانات على الأقل';
+              if (!RegExp(r'[a-zA-Z\u0600-\u06FF]').hasMatch(v)) {
+                return 'كلمة المرور لازم تحتوي على حروف';
+              }
+              if (!RegExp(r'[0-9]').hasMatch(v)) {
+                return 'كلمة المرور لازم تحتوي على رقم واحد على الأقل';
+              }
               return null;
             },
           ),
@@ -946,13 +958,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
                 child: ClipOval(
-                  child: _profileImage != null
-                      ? Image.file(_profileImage!, fit: BoxFit.cover)
-                      : const Icon(
-                          Icons.person_rounded,
-                          size: 70,
-                          color: Color(0xFF94A3B8),
-                        ),
+                  child: (_avatarGenerated &&
+                          AvatarAudioService.instance.activeAvatar.value !=
+                              null)
+                      ? const InteractiveAnimatedAvatar(
+                          width: 130,
+                          height: 130,
+                        )
+                      : (_profileImage != null
+                          ? Image.file(_profileImage!, fit: BoxFit.cover)
+                          : const Icon(
+                              Icons.person_rounded,
+                              size: 70,
+                              color: Color(0xFF94A3B8),
+                            )),
                 ),
               ),
               if (_isGeneratingAvatar)
