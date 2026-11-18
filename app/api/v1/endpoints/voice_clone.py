@@ -791,9 +791,10 @@ async def handle_llm_voice_clone(
     summary="تحويل ردود LLM Chat إلى صوت مستنسخ فعلي عبر VoiceTut بدون Fallback",
     responses={
         200: {
+            "model": LLMVoiceCloneResponse,
             "content": {
                 "audio/wav": {"schema": {"type": "string", "format": "binary"}},
-                "application/json": {"schema": {"$ref": "#/components/schemas/LLMVoiceCloneResponse"}},
+                "application/json": {"schema": LLMVoiceCloneResponse.model_json_schema()},
             },
             "description": "WAV audio file or JSON with base64 audio",
         }

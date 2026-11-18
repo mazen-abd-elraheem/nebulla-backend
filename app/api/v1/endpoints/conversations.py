@@ -30,7 +30,7 @@ from app.services.memory.fact_verifier import FactVerifier
 from app.websocket.manager import manager
 from app.websocket.handlers import get_face_service, get_ai_pipeline as _get_ai_pipeline
 from app.services.ai.context_builder import build_grounding_context, GroundingInfo, is_greeting_or_persona_inquiry
-from app.api.v1.endpoints.voice_clone import LLMVoiceCloneRequest
+from app.api.v1.endpoints.voice_clone import LLMVoiceCloneRequest, LLMVoiceCloneResponse
 
 logger = get_logger(__name__)
 
@@ -136,9 +136,10 @@ async def _get_auth_user(
     tags=["conversations"],
     responses={
         200: {
+            "model": LLMVoiceCloneResponse,
             "content": {
                 "audio/wav": {"schema": {"type": "string", "format": "binary"}},
-                "application/json": {"schema": {"$ref": "#/components/schemas/LLMVoiceCloneResponse"}},
+                "application/json": {"schema": LLMVoiceCloneResponse.model_json_schema()},
             },
             "description": "WAV audio file or JSON with base64 audio",
         }

@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     VOICETUT_SPEAKER: str = "mazen"
     # Balanced sub-second / low-latency VoiceTut defaults preserving vocal likeness & Egyptian accent
     VOICETUT_NUM_STEPS: int = 6
-    VOICETUT_MAX_STEPS: int = 20
+    VOICETUT_MAX_STEPS: int = 24
     VOICETUT_GUIDANCE_SCALE: float = 2.1
     VOICETUT_SPEED: float = 1.0
     VOICETUT_T_SHIFT: float = 0.1
