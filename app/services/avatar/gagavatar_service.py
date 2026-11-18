@@ -94,7 +94,7 @@ class GAGAvatarService:
         preferred_engine = (
             "gagavatar_remote"
             if remote_healthy
-            else ("gagavatar" if local_ok else "unavailable")
+            else ("gagavatar" if local_ok else ("gagavatar_preview" if settings.AVATAR_ALLOW_LOCAL_FALLBACK else "unavailable"))
         )
         return {
             "preferred_engine": preferred_engine,
@@ -106,7 +106,7 @@ class GAGAvatarService:
             "local_gagavatar_error": local_err,
             "cuda_available": self._local_gag_info.get("cuda_available", False),
             "cuda_device": self._local_gag_info.get("cuda_device"),
-            "local_fallback_enabled": False,
+            "local_fallback_enabled": bool(settings.AVATAR_ALLOW_LOCAL_FALLBACK),
             "output_dir": str(self.output_dir),
         }
 
