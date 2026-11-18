@@ -101,6 +101,7 @@ class MemoryPersonasScreen extends StatefulWidget {
 }
 
 class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
+  bool get isArabic => LocaleService.instance.isArabic;
   final GlobalKey<ScaffoldState> _memScaffoldKey = GlobalKey<ScaffoldState>();
 
   final _repo = NebulaRepository.instance;
@@ -881,8 +882,9 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                         // Title
                                         Expanded(
                                           child: Text(
-                                            LocaleService.instance.translate(
-                                              'memory_personas',
+                                            LocaleService.instance.tr(
+                                              'الشخصيات',
+                                              'Personas',
                                             ),
                                             textAlign: isArabic
                                                 ? TextAlign.right
@@ -968,12 +970,12 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                                   ),
                                   const SizedBox(height: 12),
 
-                                  // 2. Add New Persona Card
-                                  _buildNewPersonaCard(),
-                                  const SizedBox(height: 12),
-
-                                  // 3. Personas Management Section
+                                  // 1. Personas Management Section
                                   _buildPersonasManagementSection(),
+                                  const SizedBox(height: 16),
+
+                                  // 2. Add / Edit Persona Card
+                                  _buildNewPersonaCard(),
                                   const SizedBox(height: 12),
 
                                   // Bottom Home Indicator Pill
@@ -1041,11 +1043,15 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Flexible(
+                    Flexible(
                       child: Text(
-                        'إضافة شخصية جديدة',
+                        _editingPersonaIndex >= 0 && _editingPersonaIndex < _personas.length
+                            ? (isArabic
+                                ? 'تعديل شخصية: ${_personas[_editingPersonaIndex].name}'
+                                : 'Edit Persona: ${_personas[_editingPersonaIndex].name}')
+                            : (isArabic ? 'إضافة شخصية جديدة' : 'Add New Persona'),
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontFamily: 'Cairo',
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -1514,9 +1520,11 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                             ),
                           )
                         else ...[
-                          const Flexible(
+                          Flexible(
                             child: Text(
-                              'حفظ وتثبيت في الذاكرة',
+                              _editingPersonaIndex >= 0
+                                  ? (isArabic ? 'تحديث وحفظ في الذاكرة' : 'Update & Save')
+                                  : (isArabic ? 'حفظ وتثبيت في الذاكرة' : 'Save to Memory'),
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontFamily: 'Cairo',
@@ -1616,8 +1624,8 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFFBAE6FD)),
                   ),
-                  child: const Text(
-                    '3 شخصيات نشطة',
+                  child: Text(
+                    '${_personas.length} ${isArabic ? "شخصيات مسجلة" : "Personas"}',
                     style: TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 10.5,
@@ -1628,8 +1636,47 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
                 ),
               ],
             ),
-            GestureDetector(
-              onTap: () => _importPersonaFile(),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _editingPersonaIndex = -1;
+                      _clearForm();
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF06B6D4),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.add_rounded,
+                          size: 15,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          isArabic ? 'إضافة شخصية' : 'New Persona',
+                          style: const TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => _importPersonaFile(),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -1661,6 +1708,8 @@ class _MemoryPersonasScreenState extends State<MemoryPersonasScreen> {
             ),
           ],
         ),
+      ],
+    ),
         const SizedBox(height: 10),
 
         // Render all personas dynamically
