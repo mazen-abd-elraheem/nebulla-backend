@@ -216,6 +216,29 @@ async def recreate_avatar(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.post("/{avatar_id}/re-render-mouth", summary="Re-render mouth frames and expression sprites with enhanced FLAME recipes")
+async def rerender_avatar_mouth_frames(
+    avatar_id: int,
+    db: AsyncSession = Depends(get_db),
+    sub: Optional[str] = Depends(get_optional_user),
+    svc: GAGAvatarService = Depends(get_avatar_service),
+) -> Dict[str, Any]:
+    user_id = await _resolve_authenticated_user_id(sub, db)
+    try:
+        profile = await svc.rerender_avatar_mouth(avatar_id=avatar_id, db=db, user_id=user_id)
+        return {
+            "status": "success",
+            "message": "تم تحديث إطارات الفم والتعبيرات بنجاح.",
+            "avatar": svc.serialize_avatar(profile),
+        }
+    except KeyError:
+        raise HTTPException(status_code=404, detail="الأفاتار غير موجود.")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"فشل تحديث إطارات الفم: {exc}")
+
+
 @router.post("/{avatar_id}/render", summary="Render animated facial expression & mouth movement for an emoji")
 async def render_avatar_expression(
     avatar_id: int,

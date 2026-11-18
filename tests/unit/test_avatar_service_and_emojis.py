@@ -162,7 +162,12 @@ async def test_avatar_lifecycle_create_reject_recreate_approve_and_render(tmp_pa
             assert approved.status == "approved"
             assert approved.is_active is True
 
-            # 4. Render expression GIF + neural mouth animation
+            # 4. Re-render mouth frames with enhanced kinematics
+            rerendered = await svc.rerender_avatar_mouth(avatar_id=approved.id, db=db)
+            assert rerendered.id == approved.id
+            assert (avatar_dir / "mouth" / "sad_3.png").exists()
+
+            # 5. Render expression GIF + neural mouth animation
             render_meta = await svc.render_avatar_animation(
                 avatar=approved,
                 expression_or_emoji="😂",
@@ -247,6 +252,8 @@ async def test_avatar_remote_gagavatar_bridge_priority(tmp_path, monkeypatch):
 
 def test_gagavatar_engine_disables_dynamo_and_face_alignment_compile():
     """Verify _configure_torch_and_stubs disables TorchDynamo and forces face_alignment compile=False."""
+    pytest.importorskip("face_alignment")
+    pytest.importorskip("torch")
     import os
     import face_alignment
     import torch._dynamo

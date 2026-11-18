@@ -403,7 +403,8 @@
       place-items: center;
     }
 
-    .portrait-wrap img {
+    .portrait-wrap img,
+    .portrait-wrap canvas {
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -411,7 +412,8 @@
       transition: transform 0.25s ease;
     }
 
-    .portrait-wrap.breathing img {
+    .portrait-wrap.breathing img,
+    .portrait-wrap.breathing canvas {
       animation: breathe 4.2s ease-in-out infinite;
     }
 
@@ -719,7 +721,8 @@
         <div class="stage-box">
           <div class="stage-compare" id="stageCompare">
             <div class="portrait-wrap breathing" id="avatarPortraitBox">
-              <img id="avatarMainImg" alt="GAGAvatar Live Frame" src="" />
+              <canvas id="avatarCanvas" width="512" height="512" style="width:100%; height:100%; object-fit:cover; display:block; border-radius:inherit;"></canvas>
+              <img id="avatarMainImg" alt="GAGAvatar Live Frame" src="" style="display:none;" />
               <div class="frame-tag" id="frameTag">expr=neutral • mouth=0</div>
               <div class="mouth-meter" aria-hidden="true">
                 <div class="meter-bar" id="bar0"></div>
@@ -736,6 +739,7 @@
 
           <div class="stage-toolbar">
             <button class="btn btn-emerald" id="btnApprove" type="button">✅ اعتماد كشخصية رئيسية</button>
+            <button class="btn btn-primary" id="btnRerenderMouth" type="button">⚡ تحديث إطارات الفم للأفاتار الحالي</button>
             <button class="btn btn-cyan" id="btnRenderGif" type="button">🎞️ توليد حركة GIF</button>
             <button class="btn btn-amber" id="btnRecreate" type="button">🔁 إعادة التوليد بنمط مختلف</button>
           </div>
@@ -761,11 +765,17 @@
           <div class="emoji-grid" id="emojiGrid"></div>
 
           <div class="field-row" style="margin-top:16px;">
-            <div class="field-label">
+            <div class="field-label" style="display:flex; justify-content:space-between; align-items:center;">
               <span>مستوى فتح الفم (Mouth Level)</span>
-              <span class="mono" id="mouthLevelLabel">0 / 3</span>
+              <span class="mono" id="mouthLevelLabel" style="direction:ltr; unicode-bidi:isolate;">0 / 3</span>
             </div>
-            <input type="range" id="mouthSlider" min="0" max="3" step="1" value="0" />
+            <input type="range" id="mouthSlider" min="0" max="3" step="1" value="0" style="direction:ltr; width:100%;" />
+            <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-muted); direction:ltr; margin-top:4px;">
+              <span>0 (مغلق)</span>
+              <span>1 (خفيف)</span>
+              <span>2 (متوسط)</span>
+              <span>3 (مفتوح)</span>
+            </div>
           </div>
 
           <div class="field-row" style="margin-top:16px;">
@@ -892,19 +902,131 @@
       return av.preview_url || '';
     }
 
-    function renderStageFrame() {
+    function drawFaceKinematics(img, av, expr, mouthLevel, energy = 0) {
+      const canvas = $('avatarCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+
+      if (state.isBlinking) return;
+
+      const lm = (av && av.landmarks) || {};
+      const mPt = lm.mouth || [0.50, 0.60];
+      const lmPt = lm.left_mouth || [0.418, 0.595];
+      const rmPt = lm.right_mouth || [0.582, 0.592];
+
+      const cx = mPt[0] * w;
+      const cy = mPt[1] * h;
+      const lx = lmPt[0] * w;
+      const rx = rmPt[0] * w;
+      const hw = Math.max(26, (rx - lx) / 2);
+
+      const exprConfigs = {
+        neutral:   { cornerDy: 0.0,   baseGap: 0.0 },
+        happy:     { cornerDy: -7.5,  baseGap: 2.5 },
+        laugh:     { cornerDy: -11.0, baseGap: 7.0 },
+        love:      { cornerDy: -5.5,  baseGap: 1.5 },
+        sad:       { cornerDy: +8.5,  baseGap: 1.0 },
+        surprised: { cornerDy: -1.0,  baseGap: 13.0 },
+        angry:     { cornerDy: +4.0,  baseGap: 0.0 },
+        thinking:  { cornerDy: +2.0,  baseGap: 0.8 },
+        wink:      { cornerDy: -4.5,  baseGap: 1.5 },
+        sleepy:    { cornerDy: +2.5,  baseGap: 2.5 },
+        wave:      { cornerDy: -5.5,  baseGap: 2.0 },
+        like:      { cornerDy: -5.5,  baseGap: 1.5 },
+      };
+
+      const cfg = exprConfigs[expr] || exprConfigs.neutral;
+      const levelGaps = [0.0, 5.0, 10.5, 17.0];
+      const levelGap = levelGaps[Math.min(3, Math.max(0, mouthLevel))] || 0;
+      const dynamicEnergyGap = (energy || 0) * 16.0;
+      const totalGap = Math.max(cfg.baseGap, levelGap, dynamicEnergyGap);
+      const cornerDy = cfg.cornerDy;
+
+      if (Math.abs(cornerDy) < 0.2 && totalGap < 0.5) return;
+
+      const numStrips = 36;
+      const boxW = hw * 2.3;
+      const stripW = boxW / numStrips;
+      const startX = cx - boxW / 2;
+      const upperY = cy - hw * 0.55;
+      const lowerY = cy + hw * 0.90;
+
+      for (let i = 0; i < numStrips; i++) {
+        const sx = startX + i * stripW;
+        const u = (sx + stripW / 2 - cx) / hw;
+        if (Math.abs(u) > 1.35) continue;
+
+        const falloff = Math.max(0, 1.0 - Math.pow(Math.abs(u) / 1.35, 2));
+        const stripCornerDy = cornerDy * (Math.pow(u, 2) * 0.85 + 0.15) * falloff;
+        const stripGap = totalGap * Math.max(0, 1.0 - Math.pow(Math.min(1.0, Math.abs(u)), 2)) * falloff;
+
+        const upperH = (cy - upperY);
+        const upperLift = -0.20 * stripGap + stripCornerDy * 0.45;
+        ctx.drawImage(
+          img,
+          sx, upperY, stripW + 0.5, upperH,
+          sx, upperY + upperLift, stripW + 0.5, upperH
+        );
+
+        if (stripGap > 1.5) {
+          const cavityTop = cy + upperLift + upperH * 0.05;
+          const cavityH = stripGap;
+          const grad = ctx.createLinearGradient(0, cavityTop, 0, cavityTop + cavityH);
+          grad.addColorStop(0, '#1c0c10');
+          grad.addColorStop(0.35, '#351218');
+          grad.addColorStop(1, '#15090b');
+          ctx.fillStyle = grad;
+          ctx.fillRect(sx, cavityTop, stripW + 0.5, cavityH);
+
+          if (stripGap > 6.0 && Math.abs(u) < 0.6) {
+            ctx.fillStyle = 'rgba(235, 230, 225, 0.75)';
+            ctx.fillRect(sx, cavityTop, stripW + 0.5, Math.min(2.5, stripGap * 0.25));
+          }
+        }
+
+        const lowerH = (lowerY - cy);
+        const lowerDrop = stripGap * 0.90 + stripCornerDy * 0.65;
+        ctx.drawImage(
+          img,
+          sx, cy, stripW + 0.5, lowerH,
+          sx, cy + lowerDrop, stripW + 0.5, lowerH
+        );
+      }
+    }
+
+    function renderStageFrame(energy = 0) {
       const av = state.selected;
       if (!av) return;
       const url = getCurrentFrameUrl();
-      if (url) {
-        $('avatarMainImg').src = url;
-      }
+      if (!url) return;
+
       $('frameTag').textContent = state.isBlinking
         ? `avatar #${av.id} • blink`
         : `avatar #${av.id} • expr=${state.expression} • mouth=${state.mouthLevel}`;
       $('mouthLevelLabel').textContent = `${state.mouthLevel} / 3`;
       $('mouthSlider').value = String(state.mouthLevel);
-      updateMouthMeter(state.mouthLevel);
+      updateMouthMeter(state.mouthLevel, energy);
+
+      let img = state.preloadCache.get(url);
+      if (!img) {
+        img = new Image();
+        img.src = url;
+        state.preloadCache.set(url, img);
+      }
+      $('avatarMainImg').src = url;
+
+      if (img.complete && img.naturalWidth > 0) {
+        drawFaceKinematics(img, av, state.expression, state.mouthLevel, energy);
+      } else {
+        img.onload = () => {
+          drawFaceKinematics(img, av, state.expression, state.mouthLevel, energy);
+        };
+      }
     }
 
     function preloadAvatarFrames(av) {
@@ -1105,7 +1227,8 @@
           return;
         }
         state.mouthLevel = pattern[step % pattern.length];
-        renderStageFrame();
+        const energy = state.mouthLevel / 3.0;
+        renderStageFrame(energy);
         step++;
       }, 115);
     }
@@ -1165,10 +1288,9 @@
           }
           const rms = Math.sqrt(sum / dataArr.length);
           const nextLevel = rms >= 0.14 ? 3 : (rms >= 0.08 ? 2 : (rms >= 0.03 ? 1 : 0));
-          if (nextLevel !== state.mouthLevel) {
-            state.mouthLevel = nextLevel;
-            renderStageFrame();
-          }
+          state.mouthLevel = nextLevel;
+          const energy = Math.min(1.0, rms * 5.5);
+          renderStageFrame(energy);
           state.rafId = requestAnimationFrame(tick);
         };
 
@@ -1183,6 +1305,34 @@
         simulateLipSync();
       } finally {
         $('btnSpeakReal').disabled = false;
+      }
+    }
+
+    async function rerenderSelectedMouth() {
+      const av = state.selected;
+      if (!av) return;
+      const btn = $('btnRerenderMouth');
+      btn.disabled = true;
+      btn.textContent = '⏳ جاري تحديث إطارات الفم...';
+      try {
+        const r = await fetch(`/api/v1/avatar/${av.id}/re-render-mouth`, { method: 'POST' });
+        if (!r.ok) {
+          const err = await r.json();
+          throw new Error(err.detail || `HTTP ${r.status}`);
+        }
+        const d = await r.json();
+        showToast(d.message || 'تم تحديث إطارات الفم والتعبيرات بنجاح');
+        state.selected = d.avatar;
+        state.preloadCache.clear();
+        preloadAvatarFrames(d.avatar);
+        renderStageFrame();
+        renderTelemetry(d.avatar);
+        await loadAvatars(av.id);
+      } catch (e) {
+        showToast(`فشل تحديث إطارات الفم: ${e.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⚡ تحديث إطارات الفم للأفاتار الحالي';
       }
     }
 
@@ -1288,9 +1438,10 @@
     });
     $('mouthSlider').addEventListener('input', (e) => {
       state.mouthLevel = Number(e.target.value);
-      renderStageFrame();
+      renderStageFrame(state.mouthLevel / 3.0);
     });
     $('btnApprove').addEventListener('click', approveSelected);
+    $('btnRerenderMouth').addEventListener('click', rerenderSelectedMouth);
     $('btnRenderGif').addEventListener('click', renderAnimatedGif);
     $('btnRecreate').addEventListener('click', recreateSelected);
     $('btnSpeakReal').addEventListener('click', speakWithClonedVoice);

@@ -175,9 +175,14 @@ class GAGAvatarService:
             if isinstance(tracked_feature, (bytes, bytearray)):
                 feat_path.write_bytes(bytes(tracked_feature))
             else:
-                import torch
+                try:
+                    import torch
 
-                await asyncio.to_thread(torch.save, tracked_feature, feat_path)
+                    await asyncio.to_thread(torch.save, tracked_feature, feat_path)
+                except (ImportError, ModuleNotFoundError):
+                    import pickle
+
+                    await asyncio.to_thread(lambda: feat_path.write_bytes(pickle.dumps(tracked_feature)))
 
         profile = AvatarProfile(
             user_id=user_id,
@@ -402,19 +407,39 @@ class GAGAvatarService:
             feat_path = avatar_dir / "tracked_feature.pt"
 
             def _load_or_track_feature() -> Dict[str, Any]:
-                import torch
+                try:
+                    import torch
 
-                if feat_path.exists():
-                    return torch.load(feat_path, map_location="cpu", weights_only=False)
-                src_path = Path(avatar.source_photo_path)
-                if not src_path.exists():
-                    raise FileNotFoundError(f"Source portrait not found: {src_path}")
-                with Image.open(src_path) as im:
-                    src_pil = im.convert("RGB")
-                with engine._gpu_lock:
-                    feat = engine._track_pil_image(src_pil, f"{avatar_dir.name}.png")
-                torch.save(feat, feat_path)
-                return feat
+                    if feat_path.exists():
+                        try:
+                            return torch.load(feat_path, map_location="cpu", weights_only=False)
+                        except Exception:
+                            import pickle
+
+                            return pickle.loads(feat_path.read_bytes())
+                    src_path = Path(avatar.source_photo_path)
+                    if not src_path.exists():
+                        raise FileNotFoundError(f"Source portrait not found: {src_path}")
+                    with Image.open(src_path) as im:
+                        src_pil = im.convert("RGB")
+                    with engine._gpu_lock:
+                        feat = engine._track_pil_image(src_pil, f"{avatar_dir.name}.png")
+                    torch.save(feat, feat_path)
+                    return feat
+                except (ImportError, ModuleNotFoundError):
+                    import pickle
+
+                    if feat_path.exists():
+                        return pickle.loads(feat_path.read_bytes())
+                    src_path = Path(avatar.source_photo_path)
+                    if not src_path.exists():
+                        raise FileNotFoundError(f"Source portrait not found: {src_path}")
+                    with Image.open(src_path) as im:
+                        src_pil = im.convert("RGB")
+                    track_fn = getattr(engine, "_track_pil_image", lambda *args: {})
+                    feat = track_fn(src_pil, f"{avatar_dir.name}.png")
+                    feat_path.write_bytes(pickle.dumps(feat))
+                    return feat
 
             tracked_feature = await asyncio.to_thread(_load_or_track_feature)
 
@@ -541,6 +566,144 @@ class GAGAvatarService:
             attempt_number=(prior.attempt_number or 1) + 1,
             require_face=require_face,
         )
+
+    @staticmethod
+    def _morph_mouth_image(
+        img_pil: Image.Image,
+        corner_dy: float = 0.0,
+        mouth_gap: float = 0.0,
+        lm: Optional[Dict[str, Any]] = None,
+    ) -> Image.Image:
+        """Apply realistic mouth kinematic deformation using facial landmarks."""
+        try:
+            import cv2
+
+            img_np = np.array(img_pil).astype(np.float32)
+            h, w, _ = img_np.shape
+
+            landmarks = lm or {}
+            m_pt = landmarks.get("mouth") or [0.50, 0.65]
+            lm_pt = landmarks.get("left_mouth") or [0.41, 0.65]
+            rm_pt = landmarks.get("right_mouth") or [0.59, 0.65]
+
+            cx = float(m_pt[0] * w)
+            cy = float(m_pt[1] * h)
+            lx = float(lm_pt[0] * w)
+            rx = float(rm_pt[0] * w)
+            hw = max(24.0, (rx - lx) / 2.0)
+
+            y_indices, x_indices = np.indices((h, w), dtype=np.float32)
+
+            u = (x_indices - cx) / hw
+            v = (y_indices - cy) / (hw * 0.75)
+
+            mask = np.clip(1.0 - (u**2 / 2.0 + v**2 / 1.5), 0.0, 1.0)
+            mask = mask**2
+
+            dy_curve = corner_dy * (u**2 * 0.85 + 0.15 * (1.0 - np.clip(np.abs(u), 0.0, 1.0))) * mask
+            jaw_mask = np.clip((y_indices - (cy - 3.0)) / (hw * 0.9), 0.0, 1.0) * mask
+            dy_open = mouth_gap * (1.0 - np.clip(np.abs(u), 0.0, 1.0)**2) * jaw_mask
+
+            upper_mask = np.clip(((cy + 2.0) - y_indices) / (hw * 0.45), 0.0, 1.0) * mask
+            dy_upper = -0.22 * mouth_gap * (1.0 - np.clip(np.abs(u), 0.0, 1.0)**2) * upper_mask
+
+            total_dy = dy_curve + dy_open + dy_upper
+
+            map_x = x_indices.astype(np.float32)
+            map_y = (y_indices - total_dy).astype(np.float32)
+
+            warped = cv2.remap(
+                img_np, map_x, map_y, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT
+            )
+
+            if mouth_gap > 2.0:
+                aperture_mask = np.exp(-((y_indices - cy) / (mouth_gap * 0.48))**2 - (u / 0.88)**2)
+                aperture_mask = np.clip(aperture_mask, 0.0, 1.0)[:, :, None]
+                cavity_color = np.array([28.0, 12.0, 16.0], dtype=np.float32)
+                warped = warped * (1.0 - aperture_mask * 0.82) + cavity_color * (aperture_mask * 0.82)
+
+            warped = np.clip(warped, 0, 255).astype(np.uint8)
+            return Image.fromarray(warped)
+        except Exception as exc:
+            logger.warning(f"Failed to morph mouth image: {exc}")
+            return img_pil
+
+    async def rerender_avatar_mouth(
+        self,
+        avatar_id: int,
+        db: AsyncSession,
+        user_id: Optional[int] = None,
+    ) -> AvatarProfile:
+        """Re-render mouth frames and expression sprites for existing avatar with enhanced mouth kinematics."""
+        avatar = await self._require_avatar(avatar_id, db, user_id=user_id)
+        if not avatar.avatar_preview_path:
+            raise FileNotFoundError(f"Avatar #{avatar_id} has no preview path")
+        avatar_dir = Path(avatar.avatar_preview_path).parent
+        sprites_dir = avatar_dir / "sprites"
+        mouth_dir = avatar_dir / "mouth"
+        mouth_dir.mkdir(parents=True, exist_ok=True)
+        sprites_dir.mkdir(parents=True, exist_ok=True)
+
+        base_path = sprites_dir / "neutral.png"
+        if not base_path.exists():
+            base_path = Path(avatar.avatar_preview_path)
+        if not base_path.exists():
+            raise FileNotFoundError(f"Base avatar image not found: {base_path}")
+
+        base_im = Image.open(base_path).convert("RGB")
+        lm = self.parse_landmarks(avatar)
+
+        expr_configs = {
+            "neutral":   {"corner_dy": 0.0,  "gap": 0.0},
+            "happy":     {"corner_dy": -8.5, "gap": 2.5},
+            "laugh":     {"corner_dy": -11.0, "gap": 8.0},
+            "love":      {"corner_dy": -6.0, "gap": 1.5},
+            "sad":       {"corner_dy": +9.5, "gap": 1.0},
+            "surprised": {"corner_dy": -1.0, "gap": 14.0},
+            "angry":     {"corner_dy": +4.5, "gap": 0.0},
+            "thinking":  {"corner_dy": +2.0, "gap": 1.0},
+            "wink":      {"corner_dy": -5.0, "gap": 1.5},
+            "sleepy":    {"corner_dy": +3.0, "gap": 3.0},
+            "wave":      {"corner_dy": -6.5, "gap": 2.0},
+            "like":      {"corner_dy": -6.5, "gap": 1.5},
+        }
+        mouth_levels_gap = {1: 5.0, 2: 10.5, 3: 17.0}
+
+        def _process():
+            mouth_manifest: Dict[str, List[int]] = {}
+            for expr_name, cfg in expr_configs.items():
+                src_sprite = sprites_dir / f"{expr_name}.png"
+                curr = Image.open(src_sprite).convert("RGB") if src_sprite.exists() else base_im.copy()
+                enhanced = self._morph_mouth_image(
+                    curr, corner_dy=cfg["corner_dy"], mouth_gap=cfg["gap"], lm=lm
+                )
+                enhanced.save(sprites_dir / f"{expr_name}.png", format="PNG")
+
+                mouth_manifest[expr_name] = [0]
+                for lvl, lvl_gap in mouth_levels_gap.items():
+                    m_im = self._morph_mouth_image(
+                        curr,
+                        corner_dy=cfg["corner_dy"] * 0.7,
+                        mouth_gap=max(cfg["gap"], lvl_gap),
+                        lm=lm,
+                    )
+                    m_im.save(mouth_dir / f"{expr_name}_{lvl}.png", format="PNG")
+                    mouth_manifest[expr_name].append(lvl)
+
+            try:
+                raw_expr = json.loads(avatar.expressions_json or "{}")
+            except Exception:
+                raw_expr = {}
+            raw_expr["_mouth"] = mouth_manifest
+            for expr_name in expr_configs:
+                raw_expr[expr_name] = f"{expr_name}.png"
+            avatar.expressions_json = json.dumps(raw_expr)
+
+        await asyncio.to_thread(_process)
+        await db.commit()
+        await db.refresh(avatar)
+        logger.info(f"Re-rendered mouth frames for Avatar id={avatar.id}")
+        return avatar
 
     async def get_active_avatar(
         self,

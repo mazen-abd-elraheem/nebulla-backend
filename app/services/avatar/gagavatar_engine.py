@@ -33,27 +33,28 @@ os.environ["TORCH_COMPILE_DISABLE"] = "1"
 os.environ["TORCHDYNAMO_DISABLE"] = "1"
 
 # Empirically calibrated FLAME 2020 PCA expression coefficients + head poses on GAGAvatar.pt
+# Distinctly tuned for clear, realistic mouth and lip kinematics (smile corners, frown downturn, speech jaw opening).
 _EXPRESSION_RECIPES: Dict[str, Dict[str, Any]] = {
     "neutral": {"exp": {}, "jaw": 0.0, "rot": (0.0, 0.0, 0.0), "use_blink": 0.0, "use_wink": 0.0},
     "blink": {"exp": {}, "jaw": 0.0, "rot": (0.0, 0.0, 0.0), "use_blink": 1.0, "use_wink": 0.0},
-    "happy": {"exp": {0: 2.3, 5: 0.6}, "jaw": 0.05, "rot": (0.0, 0.0, 0.0), "use_blink": 0.0, "use_wink": 0.0},
-    "laugh": {"exp": {0: 3.1, 3: 1.0, 5: 0.9}, "jaw": 0.28, "rot": (-0.03, 0.0, 0.03), "use_blink": 0.0, "use_wink": 0.0},
-    "love": {"exp": {0: 2.0, 11: -1.1}, "jaw": 0.04, "rot": (0.02, 0.04, 0.06), "use_blink": 0.0, "use_wink": 0.0},
-    "sad": {"exp": {0: -1.6, 6: -2.2, 9: -2.0, 11: -1.2}, "jaw": 0.02, "rot": (0.06, 0.0, -0.04), "use_blink": 0.0, "use_wink": 0.0},
-    "surprised": {"exp": {10: 2.5, 3: 1.2, 2: -1.0}, "jaw": 0.22, "rot": (-0.05, 0.0, 0.0), "use_blink": 0.0, "use_wink": 0.0},
-    "angry": {"exp": {1: 2.8, 6: -2.0, 9: -1.8, 11: -2.0}, "jaw": 0.08, "rot": (0.04, 0.0, 0.0), "use_blink": 0.0, "use_wink": 0.0},
-    "thinking": {"exp": {1: -2.2, 4: 2.0}, "jaw": 0.0, "rot": (-0.03, -0.10, 0.07), "use_blink": 0.0, "use_wink": 0.0},
-    "wink": {"exp": {0: 1.8}, "jaw": 0.04, "rot": (0.0, 0.05, 0.06), "use_blink": 0.0, "use_wink": 1.0},
-    "sleepy": {"exp": {9: -0.8}, "jaw": 0.06, "rot": (0.05, 0.0, -0.05), "use_blink": 0.9, "use_wink": 0.0},
-    "wave": {"exp": {0: 2.1, 11: 1.2}, "jaw": 0.10, "rot": (-0.03, 0.06, 0.05), "use_blink": 0.0, "use_wink": 0.0},
-    "like": {"exp": {0: 2.0, 11: 0.8}, "jaw": 0.05, "rot": (-0.02, 0.0, -0.04), "use_blink": 0.0, "use_wink": 0.0},
+    "happy": {"exp": {0: 3.5, 5: 0.6, 11: 1.2, 12: 0.8}, "jaw": 0.10, "rot": (0.0, 0.0, 0.0), "use_blink": 0.0, "use_wink": 0.0},
+    "laugh": {"exp": {0: 4.2, 3: 1.8, 5: 1.2, 12: 1.0}, "jaw": 0.38, "rot": (-0.03, 0.0, 0.03), "use_blink": 0.0, "use_wink": 0.0},
+    "love": {"exp": {0: 2.8, 11: 0.8, 12: 0.6}, "jaw": 0.08, "rot": (0.02, 0.04, 0.06), "use_blink": 0.0, "use_wink": 0.0},
+    "sad": {"exp": {0: -2.8, 6: -2.5, 9: -2.0, 11: -1.5, 13: 2.2}, "jaw": 0.05, "rot": (0.06, 0.0, -0.04), "use_blink": 0.0, "use_wink": 0.0},
+    "surprised": {"exp": {10: 3.5, 3: 1.6, 2: -1.8}, "jaw": 0.35, "rot": (-0.05, 0.0, 0.0), "use_blink": 0.0, "use_wink": 0.0},
+    "angry": {"exp": {1: 3.2, 6: -2.5, 8: 1.8, 9: -1.8, 11: -2.0}, "jaw": 0.06, "rot": (0.04, 0.0, 0.0), "use_blink": 0.0, "use_wink": 0.0},
+    "thinking": {"exp": {1: -2.2, 4: 2.0, 2: 0.8}, "jaw": 0.03, "rot": (-0.03, -0.10, 0.07), "use_blink": 0.0, "use_wink": 0.0},
+    "wink": {"exp": {0: 2.4, 11: 0.6}, "jaw": 0.06, "rot": (0.0, 0.05, 0.06), "use_blink": 0.0, "use_wink": 1.0},
+    "sleepy": {"exp": {9: -1.2, 3: 0.6}, "jaw": 0.12, "rot": (0.05, 0.0, -0.05), "use_blink": 0.9, "use_wink": 0.0},
+    "wave": {"exp": {0: 2.8, 11: 1.0}, "jaw": 0.10, "rot": (-0.03, 0.06, 0.05), "use_blink": 0.0, "use_wink": 0.0},
+    "like": {"exp": {0: 2.8, 11: 1.0}, "jaw": 0.08, "rot": (-0.02, 0.0, -0.04), "use_blink": 0.0, "use_wink": 0.0},
 }
 
 _JAW_LEVEL_PITCH: Dict[int, float] = {
     0: 0.0,
-    1: 0.12,
-    2: 0.25,
-    3: 0.37,
+    1: 0.16,
+    2: 0.30,
+    3: 0.45,
 }
 
 _RENDER_BATCH_SIZE = 4
@@ -287,18 +288,18 @@ class GAGAvatarEngine:
         base_jaw = float(recipe["jaw"])
         if mouth_open is not None:
             m = float(np.clip(mouth_open, 0.0, 1.0))
-            jaw_pitch = max(base_jaw if m < 0.08 else 0.0, m * 0.37)
-            if m > 0.10:
-                code[3] = float(code[3]) + min(0.75, m * 0.75)
+            jaw_pitch = max(base_jaw if m < 0.08 else 0.0, m * 0.45)
+            if m > 0.08:
+                code[3] = float(code[3]) + min(1.2, m * 1.2)
         else:
             lvl = max(0, min(int(mouth_level), 3))
             if lvl == 0:
                 jaw_pitch = base_jaw
             else:
                 jaw_pitch = max(base_jaw, _JAW_LEVEL_PITCH[lvl])
-                code[3] = float(code[3]) + (0.25 * lvl)
+                code[3] = float(code[3]) + (0.45 * lvl)
 
-        code[103] = float(np.clip(jaw_pitch, -0.05, 0.40))
+        code[103] = float(np.clip(jaw_pitch, -0.05, 0.50))
         rx, ry, rz = recipe["rot"]
         code[100] = rx + rot_offset[0]
         code[101] = ry + rot_offset[1]

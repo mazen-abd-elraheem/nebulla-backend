@@ -33,17 +33,17 @@ app = FastAPI(title="Nebula GAGAvatar GPU Microservice", version="1.0.0")
 
 EXPRESSION_FLAME_PRESETS: Dict[str, Dict[str, float]] = {
     "neutral":   {"exp0": 0.0,  "exp1": 0.0,  "jaw": 0.0,  "blink": 0.0},
-    "happy":     {"exp0": 2.3,  "exp5": 0.6,  "jaw": 0.05, "blink": 0.0},
-    "laugh":     {"exp0": 3.1,  "exp3": 1.0,  "jaw": 0.28, "blink": 0.0},
-    "love":      {"exp0": 2.0,  "exp11": -1.1,"jaw": 0.04, "blink": 0.0},
-    "sad":       {"exp0": -1.6, "exp6": -2.2, "jaw": 0.02, "blink": 0.0},
-    "surprised": {"exp10": 2.5, "exp3": 1.2,  "jaw": 0.22, "blink": 0.0},
-    "angry":     {"exp1": 2.8,  "exp6": -2.0, "jaw": 0.08, "blink": 0.0},
-    "thinking":  {"exp1": -2.2, "exp4": 2.0,  "jaw": 0.0,  "blink": 0.0},
-    "wink":      {"exp0": 1.8,  "wink": 1.0,  "jaw": 0.04, "blink": 0.0},
-    "sleepy":    {"exp9": -0.8, "blink": 0.9, "jaw": 0.06},
-    "wave":      {"exp0": 2.1,  "exp11": 1.2, "jaw": 0.10, "blink": 0.0},
-    "like":      {"exp0": 2.0,  "exp11": 0.8, "jaw": 0.05, "blink": 0.0},
+    "happy":     {"exp0": 3.5,  "exp5": 0.6,  "exp11": 1.2, "exp12": 0.8, "jaw": 0.10, "blink": 0.0},
+    "laugh":     {"exp0": 4.2,  "exp3": 1.8,  "exp5": 1.2,  "exp12": 1.0, "jaw": 0.38, "blink": 0.0},
+    "love":      {"exp0": 2.8,  "exp11": 0.8, "exp12": 0.6, "jaw": 0.08, "blink": 0.0},
+    "sad":       {"exp0": -2.8, "exp6": -2.5, "exp9": -2.0, "exp11": -1.5, "exp13": 2.2, "jaw": 0.05, "blink": 0.0},
+    "surprised": {"exp10": 3.5, "exp3": 1.6,  "exp2": -1.8, "jaw": 0.35, "blink": 0.0},
+    "angry":     {"exp1": 3.2,  "exp6": -2.5, "exp8": 1.8,  "exp9": -1.8, "exp11": -2.0, "jaw": 0.06, "blink": 0.0},
+    "thinking":  {"exp1": -2.2, "exp4": 2.0,  "exp2": 0.8,  "jaw": 0.03, "blink": 0.0},
+    "wink":      {"exp0": 2.4,  "exp11": 0.6, "wink": 1.0,  "jaw": 0.06, "blink": 0.0},
+    "sleepy":    {"exp9": -1.2, "exp3": 0.6,  "blink": 0.9, "jaw": 0.12},
+    "wave":      {"exp0": 2.8,  "exp11": 1.0, "jaw": 0.10, "blink": 0.0},
+    "like":      {"exp0": 2.8,  "exp11": 1.0, "jaw": 0.08, "blink": 0.0},
 }
 
 
