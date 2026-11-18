@@ -266,17 +266,89 @@ async def render_avatar_expression(
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+async def _resolve_avatar_and_asset(
+    avatar_id: int,
+    db: AsyncSession,
+    svc: GAGAvatarService,
+    asset_type: str = "preview",
+    expression: str | None = None,
+    level: int = 0,
+) -> Path | None:
+    """
+    Robust fallback resolver for avatar assets:
+    1. Looks up target avatar ID.
+    2. If missing or files wiped, falls back to active avatar or newest valid avatar on disk.
+    3. For expressions/mouth frames, gracefully degrades to neutral or preview image.
+    """
+    avatar = await svc.get_avatar(avatar_id, db)
+    if not avatar or not avatar.avatar_preview_path or not Path(avatar.avatar_preview_path).exists():
+        # Fallback 1: Active approved avatar
+        avatar = await svc.get_active_avatar(db)
+        if not avatar or not avatar.avatar_preview_path or not Path(avatar.avatar_preview_path).exists():
+            # Fallback 2: Any existing valid avatar
+            valid_list = await svc.list_avatars(db)
+            avatar = valid_list[0] if valid_list else None
+
+    if not avatar:
+        return None
+
+    if asset_type == "preview":
+        if avatar.avatar_preview_path and Path(avatar.avatar_preview_path).exists():
+            return Path(avatar.avatar_preview_path)
+
+    elif asset_type == "source":
+        if avatar.source_photo_path and Path(avatar.source_photo_path).exists():
+            return Path(avatar.source_photo_path)
+        if avatar.avatar_preview_path and Path(avatar.avatar_preview_path).exists():
+            return Path(avatar.avatar_preview_path)
+
+    elif asset_type == "sprite":
+        safe_name = Path(expression).name if expression else "neutral"
+        if avatar.sprites_dir:
+            cand = Path(avatar.sprites_dir) / f"{safe_name}.png"
+            if cand.exists():
+                return cand
+            cand_neutral = Path(avatar.sprites_dir) / "neutral.png"
+            if cand_neutral.exists():
+                return cand_neutral
+        if avatar.avatar_preview_path and Path(avatar.avatar_preview_path).exists():
+            return Path(avatar.avatar_preview_path)
+
+    elif asset_type == "mouth":
+        safe_expr = Path(expression).name if expression else "neutral"
+        safe_lvl = max(0, min(int(level), 3))
+        avatar_dir = Path(avatar.avatar_preview_path).parent
+        if safe_lvl > 0:
+            cand_mouth = avatar_dir / "mouth" / f"{safe_expr}_{safe_lvl}.png"
+            if cand_mouth.exists():
+                return cand_mouth
+            cand_mouth_neutral = avatar_dir / "mouth" / f"neutral_{safe_lvl}.png"
+            if cand_mouth_neutral.exists():
+                return cand_mouth_neutral
+        if avatar.sprites_dir:
+            cand_sprite = Path(avatar.sprites_dir) / f"{safe_expr}.png"
+            if cand_sprite.exists():
+                return cand_sprite
+            cand_sprite_neutral = Path(avatar.sprites_dir) / "neutral.png"
+            if cand_sprite_neutral.exists():
+                return cand_sprite_neutral
+        if avatar.avatar_preview_path and Path(avatar.avatar_preview_path).exists():
+            return Path(avatar.avatar_preview_path)
+
+    return None
+
+
 @router.get("/{avatar_id}/preview", summary="Serve avatar preview image (PNG)")
 async def serve_avatar_preview(
     avatar_id: int,
     db: AsyncSession = Depends(get_db),
     svc: GAGAvatarService = Depends(get_avatar_service),
 ):
-    avatar = await svc.get_avatar(avatar_id, db)
-    if not avatar or not Path(avatar.avatar_preview_path).exists():
+    asset_path = await _resolve_avatar_and_asset(avatar_id, db, svc, asset_type="preview")
+    if not asset_path or not asset_path.exists():
         raise HTTPException(status_code=404, detail="صورة الأفاتار غير موجودة.")
     return FileResponse(
-        avatar.avatar_preview_path,
+        str(asset_path),
         media_type="image/png",
         headers={"Cache-Control": "no-store"},
     )
@@ -288,10 +360,11 @@ async def serve_avatar_source(
     db: AsyncSession = Depends(get_db),
     svc: GAGAvatarService = Depends(get_avatar_service),
 ):
-    avatar = await svc.get_avatar(avatar_id, db)
-    if not avatar or not Path(avatar.source_photo_path).exists():
+    asset_path = await _resolve_avatar_and_asset(avatar_id, db, svc, asset_type="source")
+    if not asset_path or not asset_path.exists():
         raise HTTPException(status_code=404, detail="الصورة الأصلية غير موجودة.")
-    return FileResponse(avatar.source_photo_path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    media_type = "image/jpeg" if asset_path.suffix.lower() in [".jpg", ".jpeg"] else "image/png"
+    return FileResponse(str(asset_path), media_type=media_type, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/{avatar_id}/sprite/{expression}", summary="Serve expression sprite image (PNG)")
@@ -301,21 +374,12 @@ async def serve_avatar_sprite(
     db: AsyncSession = Depends(get_db),
     svc: GAGAvatarService = Depends(get_avatar_service),
 ):
-    avatar = await svc.get_avatar(avatar_id, db)
-    if not avatar or not avatar.sprites_dir:
-        raise HTTPException(status_code=404, detail="ملفات تعبيرات الأفاتار غير موجودة.")
-
-    # Guard against path traversal
-    safe_name = Path(expression).name
-    sprite_path = Path(avatar.sprites_dir) / f"{safe_name}.png"
-    if not sprite_path.exists():
-        # Fall back to preview portrait if custom expression missing
-        if Path(avatar.avatar_preview_path).exists():
-            sprite_path = Path(avatar.avatar_preview_path)
-        else:
-            raise HTTPException(status_code=404, detail="التعبير المطلوب غير موجود.")
-
-    return FileResponse(str(sprite_path), media_type="image/png", headers={"Cache-Control": "no-store"})
+    asset_path = await _resolve_avatar_and_asset(
+        avatar_id, db, svc, asset_type="sprite", expression=expression
+    )
+    if not asset_path or not asset_path.exists():
+        raise HTTPException(status_code=404, detail="التعبير المطلوب غير موجود.")
+    return FileResponse(str(asset_path), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/{avatar_id}/mouth/{expression}/{level}", summary="Serve GAGAvatar neural mouth-open frame PNG")
@@ -326,29 +390,12 @@ async def serve_avatar_mouth_frame(
     db: AsyncSession = Depends(get_db),
     svc: GAGAvatarService = Depends(get_avatar_service),
 ):
-    avatar = await svc.get_avatar(avatar_id, db)
-    if not avatar or not avatar.sprites_dir:
-        raise HTTPException(status_code=404, detail="ملفات حركات فم الأفاتار غير موجودة.")
-
-    safe_expr = Path(expression).name
-    safe_level = max(0, min(int(level), 3))
-    avatar_dir = Path(avatar.avatar_preview_path).parent
-
-    if safe_level == 0:
-        frame_path = Path(avatar.sprites_dir) / f"{safe_expr}.png"
-    else:
-        frame_path = avatar_dir / "mouth" / f"{safe_expr}_{safe_level}.png"
-
-    if not frame_path.exists():
-        sprite_fallback = Path(avatar.sprites_dir) / f"{safe_expr}.png"
-        if sprite_fallback.exists():
-            frame_path = sprite_fallback
-        elif Path(avatar.avatar_preview_path).exists():
-            frame_path = Path(avatar.avatar_preview_path)
-        else:
-            raise HTTPException(status_code=404, detail="إطار حركة الفم غير موجود.")
-
-    return FileResponse(str(frame_path), media_type="image/png", headers={"Cache-Control": "no-store"})
+    asset_path = await _resolve_avatar_and_asset(
+        avatar_id, db, svc, asset_type="mouth", expression=expression, level=level
+    )
+    if not asset_path or not asset_path.exists():
+        raise HTTPException(status_code=404, detail="إطار حركة الفم غير موجود.")
+    return FileResponse(str(asset_path), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/{avatar_id}/render-file/{filename}", summary="Serve generated animation GIF/PNG")

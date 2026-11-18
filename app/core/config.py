@@ -69,10 +69,10 @@ class Settings(BaseSettings):
     VOICETUT_SERVICE_URL: str = "http://127.0.0.1:8001"  # Optional standalone microservice
     VOICETUT_PREFER_MICROSERVICE: bool = False  # Run in-process by default (eliminates 1.5s/call dead probe)
     VOICETUT_SPEAKER: str = "mazen"
-    # Balanced sub-second / low-latency VoiceTut defaults preserving vocal likeness & Egyptian accent
-    VOICETUT_NUM_STEPS: int = 14
-    VOICETUT_MAX_STEPS: int = 20
-    VOICETUT_GUIDANCE_SCALE: float = 2.1
+    # Balanced sub-second / high-fidelity VoiceTut defaults preserving vocal likeness & Egyptian accent
+    VOICETUT_NUM_STEPS: int = 16
+    VOICETUT_MAX_STEPS: int = 24
+    VOICETUT_GUIDANCE_SCALE: float = 2.2
     VOICETUT_SPEED: float = 1.0
     VOICETUT_T_SHIFT: float = 0.1
     VOICETUT_LANGUAGE: str = "arz"
