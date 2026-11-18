@@ -186,3 +186,17 @@ async def test_avatar_studio_ui_route_serves_html():
         assert "/api/v1/avatar/list" in resp.text
         assert "GAGAvatar" in resp.text
 
+
+@pytest.mark.asyncio
+async def test_avatar_gpu_worker_and_disconnect(tmp_path):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # 1. Disconnect / clear URL
+        resp = await client.post("/api/v1/avatar/gpu-worker", json={"service_url": ""})
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "disconnected"
+
+        # 2. Probe failure for unreachable host
+        resp = await client.post("/api/v1/avatar/gpu-worker", json={"service_url": "http://127.0.0.1:9999"})
+        assert resp.status_code == 400
+        assert "تعذر الاتصال" in resp.json()["detail"]
+

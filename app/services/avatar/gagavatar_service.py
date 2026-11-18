@@ -705,6 +705,94 @@ class GAGAvatarService:
         logger.info(f"Re-rendered mouth frames for Avatar id={avatar.id}")
         return avatar
 
+    async def probe_remote_service(self, remote_url: str) -> Dict[str, Any]:
+        """Probe health and GPU device details of a remote GAGAvatar microservice."""
+        clean_url = remote_url.strip().rstrip("/")
+        if not clean_url:
+            return {"healthy": False, "error": "رابط السيرفر فارغ."}
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                resp = await client.get(f"{clean_url}/health")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return {"healthy": True, "device": data.get("device", "GPU"), **data}
+                return {"healthy": False, "error": f"HTTP {resp.status_code}"}
+        except Exception as exc:
+            return {"healthy": False, "error": str(exc)}
+
+    async def generate_neural_frames_for_avatar(
+        self,
+        avatar_id: int,
+        db: AsyncSession,
+        user_id: Optional[int] = None,
+    ) -> AvatarProfile:
+        """Run full 3D neural GAGAvatar model on source photo to generate true photorealistic sprites & mouth frames."""
+        avatar = await self._require_avatar(avatar_id, db, user_id=user_id)
+        src_path = Path(avatar.source_photo_path)
+        if not src_path.exists():
+            raise FileNotFoundError(f"Source portrait photo not found: {src_path}")
+        image_bytes = src_path.read_bytes()
+        src_pil = self._decode_image_pil(image_bytes)
+
+        avatar_dir = Path(avatar.avatar_preview_path).parent
+        sprites_dir = avatar_dir / "sprites"
+        mouth_dir = avatar_dir / "mouth"
+        avatar_dir.mkdir(parents=True, exist_ok=True)
+        sprites_dir.mkdir(parents=True, exist_ok=True)
+        mouth_dir.mkdir(parents=True, exist_ok=True)
+
+        expressions_list = list(FACE_EMOJI_ACTIONS.keys())
+        gen_result = await self._run_generation_engine(
+            image_bytes=image_bytes,
+            src_pil=src_pil,
+            style=avatar.style or "realistic",
+            expressions=expressions_list,
+            avatar_key=avatar_dir.name,
+            require_face=True,
+        )
+
+        preview_path = avatar_dir / "preview.png"
+        gen_result["portrait_pil"].save(preview_path, format="PNG")
+
+        expr_files: Dict[str, Any] = {}
+        for expr_key, sprite_pil in (gen_result.get("sprites_pil") or {}).items():
+            fname = f"{expr_key}.png"
+            sprite_pil.save(sprites_dir / fname, format="PNG")
+            expr_files[expr_key] = fname
+
+        mouth_manifest: Dict[str, List[int]] = {}
+        for expr_key, mouth_imgs in (gen_result.get("mouth_pil") or {}).items():
+            levels: List[int] = [0]
+            for lvl_idx, mouth_img in enumerate(mouth_imgs, start=1):
+                mouth_img.save(mouth_dir / f"{expr_key}_{lvl_idx}.png", format="PNG")
+                levels.append(lvl_idx)
+            mouth_manifest[expr_key] = levels
+        if mouth_manifest:
+            expr_files["_mouth"] = mouth_manifest
+
+        tracked_feature = gen_result.get("tracked_feature")
+        if tracked_feature is not None:
+            feat_path = avatar_dir / "tracked_feature.pt"
+            if isinstance(tracked_feature, (bytes, bytearray)):
+                feat_path.write_bytes(bytes(tracked_feature))
+            else:
+                try:
+                    import torch
+                    await asyncio.to_thread(torch.save, tracked_feature, feat_path)
+                except (ImportError, ModuleNotFoundError):
+                    import pickle
+                    await asyncio.to_thread(lambda: feat_path.write_bytes(pickle.dumps(tracked_feature)))
+
+        avatar.sprites_dir = str(sprites_dir)
+        avatar.expressions_json = json.dumps(expr_files)
+        if gen_result.get("landmarks"):
+            avatar.landmarks_json = json.dumps(gen_result["landmarks"])
+        avatar.engine = gen_result.get("engine", "gagavatar")
+        await db.commit()
+        await db.refresh(avatar)
+        logger.info(f"Generated full neural 3D GAGAvatar frames for Avatar id={avatar.id}")
+        return avatar
+
     async def get_active_avatar(
         self,
         db: AsyncSession,

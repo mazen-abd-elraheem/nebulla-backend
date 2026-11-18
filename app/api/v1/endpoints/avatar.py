@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_optional_user
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 from app.services.avatar.emoji_actions import list_emoji_action_catalog
@@ -22,6 +23,10 @@ router = APIRouter()
 
 class AvatarRejectRequest(BaseModel):
     reason: Optional[str] = None
+
+
+class GPUWorkerConfigRequest(BaseModel):
+    service_url: str
 
 
 class AvatarRenderRequest(BaseModel):
@@ -237,6 +242,55 @@ async def rerender_avatar_mouth_frames(
         raise HTTPException(status_code=403, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"فشل تحديث إطارات الفم: {exc}")
+
+
+@router.post("/gpu-worker", summary="Configure and test remote GAGAvatar GPU microservice URL (e.g. Google Colab / ngrok)")
+async def set_gpu_worker_url(
+    body: GPUWorkerConfigRequest,
+    svc: GAGAvatarService = Depends(get_avatar_service),
+) -> Dict[str, Any]:
+    url = body.service_url.strip()
+    if not url:
+        settings.GAGAVATAR_SERVICE_URL = None
+        return {"status": "disconnected", "message": "تم إلغاء ربط سيرفر GPU."}
+
+    probe_res = await svc.probe_remote_service(url)
+    if not probe_res.get("healthy"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"تعذر الاتصال بسيرفر Colab: {probe_res.get('error') or 'Service unavailable'}",
+        )
+    settings.GAGAVATAR_SERVICE_URL = url
+    return {
+        "status": "connected",
+        "message": f"تم الاتصال بنجاح بسيرفر Colab GPU ({probe_res.get('device', 'GPU')})",
+        "worker_info": probe_res,
+    }
+
+
+@router.post("/{avatar_id}/generate-neural-frames", summary="Generate genuine 3D neural GAGAvatar sprites and mouth frames via Colab GPU")
+async def generate_neural_frames_for_avatar(
+    avatar_id: int,
+    db: AsyncSession = Depends(get_db),
+    sub: Optional[str] = Depends(get_optional_user),
+    svc: GAGAvatarService = Depends(get_avatar_service),
+) -> Dict[str, Any]:
+    user_id = await _resolve_authenticated_user_id(sub, db)
+    try:
+        profile = await svc.generate_neural_frames_for_avatar(avatar_id=avatar_id, db=db, user_id=user_id)
+        return {
+            "status": "success",
+            "message": "تم توليد الفريمات العصبية ثلاثية الأبعاد بنجاح عبر GPU!",
+            "avatar": svc.serialize_avatar(profile),
+        }
+    except KeyError:
+        raise HTTPException(status_code=404, detail="الأفاتار غير موجود.")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"فشل توليد الفريمات العصبية: {exc}")
 
 
 @router.post("/{avatar_id}/render", summary="Render animated facial expression & mouth movement for an emoji")
