@@ -820,7 +820,10 @@ class _ContactsScreenState extends State<ContactsScreen>
               ),
               const SizedBox(height: 16),
               Text(
-                t('دليل الموبايل متاح على الهاتف فقط', 'Phone Book Available on Mobile'),
+                t(
+                  'دليل الموبايل متاح على الهاتف فقط',
+                  'Phone Book Available on Mobile',
+                ),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontFamily: 'Cairo',
