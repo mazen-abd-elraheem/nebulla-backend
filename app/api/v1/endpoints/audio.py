@@ -128,7 +128,7 @@ async def synthesize_voicetut(
     speaker: Optional[str] = Form(None, description="Pre-built speaker name (e.g. mohammed, yasmin, ahmed)"),
     file: Optional[UploadFile] = File(None, description="Optional audio file for zero-shot voice cloning"),
     ref_text: Optional[str] = Form(None, description="Optional transcript of the reference audio"),
-    num_steps: Optional[int] = Form(None, description="Denoising steps (default: 14 fast high-fidelity, max 20 unless studio_hq=true)"),
+    num_steps: Optional[int] = Form(None, description="Denoising steps (default: 6 fast high-fidelity, max 20 unless studio_hq=true)"),
     studio_hq: bool = Form(False, description="Allow >20 denoising steps for manual studio override"),
     _user: Optional[str] = Depends(get_optional_user),
 ):

@@ -650,7 +650,7 @@ class QwenCleoProvider(BaseSTTProvider):
             torch_dtype = (
                 torch.bfloat16
                 if (device_idx >= 0 and torch.cuda.is_bf16_supported())
-                else (torch.float16 if device_idx >= 0 else torch.bfloat16)
+                else (torch.float16 if device_idx >= 0 else torch.float32)
             )
 
             logger.info(f"Loading QwenCleo-ASR from {model_path} ({device_str}, {torch_dtype})…")
