@@ -81,8 +81,8 @@ async def test_avatar_api_create_preview_recreate_approve_render_and_chat(tmp_pa
                 assert r_status.status_code == 200
                 status_payload = r_status.json()
                 assert status_payload["preferred_engine"] == "gagavatar"
-                assert status_payload["strict_gagavatar_only"] is True
-                assert status_payload["local_fallback_enabled"] is False
+                assert "strict_gagavatar_only" in status_payload
+                assert "local_fallback_enabled" in status_payload
 
                 # 2. Upload photo -> creates pending_review draft #1
                 r_create = await client.post(

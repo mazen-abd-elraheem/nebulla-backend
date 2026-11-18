@@ -187,6 +187,7 @@ async def test_avatar_lifecycle_create_reject_recreate_approve_and_render(tmp_pa
 async def test_avatar_strict_fails_when_gagavatar_unavailable(tmp_path, monkeypatch):
     await init_db()
     monkeypatch.setattr("app.services.avatar.gagavatar_service.settings.GAGAVATAR_SERVICE_URL", "")
+    monkeypatch.setattr("app.services.avatar.gagavatar_service.settings.AVATAR_ALLOW_LOCAL_FALLBACK", False)
     svc = GAGAvatarService(output_dir=str(tmp_path / "avatars_unavail"))
     photo_bytes = _make_portrait_jpeg_bytes()
 

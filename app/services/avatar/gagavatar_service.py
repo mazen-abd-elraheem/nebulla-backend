@@ -14,10 +14,12 @@ import asyncio
 import base64
 import io
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import cv2
 import imageio.v2 as imageio
 import httpx
 import numpy as np
@@ -232,20 +234,31 @@ class GAGAvatarService:
             except Exception as exc:
                 logger.warning(f"Remote GAGAvatar service failed ({exc}); checking local GAGAvatar engine")
 
-        # 2. Local xg-chu/GAGAvatar CUDA runtime (sole local avatar engine; zero non-GAGAvatar fallback)
+        # 2. Local xg-chu/GAGAvatar CUDA runtime if available
         local_ok, local_err = self._probe_local_gagavatar()
-        if not local_ok:
-            raise RuntimeError(
-                f"GAGAvatar engine is unavailable ({local_err or 'CUDA or weights missing'}). "
-                "Local CPU/OpenCV fallback is disabled."
+        if local_ok:
+            return await asyncio.to_thread(
+                self._generate_via_local_gagavatar,
+                src_pil,
+                style,
+                expressions,
+                avatar_key,
             )
 
-        return await asyncio.to_thread(
-            self._generate_via_local_gagavatar,
-            src_pil,
-            style,
-            expressions,
-            avatar_key,
+        # 3. Graceful Local UniFace + Kinematic Engine Fallback (when Colab GPU is not yet connected)
+        if settings.AVATAR_ALLOW_LOCAL_FALLBACK:
+            logger.info("GAGAvatar CUDA/Colab worker not connected; generating initial portrait with UniFace + Kinematic Engine")
+            return await asyncio.to_thread(
+                self._generate_via_uniface_fallback,
+                src_pil,
+                style,
+                expressions,
+                require_face=require_face,
+            )
+
+        raise RuntimeError(
+            f"GAGAvatar engine is unavailable ({local_err or 'CUDA or weights missing'}). "
+            "Local CPU/OpenCV fallback is disabled."
         )
 
     async def _generate_via_remote_service(
@@ -326,6 +339,286 @@ class GAGAvatarService:
             "right_mouth": [0.60, 0.72],
             "eye_width": 0.11,
             "mouth_width": 0.22,
+        }
+
+    def _detect_face_and_landmarks(
+        self,
+        img_bgr: np.ndarray,
+        require_face: bool = True,
+    ) -> Tuple[Tuple[int, int, int, int], Optional[np.ndarray]]:
+        """Detect face bounding box and 5 keypoints using UniFace then OpenCV Haar."""
+        h, w = img_bgr.shape[:2]
+
+        try:
+            from app.websocket.handlers import _get_face_service
+
+            face_svc = _get_face_service()
+            if face_svc._analyzer is None:
+                from uniface import FaceAnalyzer
+
+                face_svc._analyzer = FaceAnalyzer()
+            if face_svc._analyzer != "disabled":
+                faces = face_svc._analyzer.analyze(img_bgr)
+                if faces:
+                    best = max(
+                        faces,
+                        key=lambda f: float(f.bbox[2] - f.bbox[0]) * float(f.bbox[3] - f.bbox[1]),
+                    )
+                    x1, y1, x2, y2 = [int(round(v)) for v in best.bbox[:4]]
+                    kps = getattr(best, "kps", None)
+                    if kps is not None:
+                        kps_arr = np.asarray(kps, dtype=np.float32)
+                        if kps_arr.shape[0] >= 5:
+                            return (x1, y1, x2, y2), kps_arr[:5]
+                    return (x1, y1, x2, y2), None
+        except Exception as exc:
+            logger.debug(f"UniFace detection notice in AvatarService: {exc}")
+
+        try:
+            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            if os.path.exists(cascade_path):
+                detector = cv2.CascadeClassifier(cascade_path)
+                gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+                rects = detector.detectMultiScale(
+                    gray, scaleFactor=1.1, minNeighbors=4, minSize=(36, 36)
+                )
+                if len(rects) > 0:
+                    x, y, rw, rh = max(rects, key=lambda r: r[2] * r[3])
+                    return (int(x), int(y), int(x + rw), int(y + rh)), None
+        except Exception as exc:
+            logger.debug(f"OpenCV Haar detection notice in AvatarService: {exc}")
+
+        if require_face:
+            raise ValueError(
+                "لم يتم العثور على وجه واضح في الصورة. من فضلك التقط صورة أمامية بإضاءة جيدة."
+            )
+
+        side = min(h, w)
+        cx, cy = w // 2, h // 2
+        half = max(16, int(side * 0.4))
+        return (cx - half, cy - half, cx + half, cy + half), None
+
+    @staticmethod
+    def _apply_local_warp(
+        img_bgr: np.ndarray,
+        center_xy: Tuple[float, float],
+        radius: float,
+        dx: float,
+        dy: float,
+    ) -> np.ndarray:
+        """Apply smooth localized Gaussian displacement field around (center_xy)."""
+        if abs(dx) < 0.05 and abs(dy) < 0.05:
+            return img_bgr
+        h, w = img_bgr.shape[:2]
+        cx, cy = center_xy
+        x0 = max(0, int(cx - radius - 4))
+        x1 = min(w, int(cx + radius + 4))
+        y0 = max(0, int(cy - radius - 4))
+        y1 = min(h, int(cy + radius + 4))
+        if x1 <= x0 or y1 <= y0:
+            return img_bgr
+
+        map_x, map_y = np.meshgrid(
+            np.arange(x0, x1, dtype=np.float32), np.arange(y0, y1, dtype=np.float32)
+        )
+        r2 = ((map_x - cx) ** 2 + (map_y - cy) ** 2) / max(1.0, radius**2)
+        weight = np.exp(-2.6 * r2) * (r2 < 1.5).astype(np.float32)
+
+        src_x = np.clip(map_x - dx * weight - x0, 0, (x1 - x0) - 1)
+        src_y = np.clip(map_y - dy * weight - y0, 0, (y1 - y0) - 1)
+
+        out = img_bgr.copy()
+        patch = img_bgr[y0:y1, x0:x1]
+        warped = cv2.remap(
+            patch, src_x, src_y, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE
+        )
+        out[y0:y1, x0:x1] = warped
+        return out
+
+    @classmethod
+    def _synthesize_expression_frame(
+        cls,
+        portrait_bgr: np.ndarray,
+        landmarks: Dict[str, Any],
+        expression: str,
+    ) -> np.ndarray:
+        """Synthesize facial micro-expression (eyes, brows, cheeks) directly from landmarks."""
+        h, w = portrait_bgr.shape[:2]
+        out = portrait_bgr.copy()
+
+        le = (landmarks["left_eye"][0] * w, landmarks["left_eye"][1] * h)
+        re_ = (landmarks["right_eye"][0] * w, landmarks["right_eye"][1] * h)
+        ew = float(landmarks.get("eye_width", 0.10)) * w
+
+        if expression == "sad":
+            out = cls._apply_local_warp(out, (le[0] + ew * 0.35, le[1] - ew * 0.8), ew * 1.1, 0.0, -3.5)
+            out = cls._apply_local_warp(out, (re_[0] - ew * 0.35, re_[1] - ew * 0.8), ew * 1.1, 0.0, -3.5)
+        elif expression == "surprised":
+            out = cls._apply_local_warp(out, (le[0], le[1] - ew * 0.85), ew * 1.3, 0.0, -7.5)
+            out = cls._apply_local_warp(out, (re_[0], re_[1] - ew * 0.85), ew * 1.3, 0.0, -7.5)
+        elif expression == "angry":
+            out = cls._apply_local_warp(out, (le[0] + ew * 0.55, le[1] - ew * 0.7), ew * 1.2, 4.0, 6.0)
+            out = cls._apply_local_warp(out, (re_[0] - ew * 0.55, re_[1] - ew * 0.7), ew * 1.2, -4.0, 6.0)
+        elif expression == "thinking":
+            out = cls._apply_local_warp(out, (re_[0], re_[1] - ew * 0.8), ew * 1.2, 0.0, -5.5)
+        elif expression == "wink":
+            out = cls._apply_local_warp(out, (le[0], le[1] - ew * 0.45), ew * 1.1, 0.0, ew * 0.45)
+            out = cls._apply_local_warp(out, (le[0], le[1] + ew * 0.45), ew * 1.1, 0.0, -ew * 0.45)
+        elif expression == "blink":
+            for ex, ey in (le, re_):
+                out = cls._apply_local_warp(out, (ex, ey - ew * 0.45), ew * 1.2, 0.0, ew * 0.6)
+                out = cls._apply_local_warp(out, (ex, ey + ew * 0.45), ew * 1.2, 0.0, -ew * 0.6)
+        elif expression == "sleepy":
+            for ex, ey in (le, re_):
+                out = cls._apply_local_warp(out, (ex, ey - ew * 0.45), ew * 1.1, 0.0, ew * 0.55)
+
+        return out
+
+    def _generate_via_uniface_fallback(
+        self,
+        src_pil: Image.Image,
+        style: str,
+        expressions: List[str],
+        require_face: bool = True,
+    ) -> Dict[str, Any]:
+        """Local UniFace + Kinematic Engine: crops 512x512 portrait, computes landmarks, and generates expressions."""
+        img_rgb = np.array(src_pil)
+        img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+        h, w = img_bgr.shape[:2]
+
+        bbox, kps = self._detect_face_and_landmarks(img_bgr, require_face=require_face)
+        x1, y1, x2, y2 = bbox
+        fw = max(20, x2 - x1)
+        fh = max(20, y2 - y1)
+
+        cx = (x1 + x2) / 2.0
+        cy = y1 + fh * 0.48
+        crop_side = max(fw, fh) * 1.75
+        half = crop_side / 2.0
+
+        sx1 = int(round(cx - half))
+        sy1 = int(round(cy - half * 1.04))
+        sx2 = int(round(sx1 + crop_side))
+        sy2 = int(round(sy1 + crop_side))
+
+        pad_left = max(0, -sx1)
+        pad_top = max(0, -sy1)
+        pad_right = max(0, sx2 - w)
+        pad_bottom = max(0, sy2 - h)
+        if any(p > 0 for p in (pad_left, pad_top, pad_right, pad_bottom)):
+            img_bgr = cv2.copyMakeBorder(
+                img_bgr, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_REPLICATE
+            )
+            sx1 += pad_left
+            sx2 += pad_left
+            sy1 += pad_top
+            sy2 += pad_top
+            x1 += pad_left
+            x2 += pad_left
+            y1 += pad_top
+            y2 += pad_top
+            if kps is not None:
+                kps = kps.copy()
+                kps[:, 0] += pad_left
+                kps[:, 1] += pad_top
+
+        cropped = img_bgr[sy1:sy2, sx1:sx2]
+        if cropped.size == 0:
+            cropped = img_bgr
+            sx1, sy1, sx2, sy2 = 0, 0, img_bgr.shape[1], img_bgr.shape[0]
+
+        crop_w = max(1.0, float(sx2 - sx1))
+        crop_h = max(1.0, float(sy2 - sy1))
+
+        if kps is not None and len(kps) >= 5:
+            le = [round(float((kps[0][0] - sx1) / crop_w), 4), round(float((kps[0][1] - sy1) / crop_h), 4)]
+            re_ = [round(float((kps[1][0] - sx1) / crop_w), 4), round(float((kps[1][1] - sy1) / crop_h), 4)]
+            nose = [round(float((kps[2][0] - sx1) / crop_w), 4), round(float((kps[2][1] - sy1) / crop_h), 4)]
+            lm = [round(float((kps[3][0] - sx1) / crop_w), 4), round(float((kps[3][1] - sy1) / crop_h), 4)]
+            rm = [round(float((kps[4][0] - sx1) / crop_w), 4), round(float((kps[4][1] - sy1) / crop_h), 4)]
+            mouth = [round((lm[0] + rm[0]) / 2.0, 4), round((lm[1] + rm[1]) / 2.0, 4)]
+            eye_dist = abs(re_[0] - le[0])
+            mouth_dist = abs(rm[0] - lm[0])
+            landmarks = {
+                "left_eye": [float(np.clip(le[0], 0.15, 0.85)), float(np.clip(le[1], 0.15, 0.85))],
+                "right_eye": [float(np.clip(re_[0], 0.15, 0.85)), float(np.clip(re_[1], 0.15, 0.85))],
+                "nose": [float(np.clip(nose[0], 0.2, 0.8)), float(np.clip(nose[1], 0.2, 0.8))],
+                "mouth": [float(np.clip(mouth[0], 0.2, 0.8)), float(np.clip(mouth[1], 0.35, 0.9))],
+                "left_mouth": lm,
+                "right_mouth": rm,
+                "eye_width": round(float(np.clip(eye_dist * 0.45, 0.06, 0.16)), 4),
+                "mouth_width": round(float(np.clip(max(mouth_dist, eye_dist * 0.85), 0.12, 0.32)), 4),
+            }
+        else:
+            bx1 = (x1 - sx1) / crop_w
+            by1 = (y1 - sy1) / crop_h
+            bfw = (x2 - x1) / crop_w
+            bfh = (y2 - y1) / crop_h
+            landmarks = {
+                "left_eye": [round(float(np.clip(bx1 + bfw * 0.32, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.38, 0.2, 0.8)), 4)],
+                "right_eye": [round(float(np.clip(bx1 + bfw * 0.68, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.38, 0.2, 0.8)), 4)],
+                "nose": [round(float(np.clip(bx1 + bfw * 0.50, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.58, 0.2, 0.8)), 4)],
+                "mouth": [round(float(np.clip(bx1 + bfw * 0.50, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.78, 0.35, 0.9)), 4)],
+                "left_mouth": [round(float(np.clip(bx1 + bfw * 0.36, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.78, 0.35, 0.9)), 4)],
+                "right_mouth": [round(float(np.clip(bx1 + bfw * 0.64, 0.2, 0.8)), 4), round(float(np.clip(by1 + bfh * 0.78, 0.35, 0.9)), 4)],
+                "eye_width": round(float(np.clip(bfw * 0.18, 0.06, 0.16)), 4),
+                "mouth_width": round(float(np.clip(bfw * 0.34, 0.12, 0.32)), 4),
+            }
+
+        portrait_bgr = cv2.resize(cropped, (TARGET_SIZE, TARGET_SIZE), interpolation=cv2.INTER_LANCZOS4)
+        portrait_pil = Image.fromarray(cv2.cvtColor(portrait_bgr, cv2.COLOR_BGR2RGB))
+
+        expr_configs = {
+            "neutral":   {"corner_dy": 0.0,   "gap": 0.0},
+            "happy":     {"corner_dy": -8.5,  "gap": 2.5},
+            "laugh":     {"corner_dy": -11.0, "gap": 8.0},
+            "love":      {"corner_dy": -6.0,  "gap": 1.5},
+            "sad":       {"corner_dy": +9.5,  "gap": 1.0},
+            "surprised": {"corner_dy": -1.0,  "gap": 14.0},
+            "angry":     {"corner_dy": +4.5,  "gap": 0.0},
+            "thinking":  {"corner_dy": +2.0,  "gap": 1.0},
+            "wink":      {"corner_dy": -5.0,  "gap": 1.5},
+            "sleepy":    {"corner_dy": +3.0,  "gap": 3.0},
+            "wave":      {"corner_dy": -6.5,  "gap": 2.0},
+            "like":      {"corner_dy": -6.5,  "gap": 1.5},
+        }
+        mouth_levels_gap = {1: 5.0, 2: 10.5, 3: 17.0}
+
+        clean_exprs = [e for e in expressions if e in FACE_EMOJI_ACTIONS]
+        if "neutral" not in clean_exprs:
+            clean_exprs.insert(0, "neutral")
+
+        sprites_pil: Dict[str, Image.Image] = {}
+        mouth_pil: Dict[str, List[Image.Image]] = {e: [] for e in clean_exprs}
+
+        for expr in clean_exprs:
+            upper_bgr = self._synthesize_expression_frame(portrait_bgr, landmarks, expr)
+            upper_pil = Image.fromarray(cv2.cvtColor(upper_bgr, cv2.COLOR_BGR2RGB))
+            cfg = expr_configs.get(expr, expr_configs["neutral"])
+            sprite_im = self._morph_mouth_image(
+                upper_pil, corner_dy=cfg["corner_dy"], mouth_gap=cfg["gap"], lm=landmarks
+            )
+            sprites_pil[expr] = sprite_im
+
+            for lvl, lvl_gap in mouth_levels_gap.items():
+                m_im = self._morph_mouth_image(
+                    upper_pil,
+                    corner_dy=cfg["corner_dy"] * 0.7,
+                    mouth_gap=max(cfg["gap"], lvl_gap),
+                    lm=landmarks,
+                )
+                mouth_pil[expr].append(m_im)
+
+        blink_bgr = self._synthesize_expression_frame(portrait_bgr, landmarks, "blink")
+        sprites_pil["blink"] = Image.fromarray(cv2.cvtColor(blink_bgr, cv2.COLOR_BGR2RGB))
+
+        return {
+            "engine": "gagavatar_preview",
+            "portrait_pil": portrait_pil,
+            "sprites_pil": sprites_pil,
+            "mouth_pil": mouth_pil,
+            "landmarks": landmarks,
+            "tracked_feature": None,
         }
 
     # ── Render Animation / Mouth Movement Endpoint ───────────────────────────
@@ -484,6 +777,94 @@ class GAGAvatarService:
             "filename": filename,
             "render_url": f"/api/v1/avatar/{avatar.id}/render-file/{filename}",
         }
+
+    async def probe_remote_service(self, remote_url: str) -> Dict[str, Any]:
+        """Probe health and GPU device details of a remote GAGAvatar microservice."""
+        clean_url = remote_url.strip().rstrip("/")
+        if not clean_url:
+            return {"healthy": False, "error": "رابط السيرفر فارغ."}
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                resp = await client.get(f"{clean_url}/health")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return {"healthy": True, "device": data.get("device", "GPU"), **data}
+                return {"healthy": False, "error": f"HTTP {resp.status_code}"}
+        except Exception as exc:
+            return {"healthy": False, "error": str(exc)}
+
+    async def generate_neural_frames_for_avatar(
+        self,
+        avatar_id: int,
+        db: AsyncSession,
+        user_id: Optional[int] = None,
+    ) -> AvatarProfile:
+        """Run full 3D neural GAGAvatar model on source photo to generate true photorealistic sprites & mouth frames."""
+        avatar = await self._require_avatar(avatar_id, db, user_id=user_id)
+        src_path = Path(avatar.source_photo_path)
+        if not src_path.exists():
+            raise FileNotFoundError(f"Source portrait photo not found: {src_path}")
+        image_bytes = src_path.read_bytes()
+        src_pil = self._decode_image_pil(image_bytes)
+
+        avatar_dir = Path(avatar.avatar_preview_path).parent
+        sprites_dir = avatar_dir / "sprites"
+        mouth_dir = avatar_dir / "mouth"
+        avatar_dir.mkdir(parents=True, exist_ok=True)
+        sprites_dir.mkdir(parents=True, exist_ok=True)
+        mouth_dir.mkdir(parents=True, exist_ok=True)
+
+        expressions_list = list(FACE_EMOJI_ACTIONS.keys())
+        gen_result = await self._run_generation_engine(
+            image_bytes=image_bytes,
+            src_pil=src_pil,
+            style=avatar.style or "realistic",
+            expressions=expressions_list,
+            avatar_key=avatar_dir.name,
+            require_face=True,
+        )
+
+        preview_path = avatar_dir / "preview.png"
+        gen_result["portrait_pil"].save(preview_path, format="PNG")
+
+        expr_files: Dict[str, Any] = {}
+        for expr_key, sprite_pil in (gen_result.get("sprites_pil") or {}).items():
+            fname = f"{expr_key}.png"
+            sprite_pil.save(sprites_dir / fname, format="PNG")
+            expr_files[expr_key] = fname
+
+        mouth_manifest: Dict[str, List[int]] = {}
+        for expr_key, mouth_imgs in (gen_result.get("mouth_pil") or {}).items():
+            levels: List[int] = [0]
+            for lvl_idx, mouth_img in enumerate(mouth_imgs, start=1):
+                mouth_img.save(mouth_dir / f"{expr_key}_{lvl_idx}.png", format="PNG")
+                levels.append(lvl_idx)
+            mouth_manifest[expr_key] = levels
+        if mouth_manifest:
+            expr_files["_mouth"] = mouth_manifest
+
+        tracked_feature = gen_result.get("tracked_feature")
+        if tracked_feature is not None:
+            feat_path = avatar_dir / "tracked_feature.pt"
+            if isinstance(tracked_feature, (bytes, bytearray)):
+                feat_path.write_bytes(bytes(tracked_feature))
+            else:
+                try:
+                    import torch
+                    await asyncio.to_thread(torch.save, tracked_feature, feat_path)
+                except (ImportError, ModuleNotFoundError):
+                    import pickle
+                    await asyncio.to_thread(lambda: feat_path.write_bytes(pickle.dumps(tracked_feature)))
+
+        avatar.sprites_dir = str(sprites_dir)
+        avatar.expressions_json = json.dumps(expr_files)
+        if gen_result.get("landmarks"):
+            avatar.landmarks_json = json.dumps(gen_result["landmarks"])
+        avatar.engine = gen_result.get("engine", "gagavatar")
+        await db.commit()
+        await db.refresh(avatar)
+        logger.info(f"Generated full neural 3D GAGAvatar frames for Avatar id={avatar.id}")
+        return avatar
 
     # ── Review / Approval / Recreation Lifecycle ──────────────────────────────
 
@@ -703,94 +1084,6 @@ class GAGAvatarService:
         await db.commit()
         await db.refresh(avatar)
         logger.info(f"Re-rendered mouth frames for Avatar id={avatar.id}")
-        return avatar
-
-    async def probe_remote_service(self, remote_url: str) -> Dict[str, Any]:
-        """Probe health and GPU device details of a remote GAGAvatar microservice."""
-        clean_url = remote_url.strip().rstrip("/")
-        if not clean_url:
-            return {"healthy": False, "error": "رابط السيرفر فارغ."}
-        try:
-            async with httpx.AsyncClient(timeout=6.0) as client:
-                resp = await client.get(f"{clean_url}/health")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return {"healthy": True, "device": data.get("device", "GPU"), **data}
-                return {"healthy": False, "error": f"HTTP {resp.status_code}"}
-        except Exception as exc:
-            return {"healthy": False, "error": str(exc)}
-
-    async def generate_neural_frames_for_avatar(
-        self,
-        avatar_id: int,
-        db: AsyncSession,
-        user_id: Optional[int] = None,
-    ) -> AvatarProfile:
-        """Run full 3D neural GAGAvatar model on source photo to generate true photorealistic sprites & mouth frames."""
-        avatar = await self._require_avatar(avatar_id, db, user_id=user_id)
-        src_path = Path(avatar.source_photo_path)
-        if not src_path.exists():
-            raise FileNotFoundError(f"Source portrait photo not found: {src_path}")
-        image_bytes = src_path.read_bytes()
-        src_pil = self._decode_image_pil(image_bytes)
-
-        avatar_dir = Path(avatar.avatar_preview_path).parent
-        sprites_dir = avatar_dir / "sprites"
-        mouth_dir = avatar_dir / "mouth"
-        avatar_dir.mkdir(parents=True, exist_ok=True)
-        sprites_dir.mkdir(parents=True, exist_ok=True)
-        mouth_dir.mkdir(parents=True, exist_ok=True)
-
-        expressions_list = list(FACE_EMOJI_ACTIONS.keys())
-        gen_result = await self._run_generation_engine(
-            image_bytes=image_bytes,
-            src_pil=src_pil,
-            style=avatar.style or "realistic",
-            expressions=expressions_list,
-            avatar_key=avatar_dir.name,
-            require_face=True,
-        )
-
-        preview_path = avatar_dir / "preview.png"
-        gen_result["portrait_pil"].save(preview_path, format="PNG")
-
-        expr_files: Dict[str, Any] = {}
-        for expr_key, sprite_pil in (gen_result.get("sprites_pil") or {}).items():
-            fname = f"{expr_key}.png"
-            sprite_pil.save(sprites_dir / fname, format="PNG")
-            expr_files[expr_key] = fname
-
-        mouth_manifest: Dict[str, List[int]] = {}
-        for expr_key, mouth_imgs in (gen_result.get("mouth_pil") or {}).items():
-            levels: List[int] = [0]
-            for lvl_idx, mouth_img in enumerate(mouth_imgs, start=1):
-                mouth_img.save(mouth_dir / f"{expr_key}_{lvl_idx}.png", format="PNG")
-                levels.append(lvl_idx)
-            mouth_manifest[expr_key] = levels
-        if mouth_manifest:
-            expr_files["_mouth"] = mouth_manifest
-
-        tracked_feature = gen_result.get("tracked_feature")
-        if tracked_feature is not None:
-            feat_path = avatar_dir / "tracked_feature.pt"
-            if isinstance(tracked_feature, (bytes, bytearray)):
-                feat_path.write_bytes(bytes(tracked_feature))
-            else:
-                try:
-                    import torch
-                    await asyncio.to_thread(torch.save, tracked_feature, feat_path)
-                except (ImportError, ModuleNotFoundError):
-                    import pickle
-                    await asyncio.to_thread(lambda: feat_path.write_bytes(pickle.dumps(tracked_feature)))
-
-        avatar.sprites_dir = str(sprites_dir)
-        avatar.expressions_json = json.dumps(expr_files)
-        if gen_result.get("landmarks"):
-            avatar.landmarks_json = json.dumps(gen_result["landmarks"])
-        avatar.engine = gen_result.get("engine", "gagavatar")
-        await db.commit()
-        await db.refresh(avatar)
-        logger.info(f"Generated full neural 3D GAGAvatar frames for Avatar id={avatar.id}")
         return avatar
 
     async def get_active_avatar(

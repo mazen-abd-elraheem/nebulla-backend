@@ -151,8 +151,8 @@ class Settings(BaseSettings):
     GAGAVATAR_MODEL_PATH: str = "assets/GAGAvatar"
     GAGAVATAR_SERVICE_URL: str | None = None
     GAGAVATAR_DEVICE: str = "auto"  # "auto" | "cuda" | "cpu"
-    AVATAR_ALLOW_LOCAL_FALLBACK: bool = False
-    GAGAVATAR_STRICT_ONLY: bool = True
+    AVATAR_ALLOW_LOCAL_FALLBACK: bool = True
+    GAGAVATAR_STRICT_ONLY: bool = False
     AVATAR_OUTPUT_DIR: str = "data/avatars"
 
     # ── Logging ────────────────────────────────────────────────────────────
