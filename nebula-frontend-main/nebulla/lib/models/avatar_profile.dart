@@ -108,6 +108,57 @@ class AvatarProfileModel {
     return withCacheBust(sprites[emotion] ?? sprites['neutral'] ?? previewUrl);
   }
 
+  factory AvatarProfileModel.fromUrl(String url, {String name = 'المستخدم'}) {
+    final match = RegExp(r'/avatar/(\d+)').firstMatch(url);
+    final id = match != null ? int.tryParse(match.group(1)!) ?? 1 : 1;
+    final prefix = '/api/v1/avatar/$id';
+
+    const expressions = [
+      'neutral',
+      'happy',
+      'laugh',
+      'love',
+      'sad',
+      'surprised',
+      'angry',
+      'thinking',
+      'wink',
+      'sleepy',
+      'wave',
+      'like',
+    ];
+
+    final sprites = <String, String>{
+      'blink': '$prefix/sprite/blink',
+    };
+    final mouthFrames = <String, List<String>>{};
+
+    for (final exp in expressions) {
+      sprites[exp] = '$prefix/sprite/$exp';
+      mouthFrames[exp] = [
+        '$prefix/mouth/$exp/0',
+        '$prefix/mouth/$exp/1',
+        '$prefix/mouth/$exp/2',
+        '$prefix/mouth/$exp/3',
+      ];
+    }
+
+    return AvatarProfileModel(
+      id: id,
+      name: name,
+      engine: 'local_face_3d',
+      style: 'realistic',
+      status: 'approved',
+      isActive: true,
+      attemptNumber: 1,
+      previewUrl: url.isNotEmpty ? url : '$prefix/preview',
+      sourcePhotoUrl: '$prefix/source',
+      sprites: sprites,
+      mouthFrames: mouthFrames,
+      blinkSpriteUrl: '$prefix/sprite/blink',
+    );
+  }
+
   factory AvatarProfileModel.fromJson(Map<String, dynamic> json) {
     final rawSprites = json['sprites'];
     final sprites = <String, String>{};

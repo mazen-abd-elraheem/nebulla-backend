@@ -61,7 +61,8 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     super.initState();
     _initControllers();
     _scheduleNextBlink();
-    unawaited(_audioService.loadActiveAvatar());
+    _audioService.initializeFromStorage();
+    unawaited(_audioService.loadActiveAvatar(force: true));
   }
 
   void _initControllers() {
@@ -214,7 +215,10 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
       builder: (context, constraints) {
         final availableW = widget.width ?? constraints.maxWidth;
         final availableH = widget.height ?? constraints.maxHeight;
-        final portraitW = widget.fullScreen ? availableW : min(availableW, 420.0);
+        final isWide = availableW > 540;
+        final portraitW = widget.fullScreen
+            ? (isWide ? min(availableW, 500.0) : availableW)
+            : min(availableW, 420.0);
         final portraitH = availableH;
 
         return GestureDetector(
@@ -351,7 +355,22 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   Widget _buildNoAvatarPlaceholder(Color auraColor) {
-    // 1. If user previously uploaded a personal photo or avatar, render it seamlessly
+    // 1. If backend avatar URL exists, render it as priority
+    final userAvatarUrl = StorageService.instance.getUserAvatarUrl();
+    if (userAvatarUrl != null && userAvatarUrl.isNotEmpty) {
+      final resolved = ApiService.instance.resolveUrl(userAvatarUrl);
+      return ColoredBox(
+        color: Colors.white,
+        child: Image.network(
+          resolved,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (_, _, _) => _buildAssetCyborg(),
+        ),
+      );
+    }
+
+    // 2. If user previously uploaded a local photo, render it as fallback
     final userAvatarPath = StorageService.instance.getUserAvatarPath();
     if (userAvatarPath != null && File(userAvatarPath).existsSync()) {
       return ColoredBox(
@@ -365,21 +384,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
       );
     }
 
-    final userAvatarUrl = StorageService.instance.getUserAvatarUrl();
-    if (userAvatarUrl != null && userAvatarUrl.isNotEmpty) {
-      final resolved = ApiService.instance.resolveUrl(userAvatarUrl);
-      return ColoredBox(
-        color: Colors.white,
-        child: Image.network(
-          resolved,
-          fit: BoxFit.cover,
-          alignment: Alignment.topCenter,
-          errorBuilder: (_, _, _) => _buildAssetCyborg(),
-        ),
-      );
-    }
-
-    // 2. Default initial clean cyborg design matching the reference mockup
+    // 3. Default initial clean cyborg design matching the reference mockup
     return _buildAssetCyborg();
   }
 

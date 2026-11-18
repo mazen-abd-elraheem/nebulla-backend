@@ -48,12 +48,26 @@ class AvatarAudioService {
     }
   }
 
+  /// Initialize from local cache immediately so avatar renders from frame 0
+  void initializeFromStorage() {
+    final storedUrl = StorageService.instance.getUserAvatarUrl();
+    if (storedUrl != null && storedUrl.isNotEmpty && activeAvatar.value == null) {
+      setActiveAvatar(AvatarProfileModel.fromUrl(storedUrl));
+    }
+  }
+
   /// Fetch active approved avatar from backend on startup / after login.
   Future<void> loadActiveAvatar({bool force = false, int? personalityId}) async {
     final currentToken = StorageService.instance.getToken();
-    if (_avatarLoadedOnce && !force && _lastAvatarToken == currentToken) return;
+    if (_avatarLoadedOnce && !force && _lastAvatarToken == currentToken && activeAvatar.value != null) {
+      return;
+    }
     _avatarLoadedOnce = true;
     _lastAvatarToken = currentToken;
+
+    // Immediately restore stored backend avatar while network request executes
+    initializeFromStorage();
+
     try {
       final params = <String, dynamic>{};
       if (personalityId != null) params['personality_id'] = personalityId;
@@ -61,12 +75,25 @@ class AvatarAudioService {
       if (data is Map<String, dynamic> &&
           data['has_avatar'] == true &&
           data['avatar'] is Map<String, dynamic>) {
-        setActiveAvatar(AvatarProfileModel.fromJson(data['avatar'] as Map<String, dynamic>));
+        final profile = AvatarProfileModel.fromJson(data['avatar'] as Map<String, dynamic>);
+        setActiveAvatar(profile);
+        if (profile.previewUrl.isNotEmpty) {
+          unawaited(StorageService.instance.setUserAvatarUrl(profile.previewUrl));
+        }
       } else {
-        setActiveAvatar(null);
+        final storedUrl = StorageService.instance.getUserAvatarUrl();
+        if (storedUrl != null && storedUrl.isNotEmpty) {
+          setActiveAvatar(AvatarProfileModel.fromUrl(storedUrl));
+        } else {
+          setActiveAvatar(null);
+        }
       }
     } catch (e) {
       debugPrint('AvatarAudioService loadActiveAvatar notice: $e');
+      final storedUrl = StorageService.instance.getUserAvatarUrl();
+      if (storedUrl != null && storedUrl.isNotEmpty && activeAvatar.value == null) {
+        setActiveAvatar(AvatarProfileModel.fromUrl(storedUrl));
+      }
     }
   }
 

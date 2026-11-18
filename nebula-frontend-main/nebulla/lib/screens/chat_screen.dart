@@ -1045,24 +1045,24 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Builds the circular digital avatar (using user uploaded photo if available)
   Widget _buildCyborgAvatarCircle({double radius = 18}) {
-    final avatarPath = StorageService.instance.getUserAvatarPath();
     final avatarUrl = StorageService.instance.getUserAvatarUrl();
+    final avatarPath = StorageService.instance.getUserAvatarPath();
 
     Widget imageWidget;
-    if (avatarPath != null && File(avatarPath).existsSync()) {
-      imageWidget = Image.file(
-        File(avatarPath),
-        fit: BoxFit.cover,
-        alignment: Alignment.topCenter,
-        errorBuilder: (context, error, stackTrace) => _defaultAvatarFallback(radius),
-      );
-    } else if (avatarUrl != null && avatarUrl.isNotEmpty) {
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
       final base = StorageService.instance.getBaseUrl();
       final fullUrl = avatarUrl.startsWith('http') ? avatarUrl : '$base$avatarUrl';
       imageWidget = Image.network(
         fullUrl,
         fit: BoxFit.cover,
-        alignment: Alignment.topCenter,
+        alignment: Alignment.center,
+        errorBuilder: (context, error, stackTrace) => _defaultAvatarFallback(radius),
+      );
+    } else if (avatarPath != null && File(avatarPath).existsSync()) {
+      imageWidget = Image.file(
+        File(avatarPath),
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => _defaultAvatarFallback(radius),
       );
     } else {

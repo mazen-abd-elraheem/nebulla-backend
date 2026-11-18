@@ -63,23 +63,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildProfileAvatar() {
-    final avatarPath = StorageService.instance.getUserAvatarPath();
     final avatarUrl = StorageService.instance.getUserAvatarUrl();
+    final avatarPath = StorageService.instance.getUserAvatarPath();
 
-    if (avatarPath != null && File(avatarPath).existsSync()) {
-      return Image.file(
-        File(avatarPath),
-        fit: BoxFit.cover,
-        alignment: Alignment.topCenter,
-      );
-    } else if (avatarUrl != null && avatarUrl.isNotEmpty) {
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
       final base = StorageService.instance.getBaseUrl();
       final fullUrl = avatarUrl.startsWith('http') ? avatarUrl : '$base$avatarUrl';
       return Image.network(
         fullUrl,
         fit: BoxFit.cover,
-        alignment: Alignment.topCenter,
+        alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => _profileInitialFallback(),
+      );
+    } else if (avatarPath != null && File(avatarPath).existsSync()) {
+      return Image.file(
+        File(avatarPath),
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        errorBuilder: (_, _, _) => _profileInitialFallback(),
       );
     } else {
       return _profileInitialFallback();
