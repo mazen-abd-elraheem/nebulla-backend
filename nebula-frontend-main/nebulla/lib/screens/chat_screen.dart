@@ -714,6 +714,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(width: 6),
 
+            // 3-dots Menu placed directly beside the session button as requested
             // 3-dots Menu: جلسة جديدة + مسح الرسائل
             PopupMenuButton<String>(
               icon: Container(
@@ -735,7 +736,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 borderRadius: BorderRadius.circular(16),
               ),
               onSelected: (val) {
+                if (val == 'switch_persona') _showPersonalitySwitchDialog();
                 if (val == 'new') _startNewSession();
+                if (val == 'clear') setState(() => _messages.clear());
                 if (val == 'clear') {
                   setState(() {
                     _messages.clear();
@@ -750,6 +753,28 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
               },
               itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'switch_persona',
+                  child: Directionality(
+                    textDirection: LocaleService.instance.textDirection,
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.switch_account_rounded,
+                          size: 18,
+                          color: Color(0xFF00B4D8),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          LocaleService.instance.isArabic
+                              ? 'تبديل الشخصية'
+                              : 'Switch Personality',
+                          style: const TextStyle(fontFamily: 'Cairo'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 PopupMenuItem(
                   value: 'new',
                   child: Directionality(
@@ -878,6 +903,23 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(width: 6),
+
+            // Filter icon button
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Icon(
+                Icons.tune_rounded,
+                size: 16,
+                color: Color(0xFF475569),
+              ),
             ),
           ],
         ),
