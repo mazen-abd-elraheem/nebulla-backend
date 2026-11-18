@@ -68,7 +68,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     _breathingController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4200),
-    )..repeat(reverse: true);
+    );
 
     _breathingAnimation ??= Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
@@ -80,12 +80,12 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     _auraPulseController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
-    )..repeat(reverse: true);
+    );
 
     _headMotionController ??= AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 6000),
-    )..repeat(reverse: true);
+    );
 
     _blinkController ??= AnimationController(
       vsync: this,
@@ -229,12 +229,7 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
           onDoubleTap: widget.onAvatarDoubleTapped,
           onLongPress: widget.onAvatarLongPress,
           child: AnimatedBuilder(
-            animation: Listenable.merge([
-              _breathingAnimation!,
-              _auraPulseController!,
-              _headMotionController!,
-              _blinkAnimation!,
-            ]),
+            animation: _blinkAnimation!,
             builder: (context, _) {
               String? frameUrl;
               if (hasGagAvatar) {
@@ -251,16 +246,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                 frameUrl = ApiService.instance.resolveUrl(relPath);
               }
 
-              final headT = (_headMotionController?.value ?? 0.5) * 2 * pi;
-              final breathVal = _breathingAnimation?.value ?? 0.0;
-              final speakBoost = isSpeaking ? (1.0 + amplitude * 0.85) : 1.0;
-              final yaw = sin(headT * 0.7) * 0.045 * speakBoost;
-              final pitch = (cos(headT * 0.9) * 0.025) +
-                  (isSpeaking ? sin(headT * 4.2) * (0.018 + amplitude * 0.022) : 0.0);
-              final roll = sin(headT * 0.5) * 0.018;
-              final floatY = (breathVal - 0.5) * -5.0 -
-                  (isSpeaking ? amplitude * 3.5 : 0.0);
-
               return Center(
                 child: SizedBox(
                   width: portraitW,
@@ -269,61 +254,44 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                     alignment: Alignment.center,
                     clipBehavior: Clip.none,
                     children: [
-                      _buildAmbientGlow(auraColor, isSpeaking, amplitude, portraitW, portraitH),
-                      Transform.translate(
-                        offset: Offset(0, floatY),
-                        child: Transform(
-                          alignment: const Alignment(0.0, -0.12), // Pivot on neck base
-                          transform: Matrix4.identity()
-                            ..setEntry(3, 2, 0.0012)
-                            ..rotateY(yaw)
-                            ..rotateX(pitch)
-                            ..rotateZ(roll),
-                          child: ClipRRect(
-                            borderRadius: widget.fullScreen
-                                ? BorderRadius.zero
-                                : BorderRadius.circular(24),
-                            child: SizedBox(
-                              width: portraitW,
-                              height: portraitH,
-                              child: Transform.scale(
-                                scale: 1.02 +
-                                    (0.018 * breathVal) +
-                                    (isSpeaking ? amplitude * 0.022 : 0.0),
-                                alignment: const Alignment(0.0, 0.1),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    if (frameUrl != null)
-                                      Image.network(
-                                        frameUrl,
-                                        fit: BoxFit.cover,
-                                        alignment: Alignment.center,
-                                        gaplessPlayback: true,
-                                        errorBuilder: (_, _, _) =>
-                                            _buildNoAvatarPlaceholder(auraColor),
-                                      )
-                                    else
+                      // Completely locked, stationary avatar portrait and background
+                      ClipRRect(
+                        borderRadius: widget.fullScreen
+                            ? BorderRadius.zero
+                            : BorderRadius.circular(24),
+                        child: SizedBox(
+                          width: portraitW,
+                          height: portraitH,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (frameUrl != null)
+                                Image.network(
+                                  frameUrl,
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.center,
+                                  gaplessPlayback: true,
+                                  errorBuilder: (_, _, _) =>
                                       _buildNoAvatarPlaceholder(auraColor),
-                                    if (widget.fullScreen)
-                                      DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topCenter,
-                                            end: Alignment.bottomCenter,
-                                            colors: [
-                                              Colors.transparent,
-                                              Colors.transparent,
-                                              Colors.white.withValues(alpha: 0.20),
-                                            ],
-                                            stops: const [0.0, 0.75, 1.0],
-                                          ),
-                                        ),
-                                      ),
-                                  ],
+                                )
+                              else
+                                _buildNoAvatarPlaceholder(auraColor),
+                              if (widget.fullScreen)
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        Colors.transparent,
+                                        Colors.white.withValues(alpha: 0.20),
+                                      ],
+                                      stops: const [0.0, 0.75, 1.0],
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
+                            ],
                           ),
                         ),
                       ),
@@ -340,27 +308,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
           ),
         );
       },
-    );
-  }
-
-  Widget _buildAmbientGlow(
-      Color color, bool isSpeaking, double amplitude, double w, double h) {
-    final pulseVal = _auraPulseController?.value ?? 0.5;
-    final pulse = isSpeaking ? 0.32 + (amplitude * 0.22) : 0.10 + (pulseVal * 0.06);
-
-    return Container(
-      width: w * 0.82,
-      height: h * 0.62,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: pulse),
-            blurRadius: isSpeaking ? 64 : 40,
-            spreadRadius: isSpeaking ? 16 : 6,
-          ),
-        ],
-      ),
     );
   }
 
