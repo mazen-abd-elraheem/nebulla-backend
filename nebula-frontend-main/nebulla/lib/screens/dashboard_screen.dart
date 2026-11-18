@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
-import '../models/avatar_profile.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/locale_service.dart';
 import '../services/nebula_repository.dart';
 import '../services/storage_service.dart';
-import '../screens/login_screen.dart';
 import '../utils/avatar_photo_picker.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/interactive_animated_avatar.dart';
 import '../widgets/nebula_side_menu.dart';
+import 'main_shell.dart';
 
-/// Home screen centered solely around the user's xg-chu/GAGAvatar 3D character.
-/// Users upload a portrait photo on Home -> transformed in backend via GAGAvatar ->
-/// previewed, tested with face emojis + cloned voice, approved (or regenerated),
-/// and set as the app's main speaking character.
+/// Clean Home Screen matching user reference design 100%:
+/// - Full-height centered avatar on a clean light background.
+/// - Top bar with circular Menu button (left) and Notification Bell button (right).
+/// - Bottom navigation handled by GlobalNebulaFooter in MainShell.
+/// - Direct backend binding: when user enters/uploads their photo, it is converted
+///   to a speaking 3D avatar with 13 FLAME / local_face_animator expressions & 36 visemes.
+/// - LLM dialogue synchronization: avatar reacts live to dialogue emotion, face emojis & speech.
 class DashboardScreen extends StatefulWidget {
   final ValueChanged<int>? onNavigate;
 
@@ -24,25 +25,16 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen>
-    with SingleTickerProviderStateMixin {
+class _DashboardScreenState extends State<DashboardScreen> {
   final _audioService = AvatarAudioService.instance;
   final _repo = NebulaRepository.instance;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  AvatarProfileModel? _draftAvatar;
-  String _selectedStyle = 'realistic';
   bool _isGenerating = false;
-  bool _isApproving = false;
-  late final AnimationController _skeletonController;
 
   @override
   void initState() {
     super.initState();
-    _skeletonController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..repeat(reverse: true);
     final user = StorageService.instance.getUser();
     if (user != null && user.fullName.trim().isNotEmpty) {
       _audioService.setPersonaName(user.fullName.trim());
@@ -50,95 +42,31 @@ class _DashboardScreenState extends State<DashboardScreen>
     _audioService.loadActiveAvatar(force: true);
   }
 
-  @override
-  void dispose() {
-    _skeletonController.dispose();
-    super.dispose();
-  }
-
   void _openMenu() {
-    NebulaSideMenu.show(
-      context,
-      activeIndex: 2,
-      onNavigate: (idx) {
-        if (widget.onNavigate != null && idx >= 0) {
-          widget.onNavigate!(idx);
-        }
-      },
-    );
+    try {
+      MainShell.openSideMenu(context);
+    } catch (_) {
+      NebulaSideMenu.show(
+        context,
+        activeIndex: 2,
+        onNavigate: (idx) {
+          if (widget.onNavigate != null && idx >= 0) {
+            widget.onNavigate!(idx);
+          }
+        },
+      );
+    }
   }
 
-  Future<void> _handleLogout() async {
-    final t = LocaleService.instance.translate;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: LocaleService.instance.textDirection,
-        child: AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(
-            t('logout'),
-            style: const TextStyle(
-              fontFamily: 'Cairo',
-              fontWeight: FontWeight.w800,
-              fontSize: 18,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          content: Text(
-            LocaleService.instance.isArabic
-                ? 'هل أنت متأكد من تسجيل الخروج من حسابك؟'
-                : 'Are you sure you want to sign out from your account?',
-            style: const TextStyle(
-              fontFamily: 'Cairo',
-              fontSize: 14,
-              color: Color(0xFF475569),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(
-                t('cancel'),
-                style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  color: Color(0xFF64748B),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F172A),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                elevation: 0,
-              ),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(
-                t('logout'),
-                style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFFEF4444),
-                ),
-              ),
-            ),
-          ],
-        ),
+  void _handleNotificationsTap() {
+    final t = LocaleService.instance.tr;
+    showSuccessSnackbar(
+      context,
+      t(
+        'لا توجد تنبيهات جديدة، الأفاتار جاهز للتواصل والتفاعل معك.',
+        'No new notifications. The avatar is ready to interact with you.',
       ),
     );
-
-    if (confirmed == true && mounted) {
-      await StorageService.instance.clearToken();
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (route) => false,
-        );
-      }
-    }
   }
 
   Future<void> _triggerAvatarGreeting() async {
@@ -191,646 +119,378 @@ class _DashboardScreenState extends State<DashboardScreen>
       setState(() => _isGenerating = true);
 
       try {
-        final draft = await _repo.createAvatarFromPhoto(
-          photoFile: file,
-          name: _audioService.activePersonaName.value,
-          personalityId: _audioService.activePersonalityId.value,
-          style: _selectedStyle,
-        );
-        if (!mounted) return;
-        setState(() {
-          _draftAvatar = draft;
-          _isGenerating = false;
-        });
-        showSuccessSnackbar(
-          context,
-          'تم تحويل صورتك إلى أفاتار ثلاثي الأبعاد! جرّب التعبيرات واعتمدها.',
-        );
-        return;
-      } catch (_) {
-        // Fallback to unified backend user avatar pipeline (creates, activates & binds to user persona)
         await _repo.generateAvatar(file);
         if (!mounted) return;
-        setState(() {
-          _draftAvatar = null;
-          _isGenerating = false;
-        });
+        setState(() => _isGenerating = false);
         showSuccessSnackbar(
           context,
-          'تم تحويل صورتك لأفاتار متحرك وتفعيلها كشخصيتك بنجاح ✨',
+          LocaleService.instance.tr(
+            'تم تحويل صورتك إلى أفاتار ناطق وتفعيله بنجاح ✨',
+            'Your photo was transformed into your speaking avatar ✨',
+          ),
+        );
+        _triggerAvatarGreeting();
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _isGenerating = false);
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تعذر تحويل الصورة إلى أفاتار حالياً، يرجى المحاولة مرة أخرى.',
+            'Could not transform photo into avatar right now. Please try again.',
+          ),
         );
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isGenerating = false);
-      showErrorSnackbar(context, 'تعذر تحويل الصورة: $e');
     }
   }
 
-  Future<void> _recreateDraft({bool pickNewPhoto = false}) async {
-    final target = _draftAvatar ?? _audioService.activeAvatar.value;
-    if (target == null) {
-      await _uploadAndTransform();
-      return;
-    }
-
-    if (pickNewPhoto) {
-      await _uploadAndTransform();
-      return;
-    }
-
-    setState(() => _isGenerating = true);
-    try {
-      final nextStyle =
-          _selectedStyle == 'realistic' ? 'studio_3d' : 'realistic';
-      _selectedStyle = nextStyle;
-      final nextDraft = await _repo.recreateAvatar(
-        target.id,
-        style: nextStyle,
-        reason: 'المستخدم طلب نسخة GAGAvatar جديدة من الرئيسية',
-      );
-      if (!mounted) return;
-      setState(() {
-        _draftAvatar = nextDraft;
-        _isGenerating = false;
-      });
-      showSuccessSnackbar(
-        context,
-        'تم إنشاء نسخة GAGAvatar جديدة (#${nextDraft.attemptNumber}) للمراجعة.',
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isGenerating = false);
-      showErrorSnackbar(context, 'تعذر إعادة إنشاء الأفاتار: $e');
-    }
-  }
-
-  Future<void> _approveDraft() async {
-    final draft = _draftAvatar;
-    if (draft == null) return;
-
-    setState(() => _isApproving = true);
-    try {
-      final approved = await _repo.approveAvatar(draft.id);
-      _audioService.setActiveAvatar(approved);
-      if (!mounted) return;
-      setState(() {
-        _draftAvatar = null;
-        _isApproving = false;
-      });
-      showSuccessSnackbar(
-        context,
-        LocaleService.instance.tr(
-          'تم اعتماد الأفاتار كشخصيتك الرئيسية في التطبيق!',
-          'Avatar approved as your main character!',
-        ),
-      );
-      _triggerAvatarGreeting();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isApproving = false);
-      showErrorSnackbar(
-        context,
-        LocaleService.instance.tr('تعذر اعتماد الأفاتار: $e', 'Could not approve avatar: $e'),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: const Color(0xFF090D16),
-      drawer: Drawer(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: NebulaSideMenu(
-          activeIndex: 2,
-          onNavigate: (idx) {
-            _scaffoldKey.currentState?.closeDrawer();
-            if (widget.onNavigate != null && idx >= 0) {
-              widget.onNavigate!(idx);
-            }
-          },
-          onClose: () => _scaffoldKey.currentState?.closeDrawer(),
-        ),
+  void _showAvatarOptionsSheet() {
+    final t = LocaleService.instance.tr;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      body: ValueListenableBuilder<AvatarProfileModel?>(
-        valueListenable: _audioService.activeAvatar,
-        builder: (context, activeAvatar, _) {
-          final displayAvatar = _draftAvatar ?? activeAvatar;
-          final hasActive = activeAvatar != null && activeAvatar.isGagAvatar;
-          final isReviewingDraft =
-              _draftAvatar != null && !_draftAvatar!.isActive;
-
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              // 1. Subtle radial ambient backdrop behind the 3D character
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(0, -0.25),
-                    radius: 1.1,
-                    colors: [
-                      const Color(0xFF6366F1).withValues(alpha: 0.14),
-                      const Color(0xFF0F172A),
-                      const Color(0xFF090D16),
-                    ],
+      builder: (ctx) => Directionality(
+        textDirection: LocaleService.instance.textDirection,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-              ),
-
-              // 2. Full-screen GAGAvatar character stage
-              Positioned.fill(
-                child: InteractiveAnimatedAvatar(
-                  fullScreen: true,
-                  overrideAvatar: displayAvatar,
-                  onAvatarTapped:
-                      displayAvatar != null ? _triggerAvatarGreeting : () => _uploadAndTransform(),
+                const SizedBox(height: 16),
+                Text(
+                  t('تخصيص الأفاتار الشخصي', 'Customize Personal Avatar'),
+                  style: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
                 ),
-              ),
-
-              // 3. Top Glass Header Bar
-              SafeArea(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    child: Directionality(
-                      textDirection: TextDirection.ltr,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _topIconBtn(
-                            icon: Icons.menu_rounded,
-                            onTap: _openMenu,
-                            tooltip: 'القائمة',
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0F172A).withValues(alpha: 0.85),
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.08),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: hasActive
-                                        ? AppColors.success
-                                        : (isReviewingDraft
-                                            ? AppColors.warning
-                                            : AppColors.teal),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  isReviewingDraft
-                                      ? LocaleService.instance.tr(
-                                          'معاينة الأفاتار #${_draftAvatar!.attemptNumber}',
-                                          'Avatar Preview #${_draftAvatar!.attemptNumber}',
-                                        )
-                                      : (hasActive
-                                          ? LocaleService.instance.tr(
-                                              'الأفاتار التفاعلي • الشخصية الرئيسية',
-                                              '3D Avatar • Main Character',
-                                            )
-                                          : LocaleService.instance.tr(
-                                              'استوديو الأفاتار',
-                                              'Avatar Studio',
-                                            )),
-                                  style: const TextStyle(
-                                    fontFamily: 'Cairo',
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _topIconBtn(
-                                icon: Icons.add_a_photo_rounded,
-                                onTap: _isGenerating ? null : () => _uploadAndTransform(),
-                                tooltip: 'رفع صورة جديدة',
-                              ),
-                              const SizedBox(width: 8),
-                              _topIconBtn(
-                                icon: Icons.notifications_none_rounded,
-                                onTap: () {
-                                  showSuccessSnackbar(
-                                    context,
-                                    hasActive
-                                        ? 'أفاتار GAGAvatar نشط ومرتبط بالصوت المستنسخ وتعبيرات الإيموجي.'
-                                        : 'ارفع صورتك الآن لبناء شخصيتك بنموذج GAGAvatar.',
-                                  );
-                                },
-                                tooltip: 'الحالة',
-                              ),
-                              const SizedBox(width: 8),
-                              _topIconBtn(
-                                icon: Icons.logout_rounded,
-                                onTap: _handleLogout,
-                                tooltip: 'تسجيل الخروج',
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                const SizedBox(height: 6),
+                Text(
+                  t(
+                    'ارفع صورتك وسيقوم النظام بتحويلها لأفاتار ناطق يتفاعل مع الحوار',
+                    'Upload your photo and it will be converted into a speaking avatar that reacts to dialogue',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 12.5,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFEFF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.camera_alt_rounded,
+                      color: Color(0xFF00B4D8),
                     ),
                   ),
-                ),
-              ),
-
-              // 4. Bottom GAGAvatar Studio / Review / Expression Dock (clears GlobalNebulaFooter)
-              SafeArea(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 540),
-                      child: _buildBottomDock(
-                        hasActive: hasActive,
-                        isReviewingDraft: isReviewingDraft,
-                      ),
+                  title: Text(
+                    t('التقاط بالكاميرا', 'Take Photo with Camera'),
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Color(0xFF0F172A),
                     ),
                   ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _uploadAndTransform(preferCamera: true);
+                  },
                 ),
-              ),
-            ],
-          );
-        },
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.photo_library_rounded,
+                      color: Color(0xFF3B82F6),
+                    ),
+                  ),
+                  title: Text(
+                    t('اختيار من المعرض', 'Choose from Gallery'),
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _uploadAndTransform(preferCamera: false);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _topIconBtn({
+  void _onAvatarTapped() {
+    final avatar = _audioService.activeAvatar.value;
+    if (avatar != null && avatar.isGagAvatar) {
+      _triggerAvatarGreeting();
+    } else {
+      _showFirstTimeOrGreetingDialog();
+    }
+  }
+
+  void _showFirstTimeOrGreetingDialog() {
+    final t = LocaleService.instance.tr;
+    showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: LocaleService.instance.textDirection,
+        child: AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(
+                Icons.face_retouching_natural_rounded,
+                color: Color(0xFF00B4D8),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                t('الأفاتار الذكي', 'Smart Avatar'),
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontWeight: FontWeight.w800,
+                  fontSize: 17,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            t(
+              'يمكنك التحدث مباشرة مع المساعد، أو تحويل صورتك الشخصية لتصبح أنت الأفاتار الناطق المتفاعل!',
+              'You can speak directly with the assistant, or convert your own photo into the animated speaking avatar!',
+            ),
+            style: const TextStyle(
+              fontFamily: 'Cairo',
+              fontSize: 13.5,
+              color: Color(0xFF475569),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _triggerAvatarGreeting();
+              },
+              child: Text(
+                t('تحدث الآن 💬', 'Speak Now 💬'),
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF00B4D8),
+                ),
+              ),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F172A),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _showAvatarOptionsSheet();
+              },
+              icon: const Icon(Icons.add_a_photo_rounded, size: 16),
+              label: Text(
+                t('تحويل صورتي 📸', 'Transform My Photo 📸'),
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _topCircleBtn({
     required IconData icon,
     required VoidCallback? onTap,
     required String tooltip,
   }) {
     return Tooltip(
       message: tooltip,
-      child: Material(
-        color: const Color(0xFF0F172A).withValues(alpha: 0.85),
-        shape: CircleBorder(
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.90),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.black.withValues(alpha: 0.08),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, color: AppColors.textPrimary, size: 22),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: Center(
+              child: Icon(
+                icon,
+                color: const Color(0xFF0F172A),
+                size: 22,
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildBottomDock({
-    required bool hasActive,
-    required bool isReviewingDraft,
-  }) {
-    if (_isGenerating) {
-      return AnimatedBuilder(
-        animation: _skeletonController,
-        builder: (context, _) {
-          final pulse = 0.35 + (_skeletonController.value * 0.45);
-          return _dockContainer(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.auto_awesome_rounded,
-                      color: AppColors.teal.withValues(alpha: pulse + 0.2),
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'جاري تتبع الملامح وبناء الشخصية بـ GAGAvatar...',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: Colors.white,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 1. Full-screen Interactive Avatar Stage
+          Positioned.fill(
+            child: InteractiveAnimatedAvatar(
+              fullScreen: true,
+              onAvatarTapped: _onAvatarTapped,
+              onAvatarDoubleTapped: _showAvatarOptionsSheet,
+            ),
+          ),
+
+          // 2. Top bar matching user reference image exactly
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Circular Menu Button (Left)
+                      _topCircleBtn(
+                        icon: Icons.menu_rounded,
+                        onTap: _openMenu,
+                        tooltip: LocaleService.instance.tr('القائمة', 'Menu'),
                       ),
-                    ),
-                  ],
+
+                      // Circular Notification Bell Button (Right)
+                      _topCircleBtn(
+                        icon: Icons.notifications_none_rounded,
+                        onTap: _handleNotificationsTap,
+                        tooltip:
+                            LocaleService.instance.tr('الإشعارات', 'Notifications'),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+
+          // 3. Elegant Loading Overlay during photo transformation
+          if (_isGenerating)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.35),
+                child: Center(
                   child: Container(
-                    height: 10,
-                    color: const Color(0xFF1E293B),
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: 0.35 + (_skeletonController.value * 0.55),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.teal.withValues(alpha: 0.6),
-                              const Color(0xFF818CF8),
-                            ],
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 20,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(
+                          strokeWidth: 3,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Color(0xFF00B4D8)),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          LocaleService.instance.tr(
+                            'جاري تحويل صورتك إلى أفاتار ناطق...',
+                            'Transforming photo to animated avatar...',
+                          ),
+                          style: const TextStyle(
+                            fontFamily: 'Cairo',
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Color(0xFF0F172A),
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'تجهيز التعبيرات الـ 12 وحركات الفم الثلاثية الأبعاد...',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    }
-
-    if (isReviewingDraft) {
-      return _dockContainer(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.verified_user_outlined, color: AppColors.teal, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    LocaleService.instance.tr(
-                      'راجع الأفاتار (#${_draftAvatar!.attemptNumber}) قبل الاعتماد',
-                      'Review Avatar (#${_draftAvatar!.attemptNumber}) before approving',
-                    ),
-                    style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _recreateDraft(),
-                    icon: const Icon(Icons.refresh_rounded, size: 17, color: AppColors.warning),
-                    label: const Text(
-                      'مش عاجبني، جديد',
-                      style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.warning,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: AppColors.warning.withValues(alpha: 0.65)),
-                      padding: const EdgeInsets.symmetric(vertical: 11),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton.icon(
-                    onPressed: _isApproving ? null : _approveDraft,
-                    icon: const Icon(Icons.check_circle_rounded, size: 18, color: Colors.black),
-                    label: Text(
-                      _isApproving ? 'جاري الاعتماد...' : 'اعتماد كشخصية رئيسية',
-                      style: const TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.teal,
-                      padding: const EdgeInsets.symmetric(vertical: 11),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (hasActive) {
-      return _dockContainer(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _uploadAndTransform(),
-                icon: const Icon(Icons.photo_library_outlined, size: 16, color: AppColors.teal),
-                label: Text(
-                  LocaleService.instance.tr('رفع صورة جديدة', 'Upload New Photo'),
-                  style: const TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 12,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-                  padding: const EdgeInsets.symmetric(vertical: 9),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _triggerAvatarGreeting,
-                icon: const Icon(Icons.record_voice_over_rounded, size: 16, color: Colors.black),
-                label: Text(
-                  LocaleService.instance.tr('تحدث الآن', 'Speak Now'),
-                  style: const TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.teal,
-                  padding: const EdgeInsets.symmetric(vertical: 9),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Empty State: Guide user right on Home Screen to upload their photo
-    return _dockContainer(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.face_retouching_natural_rounded, color: AppColors.teal, size: 20),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'أنشئ شخصيتك الرئيسية بنموذج GAGAvatar',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'ارفع صورة واضحة لوجهك، وهنحولها لأفاتار 3D ناطق بيتفاعل بتعبيرات الإيموجي وحركة الشفايف.',
-            style: TextStyle(
-              fontFamily: 'Cairo',
-              fontSize: 11.5,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: kAvatarStyles.map((s) {
-              final selected = _selectedStyle == s['id'];
-              return ChoiceChip(
-                label: Text(
-                  s['label']!,
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 11,
-                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                    color: selected ? Colors.black : AppColors.textSecondary,
-                  ),
-                ),
-                selected: selected,
-                selectedColor: AppColors.teal,
-                backgroundColor: const Color(0xFF1E293B),
-                side: BorderSide(
-                  color: selected ? AppColors.teal : Colors.white.withValues(alpha: 0.10),
-                ),
-                onSelected: (_) => setState(() => _selectedStyle = s['id']!),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: ElevatedButton.icon(
-                  onPressed: () => _uploadAndTransform(),
-                  icon: const Icon(Icons.upload_rounded, size: 18, color: Colors.black),
-                  label: const Text(
-                    'ارفع صورتك وحوّلها الآن',
-                    style: TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.teal,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () => _uploadAndTransform(preferCamera: true),
-                icon: const Icon(Icons.camera_alt_outlined, size: 18, color: AppColors.teal),
-                label: const Text(
-                  'كاميرا',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 12,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
-    );
-  }
-
-  Widget _dockContainer({
-    required Widget child,
-    EdgeInsetsGeometry padding = const EdgeInsets.all(16),
-  }) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A).withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.10),
-          width: 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF6366F1).withValues(alpha: 0.12),
-            blurRadius: 28,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: child,
     );
   }
 }

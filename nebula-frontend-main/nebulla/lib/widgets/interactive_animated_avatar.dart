@@ -281,42 +281,43 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                             child: SizedBox(
                               width: portraitW,
                               height: portraitH,
-                              child: frameUrl != null
-                                  ? Transform.scale(
-                                      scale: 1.02 +
-                                          (0.018 * breathVal) +
-                                          (isSpeaking ? amplitude * 0.022 : 0.0),
-                                      alignment: const Alignment(0.0, 0.1),
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          Image.network(
-                                            frameUrl,
-                                            fit: BoxFit.cover,
-                                            alignment: Alignment.center,
-                                            gaplessPlayback: true,
-                                            errorBuilder: (_, _, _) =>
-                                                _buildNoAvatarPlaceholder(auraColor),
+                              child: Transform.scale(
+                                scale: 1.02 +
+                                    (0.018 * breathVal) +
+                                    (isSpeaking ? amplitude * 0.022 : 0.0),
+                                alignment: const Alignment(0.0, 0.1),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    if (frameUrl != null)
+                                      Image.network(
+                                        frameUrl,
+                                        fit: BoxFit.cover,
+                                        alignment: Alignment.center,
+                                        gaplessPlayback: true,
+                                        errorBuilder: (_, _, _) =>
+                                            _buildNoAvatarPlaceholder(auraColor),
+                                      )
+                                    else
+                                      _buildNoAvatarPlaceholder(auraColor),
+                                    if (widget.fullScreen)
+                                      DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Colors.transparent,
+                                              Colors.transparent,
+                                              Colors.white.withValues(alpha: 0.20),
+                                            ],
+                                            stops: const [0.0, 0.75, 1.0],
                                           ),
-                                          if (widget.fullScreen)
-                                            DecoratedBox(
-                                              decoration: BoxDecoration(
-                                                gradient: LinearGradient(
-                                                  begin: Alignment.topCenter,
-                                                  end: Alignment.bottomCenter,
-                                                  colors: [
-                                                    Colors.transparent,
-                                                    Colors.transparent,
-                                                    AppColors.bg.withValues(alpha: 0.88),
-                                                  ],
-                                                  stops: const [0.0, 0.68, 1.0],
-                                                ),
-                                              ),
-                                            ),
-                                        ],
+                                        ),
                                       ),
-                                    )
-                                  : _buildNoAvatarPlaceholder(auraColor),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -398,71 +399,22 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   Widget _buildNoAvatarPlaceholder(Color auraColor) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF090D16),
-            const Color(0xFF0F172A),
-            auraColor.withValues(alpha: 0.14),
-          ],
-        ),
-      ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 92,
-                height: 92,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF1E293B).withValues(alpha: 0.85),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
-                    width: 1.2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: auraColor.withValues(alpha: 0.22),
-                      blurRadius: 28,
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.face_retouching_natural_rounded,
-                  size: 42,
-                  color: auraColor,
-                ),
-              ),
-              const SizedBox(height: 16),
-              ValueListenableBuilder<String>(
-                valueListenable: _audioService.activePersonaName,
-                builder: (context, name, _) => Text(
-                  name,
-                  style: const TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'ارفع صورتك لتحويلها لشخصية 3D بنموذج GAGAvatar',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 12.5,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
+    // When no custom backend avatar has been uploaded yet, render the cyborg character
+    // exactly matching the reference design in media_1795028136616_f37656e6.png
+    return ColoredBox(
+      color: Colors.white,
+      child: Image.asset(
+        'assets/images/avatar_female.png',
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        errorBuilder: (_, _, _) => Image.asset(
+          'assets/images/avatar_female_full.png',
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (_, _, _) => Image.asset(
+            'assets/images/cyborg_bg.jpg',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
           ),
         ),
       ),

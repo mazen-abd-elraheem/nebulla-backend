@@ -73,7 +73,13 @@ class _ContactsScreenState extends State<ContactsScreen>
     } catch (e) {
       if (mounted) {
         setState(() => _loadingRobot = false);
-        showErrorSnackbar(context, 'تعذر تحميل جهات الاتصال من الخادم: $e');
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تعذر تحميل جهات الاتصال من الخادم حالياً.',
+            'Could not load contacts from server right now.',
+          ),
+        );
       }
     }
   }
@@ -166,7 +172,13 @@ class _ContactsScreenState extends State<ContactsScreen>
     } catch (e) {
       if (mounted) {
         setState(() => _syncing = false);
-        showErrorSnackbar(context, 'فشلت المزامنة: $e');
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تعذر إتمام مزامنة جهات الاتصال حالياً.',
+            'Could not complete contacts sync right now.',
+          ),
+        );
       }
     }
   }
@@ -189,7 +201,15 @@ class _ContactsScreenState extends State<ContactsScreen>
         );
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل تحديث الحالة: $e');
+      if (mounted) {
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تعذر تحديث إذن الاتصال بجهة الاتصال.',
+            'Could not update contact call permission.',
+          ),
+        );
+      }
     }
   }
 
@@ -262,7 +282,15 @@ class _ContactsScreenState extends State<ContactsScreen>
         showSuccessSnackbar(context, 'تم حذف جهة الاتصال بنجاح');
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'تعذر الحذف: $e');
+      if (mounted) {
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تعذر حذف جهة الاتصال، حاول مرة أخرى.',
+            'Could not delete contact. Please try again.',
+          ),
+        );
+      }
     }
   }
 
@@ -316,7 +344,15 @@ class _ContactsScreenState extends State<ContactsScreen>
         showSuccessSnackbar(context, 'تمت إضافة $name لقائمة نيبولا بنجاح! 📞');
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'فشل الإضافة: $e');
+      if (mounted) {
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تعذر إضافة جهة الاتصال الجديدة حالياً.',
+            'Could not add new contact right now.',
+          ),
+        );
+      }
     }
   }
 
@@ -1514,7 +1550,13 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        showErrorSnackbar(context, 'فشل حفظ جهة الاتصال: $e');
+        showErrorSnackbar(
+          context,
+          LocaleService.instance.tr(
+            'تعذر حفظ بيانات جهة الاتصال حالياً.',
+            'Could not save contact details right now.',
+          ),
+        );
       }
     }
   }
