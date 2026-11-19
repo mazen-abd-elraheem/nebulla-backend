@@ -618,10 +618,10 @@ async def test_voice(
 
 class LLMVoiceCloneRequest(BaseModel):
     text: str = Field(
-        "أهلاً بيك يا صديقي! أنا جاهز أساعدك في أي وقت.",
+        ...,
         description="نص رد الـ LLM المراد تحويله لصوت مستنسخ",
     )
-    personality_id: int | None = Field(1, description="معرف الشخصية لاستخدام عينة صوتها المستنسخة (افتراضياً 1 أو النشطة)")
+    personality_id: int | None = Field(None, description="معرف الشخصية لاستخدام عينة صوتها المستنسخة (اختياري، يحدد الشخصية أو النشطة)")
     return_json: bool = Field(False, description="إذا كان True يرجع كائن JSON مع audio_base64، وإذا كان False يرجع ملف صوتي مباشر audio/wav")
     speed: float | None = Field(1.0, description="سرعة نطق الصوت الطبيعية (افتراضياً 1.0 لمطابقة النبرة الأصلية)")
     guidance_scale: float | None = Field(2.1, description="مقياس تطابق نبرة الصوت المرجعي بدقة (افتراضياً 2.1)")
@@ -631,8 +631,8 @@ class LLMVoiceCloneRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "text": "أهلاً بيك يا صديقي! أنا جاهز أساعدك في أي وقت.",
-                "personality_id": 1,
+                "text": "مساء الخير، أنا بكلمك بصوتي المستنسخ الجديد.",
+                "personality_id": 3,
                 "return_json": False,
                 "speed": 1.0,
                 "guidance_scale": 2.1,
@@ -751,6 +751,8 @@ async def handle_llm_voice_clone(
     # Cache for immediate browser playback
     try:
         LATEST_WAV_FILE.write_bytes(wav_bytes)
+        pid_wav = CACHE_DIR / f"latest_synthesized_p{target_pid}.wav"
+        pid_wav.write_bytes(wav_bytes)
         _last_synthesized_audio[target_pid] = wav_bytes
         _last_synthesized_audio["latest"] = wav_bytes
     except Exception:
@@ -858,8 +860,10 @@ async def llm_voice_clone_get(
             studio_hq=studio_hq,
         )
 
-    pid = personality_id or 1
-    cached = _last_synthesized_audio.get(pid) or _last_synthesized_audio.get("latest")
+    target_pid = await _resolve_target_pid(svc, personality_id=personality_id, user=_user)
+
+    # 1. Check in-memory synthesized audio for this specific personality
+    cached = _last_synthesized_audio.get(target_pid)
     if cached:
         return Response(
             content=cached,
@@ -867,11 +871,32 @@ async def llm_voice_clone_get(
             headers={
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(len(cached)),
-                "Content-Disposition": f'inline; filename="llm_voice_clone_{pid}.wav"',
+                "Content-Disposition": f'inline; filename="llm_voice_clone_p{target_pid}.wav"',
             },
         )
 
-    if LATEST_WAV_FILE.exists() and LATEST_WAV_FILE.stat().st_size > 0:
+    # 2. Check disk file for this specific personality
+    pid_wav = CACHE_DIR / f"latest_synthesized_p{target_pid}.wav"
+    if pid_wav.exists() and pid_wav.stat().st_size > 0:
+        return FileResponse(
+            path=str(pid_wav),
+            media_type="audio/wav",
+            content_disposition_type="inline",
+            filename=f"llm_voice_clone_p{target_pid}.wav",
+        )
+
+    # 3. Check for pre-cached greeting audio for this personality
+    greet_wav = CACHE_DIR / f"greeting_personality_{target_pid}.wav"
+    if greet_wav.exists() and greet_wav.stat().st_size > 0:
+        return FileResponse(
+            path=str(greet_wav),
+            media_type="audio/wav",
+            content_disposition_type="inline",
+            filename=f"greeting_p{target_pid}.wav",
+        )
+
+    # 4. Fallback to global latest only if personality_id was not explicitly requested
+    if personality_id is None and LATEST_WAV_FILE.exists() and LATEST_WAV_FILE.stat().st_size > 0:
         return FileResponse(
             path=str(LATEST_WAV_FILE),
             media_type="audio/wav",
@@ -881,7 +906,7 @@ async def llm_voice_clone_get(
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail="لا يوجد صوت مُولّد مسبقاً، يرجى إرسال نص ليتم توليده.",
+        detail=f"الشخصية رقم {target_pid} ملهاش صوت مُولّد مسبقاً، يرجى إرسال نص لتوليد صوته.",
     )
 
 
