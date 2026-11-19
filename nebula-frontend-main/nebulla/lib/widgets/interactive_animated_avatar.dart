@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../models/avatar_profile.dart';
 import '../services/api_service.dart';
+import '../services/avatar_3d_controller.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/audio_viseme_analyzer.dart';
 import '../services/storage_service.dart';
+import 'avatar_3d_widget.dart';
 
 /// Interactive neural avatar powered solely by xg-chu/GAGAvatar.
 ///
@@ -44,6 +47,7 @@ class InteractiveAnimatedAvatar extends StatefulWidget {
 class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     with TickerProviderStateMixin {
   final _audioService = AvatarAudioService.instance;
+  Avatar3DController? _avatar3dController;
 
   AnimationController? _breathingController;
   Animation<double>? _breathingAnimation;
@@ -99,6 +103,29 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
         curve: Curves.easeInOutQuad,
       ),
     );
+
+    if (_avatar3dController == null && !kIsWeb && Platform.isWindows) {
+      _avatar3dController = Avatar3DController();
+      _avatar3dController!.startSimulation();
+      _audioService.isSpeaking.addListener(_sync3DSpeech);
+      _audioService.speechAmplitude.addListener(_sync3DAmplitude);
+    }
+  }
+
+  void _sync3DSpeech() {
+    if (_avatar3dController == null) return;
+    if (_audioService.isSpeaking.value) {
+      _avatar3dController!.setState(AvatarBehaviorState.talking);
+    } else {
+      _avatar3dController!.setState(AvatarBehaviorState.idle);
+      _avatar3dController!.mouthOpenness.value = 0.0;
+    }
+  }
+
+  void _sync3DAmplitude() {
+    if (_avatar3dController == null || !_audioService.isSpeaking.value) return;
+    final amp = _audioService.speechAmplitude.value;
+    _avatar3dController!.mouthOpenness.value = (amp * 1.5).clamp(0.0, 1.0);
   }
 
   void _scheduleNextBlink() {
@@ -147,6 +174,9 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     _auraPulseController?.dispose();
     _headMotionController?.dispose();
     _blinkController?.dispose();
+    _audioService.isSpeaking.removeListener(_sync3DSpeech);
+    _audioService.speechAmplitude.removeListener(_sync3DAmplitude);
+    _avatar3dController?.dispose();
     super.dispose();
   }
 
@@ -235,6 +265,30 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
           child: AnimatedBuilder(
             animation: _blinkAnimation!,
             builder: (context, _) {
+              if (_audioService.use3DModel.value &&
+                  _avatar3dController != null &&
+                  widget.overrideAvatar == null) {
+                return Center(
+                  child: SizedBox(
+                    width: portraitW,
+                    height: portraitH,
+                    child: ClipRRect(
+                      borderRadius: widget.fullScreen
+                          ? BorderRadius.zero
+                          : BorderRadius.circular(24),
+                      child: Avatar3DWidget(
+                        controller: _avatar3dController!,
+                        width: portraitW,
+                        height: portraitH,
+                        onTap: widget.onAvatarTapped ?? _triggerTapFeedback,
+                        onDoubleTap: widget.onAvatarDoubleTapped,
+                        fallback: _buildAssetCyborg(),
+                      ),
+                    ),
+                  ),
+                );
+              }
+
               String? frameUrl;
               if (hasGagAvatar) {
                 final blinkVal = _blinkAnimation?.value ?? 0.0;
@@ -355,6 +409,15 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
   }
 
   Widget _buildNoAvatarPlaceholder(Color auraColor) {
+    if (_avatar3dController != null) {
+      return Avatar3DWidget(
+        controller: _avatar3dController!,
+        onTap: widget.onAvatarTapped ?? _triggerTapFeedback,
+        onDoubleTap: widget.onAvatarDoubleTapped,
+        fallback: _buildAssetCyborg(),
+      );
+    }
+
     // 1. If backend avatar URL exists, render it as priority
     final userAvatarUrl = StorageService.instance.getUserAvatarUrl();
     if (userAvatarUrl != null && userAvatarUrl.isNotEmpty) {

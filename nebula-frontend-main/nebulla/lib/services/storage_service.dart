@@ -90,4 +90,11 @@ class StorageService {
   }
 
   String? getUserAvatarUrl() => _prefs?.getString('pref_user_avatar_url');
+
+  Future<void> setUse3DModel(bool value) async {
+    await _prefs?.setBool('pref_use_3d_avatar_model', value);
+  }
+
+  bool getUse3DModel({bool defaultValue = true}) =>
+      _prefs?.getBool('pref_use_3d_avatar_model') ?? defaultValue;
 }

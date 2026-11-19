@@ -248,6 +248,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                 ),
                 const SizedBox(height: 8),
+                const Divider(),
+                ValueListenableBuilder<bool>(
+                  valueListenable: _audioService.use3DModel,
+                  builder: (context, use3D, _) {
+                    return ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.view_in_ar_rounded,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                      title: Text(
+                        t('مجسم الأفاتار ثلاثي الأبعاد (3D Model)', '3D Avatar Model'),
+                        style: const TextStyle(
+                          fontFamily: 'Cairo',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      subtitle: Text(
+                        use3D
+                            ? t('مفعل: شخصية 3D حية تتنفس وتنطق', 'Active: Live 3D speaking character')
+                            : t('معطل: استخدام صورة الوجه المولدة', 'Inactive: Using generated face photo'),
+                        style: const TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 12,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                      trailing: Switch(
+                        value: use3D,
+                        activeThumbColor: const Color(0xFF10B981),
+                        onChanged: (val) {
+                          _audioService.setUse3DModel(val);
+                          Navigator.of(ctx).pop();
+                        },
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
               ],
             ),
           ),
@@ -425,6 +472,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         icon: Icons.menu_rounded,
                         onTap: _openMenu,
                         tooltip: LocaleService.instance.tr('القائمة', 'Menu'),
+                      ),
+
+                      // 3D Avatar Model Toggle Button (Center)
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _audioService.use3DModel,
+                        builder: (context, use3D, _) {
+                          return Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                _audioService.setUse3DModel(!use3D);
+                              },
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: use3D
+                                        ? const Color(0xFF10B981)
+                                        : const Color(0xFFCBD5E1),
+                                    width: 1.4,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.05),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      use3D
+                                          ? Icons.view_in_ar_rounded
+                                          : Icons.face_rounded,
+                                      size: 16,
+                                      color: use3D
+                                          ? const Color(0xFF10B981)
+                                          : const Color(0xFF64748B),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      use3D ? '3D Model' : 'Photo',
+                                      style: TextStyle(
+                                        fontFamily: 'Cairo',
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: use3D
+                                            ? const Color(0xFF10B981)
+                                            : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
 
                       // Circular Notification Bell Button (Right)

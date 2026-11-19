@@ -19,6 +19,7 @@ class Avatar3DWidget extends StatefulWidget {
   final double? height;
   final VoidCallback? onTap;
   final VoidCallback? onDoubleTap;
+  final Widget? fallback;
 
   const Avatar3DWidget({
     super.key,
@@ -27,6 +28,7 @@ class Avatar3DWidget extends StatefulWidget {
     this.height,
     this.onTap,
     this.onDoubleTap,
+    this.fallback,
   });
 
   @override
@@ -113,6 +115,8 @@ class _Avatar3DWidgetState extends State<Avatar3DWidget> {
                 _webviewController,
                 permissionRequested: (_, _, _) async => WebviewPermissionDecision.allow,
               )
+            else if (widget.fallback != null)
+              widget.fallback!
             else
               const Center(
                 child: SizedBox(

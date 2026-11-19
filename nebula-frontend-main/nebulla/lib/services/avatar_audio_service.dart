@@ -24,6 +24,13 @@ class AvatarAudioService {
   final ValueNotifier<int> activePersonalityId = ValueNotifier<int>(1);
   final ValueNotifier<String> activePersonaName = ValueNotifier<String>('المساعد الذكي');
   final ValueNotifier<AvatarProfileModel?> activeAvatar = ValueNotifier<AvatarProfileModel?>(null);
+  late final ValueNotifier<bool> use3DModel =
+      ValueNotifier<bool>(StorageService.instance.getUse3DModel());
+
+  void setUse3DModel(bool value) {
+    use3DModel.value = value;
+    unawaited(StorageService.instance.setUse3DModel(value));
+  }
 
   bool _avatarLoadedOnce = false;
   String? _lastAvatarToken;
