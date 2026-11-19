@@ -113,6 +113,8 @@ async def get_active_avatar(
         if user is not None:
             avatar = await svc.ensure_active_avatar_from_user(user=user, db=db)
     if not avatar:
+        avatar = await svc.get_active_avatar(db=db, user_id=None, personality_id=personality_id)
+    if not avatar:
         return {"has_avatar": False, "avatar": None}
     return {"has_avatar": True, "avatar": svc.serialize_avatar(avatar)}
 

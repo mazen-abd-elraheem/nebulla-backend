@@ -1023,12 +1023,12 @@
       try {
         const r = await fetch('/api/v1/avatar/status');
         const d = await r.json();
-        const ready = Boolean(d.local_gagavatar_available || d.remote_healthy);
+        const ready = Boolean(d.local_gagavatar_available || d.remote_healthy || d.local_animator_available);
         $('engineDot').className = 'dot ' + (ready ? 'ready' : 'error');
         const gpu = d.cuda_device ? ` (${d.cuda_device})` : '';
         $('engineStatusText').textContent = ready
           ? `${d.preferred_engine}${gpu}`
-          : 'GAGAvatar unavailable';
+          : 'Avatar Engine offline';
       } catch (e) {
         $('engineDot').className = 'dot error';
         $('engineStatusText').textContent = 'Status check failed';
