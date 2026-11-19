@@ -39,12 +39,6 @@ class GlobalNebulaFooter extends StatelessWidget {
         label: t('nav_personas'),
       ),
       _FooterItem(
-        index: 3,
-        icon: Icons.psychology_outlined,
-        activeIcon: Icons.psychology_rounded,
-        label: t('nav_memory'),
-      ),
-      _FooterItem(
         index: 4,
         icon: Icons.person_outline_rounded,
         activeIcon: Icons.person_rounded,

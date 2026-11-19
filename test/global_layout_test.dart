@@ -32,7 +32,6 @@ void main() {
     expect(find.text('الصفحه الرئيسيه'), findsOneWidget);
     expect(find.text('الدردشة'), findsOneWidget);
     expect(find.text('الشخصيات'), findsOneWidget);
-    expect(find.text('الذاكرة'), findsOneWidget);
     expect(find.text('الملف الشخصي'), findsOneWidget);
 
     // Tap on Personas (index 0)
@@ -44,11 +43,6 @@ void main() {
     await tester.tap(find.text('الصفحه الرئيسيه'));
     await tester.pump();
     expect(navigatedIndex, 2);
-
-    // Tap on Memory (index 3)
-    await tester.tap(find.text('الذاكرة'));
-    await tester.pump();
-    expect(navigatedIndex, 3);
 
     // Tap on Profile (index 4)
     await tester.tap(find.text('الملف الشخصي'));
@@ -77,7 +71,6 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Chat'), findsOneWidget);
     expect(find.text('Personas'), findsOneWidget);
-    expect(find.text('Memory'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
   });
 
