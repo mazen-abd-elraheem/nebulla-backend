@@ -51,12 +51,25 @@ class User(Base):
     reset_token: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     reset_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # User profile avatar URL / path
+    avatar_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    # User profile contact info
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     # Personalities owned by this user
     personalities: Mapped[List["Personality"]] = relationship(
         "Personality", back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    # Memories owned by this user (user-isolated memory storage)
+    memories: Mapped[List["Memory"]] = relationship(
+        "Memory", back_populates="user", cascade="all, delete-orphan", lazy="selectin"
     )
 
     # Biometric face profile

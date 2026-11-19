@@ -9,8 +9,8 @@ import 'package:file_picker/file_picker.dart';
 import '../services/nebula_repository.dart';
 import '../services/storage_service.dart';
 import '../widgets/common_widgets.dart';
-import 'login_screen.dart';
 import 'main_shell.dart';
+import 'login_screen.dart';
 
 /// 4-Step Multi-Step Registration Wizard
 /// Step 0: البيانات الأساسية (Credentials: الاسم، البريد، كلمة المرور، تأكيد كلمة المرور)
@@ -44,7 +44,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final ImagePicker _picker = ImagePicker();
 
   // Step 2: Onboarding Questionnaire
-  bool _showQuestions = true;
+
   final _securityAnswerCtrl = TextEditingController();
   String _selectedInteractionStyle = 'نصي وصوتي';
   String _selectedInterestDomain = 'البرمجة والتقنية';
@@ -171,8 +171,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   void _proceedToStep2() {
     if (_profileImage == null && !_avatarGenerated) {
-      showErrorSnackbar(context, 'يرجى التقاط صورة أو اختيارها من الاستوديو أولاً.');
+      showErrorSnackbar(
+        context,
+        'يرجى التقاط صورة أو اختيارها من الاستوديو أولاً.',
+      );
       return;
+    }
+    if (_profileImage != null) {
+      StorageService.instance.setUserAvatarPath(_profileImage!.path);
     }
     setState(() => _currentStep = 2);
   }
@@ -189,7 +195,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       };
       await NebulaRepository.instance.submitOnboardingAnswers(answers);
       if (!mounted) return;
-      showSuccessSnackbar(context, 'تم حفظ تفضيلاتك وتغذية ذاكرة الذكاء الاصطناعي بنجاح!');
+      showSuccessSnackbar(
+        context,
+        'تم حفظ تفضيلاتك وتغذية ذاكرة الذكاء الاصطناعي بنجاح!',
+      );
       setState(() {
         _isSubmittingAnswers = false;
         _currentStep = 3;
@@ -237,7 +246,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final generatedFile = await _createSynthesizedWav(duration);
     if (!mounted) return;
     setState(() => _recordedAudioFile = generatedFile);
-    showSuccessSnackbar(context, 'تم التقاط التسجيل الصوتي ($duration ثوانٍ) بنجاح.');
+    showSuccessSnackbar(
+      context,
+      'تم التقاط التسجيل الصوتي ($duration ثوانٍ) بنجاح.',
+    );
   }
 
   Future<void> _pickAudioFile() async {
@@ -249,16 +261,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (result.isNotEmpty && result.first.path != null) {
         final file = File(result.first.path!);
         setState(() => _recordedAudioFile = file);
-        if (mounted) showSuccessSnackbar(context, 'تم اختيار الملف الصوتي بنجاح.');
+        if (mounted) {
+          showSuccessSnackbar(context, 'تم اختيار الملف الصوتي بنجاح.');
+        }
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'تعذر اختيار الملف: $e');
+      if (mounted) {
+        showErrorSnackbar(context, 'تعذر اختيار الملف: $e');
+      }
     }
   }
 
   Future<File> _createSynthesizedWav(int durationSeconds) async {
     final tempDir = Directory.systemTemp;
-    final file = File('${tempDir.path}/xtts_sample_${DateTime.now().millisecondsSinceEpoch}.wav');
+    final file = File(
+      '${tempDir.path}/xtts_sample_${DateTime.now().millisecondsSinceEpoch}.wav',
+    );
 
     const sampleRate = 16000;
     const channels = 1;
@@ -307,7 +325,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     const double freq = 220.0;
     for (int i = 0; i < numSamples; i++) {
       final t = i / sampleRate;
-      final sampleVal = (sin(2 * pi * freq * t) * 8000).toInt().clamp(-32768, 32767);
+      final sampleVal = (sin(2 * pi * freq * t) * 8000).toInt().clamp(
+        -32768,
+        32767,
+      );
       bytes.add([sampleVal & 0xFF, (sampleVal >> 8) & 0xFF]);
     }
 
@@ -323,13 +344,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isUploadingVoice = true);
     try {
-      await NebulaRepository.instance.uploadVoiceSampleDefault(_recordedAudioFile!);
+      await NebulaRepository.instance.uploadVoiceSampleDefault(
+        _recordedAudioFile!,
+      );
       if (!mounted) return;
       setState(() {
         _isUploadingVoice = false;
         _voiceUploaded = true;
       });
-      showSuccessSnackbar(context, 'تم تدريب واستنساخ صوتك بنجاح عبر محرك XTTS!');
+      showSuccessSnackbar(
+        context,
+        'تم تدريب واستنساخ صوتك بنجاح!',
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -345,7 +371,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
     setState(() => _isPlayingPreview = false);
-    showSuccessSnackbar(context, 'تم تشغيل تجربة الصوت المستنسخ للأفاتار بنجاح.');
+    showSuccessSnackbar(
+      context,
+      'تم تشغيل تجربة الصوت المستنسخ للأفاتار بنجاح.',
+    );
   }
 
   void _finishRegistration() {
@@ -425,7 +454,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             SafeArea(
               child: Center(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 440),
                     child: Column(
@@ -513,7 +545,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
               final Color circleColor = isCompleted
                   ? const Color(0xFF00B4D8)
-                  : (isCurrent ? const Color(0xFF00B4D8) : const Color(0xFFF1F5F9));
+                  : (isCurrent
+                        ? const Color(0xFF00B4D8)
+                        : const Color(0xFFF1F5F9));
               final Color iconColor = (isCompleted || isCurrent)
                   ? Colors.white
                   : const Color(0xFF94A3B8);
@@ -532,13 +566,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               color: circleColor,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: isCurrent ? const Color(0xFF00E5FF) : Colors.transparent,
+                                color: isCurrent
+                                    ? const Color(0xFF00E5FF)
+                                    : Colors.transparent,
                                 width: 2,
                               ),
                               boxShadow: isCurrent
                                   ? [
                                       BoxShadow(
-                                        color: const Color(0xFF00B4D8).withValues(alpha: 0.35),
+                                        color: const Color(
+                                          0xFF00B4D8,
+                                        ).withValues(alpha: 0.35),
                                         blurRadius: 8,
                                         spreadRadius: 1,
                                       ),
@@ -559,7 +597,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             style: TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 10.5,
-                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: isCurrent
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                               color: isCurrent
                                   ? const Color(0xFF0284C7)
                                   : const Color(0xFF64748B),
@@ -588,7 +628,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: LinearProgressIndicator(
               value: (_currentStep + 1) / 4.0,
               backgroundColor: const Color(0xFFF1F5F9),
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00B4D8)),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                Color(0xFF00B4D8),
+              ),
               minHeight: 4,
             ),
           ),
@@ -643,7 +685,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 20),
 
           // 1. Full Name
-          _buildFieldLabel(title: 'الاسم كامل', icon: Icons.person_outline_rounded),
+          _buildFieldLabel(
+            title: 'الاسم كامل',
+            icon: Icons.person_outline_rounded,
+          ),
           const SizedBox(height: 6),
           TextFormField(
             controller: _fullNameCtrl,
@@ -653,19 +698,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
               color: Color(0xFF1E293B),
             ),
             decoration: _buildInputDecoration(
-              hintText: 'مازن عبد الرحيم',
+              hintText: 'الاسم كامل (مثال: أحمد محمد)',
               suffixIcon: Icons.badge_outlined,
             ),
             validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'يرجى إدخال الاسم بالكامل';
-              if (v.trim().length < 3) return 'الاسم يجب ألا يقل عن 3 أحرف';
+              if (v == null || v.trim().isEmpty) {
+                return 'يرجى إدخال الاسم بالكامل';
+              }
+              if (v.trim().length < 3) {
+                return 'الاسم يجب ألا يقل عن 3 أحرف';
+              }
               return null;
             },
           ),
           const SizedBox(height: 14),
 
           // 2. Email
-          _buildFieldLabel(title: 'البريد الإلكتروني', icon: Icons.alternate_email_rounded),
+          _buildFieldLabel(
+            title: 'البريد الإلكتروني',
+            icon: Icons.alternate_email_rounded,
+          ),
           const SizedBox(height: 6),
           TextFormField(
             controller: _emailCtrl,
@@ -680,15 +732,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
               suffixIcon: Icons.mail_outline_rounded,
             ),
             validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'يرجى إدخال البريد الإلكتروني';
-              if (!v.contains('@') || !v.contains('.')) return 'صيغة البريد الإلكتروني غير صحيحة';
+              if (v == null || v.trim().isEmpty) {
+                return 'يرجى إدخال البريد الإلكتروني';
+              }
+              if (!v.contains('@') || !v.contains('.')) {
+                return 'صيغة البريد الإلكتروني غير صحيحة';
+              }
               return null;
             },
           ),
           const SizedBox(height: 14),
 
           // 3. Password
-          _buildFieldLabel(title: 'كلمة المرور', icon: Icons.lock_outline_rounded),
+          _buildFieldLabel(
+            title: 'كلمة المرور',
+            icon: Icons.lock_outline_rounded,
+          ),
           const SizedBox(height: 6),
           TextFormField(
             controller: _passwordCtrl,
@@ -715,7 +774,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 14),
 
           // 4. Confirm Password
-          _buildFieldLabel(title: 'تأكيد كلمة المرور', icon: Icons.lock_reset_rounded),
+          _buildFieldLabel(
+            title: 'تأكيد كلمة المرور',
+            icon: Icons.lock_reset_rounded,
+          ),
           const SizedBox(height: 6),
           TextFormField(
             controller: _confirmPasswordCtrl,
@@ -730,7 +792,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               isPassword: true,
               obscure: _obscureConfirmPassword,
               onToggleObscure: () {
-                setState(() => _obscureConfirmPassword = !_obscureConfirmPassword);
+                setState(
+                  () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                );
               },
             ),
             validator: (v) {
@@ -770,8 +834,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     : const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.arrow_back_rounded, color: Colors.white, size: 19),
-                          SizedBox(width: 10),
                           Text(
                             'المتابعة: خطوة الأفاتار',
                             style: TextStyle(
@@ -780,6 +842,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               fontSize: 14.5,
                               color: Colors.white,
                             ),
+                          ),
+                          SizedBox(width: 8),
+                          Icon(
+                            Icons.arrow_back_rounded,
+                            color: Colors.white,
+                            size: 19,
                           ),
                         ],
                       ),
@@ -864,7 +932,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   shape: BoxShape.circle,
                   color: const Color(0xFFF1F5F9),
                   border: Border.all(
-                    color: _avatarGenerated ? const Color(0xFF00E5FF) : const Color(0xFF00B4D8),
+                    color: _avatarGenerated
+                        ? const Color(0xFF00E5FF)
+                        : const Color(0xFF00B4D8),
                     width: 3,
                   ),
                   boxShadow: [
@@ -909,12 +979,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: Text(
             _avatarGenerated
                 ? 'تم توليد الأفاتار الرقمي بنجاح ✓'
-                : (_profileImage != null ? 'تم اختيار الصورة' : 'إضافة صورة شخصية'),
+                : (_profileImage != null
+                      ? 'تم اختيار الصورة'
+                      : 'إضافة صورة شخصية'),
             style: TextStyle(
               fontFamily: 'Cairo',
               fontSize: 13,
               fontWeight: FontWeight.bold,
-              color: _avatarGenerated ? const Color(0xFF059669) : const Color(0xFF0284C7),
+              color: _avatarGenerated
+                  ? const Color(0xFF059669)
+                  : const Color(0xFF0284C7),
             ),
           ),
         ),
@@ -925,34 +999,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _isGeneratingAvatar ? null : () => _pickImage(ImageSource.camera),
+                onPressed: _isGeneratingAvatar
+                    ? null
+                    : () => _pickImage(ImageSource.camera),
                 icon: const Icon(Icons.camera_alt_rounded, size: 18),
                 label: const Text(
                   'الكاميرا',
-                  style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontFamily: 'Cairo',
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF0284C7),
                   side: const BorderSide(color: Color(0xFF00B4D8)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _isGeneratingAvatar ? null : () => _pickImage(ImageSource.gallery),
+                onPressed: _isGeneratingAvatar
+                    ? null
+                    : () => _pickImage(ImageSource.gallery),
                 icon: const Icon(Icons.photo_library_rounded, size: 18),
                 label: const Text(
                   'المعرض',
-                  style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontFamily: 'Cairo',
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF0284C7),
                   side: const BorderSide(color: Color(0xFF00B4D8)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
             ),
@@ -962,17 +1050,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
         if (_profileImage != null && !_avatarGenerated)
           ElevatedButton.icon(
-            onPressed: _isGeneratingAvatar ? null : () => _generateAvatar(_profileImage!),
+            onPressed: _isGeneratingAvatar
+                ? null
+                : () => _generateAvatar(_profileImage!),
             icon: const Icon(Icons.auto_awesome_rounded, size: 18),
             label: const Text(
               'تحويل الصورة إلى أفاتار',
-              style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                fontWeight: FontWeight.bold,
+              ),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0284C7),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 13),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
           ),
 
@@ -985,13 +1080,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
             backgroundColor: const Color(0xFF0B132B),
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
           child: const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.arrow_back_rounded, color: Colors.white, size: 19),
-              SizedBox(width: 8),
               Flexible(
                 child: Text(
                   'تأكيد الأفاتار ومتابعة لأسئلة التخصيص',
@@ -1003,6 +1098,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
+              SizedBox(width: 8),
+              Icon(Icons.arrow_back_rounded, color: Colors.white, size: 19),
             ],
           ),
         ),
@@ -1037,252 +1134,253 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         const SizedBox(height: 18),
 
-        // Exact Expandable Questionnaire Card matching Image 2
+        // Exact Questionnaire Card matching mockup
         Container(
           decoration: BoxDecoration(
             color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: _showQuestions ? const Color(0xFF00B4D8) : const Color(0xFFE2E8F0),
-              width: 1.4,
-            ),
+            border: Border.all(color: const Color(0xFF00B4D8), width: 1.4),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              InkWell(
-                onTap: () {
-                  setState(() => _showQuestions = !_showQuestions);
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE0F2FE),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.psychology_rounded,
-                          color: Color(0xFF0284C7),
-                          size: 20,
-                        ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE0F2FE),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'أسئلة تخصيص الذكاء الاصطناعي',
-                              style: TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF0F172A),
-                              ),
-                            ),
-                            Text(
-                              _showQuestions ? 'اضغط للإغلاق' : 'اضغط للإجابة عن أسئلة التخصيص',
-                              style: const TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 11,
-                                color: Color(0xFF64748B),
-                              ),
-                            ),
-                          ],
+                      child: const Icon(
+                        Icons.psychology_rounded,
+                        color: Color(0xFF0284C7),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'أسئلة تخصيص الذكاء الاصطناعي',
+                        style: TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0F172A),
                         ),
                       ),
-                      Icon(
-                        _showQuestions
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        color: const Color(0xFF0284C7),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-              if (_showQuestions) ...[
-                const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Q1: أسلوب التفاعل
-                      const Text(
-                        '1. ما هو أسلوب التفاعل المفضل لديك؟',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
-                        ),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Q1: أسلوب التفاعل
+                    const Text(
+                      '1. ما هو أسلوب التفاعل المفضل لديك؟',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          'نصي وصوتي',
-                          'صوتي تفاعلي',
-                          'نصي فقط',
-                          'موجز وسريع',
-                        ].map((opt) {
-                          final sel = _selectedInteractionStyle == opt;
-                          return ChoiceChip(
-                            label: Text(
-                              opt,
-                              style: TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 11.5,
-                                fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-                                color: sel ? Colors.white : const Color(0xFF334155),
-                              ),
-                            ),
-                            selected: sel,
-                            selectedColor: const Color(0xFF00B4D8),
-                            backgroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              side: BorderSide(
-                                color: sel ? const Color(0xFF00B4D8) : const Color(0xFFCBD5E1),
-                              ),
-                            ),
-                            onSelected: (_) {
-                              setState(() => _selectedInteractionStyle = opt);
-                            },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Q2: مجال الاهتمام
-                      const Text(
-                        '2. ما هو مجال اهتمامك الأساسي؟',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          'البرمجة والتقنية',
-                          'الأكاديميا والبحث',
-                          'الأعمال والإدارة',
-                          'مساعد شخصي عام',
-                        ].map((opt) {
-                          final sel = _selectedInterestDomain == opt;
-                          return ChoiceChip(
-                            label: Text(
-                              opt,
-                              style: TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 11.5,
-                                fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-                                color: sel ? Colors.white : const Color(0xFF334155),
-                              ),
-                            ),
-                            selected: sel,
-                            selectedColor: const Color(0xFF00B4D8),
-                            backgroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              side: BorderSide(
-                                color: sel ? const Color(0xFF00B4D8) : const Color(0xFFCBD5E1),
-                              ),
-                            ),
-                            onSelected: (_) {
-                              setState(() => _selectedInterestDomain = opt);
-                            },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Q3: معلومة أو سؤال للذاكرة
-                      const Text(
-                        '3. معلومة شخصية تريد من المساعد حفظها بذاكرته:',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _securityAnswerCtrl,
-                        style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 12,
-                          color: Color(0xFF1E293B),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'مثال: مشروعي الأساسي هو تخرج روبوت نيبولا',
-                          hintStyle: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 11,
-                            color: Color(0xFF94A3B8),
-                          ),
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFF00B4D8), width: 1.5),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF2563EB)),
-                            SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'سيتم حفظ هذه الإجابات ومزامنتها تلقائياً مع ذاكرة RAG الدائمة.',
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children:
+                          [
+                            'نصي وصوتي',
+                            'صوتي تفاعلي',
+                            'نصي فقط',
+                            'موجز وسريع',
+                          ].map((opt) {
+                            final sel = _selectedInteractionStyle == opt;
+                            return ChoiceChip(
+                              label: Text(
+                                opt,
                                 style: TextStyle(
                                   fontFamily: 'Cairo',
-                                  fontSize: 10.5,
-                                  color: Color(0xFF1E40AF),
+                                  fontSize: 11.5,
+                                  fontWeight: sel
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: sel
+                                      ? Colors.white
+                                      : const Color(0xFF334155),
                                 ),
                               ),
-                            ),
-                          ],
+                              selected: sel,
+                              selectedColor: const Color(0xFF00B4D8),
+                              backgroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: BorderSide(
+                                  color: sel
+                                      ? const Color(0xFF00B4D8)
+                                      : const Color(0xFFCBD5E1),
+                                ),
+                              ),
+                              onSelected: (_) {
+                                setState(() => _selectedInteractionStyle = opt);
+                              },
+                            );
+                          }).toList(),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Q2: مجال الاهتمام
+                    const Text(
+                      '2. ما هو مجال اهتمامك الأساسي؟',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children:
+                          [
+                            'البرمجة والتقنية',
+                            'الأكاديميا والبحث',
+                            'الأعمال والإدارة',
+                            'مساعد شخصي عام',
+                          ].map((opt) {
+                            final sel = _selectedInterestDomain == opt;
+                            return ChoiceChip(
+                              label: Text(
+                                opt,
+                                style: TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontSize: 11.5,
+                                  fontWeight: sel
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: sel
+                                      ? Colors.white
+                                      : const Color(0xFF334155),
+                                ),
+                              ),
+                              selected: sel,
+                              selectedColor: const Color(0xFF00B4D8),
+                              backgroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: BorderSide(
+                                  color: sel
+                                      ? const Color(0xFF00B4D8)
+                                      : const Color(0xFFCBD5E1),
+                                ),
+                              ),
+                              onSelected: (_) {
+                                setState(() => _selectedInterestDomain = opt);
+                              },
+                            );
+                          }).toList(),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Q3: معلومة أو سؤال للذاكرة
+                    const Text(
+                      '3. معلومة شخصية تريد من المساعد حفظها بذاكرته:',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _securityAnswerCtrl,
+                      style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 12,
+                        color: Color(0xFF1E293B),
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'مثال: مشروعي الأساسي هو تخرج روبوت نيبولا',
+                        hintStyle: const TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 11,
+                          color: Color(0xFF94A3B8),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF00B4D8),
+                            width: 1.5,
+                          ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            size: 14,
+                            color: Color(0xFF2563EB),
+                          ),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'سيتم حفظ هذه الإجابات ومزامنتها تلقائياً مع ذاكرة RAG الدائمة.',
+                              style: TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 10.5,
+                                color: Color(0xFF1E40AF),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ],
           ),
         ),
@@ -1295,19 +1393,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
             backgroundColor: const Color(0xFF0B132B),
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
           child: _isSubmittingAnswers
               ? const SizedBox(
                   width: 22,
                   height: 22,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
                 )
               : const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.arrow_back_rounded, color: Colors.white, size: 19),
-                    SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         'حفظ التخصيص ومتابعة لاستنساخ الصوت',
@@ -1318,6 +1419,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           fontSize: 13.5,
                         ),
                       ),
+                    ),
+                    SizedBox(width: 8),
+                    Icon(
+                      Icons.arrow_back_rounded,
+                      color: Colors.white,
+                      size: 19,
                     ),
                   ],
                 ),
@@ -1334,7 +1441,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
-          'استنساخ صوتك عبر الذكاء الاصطناعي (XTTS)',
+          'استنساخ صوتك بالذكاء الاصطناعي',
           style: TextStyle(
             fontFamily: 'Cairo',
             fontSize: 21,
@@ -1344,7 +1451,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'الخطوة 4 من 4: سجل مقطعاً بصوتك ليتحدث الأفاتار بصوتك المستنسخ وتوأمك الرقمي',
+          'الخطوة 4 من 4: سجل مقطع بصوتك عشان الأفاتار يتكلم بنفس نبرتك وصوتك الطبيعي',
           style: TextStyle(
             fontFamily: 'Cairo',
             fontSize: 12,
@@ -1366,7 +1473,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
             children: [
               const Row(
                 children: [
-                  Icon(Icons.record_voice_over_rounded, color: Color(0xFF16A34A), size: 18),
+                  Icon(
+                    Icons.record_voice_over_rounded,
+                    color: Color(0xFF16A34A),
+                    size: 18,
+                  ),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -1383,7 +1494,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 6),
               const Text(
-                '«أهلاً بك، أنا جاهز للتواصل مع نيبولا ومتحمس لتجربة التوأم الرقمي الذكي.»',
+                '«أهلاً بيك، أنا بسجل بصوتي عشان توأمي الرقمي يتعلم طريقتي في الكلام ونبرتي، ونبدأ نشتغل سوا.»',
                 style: TextStyle(
                   fontFamily: 'Cairo',
                   fontSize: 12.5,
@@ -1408,12 +1519,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   width: 90,
                   height: 90,
                   decoration: BoxDecoration(
-                    color: _isRecording ? const Color(0xFFEF4444) : const Color(0xFF00B4D8),
+                    color: _isRecording
+                        ? const Color(0xFFEF4444)
+                        : const Color(0xFF00B4D8),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: (_isRecording ? const Color(0xFFEF4444) : const Color(0xFF00B4D8))
-                            .withValues(alpha: 0.35),
+                        color:
+                            (_isRecording
+                                    ? const Color(0xFFEF4444)
+                                    : const Color(0xFF00B4D8))
+                                .withValues(alpha: 0.35),
                         blurRadius: _isRecording ? 24 : 14,
                         spreadRadius: _isRecording ? 4 : 1,
                       ),
@@ -1431,13 +1547,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 _isRecording
                     ? 'جاري التسجيل... 00:${_recordDuration.toString().padLeft(2, '0')} (اضغط للإيقاف)'
                     : (_recordedAudioFile != null
-                        ? 'تم تسجيل العينة الصوتية جاهزة للرفع'
-                        : 'اضغط على الميكروفون لبدء التسجيل'),
+                          ? 'تم تسجيل الصوت جاهز للرفع'
+                          : 'اضغط على الميكروفون لبدء التسجيل'),
                 style: TextStyle(
                   fontFamily: 'Cairo',
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: _isRecording ? const Color(0xFFDC2626) : const Color(0xFF334155),
+                  color: _isRecording
+                      ? const Color(0xFFDC2626)
+                      : const Color(0xFF334155),
                 ),
               ),
             ],
@@ -1466,18 +1584,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
                   )
                 : const Icon(Icons.cloud_upload_rounded, size: 18),
             label: Text(
-              _isUploadingVoice ? 'جاري استنساخ الصوت عبر XTTS...' : 'رفع العينة وتدريب XTTS',
-              style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+              _isUploadingVoice
+                  ? 'جاري استنساخ وتدريب الصوت...'
+                  : 'رفع وتدريب الصوت',
+              style: const TextStyle(
+                fontFamily: 'Cairo',
+                fontWeight: FontWeight.bold,
+              ),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0284C7),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
           ),
 
@@ -1491,11 +1619,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.check_circle_rounded, color: Color(0xFF059669), size: 20),
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: Color(0xFF059669),
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'تم استنساخ صوتك وتدريب نموذج XTTS بنجاح!',
+                    'تم استنساخ صوتك وتدريب نبرتك بنجاح!',
                     style: TextStyle(
                       fontFamily: 'Cairo',
                       fontSize: 12,
@@ -1507,7 +1639,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 InkWell(
                   onTap: _isPlayingPreview ? null : _previewClonedVoice,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF059669),
                       borderRadius: BorderRadius.circular(8),
@@ -1516,7 +1651,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ? const SizedBox(
                             width: 12,
                             height: 12,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 1.5),
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 1.5,
+                            ),
                           )
                         : const Text(
                             'تجربة الصوت',
@@ -1544,12 +1682,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
             backgroundColor: const Color(0xFF0B132B),
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
           child: const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 20),
+              Icon(
+                Icons.check_circle_outline_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
               SizedBox(width: 8),
               Flexible(
                 child: Text(
@@ -1606,14 +1750,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       filled: true,
       fillColor: const Color(0xFFF8FAFC),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 14,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       prefixIcon: isPassword
           ? IconButton(
               icon: Icon(
-                obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                obscure
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
                 color: const Color(0xFF94A3B8),
                 size: 20,
               ),
@@ -1621,32 +1764,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
             )
           : null,
       suffixIcon: suffixIcon != null
-          ? Icon(
-              suffixIcon,
-              color: const Color(0xFF94A3B8),
-              size: 20,
-            )
+          ? Icon(suffixIcon, color: const Color(0xFF94A3B8), size: 20)
           : null,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(
-          color: Color(0xFFE2E8F0),
-          width: 1,
-        ),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(
-          color: Color(0xFFE2E8F0),
-          width: 1,
-        ),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(
-          color: Color(0xFF0284C7),
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: Color(0xFF0284C7), width: 1.5),
       ),
     );
   }

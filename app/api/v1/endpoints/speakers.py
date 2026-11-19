@@ -511,41 +511,6 @@ async def diarize_speakers(
     return res
 
 
-@router.post(
-    "/compare",
-    summary="Compare two voice samples and detect language (Voice 1 vs Voice 2)",
-    status_code=status.HTTP_200_OK,
-)
-async def compare_speakers(
-    file1: UploadFile = File(..., description="First audio file (Voice 1)"),
-    file2: UploadFile = File(..., description="Second audio file (Voice 2)"),
-    threshold: Optional[float] = Query(None, description="Cosine similarity threshold override (default: 0.82)"),
-    db: AsyncSession = Depends(get_db),
-) -> Dict[str, Any]:
-    """Compare two voice recordings and detect spoken language."""
-    audio_bytes1 = await file1.read()
-    audio_bytes2 = await file2.read()
-
-    if not audio_bytes1 or not audio_bytes2:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="يجب إرسال كلا الملفين الصوتيين (file1 و file2) لإجراء المقارنة.",
-        )
-
-    speaker_service = get_speaker_service()
-    res = await speaker_service.compare_two_speakers(
-        audio1=audio_bytes1,
-        audio2=audio_bytes2,
-        threshold=threshold,
-    )
-    if not res.get("success", False):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=res.get("error", "فشلت عملية مقارنة الصوتين."),
-        )
-    return res
-
-
 @router.get(
     "/status",
     summary="Voiceprint engine status",

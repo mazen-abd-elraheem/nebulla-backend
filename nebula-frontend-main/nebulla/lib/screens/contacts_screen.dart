@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart' as fc;
-import '../core/theme.dart';
 import '../models/models.dart';
+import '../services/locale_service.dart';
 import '../services/nebula_repository.dart';
 import '../services/phone_actions_service.dart';
 import '../widgets/common_widgets.dart';
@@ -73,7 +73,7 @@ class _ContactsScreenState extends State<ContactsScreen>
     } catch (e) {
       if (mounted) {
         setState(() => _loadingRobot = false);
-        showErrorSnackbar(context, 'معرفناش نجيب جهات الاتصال من السيرفر: $e');
+        showErrorSnackbar(context, 'تعذر تحميل جهات الاتصال من الخادم: $e');
       }
     }
   }
@@ -97,14 +97,14 @@ class _ContactsScreenState extends State<ContactsScreen>
           setState(() => _loadingDevice = false);
           showErrorSnackbar(
             context,
-            'لازم توافق على صلاحية الوصول لجهات الاتصال في الموبايل',
+            'يجب منح صلاحية الوصول لجهات الاتصال في الهاتف',
           );
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _loadingDevice = false);
-        showErrorSnackbar(context, 'حصل خطأ أثناء قراءة جهات الاتصال: $e');
+        showErrorSnackbar(context, 'حدث خطأ أثناء قراءة جهات الاتصال: $e');
       }
     }
   }
@@ -130,7 +130,7 @@ class _ContactsScreenState extends State<ContactsScreen>
         setState(() => _syncing = false);
         showSuccessSnackbar(
           context,
-          'اتزامنت ${synced.length} جهة اتصال مع نيبولا بنجاح ✨',
+          'تمت مزامنة ${synced.length} جهة اتصال مع نيبولا بنجاح ✨',
         );
       }
     } catch (e) {
@@ -167,24 +167,26 @@ class _ContactsScreenState extends State<ContactsScreen>
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.card,
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.cardBorder),
+          borderRadius: BorderRadius.circular(20),
         ),
         title: const Text(
           'حذف جهة الاتصال',
           style: TextStyle(
             fontFamily: 'Cairo',
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+            fontSize: 16,
+            color: Color(0xFF0F172A),
           ),
         ),
         content: Text(
-          'متأكد إنك عاوز تحذف "${contact.name}" من قائمة نيبولا؟ الروبوت مش هيقدر يكلمه.',
+          'هل أنت متأكد من حذف "${contact.name}" من قائمة نيبولا؟ لن يتمكن المساعد من الاتصال بهذه الجهة.',
           style: const TextStyle(
             fontFamily: 'Cairo',
-            color: AppColors.textSecondary,
+            fontSize: 13,
+            color: Color(0xFF475569),
+            height: 1.5,
           ),
         ),
         actions: [
@@ -192,23 +194,28 @@ class _ContactsScreenState extends State<ContactsScreen>
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text(
               'إلغاء',
-              style: TextStyle(fontFamily: 'Cairo', color: AppColors.textMuted),
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
               ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text(
-              'احذف',
+              'حذف',
               style: TextStyle(
                 fontFamily: 'Cairo',
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
@@ -224,10 +231,10 @@ class _ContactsScreenState extends State<ContactsScreen>
         _robotContacts.removeWhere((c) => c.id == contact.id);
       });
       if (mounted) {
-        showSuccessSnackbar(context, 'اتحذفت جهة الاتصال بنجاح');
+        showSuccessSnackbar(context, 'تم حذف جهة الاتصال بنجاح');
       }
     } catch (e) {
-      if (mounted) showErrorSnackbar(context, 'معرفناش نحذف: $e');
+      if (mounted) showErrorSnackbar(context, 'تعذر الحذف: $e');
     }
   }
 
@@ -278,7 +285,7 @@ class _ContactsScreenState extends State<ContactsScreen>
         _robotContacts.insert(0, created);
       });
       if (mounted) {
-        showSuccessSnackbar(context, 'اتضافت $name لقائمة نيبولا بنجاح! 📞');
+        showSuccessSnackbar(context, 'تمت إضافة $name لقائمة نيبولا بنجاح! 📞');
       }
     } catch (e) {
       if (mounted) showErrorSnackbar(context, 'فشل الإضافة: $e');
@@ -287,190 +294,286 @@ class _ContactsScreenState extends State<ContactsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: Container(
-        decoration: const BoxDecoration(gradient: AppColors.bgGradient),
-        child: SafeArea(
+    final isArabic = LocaleService.instance.isArabic;
+
+    // Header buttons
+    final menuBtn = GestureDetector(
+      onTap: () {
+        NebulaSideMenu.show(
+          context,
+          activeIndex: 7,
+          onNavigate: (idx) {
+            if (widget.onNavigate != null && idx >= 0) {
+              widget.onNavigate!(idx);
+            }
+          },
+        );
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFFCBD5E1),
+            width: 1.4,
+          ),
+        ),
+        child: const Icon(
+          Icons.menu_rounded,
+          color: Color(0xFF0F172A),
+          size: 22,
+        ),
+      ),
+    );
+
+    final titleWidget = Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Text(
+            'جهات الاتصال والتليفون',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Cairo',
+              fontSize: 16.5,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          SizedBox(height: 1),
+          Text(
+            'تحكم في الأرقام التي يتواصل معها نيبولا بصوتك',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Cairo',
+              fontSize: 11,
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final actionsSection = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Sync Button
+        GestureDetector(
+          onTap: _syncing ? null : _syncAllFromDevice,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: const Color(0xFFCBD5E1),
+                width: 1.4,
+              ),
+            ),
+            child: _syncing
+                ? const Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF00B4D8),
+                      ),
+                    ),
+                  )
+                : const Icon(
+                    Icons.sync_rounded,
+                    color: Color(0xFF00B4D8),
+                    size: 20,
+                  ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Back / Exit Button
+        GestureDetector(
+          onTap: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              widget.onNavigate?.call(2);
+            }
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: const Color(0xFFCBD5E1),
+                width: 1.4,
+              ),
+            ),
+            child: Icon(
+              isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
+              color: const Color(0xFF0F172A),
+              size: 20,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final leftSide = isArabic ? menuBtn : actionsSection;
+    final rightSide = isArabic ? actionsSection : menuBtn;
+
+    return Directionality(
+      textDirection: LocaleService.instance.textDirection,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        body: SafeArea(
           child: Column(
             children: [
-              // Header
+              // 1. Top Header Row (Menu on Left, Title Centered, Actions on Right)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.menu_rounded,
-                        color: AppColors.textPrimary,
-                        size: 24,
-                      ),
-                      tooltip: 'القائمة الجانبية',
-                      onPressed: () {
-                        NebulaSideMenu.show(
-                          context,
-                          activeIndex: 7,
-                          onNavigate: (idx) {
-                            if (widget.onNavigate != null && idx >= 0) {
-                              widget.onNavigate!(idx);
-                            }
-                          },
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 4),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'جهات الاتصال والتليفون',
-                            style: TextStyle(
-                              fontFamily: 'Cairo',
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            'تحكم في الأرقام اللي يقدر نيبولا يكلمها بصوتك',
-                            style: TextStyle(
-                              fontFamily: 'Cairo',
-                              fontSize: 11.5,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: _syncing
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.teal,
-                              ),
-                            )
-                          : const Icon(Icons.sync, color: AppColors.teal),
-                      tooltip: 'مزامنة من الموبايل',
-                      onPressed: _syncing ? null : _syncAllFromDevice,
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        textDirection: TextDirection.ltr,
-                        color: AppColors.textPrimary,
-                        size: 18,
-                      ),
-                      tooltip: 'رجوع',
-                      onPressed: () {
-                        if (Navigator.of(context).canPop()) {
-                          Navigator.of(context).pop();
-                        } else {
-                          widget.onNavigate?.call(2);
-                        }
-                      },
-                    ),
-                  ],
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [leftSide, titleWidget, rightSide],
+                  ),
                 ),
               ),
 
-              // Search bar
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
+              // 2. Search Bar
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: TextField(
                   controller: _searchCtrl,
                   style: const TextStyle(
-                    color: AppColors.textPrimary,
+                    color: Color(0xFF0F172A),
                     fontFamily: 'Cairo',
+                    fontSize: 13.5,
                   ),
                   decoration: InputDecoration(
                     hintText: 'ابحث بالاسم أو الرقم أو صلة القرابة...',
                     hintStyle: const TextStyle(
-                      color: AppColors.textMuted,
+                      color: Color(0xFF94A3B8),
                       fontFamily: 'Cairo',
-                      fontSize: 13,
+                      fontSize: 12.5,
                     ),
                     prefixIcon: const Icon(
-                      Icons.search,
-                      color: AppColors.teal,
+                      Icons.search_rounded,
+                      color: Color(0xFF00B4D8),
                       size: 20,
                     ),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(
-                              Icons.clear,
-                              color: AppColors.textMuted,
+                              Icons.clear_rounded,
+                              color: Color(0xFF94A3B8),
                               size: 18,
                             ),
                             onPressed: () => _searchCtrl.clear(),
                           )
                         : null,
-                    filled: true,
-                    fillColor: AppColors.card,
+                    border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(
-                      vertical: 10,
+                      vertical: 12,
                       horizontal: 14,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.cardBorder),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.cardBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: AppColors.teal,
-                        width: 1.5,
-                      ),
                     ),
                   ),
                 ),
               ),
 
-              // Tabs
+              // 3. Segmented Control Tabs
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.cardBorder),
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: TabBar(
                   controller: _tabController,
                   indicator: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    color: AppColors.teal.withValues(alpha: 0.15),
-                    border: Border.all(
-                      color: AppColors.teal.withValues(alpha: 0.5),
-                    ),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  labelColor: AppColors.teal,
-                  unselectedLabelColor: AppColors.textMuted,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  labelColor: const Color(0xFF0F172A),
+                  unselectedLabelColor: const Color(0xFF64748B),
                   labelStyle: const TextStyle(
                     fontFamily: 'Cairo',
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontWeight: FontWeight.w600,
                     fontSize: 13,
                   ),
                   tabs: [
                     Tab(
-                      text:
-                          'جهات الروبوت (${_robotContacts.where((c) => c.isAllowlisted).length})',
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.smart_toy_rounded,
+                            size: 16,
+                            color: Color(0xFF00B4D8),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'جهات نيبولا (${_robotContacts.where((c) => c.isAllowlisted).length})',
+                          ),
+                        ],
+                      ),
                     ),
-                    const Tab(text: 'دليل الهاتف بالموبايل'),
+                    Tab(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(
+                            Icons.phone_iphone_rounded,
+                            size: 16,
+                            color: Color(0xFF64748B),
+                          ),
+                          SizedBox(width: 6),
+                          Text('دليل الموبايل'),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
 
-              // Tab Views
+              // 4. Tab Views
               Expanded(
                 child: TabBarView(
                   controller: _tabController,
@@ -483,17 +586,21 @@ class _ContactsScreenState extends State<ContactsScreen>
             ],
           ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.teal,
-        foregroundColor: Colors.black,
-        elevation: 4,
-        icon: const Icon(Icons.person_add_alt_1),
-        label: const Text(
-          'جهة جديدة',
-          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700),
+        floatingActionButton: FloatingActionButton.extended(
+          backgroundColor: const Color(0xFF00B4D8),
+          foregroundColor: Colors.white,
+          elevation: 4,
+          icon: const Icon(Icons.person_add_rounded, size: 20),
+          label: const Text(
+            'جهة جديدة',
+            style: TextStyle(
+              fontFamily: 'Cairo',
+              fontWeight: FontWeight.w800,
+              fontSize: 13.5,
+            ),
+          ),
+          onPressed: () => _showAddEditModal(),
         ),
-        onPressed: () => _showAddEditModal(),
       ),
     );
   }
@@ -501,7 +608,7 @@ class _ContactsScreenState extends State<ContactsScreen>
   Widget _buildRobotContactsTab() {
     if (_loadingRobot) {
       return const Center(
-        child: CircularProgressIndicator(color: AppColors.teal),
+        child: CircularProgressIndicator(color: Color(0xFF00B4D8)),
       );
     }
 
@@ -520,47 +627,62 @@ class _ContactsScreenState extends State<ContactsScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.contact_phone_outlined,
-                size: 64,
-                color: AppColors.teal.withValues(alpha: 0.4),
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0F2FE),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFBAE6FD)),
+                ),
+                child: const Icon(
+                  Icons.contact_phone_rounded,
+                  size: 36,
+                  color: Color(0xFF0284C7),
+                ),
               ),
               const SizedBox(height: 16),
               const Text(
-                'مفيش جهات اتصال مسجلة في نيبولا',
+                'لا توجد جهات اتصال مسجلة في نيبولا',
                 style: TextStyle(
                   fontFamily: 'Cairo',
                   fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
                 ),
               ),
               const SizedBox(height: 8),
               const Text(
-                'اضغط على زرار المزامنة فوق عشان تسحب أرقامك من الموبايل أو ضيف جهة يدوياً.',
+                'اضغط على زر المزامنة بالأعلى لسحب أرقامك من الموبايل أو أضف جهة يدوياً.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'Cairo',
                   fontSize: 13,
-                  color: AppColors.textMuted,
+                  color: Color(0xFF64748B),
+                  height: 1.5,
                 ),
               ),
               const SizedBox(height: 20),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.teal,
-                  foregroundColor: Colors.black,
+                  backgroundColor: const Color(0xFF00B4D8),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
                 onPressed: _syncAllFromDevice,
-                icon: const Icon(Icons.sync),
+                icon: const Icon(Icons.sync_rounded, size: 18),
                 label: const Text(
-                  'مزامنة الأرقام من الموبايل دلوقتي',
+                  'مزامنة الأرقام من الموبايل الآن',
                   style: TextStyle(
                     fontFamily: 'Cairo',
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
@@ -571,8 +693,8 @@ class _ContactsScreenState extends State<ContactsScreen>
     }
 
     return RefreshIndicator(
-      color: AppColors.teal,
-      backgroundColor: AppColors.surface,
+      color: const Color(0xFF00B4D8),
+      backgroundColor: Colors.white,
       onRefresh: _loadRobotContacts,
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
@@ -601,43 +723,62 @@ class _ContactsScreenState extends State<ContactsScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.security, size: 64, color: AppColors.warning),
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: const Icon(
+                  Icons.security_rounded,
+                  size: 36,
+                  color: Color(0xFFD97706),
+                ),
+              ),
               const SizedBox(height: 16),
               const Text(
                 'يلزم تفعيل صلاحية جهات الاتصال',
                 style: TextStyle(
                   fontFamily: 'Cairo',
                   fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
                 ),
               ),
               const SizedBox(height: 8),
               const Text(
-                'نيبولا محتاج إذن الوصول لدليل الهاتف عشان يقرأ الأرقام ويسمح للروبوت يكلم أصحابك وعيلتك بأمر صوتي.',
+                'نيبولا يحتاج إذن الوصول لدليل الهاتف حتى يتمكن المساعد من قراءة الأرقام والتواصل مع أصحابك وعائلتك بأمر صوتي.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'Cairo',
                   fontSize: 13,
-                  color: AppColors.textMuted,
+                  color: Color(0xFF64748B),
+                  height: 1.5,
                 ),
               ),
               const SizedBox(height: 20),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.teal,
-                  foregroundColor: Colors.black,
+                  backgroundColor: const Color(0xFF00B4D8),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
                 onPressed: _checkAndLoadDeviceContacts,
-                icon: const Icon(Icons.check_circle_outline),
+                icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
                 label: const Text(
                   'تفعيل الصلاحية وقراءة الأسماء',
                   style: TextStyle(
                     fontFamily: 'Cairo',
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
@@ -649,7 +790,7 @@ class _ContactsScreenState extends State<ContactsScreen>
 
     if (_loadingDevice) {
       return const Center(
-        child: CircularProgressIndicator(color: AppColors.teal),
+        child: CircularProgressIndicator(color: Color(0xFF00B4D8)),
       );
     }
 
@@ -665,8 +806,12 @@ class _ContactsScreenState extends State<ContactsScreen>
     if (filtered.isEmpty) {
       return const Center(
         child: Text(
-          'مفيش جهات اتصال مطابقة في الهاتف',
-          style: TextStyle(fontFamily: 'Cairo', color: AppColors.textMuted),
+          'لا توجد جهات اتصال مطابقة في الهاتف',
+          style: TextStyle(
+            fontFamily: 'Cairo',
+            color: Color(0xFF64748B),
+            fontSize: 14,
+          ),
         ),
       );
     }
@@ -678,35 +823,40 @@ class _ContactsScreenState extends State<ContactsScreen>
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: AppColors.teal.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.teal.withValues(alpha: 0.3)),
+            color: const Color(0xFFE0F2FE),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFBAE6FD)),
           ),
           child: Row(
             children: [
-              const Icon(Icons.phone_iphone, color: AppColors.teal, size: 20),
+              const Icon(
+                Icons.phone_iphone_rounded,
+                color: Color(0xFF0284C7),
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'تم العثور على ${filtered.length} جهة اتصال في الموبايل',
                   style: const TextStyle(
                     fontFamily: 'Cairo',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0369A1),
                   ),
                 ),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.teal,
-                  foregroundColor: Colors.black,
+                  backgroundColor: const Color(0xFF00B4D8),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
+                    horizontal: 14,
+                    vertical: 8,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
                 onPressed: _syncing ? null : _syncAllFromDevice,
@@ -715,7 +865,7 @@ class _ContactsScreenState extends State<ContactsScreen>
                   style: const TextStyle(
                     fontFamily: 'Cairo',
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
@@ -741,25 +891,49 @@ class _ContactsScreenState extends State<ContactsScreen>
                     (c1 == c2 || c1.endsWith(c2) || c2.endsWith(c1));
               });
 
-              return NebulaCard(
-                padding: const EdgeInsets.all(12),
+              return Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: alreadyInRobot
-                          ? AppColors.teal.withValues(alpha: 0.2)
-                          : AppColors.surface,
-                      child: Text(
-                        dc.displayName.isNotEmpty
-                            ? dc.displayName.characters.first
-                            : '?',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontWeight: FontWeight.w700,
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: alreadyInRobot
+                            ? const Color(0xFFDCFCE7)
+                            : const Color(0xFFF1F5F9),
+                        shape: BoxShape.circle,
+                        border: Border.all(
                           color: alreadyInRobot
-                              ? AppColors.teal
-                              : AppColors.textPrimary,
+                              ? const Color(0xFF86EFAC)
+                              : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          dc.displayName.isNotEmpty
+                              ? dc.displayName.characters.first
+                              : '?',
+                          style: TextStyle(
+                            fontFamily: 'Cairo',
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color: alreadyInRobot
+                                ? const Color(0xFF16A34A)
+                                : const Color(0xFF0F172A),
+                          ),
                         ),
                       ),
                     ),
@@ -772,18 +946,19 @@ class _ContactsScreenState extends State<ContactsScreen>
                             dc.displayName,
                             style: const TextStyle(
                               fontFamily: 'Cairo',
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w800,
                               fontSize: 14,
-                              color: AppColors.textPrimary,
+                              color: Color(0xFF0F172A),
                             ),
                           ),
+                          const SizedBox(height: 2),
                           Text(
                             phone,
                             textDirection: TextDirection.ltr,
                             style: const TextStyle(
                               fontFamily: 'Cairo',
                               fontSize: 12,
-                              color: AppColors.textMuted,
+                              color: Color(0xFF64748B),
                             ),
                           ),
                         ],
@@ -792,34 +967,53 @@ class _ContactsScreenState extends State<ContactsScreen>
                     if (alreadyInRobot)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
+                          horizontal: 10,
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.success.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: AppColors.success.withValues(alpha: 0.4),
-                          ),
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF86EFAC)),
                         ),
-                        child: const Text(
-                          'مضاف للروبوت ✓',
-                          style: TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.success,
-                          ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle_rounded,
+                              size: 14,
+                              color: Color(0xFF16A34A),
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'مضاف ✓',
+                              style: TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF16A34A),
+                              ),
+                            ),
+                          ],
                         ),
                       )
                     else
-                      IconButton(
-                        icon: const Icon(
-                          Icons.add_circle_outline,
-                          color: AppColors.teal,
+                      InkWell(
+                        onTap: () => _addDeviceContactToRobot(dc),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE0F2FE),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFBAE6FD)),
+                          ),
+                          child: const Icon(
+                            Icons.add_rounded,
+                            color: Color(0xFF0284C7),
+                            size: 20,
+                          ),
                         ),
-                        tooltip: 'إضافة لقائمة الروبوت',
-                        onPressed: () => _addDeviceContactToRobot(dc),
                       ),
                   ],
                 ),
@@ -851,32 +1045,86 @@ class _RobotContactCard extends StatelessWidget {
     required this.onSms,
   });
 
+  Widget _buildActionIconButton({
+    required IconData icon,
+    required Color color,
+    required Color bgColor,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: color, size: 17),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return NebulaCard(
-      padding: const EdgeInsets.all(14),
-      borderColor: contact.isAllowlisted
-          ? AppColors.teal.withValues(alpha: 0.4)
-          : AppColors.cardBorder,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: contact.isAllowlisted
+              ? const Color(0xFFBAE6FD)
+              : const Color(0xFFE2E8F0),
+          width: contact.isAllowlisted ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: contact.isAllowlisted
+                ? const Color(0xFF00B4D8).withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: contact.isAllowlisted
-                    ? AppColors.teal.withValues(alpha: 0.2)
-                    : AppColors.textMuted.withValues(alpha: 0.1),
-                child: Text(
-                  contact.name.isNotEmpty ? contact.name.characters.first : '?',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: contact.isAllowlisted
+                      ? const Color(0xFFE0F2FE)
+                      : const Color(0xFFF1F5F9),
+                  shape: BoxShape.circle,
+                  border: Border.all(
                     color: contact.isAllowlisted
-                        ? AppColors.teal
-                        : AppColors.textMuted,
+                        ? const Color(0xFFBAE6FD)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    contact.name.isNotEmpty
+                        ? contact.name.characters.first
+                        : '?',
+                    style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: contact.isAllowlisted
+                          ? const Color(0xFF0284C7)
+                          : const Color(0xFF64748B),
+                    ),
                   ),
                 ),
               ),
@@ -894,7 +1142,7 @@ class _RobotContactCard extends StatelessWidget {
                               fontFamily: 'Cairo',
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary,
+                              color: Color(0xFF0F172A),
                             ),
                           ),
                         ),
@@ -903,12 +1151,15 @@ class _RobotContactCard extends StatelessWidget {
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
+                              horizontal: 8,
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.purple.withValues(alpha: 0.2),
+                              color: const Color(0xFFF3E8FF),
                               borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0xFFE9D5FF),
+                              ),
                             ),
                             child: Text(
                               contact.relationship!,
@@ -916,7 +1167,7 @@ class _RobotContactCard extends StatelessWidget {
                                 fontFamily: 'Cairo',
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.purple,
+                                color: Color(0xFF9333EA),
                               ),
                             ),
                           ),
@@ -929,8 +1180,9 @@ class _RobotContactCard extends StatelessWidget {
                       textDirection: TextDirection.ltr,
                       style: const TextStyle(
                         fontFamily: 'Cairo',
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
@@ -940,7 +1192,8 @@ class _RobotContactCard extends StatelessWidget {
               // Allow switch
               Switch(
                 value: contact.isAllowlisted,
-                activeThumbColor: AppColors.teal,
+                activeThumbColor: const Color(0xFF00B4D8),
+                activeTrackColor: const Color(0xFFBAE6FD),
                 onChanged: onToggleAllowlist,
               ),
             ],
@@ -949,41 +1202,52 @@ class _RobotContactCard extends StatelessWidget {
           // Aliases display
           if (contact.aliases.isNotEmpty) ...[
             const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.record_voice_over_outlined,
-                  size: 14,
-                  color: AppColors.textMuted,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'الأسماء الصوتية: ${contact.aliases}',
-                    style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 11,
-                      color: AppColors.textMuted,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.record_voice_over_rounded,
+                    size: 15,
+                    color: Color(0xFF0284C7),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'الأسماء الصوتية: ${contact.aliases}',
+                      style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 11.5,
+                        color: Color(0xFF475569),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
 
-          const Divider(color: AppColors.cardBorder, height: 20),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Divider(color: Color(0xFFF1F5F9), height: 1),
+          ),
 
           // Action row
           Row(
             children: [
               // Security level pill
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.cardBorder),
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: Text(
                   contact.requiredLevel == 2
@@ -991,49 +1255,48 @@ class _RobotContactCard extends StatelessWidget {
                       : 'مستوى 1: تأكيد بسيط 🛡️',
                   style: const TextStyle(
                     fontFamily: 'Cairo',
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textMuted,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF64748B),
                   ),
                 ),
               ),
               const Spacer(),
 
               // Direct dial button
-              IconButton(
-                icon: const Icon(Icons.phone, color: AppColors.teal, size: 20),
-                tooltip: 'اتصال مباشر من الموبايل',
-                onPressed: onCall,
+              _buildActionIconButton(
+                icon: Icons.phone_rounded,
+                color: const Color(0xFF0284C7),
+                bgColor: const Color(0xFFE0F2FE),
+                tooltip: 'اتصال مباشر',
+                onTap: onCall,
               ),
+              const SizedBox(width: 6),
               // Direct SMS button
-              IconButton(
-                icon: const Icon(
-                  Icons.message_outlined,
-                  color: AppColors.purple,
-                  size: 20,
-                ),
+              _buildActionIconButton(
+                icon: Icons.message_rounded,
+                color: const Color(0xFF9333EA),
+                bgColor: const Color(0xFFF3E8FF),
                 tooltip: 'رسالة نصية',
-                onPressed: onSms,
+                onTap: onSms,
               ),
+              const SizedBox(width: 6),
               // Edit button
-              IconButton(
-                icon: const Icon(
-                  Icons.edit_outlined,
-                  color: AppColors.textSecondary,
-                  size: 20,
-                ),
+              _buildActionIconButton(
+                icon: Icons.edit_rounded,
+                color: const Color(0xFF475569),
+                bgColor: const Color(0xFFF1F5F9),
                 tooltip: 'تعديل البيانات',
-                onPressed: onEdit,
+                onTap: onEdit,
               ),
+              const SizedBox(width: 6),
               // Delete button
-              IconButton(
-                icon: const Icon(
-                  Icons.delete_outline,
-                  color: AppColors.error,
-                  size: 20,
-                ),
+              _buildActionIconButton(
+                icon: Icons.delete_outline_rounded,
+                color: const Color(0xFFDC2626),
+                bgColor: const Color(0xFFFEE2E2),
                 tooltip: 'حذف',
-                onPressed: onDelete,
+                onTap: onDelete,
               ),
             ],
           ),
@@ -1139,11 +1402,11 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.only(
-        top: 20,
+        top: 16,
         left: 20,
         right: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 20,
@@ -1157,38 +1420,87 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
             children: [
               Center(
                 child: Container(
-                  width: 40,
-                  height: 4,
+                  width: 44,
+                  height: 4.5,
                   decoration: BoxDecoration(
-                    color: AppColors.cardBorder,
-                    borderRadius: BorderRadius.circular(2),
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
-              Text(
-                widget.contact != null
-                    ? 'تعديل جهة الاتصال'
-                    : 'إضافة جهة اتصال لنيبولا',
-                style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2FE),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.person_pin_rounded,
+                      color: Color(0xFF0284C7),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    widget.contact != null
+                        ? 'تعديل بيانات جهة الاتصال'
+                        : 'إضافة جهة اتصال لنيبولا',
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 16.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
 
               // Name
               TextFormField(
                 controller: _nameCtrl,
                 style: const TextStyle(
-                  color: AppColors.textPrimary,
+                  color: Color(0xFF0F172A),
                   fontFamily: 'Cairo',
+                  fontSize: 13.5,
                 ),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'اسم جهة الاتصال *',
-                  prefixIcon: Icon(Icons.person_outline),
+                  labelStyle: const TextStyle(
+                    fontFamily: 'Cairo',
+                    color: Color(0xFF64748B),
+                    fontSize: 13,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.person_outline_rounded,
+                    color: Color(0xFF00B4D8),
+                    size: 20,
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF00B4D8),
+                      width: 1.5,
+                    ),
+                  ),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'لازم تكتب الاسم' : null,
@@ -1201,12 +1513,43 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 keyboardType: TextInputType.phone,
                 textDirection: TextDirection.ltr,
                 style: const TextStyle(
-                  color: AppColors.textPrimary,
+                  color: Color(0xFF0F172A),
                   fontFamily: 'Cairo',
+                  fontSize: 13.5,
                 ),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'رقم الهاتف * (مثال: +201012345678 أو 010...)',
-                  prefixIcon: Icon(Icons.phone_outlined),
+                  labelStyle: const TextStyle(
+                    fontFamily: 'Cairo',
+                    color: Color(0xFF64748B),
+                    fontSize: 13,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.phone_outlined,
+                    color: Color(0xFF00B4D8),
+                    size: 20,
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF00B4D8),
+                      width: 1.5,
+                    ),
+                  ),
                 ),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'لازم تكتب الرقم';
@@ -1219,14 +1562,45 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               // Relationship Dropdown
               DropdownButtonFormField<String>(
                 initialValue: _relationship,
-                dropdownColor: AppColors.card,
+                dropdownColor: Colors.white,
                 style: const TextStyle(
-                  color: AppColors.textPrimary,
+                  color: Color(0xFF0F172A),
                   fontFamily: 'Cairo',
+                  fontSize: 13.5,
                 ),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'صلة القرابة / العلاقة',
-                  prefixIcon: Icon(Icons.family_restroom_outlined),
+                  labelStyle: const TextStyle(
+                    fontFamily: 'Cairo',
+                    color: Color(0xFF64748B),
+                    fontSize: 13,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.family_restroom_rounded,
+                    color: Color(0xFF00B4D8),
+                    size: 20,
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF00B4D8),
+                      width: 1.5,
+                    ),
+                  ),
                 ),
                 items: _relationships
                     .map((r) => DropdownMenuItem(value: r, child: Text(r)))
@@ -1239,69 +1613,140 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               TextFormField(
                 controller: _aliasesCtrl,
                 style: const TextStyle(
-                  color: AppColors.textPrimary,
+                  color: Color(0xFF0F172A),
                   fontFamily: 'Cairo',
+                  fontSize: 13.5,
                 ),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'الأسماء البديلة في الصوت (مفصولة بفاصلة)',
                   hintText: 'مثال: مامي, أمي, الوالدة',
-                  prefixIcon: Icon(Icons.record_voice_over_outlined),
+                  hintStyle: const TextStyle(
+                    fontFamily: 'Cairo',
+                    color: Color(0xFF94A3B8),
+                    fontSize: 12,
+                  ),
+                  labelStyle: const TextStyle(
+                    fontFamily: 'Cairo',
+                    color: Color(0xFF64748B),
+                    fontSize: 13,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.record_voice_over_rounded,
+                    color: Color(0xFF00B4D8),
+                    size: 20,
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF00B4D8),
+                      width: 1.5,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
 
               // Switches
-              SwitchListTile(
-                title: const Text(
-                  'السماح لنيبولا بالاتصال بهذه الجهة',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 13,
-                    color: AppColors.textPrimary,
-                  ),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                value: _isAllowlisted,
-                activeThumbColor: AppColors.teal,
-                onChanged: (v) => setState(() => _isAllowlisted = v),
-                contentPadding: EdgeInsets.zero,
-              ),
-              SwitchListTile(
-                title: const Text(
-                  'طلب تأكيد صوتي قبل إجراء المكالمة',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 13,
-                    color: AppColors.textPrimary,
-                  ),
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      title: const Text(
+                        'السماح لنيبولا بالاتصال بهذه الجهة',
+                        style: TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      value: _isAllowlisted,
+                      activeThumbColor: const Color(0xFF00B4D8),
+                      onChanged: (v) => setState(() => _isAllowlisted = v),
+                    ),
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    SwitchListTile(
+                      title: const Text(
+                        'طلب تأكيد صوتي قبل إجراء المكالمة',
+                        style: TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      value: _requiresConfirmation,
+                      activeThumbColor: const Color(0xFF00B4D8),
+                      onChanged: (v) => setState(() => _requiresConfirmation = v),
+                    ),
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    SwitchListTile(
+                      title: const Text(
+                        'إبلاغ هذه الجهة إذا نسيت جرعة الدواء',
+                        style: TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      value: _notifyOnMissed,
+                      activeThumbColor: const Color(0xFF00B4D8),
+                      onChanged: (v) => setState(() => _notifyOnMissed = v),
+                    ),
+                  ],
                 ),
-                value: _requiresConfirmation,
-                activeThumbColor: AppColors.teal,
-                onChanged: (v) => setState(() => _requiresConfirmation = v),
-                contentPadding: EdgeInsets.zero,
-              ),
-              SwitchListTile(
-                title: const Text(
-                  'إبلاغ هذه الجهة إذا نسيت جرعة الدواء',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 13,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                value: _notifyOnMissed,
-                activeThumbColor: AppColors.teal,
-                onChanged: (v) => setState(() => _notifyOnMissed = v),
-                contentPadding: EdgeInsets.zero,
               ),
               const SizedBox(height: 20),
 
-              NebulaPrimaryButton(
-                label: widget.contact != null
-                    ? 'حفظ التعديلات'
-                    : 'إضافة للروبوت',
-                icon: Icons.check,
-                loading: _saving,
-                onTap: _save,
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00B4D8),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.check_rounded, size: 20),
+                label: Text(
+                  widget.contact != null ? 'حفظ التعديلات' : 'إضافة لنيبولا',
+                  style: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),

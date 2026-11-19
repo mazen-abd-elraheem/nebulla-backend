@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../models/models.dart';
+import '../services/storage_service.dart';
 import '../services/nebula_repository.dart';
 import '../services/avatar_audio_service.dart';
 import '../widgets/common_widgets.dart';
@@ -54,7 +56,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<_ChatMessageItem> _messages = [];
   String? _sessionId;
   bool _sending = false;
-  String _assistantName = 'مازن (Mazen) - التوأم الرقمي';
+  String _assistantName = 'التوأم الرقمي';
   int? _activePersonalityId = 1;
 
   // Liked/disliked message state for the thumb icons
@@ -142,19 +144,28 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Initial state: ONLY the welcome greeting message is present at start!
   /// No fake questions or answers, exactly as requested: "المسج تبقى في الاول بس ولما اعمل حاجه جديده تتغير وتمشي"
   void _seedInitialWelcomeMessage() {
+    final user = StorageService.instance.getUser();
+    final displayName = user != null && user.fullName.isNotEmpty
+        ? user.fullName
+        : 'صديقي';
+    final assistantTitle = user != null && user.fullName.isNotEmpty
+        ? '${user.fullName} - التوأم الرقمي'
+        : 'التوأم الرقمي';
+    _assistantName = assistantTitle;
+
     _messages.clear();
     _messages.add(
       _ChatMessageItem(
         id: 'msg_welcome',
         role: 'assistant',
         content:
-            'أهلاً بك! أنا مازن، توأمك الرقمي ومساعدك الذكي لنظام نيبولا. اسألني عن مشروع التخرج، الروبوت، الذاكرة، أو أي استفسار تريده!',
+            'أهلاً بك يا $displayName! أنا توأمك الرقمي ومساعدك الذكي لنظام نيبولا. اسألني عن الروبوت، الذاكرة، أو أي استفسار تريده!',
         time: 'اليوم، ${_formatCurrentTime()}',
         isWelcome: true,
         quickActions: [
-          'مين هو مازن؟',
-          'مشروع تخرج روبوت نيبولا',
-          'أين جواز السفر والمفاتيح؟',
+          'من أنت وكيف تساعدني؟',
+          'مواصفات وإمكانيات الروبوت',
+          'ما هي معلوماتك في الذاكرة؟',
         ],
       ),
     );
@@ -170,14 +181,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadActivePersonality() async {
     try {
+      final user = StorageService.instance.getUser();
       final personalities = await _repo.getPersonalities();
-      final active =
-          personalities.where((p) => p.isActive).firstOrNull ??
+      Personality? active;
+      if (user != null && user.fullName.isNotEmpty) {
+        active = personalities.where((p) => p.name.contains(user.fullName)).firstOrNull;
+      }
+      active ??= personalities.where((p) => p.isActive).firstOrNull ??
           personalities.firstOrNull;
       if (active != null && mounted) {
+        var name = active.name;
+        if (user != null && user.fullName.isNotEmpty && (name == 'التوأم الرقمي' || name == 'نيبولا')) {
+          name = '${user.fullName} - التوأم الرقمي';
+        }
         setState(() {
-          _assistantName = active.name;
-          _activePersonalityId = active.id;
+          _assistantName = name;
+          _activePersonalityId = active!.id;
         });
       }
     } catch (_) {}
@@ -469,7 +488,6 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildTopAppBar() {
     final locale = LocaleService.instance;
     final isArabic = locale.isArabic;
-    final t = locale.translate;
 
     final menuBtn = InkWell(
       onTap: () => MainShell.openSideMenu(context),
@@ -538,76 +556,9 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             // Visual Left
             leftSide,
-            const SizedBox(width: 12),
 
-            // Center Branding ('المساعد الذكي' removed)
-            Expanded(
-              child: Directionality(
-                textDirection: locale.textDirection,
-                child: Row(
-                  children: [
-                    // Robot Avatar with cyan glowing ring
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFF0FDFE),
-                        border: Border.all(
-                            color: const Color(0xFF00E5FF), width: 1.8),
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.smart_toy_rounded,
-                          color: Color(0xFF0096C7),
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          t('brand_name'),
-                          style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF0F172A),
-                            height: 1.2,
-                          ),
-                        ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Color(0xFF10B981),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              t('online_now'),
-                              style: const TextStyle(
-                                fontFamily: 'Cairo',
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF0096C7),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            // Center Branding removed completely as requested
+            const Spacer(),
 
             // Visual Right
             rightSide,
@@ -643,54 +594,70 @@ class _ChatScreenState extends State<ChatScreen> {
             _buildCyborgAvatarCircle(radius: 22),
             const SizedBox(width: 10),
 
-            // Dynamic User-Chosen Persona Name & Live Status
+            // Dynamic User-Chosen Persona Name & Live Status (Tappable to switch)
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _assistantName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F172A),
-                      height: 1.2,
-                    ),
-                  ),
-                  Row(
+              child: InkWell(
+                onTap: _showPersonalitySwitchDialog,
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Color(0xFF00C7E5),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          LocaleService.instance.isArabic
-                              ? 'متصل الآن - استجابة فورية'
-                              : 'Online - Instant Response',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF0096C7),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _assistantName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 15,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF0F172A),
+                                height: 1.2,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 16,
+                            color: Color(0xFF00B4D8),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFF00C7E5),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            LocaleService.instance.isArabic
+                                ? 'متصل الآن - اضغط للتبديل'
+                                : 'Online - Tap to switch',
+                            style: const TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0096C7),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -756,10 +723,33 @@ class _ChatScreenState extends State<ChatScreen> {
                 borderRadius: BorderRadius.circular(16),
               ),
               onSelected: (val) {
+                if (val == 'switch_persona') _showPersonalitySwitchDialog();
                 if (val == 'new') _startNewSession();
                 if (val == 'clear') setState(() => _messages.clear());
               },
               itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'switch_persona',
+                  child: Directionality(
+                    textDirection: LocaleService.instance.textDirection,
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.switch_account_rounded,
+                          size: 18,
+                          color: Color(0xFF00B4D8),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          LocaleService.instance.isArabic
+                              ? 'تبديل الشخصية'
+                              : 'Switch Personality',
+                          style: const TextStyle(fontFamily: 'Cairo'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 PopupMenuItem(
                   value: 'new',
                   child: Directionality(
@@ -829,47 +819,263 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Builds the circular active GAGAvatar face thumbnail with live speaking pulse & popup
-  Widget _buildCyborgAvatarCircle({double radius = 18}) {
-    final audio = AvatarAudioService.instance;
-    return ValueListenableBuilder<bool>(
-      valueListenable: audio.isSpeaking,
-      builder: (context, isSpeaking, _) {
-        return InkWell(
-          onTap: _showLiveAvatarDialog,
-          borderRadius: BorderRadius.circular(radius),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            width: radius * 2,
-            height: radius * 2,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFF0F172A),
-              border: Border.all(
-                color: isSpeaking
-                    ? const Color(0xFF00E5FF)
-                    : const Color(0xFFE2E8F0),
-                width: isSpeaking ? 2.4 : 1.4,
-              ),
-              boxShadow: isSpeaking
-                  ? [
-                      BoxShadow(
-                        color: const Color(0xFF00E5FF).withValues(alpha: 0.55),
-                        blurRadius: 12,
-                        spreadRadius: 2,
-                      ),
-                    ]
-                  : null,
+  /// Shows Personality switcher bottom sheet dialog
+  Future<void> _showPersonalitySwitchDialog() async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Directionality(
+          textDirection: LocaleService.instance.textDirection,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: ActiveAvatarThumb(
-              size: radius * 2,
-              radius: radius,
-              showBorder: false,
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+            child: FutureBuilder<List<Personality>>(
+              future: _repo.getPersonalities(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: 180,
+                    child: Center(
+                      child: CircularProgressIndicator(color: Color(0xFF00B4D8)),
+                    ),
+                  );
+                }
+                final list = snapshot.data ?? [];
+                if (list.isEmpty) {
+                  return SizedBox(
+                    height: 160,
+                    child: Center(
+                      child: Text(
+                        LocaleService.instance.isArabic
+                            ? 'لا توجد شخصيات متاحة حالياً.'
+                            : 'No personalities available.',
+                        style: const TextStyle(fontFamily: 'Cairo'),
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFCBD5E1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const Icon(Icons.psychology_rounded, color: Color(0xFF00B4D8), size: 22),
+                        const SizedBox(width: 8),
+                        Text(
+                          LocaleService.instance.isArabic ? 'تبديل الشخصية الذكية' : 'Switch AI Persona',
+                          style: const TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    ...list.map((p) {
+                      final isSelected = p.id == _activePersonalityId;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isSelected ? const Color(0xFF00B4D8) : const Color(0xFFE2E8F0),
+                            width: isSelected ? 1.5 : 1.0,
+                          ),
+                        ),
+                        child: ListTile(
+                          onTap: () async {
+                            Navigator.of(ctx).pop();
+                            await _selectPersonality(p);
+                          },
+                          leading: CircleAvatar(
+                            backgroundColor: isSelected ? const Color(0xFF00B4D8) : const Color(0xFFE2E8F0),
+                            child: Icon(
+                              Icons.person_rounded,
+                              color: isSelected ? Colors.white : const Color(0xFF64748B),
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            p.name,
+                            style: TextStyle(
+                              fontFamily: 'Cairo',
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          subtitle: Text(
+                            p.dialect,
+                            style: const TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 11.5,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_circle_rounded, color: Color(0xFF00B4D8))
+                              : null,
+                        ),
+                      );
+                    }),
+                  ],
+                );
+              },
             ),
           ),
         );
       },
+    );
+  }
+
+
+  Future<void> _selectPersonality(Personality p) async {
+    setState(() {
+      _activePersonalityId = p.id;
+      _assistantName = p.name;
+    });
+
+    try {
+      await _repo.activatePersonality(p.id);
+    } catch (_) {}
+
+    if (!mounted) return;
+    showSuccessSnackbar(
+      context,
+      LocaleService.instance.isArabic
+          ? 'تم التحويل إلى شخصية "${p.name}" بنجاح ✨'
+          : 'Switched to persona "${p.name}" ✨',
+    );
+  }
+
+  /// Builds the circular digital avatar (using user uploaded photo if available)
+  Widget _buildCyborgAvatarCircle({double radius = 18}) {
+    final avatarPath = StorageService.instance.getUserAvatarPath();
+    final avatarUrl = StorageService.instance.getUserAvatarUrl();
+
+    Widget imageWidget;
+    if (avatarPath != null && File(avatarPath).existsSync()) {
+      imageWidget = Image.file(
+        File(avatarPath),
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+        errorBuilder: (context, error, stackTrace) => _defaultAvatarFallback(radius),
+      );
+    } else if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      final base = StorageService.instance.getBaseUrl();
+      final fullUrl = avatarUrl.startsWith('http') ? avatarUrl : '$base$avatarUrl';
+      imageWidget = Image.network(
+        fullUrl,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+        errorBuilder: (context, error, stackTrace) => _defaultAvatarFallback(radius),
+      );
+    } else {
+      imageWidget = _defaultAvatarFallback(radius);
+    }
+
+    return InkWell(
+      onTap: _showLiveAvatarDialog,
+      borderRadius: BorderRadius.circular(radius),
+      child: Container(
+        width: radius * 2,
+        height: radius * 2,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFFF1F5F9),
+          border: Border.all(color: const Color(0xFF00B4D8), width: 1.5),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: imageWidget,
+      ),
+    );
+  }
+
+  Widget _defaultAvatarFallback(double radius) {
+    final user = StorageService.instance.getUser();
+    final isFemale = AvatarAudioService.instance.activeAvatarType.value == 'female';
+    final img = isFemale ? 'assets/images/avatar_female.png' : 'assets/images/avatar_male.jpg';
+    return Image.asset(
+      img,
+      fit: BoxFit.cover,
+      alignment: Alignment.topCenter,
+      errorBuilder: (context, error, stackTrace) =>
+          _userInitialWidget(user?.fullName, radius),
+    );
+  }
+
+  /// Builds user avatar circle for user chat messages
+  Widget _buildUserAvatarCircle({double radius = 18}) {
+    final avatarPath = StorageService.instance.getUserAvatarPath();
+    final avatarUrl = StorageService.instance.getUserAvatarUrl();
+    final user = StorageService.instance.getUser();
+
+    Widget imageWidget;
+    if (avatarPath != null && File(avatarPath).existsSync()) {
+      imageWidget = Image.file(
+        File(avatarPath),
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+        errorBuilder: (context, error, stackTrace) => _userInitialWidget(user?.fullName, radius),
+      );
+    } else if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      final base = StorageService.instance.getBaseUrl();
+      final fullUrl = avatarUrl.startsWith('http') ? avatarUrl : '$base$avatarUrl';
+      imageWidget = Image.network(
+        fullUrl,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+        errorBuilder: (context, error, stackTrace) => _userInitialWidget(user?.fullName, radius),
+      );
+    } else {
+      imageWidget = _userInitialWidget(user?.fullName, radius);
+    }
+
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: const Color(0xFFE0F2FE),
+        border: Border.all(color: const Color(0xFF0284C7), width: 1.4),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: imageWidget,
+    );
+  }
+
+  Widget _userInitialWidget(String? name, double radius) {
+    final initial = (name != null && name.trim().isNotEmpty) ? name.trim()[0].toUpperCase() : 'U';
+    return Center(
+      child: Text(
+        initial,
+        style: TextStyle(
+          fontFamily: 'Cairo',
+          fontSize: radius * 0.9,
+          fontWeight: FontWeight.bold,
+          color: const Color(0xFF0284C7),
+        ),
+      ),
     );
   }
 
@@ -1087,7 +1293,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
 
-                if (isUser) const SizedBox(width: 8),
+                if (isUser) ...[
+                  const SizedBox(width: 8),
+                  _buildUserAvatarCircle(radius: 17),
+                ],
               ],
             ),
 

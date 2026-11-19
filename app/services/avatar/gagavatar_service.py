@@ -584,7 +584,10 @@ class GAGAvatarService:
         if personality_id is not None:
             stmt = stmt.where(AvatarProfile.personality_id == personality_id)
         res = await db.execute(stmt)
-        return list(res.scalars().all())
+        avatars = list(res.scalars().all())
+        # Filter out orphaned records whose preview files do not exist on disk (e.g. purged test runs)
+        valid = [a for a in avatars if a.avatar_preview_path and Path(a.avatar_preview_path).exists()]
+        return valid
 
     async def get_avatar(
         self,

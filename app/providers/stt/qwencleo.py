@@ -635,13 +635,14 @@ class QwenCleoProvider(BaseSTTProvider):
                     try:
                         free_bytes, _total_bytes = torch.cuda.mem_get_info(device_idx)
                         free_mib = int(free_bytes // (1024 * 1024))
-                        # Reserve 800 MiB for inference activations, KV cache & WDDM overhead
-                        gpu_budget_mib = max(0, free_mib - 800)
+                        # Reserve at least 3200 MiB for VoiceTut-TTS to guarantee sub-second synthesis without WDDM PCIe paging
+                        gpu_budget_mib = min(1536, max(0, free_mib - 3200))
                         logger.info(
-                            f"CUDA GPU0 free VRAM: {free_mib} MiB -> QwenCleo GPU budget: {gpu_budget_mib} MiB"
+                            f"CUDA GPU0 free VRAM: {free_mib} MiB -> QwenCleo GPU budget capped at {gpu_budget_mib} MiB "
+                            f"(reserving ~{max(0, free_mib - gpu_budget_mib)} MiB dedicated for VoiceTut-TTS)"
                         )
                     except Exception:
-                        gpu_budget_mib = 2400
+                        gpu_budget_mib = 1200
                 else:
                     logger.warning("CUDA requested for QwenCleo but not available. Using CPU.")
 
