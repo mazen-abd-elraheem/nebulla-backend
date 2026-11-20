@@ -27,70 +27,98 @@ logger = get_logger(__name__)
 
 TARGET_SIZE = 512
 
-# Expression deformation recipes driven by detected 5-point landmarks (subtle, human, photorealistic)
+# Expression deformation recipes driven by detected 5-point landmarks (vivid, distinct, human & photorealistic)
 _LOCAL_EXPRESSION_RECIPES: Dict[str, Dict[str, Any]] = {
     "neutral": {},
     "blink": {"blink_l": 0.85, "blink_r": 0.85},
-    "happy": {"smile": 0.65, "cheek_lift": 0.30, "mouth_open": 0.08, "warmth": 1.04},
-    "laugh": {
-        "smile": 0.85,
-        "cheek_lift": 0.45,
-        "squint": 0.20,
-        "mouth_open": 0.28,
-        "tilt_deg": 1.2,
-        "warmth": 1.05,
-    },
-    "love": {
-        "smile": 0.60,
-        "cheek_lift": 0.28,
-        "blush": 0.22,
-        "tilt_deg": 1.4,
+    "happy": {
+        "smile": 1.0,
+        "cheek_lift": 0.55,
+        "squint": 0.40,
+        "tilt_deg": 2.8,
+        "shift_y": -3.0,
         "warmth": 1.06,
     },
+    "laugh": {
+        "smile": 1.25,
+        "cheek_lift": 0.75,
+        "squint": 0.60,
+        "mouth_open": 0.22,
+        "tilt_deg": 3.8,
+        "shift_y": -4.0,
+        "warmth": 1.08,
+    },
+    "love": {
+        "smile": 0.95,
+        "cheek_lift": 0.50,
+        "squint": 0.35,
+        "blush": 0.40,
+        "tilt_deg": 3.0,
+        "shift_y": -2.0,
+        "warmth": 1.08,
+    },
     "sad": {
-        "smile": -0.50,
-        "brow_inner_lift": 0.40,
-        "blink_l": 0.15,
-        "blink_r": 0.15,
-        "tilt_deg": -1.2,
-        "warmth": 0.94,
+        "frown": 1.0,
+        "brow_inner_lift": 0.85,
+        "tilt_deg": -3.0,
+        "shift_y": 5.0,
+        "warmth": 0.90,
+        "brightness": 0.97,
     },
     "surprised": {
-        "brow_raise": 0.60,
-        "eye_widen": 0.35,
-        "mouth_o": 0.35,
+        "brow_raise": 1.0,
+        "mouth_o": 0.70,
         "mouth_open": 0.28,
-        "warmth": 1.03,
+        "tilt_deg": -1.5,
+        "shift_y": -4.0,
+        "brightness": 1.04,
     },
     "angry": {
-        "brow_furrow": 0.60,
-        "squint": 0.20,
-        "smile": -0.38,
-        "mouth_tense": 0.35,
-        "warmth": 1.02,
+        "brow_furrow": 1.0,
+        "squint": 0.50,
+        "frown": 0.50,
+        "tilt_deg": -2.2,
+        "shift_y": 5.0,
+        "warmth": 0.94,
+        "contrast": 1.08,
     },
     "thinking": {
-        "brow_asym": 0.50,
-        "mouth_shift_x": 0.25,
-        "smile": -0.08,
-        "tilt_deg": 1.8,
+        "brow_asym": 1.0,
+        "mouth_shift_x": 0.75,
+        "tilt_deg": 4.2,
+        "shift_y": -2.0,
+        "warmth": 1.01,
     },
     "wink": {
+        "smile": 0.95,
         "blink_r": 0.85,
-        "smile": 0.55,
-        "cheek_lift": 0.25,
-        "tilt_deg": 1.4,
-        "warmth": 1.04,
+        "squint": 0.30,
+        "cheek_lift": 0.50,
+        "tilt_deg": 2.5,
+        "warmth": 1.05,
     },
     "sleepy": {
-        "blink_l": 0.55,
-        "blink_r": 0.55,
-        "mouth_open": 0.06,
-        "tilt_deg": -1.4,
-        "warmth": 0.96,
+        "blink_l": 0.60,
+        "blink_r": 0.60,
+        "tilt_deg": -3.2,
+        "shift_y": 6.0,
+        "warmth": 0.94,
+        "brightness": 0.95,
     },
-    "wave": {"smile": 0.68, "cheek_lift": 0.30, "mouth_open": 0.10, "tilt_deg": 1.2, "warmth": 1.04},
-    "like": {"smile": 0.65, "cheek_lift": 0.28, "mouth_open": 0.06, "tilt_deg": -1.2, "warmth": 1.04},
+    "wave": {
+        "smile": 1.05,
+        "cheek_lift": 0.55,
+        "tilt_deg": 3.5,
+        "shift_y": -3.0,
+        "warmth": 1.06,
+    },
+    "like": {
+        "smile": 0.95,
+        "brow_asym": 0.45,
+        "tilt_deg": -2.5,
+        "shift_y": -1.0,
+        "warmth": 1.04,
+    },
 }
 
 _MOUTH_LEVEL_AMOUNTS: Dict[int, float] = {
@@ -337,117 +365,113 @@ class LocalFaceAnimator:
         disp_x = np.zeros((TARGET_SIZE, TARGET_SIZE), dtype=np.float32)
         disp_y = np.zeros((TARGET_SIZE, TARGET_SIZE), dtype=np.float32)
 
-        # 1. Smile / Frown (pull mouth corners up/down + slight cheek lift)
+        # 1. Smile (Corners UP and OUT with asymmetric vertical falloff: chin is never pulled)
         smile = float(recipe.get("smile", 0.0))
-        if abs(smile) > 1e-3:
-            corner_r = mouth_half_w * 0.72
-            up_shift = smile * inter_eye * 0.095
-            out_shift = smile * inter_eye * 0.048
-            g_lm = self._gauss(lmx, lmy, corner_r, corner_r * 0.85)
-            g_rm = self._gauss(rmx, rmy, corner_r, corner_r * 0.85)
-            # In cv2.remap: map_y = y + disp_y. Positive disp_y pulls pixels UP (samples from below).
-            disp_y += (g_lm + g_rm) * up_shift
-            disp_x += g_lm * out_shift - g_rm * out_shift
+        if smile > 1e-3:
+            up_px = smile * 11.5
+            out_px = smile * 7.0
+            for cx, cy, sign in ((lmx, lmy, 1.0), (rmx, rmy, -1.0)):
+                dx = (self._grid_x - cx) / max(2.0, mouth_half_w * 0.70)
+                ry_c = np.where(self._grid_y < cy, mouth_half_w * 0.70, mouth_half_w * 0.35)
+                dy = (self._grid_y - cy) / ry_c
+                g = np.exp(-0.5 * (dx * dx + dy * dy)).astype(np.float32)
+                disp_y += g * up_px
+                disp_x += g * (out_px * sign)
 
+        # 2. Frown (Corners DOWN with smooth gentle falloff)
+        frown = float(recipe.get("frown", 0.0))
+        if frown < 1e-3 and smile < -1e-3:
+            frown = abs(smile)
+        if frown > 1e-3:
+            down_px = frown * 10.0
+            for cx, cy, sign in ((lmx, lmy, -1.0), (rmx, rmy, 1.0)):
+                dx = (self._grid_x - cx) / max(2.0, mouth_half_w * 0.70)
+                ry_c = np.where(self._grid_y > cy, mouth_half_w * 0.70, mouth_half_w * 0.35)
+                dy = (self._grid_y - cy) / ry_c
+                g = np.exp(-0.5 * (dx * dx + dy * dy)).astype(np.float32)
+                disp_y -= g * down_px
+                disp_x += g * (frown * 3.0 * sign)
+
+        # 3. Cheek lift (apples of cheeks lift)
         cheek_lift = float(recipe.get("cheek_lift", 0.0))
         if cheek_lift > 1e-3:
             ck_r = inter_eye * 0.36
-            g_lc = self._gauss(lx - inter_eye * 0.12, (ly + lmy) * 0.52, ck_r, ck_r * 0.85)
-            g_rc = self._gauss(rx + inter_eye * 0.12, (ry + rmy) * 0.52, ck_r, ck_r * 0.85)
-            disp_y += (g_lc + g_rc) * (cheek_lift * inter_eye * 0.065)
+            g_lc = np.exp(-0.5 * (((self._grid_x - (lx - inter_eye * 0.08)) / ck_r) ** 2 + ((self._grid_y - (ly + lmy) * 0.50) / (ck_r * 0.75)) ** 2))
+            g_rc = np.exp(-0.5 * (((self._grid_x - (rx + inter_eye * 0.08)) / ck_r) ** 2 + ((self._grid_y - (ry + rmy) * 0.50) / (ck_r * 0.75)) ** 2))
+            disp_y += (g_lc + g_rc).astype(np.float32) * (cheek_lift * 8.0)
 
-        # 2. Eyebrows (raise, furrow, inner lift, asymmetric thinking)
-        brow_offset_y = inter_eye * 0.30
-        brow_rx = eye_r * 1.45
-        brow_ry = eye_r * 0.75
+        # 4. Eyebrows (smooth Gaussian on brow bone, zero sharp cutoffs)
+        brow_center_y = ly - inter_eye * 0.35
+        brow_rx = eye_r * 1.55
+        brow_ry = eye_r * 0.50
 
         brow_raise = float(recipe.get("brow_raise", 0.0))
         if brow_raise > 1e-3:
-            g_lb = self._gauss(lx, ly - brow_offset_y, brow_rx, brow_ry)
-            g_rb = self._gauss(rx, ry - brow_offset_y, brow_rx, brow_ry)
-            disp_y += (g_lb + g_rb) * (brow_raise * inter_eye * 0.11)
+            g_lb = np.exp(-0.5 * (((self._grid_x - lx) / brow_rx) ** 2 + ((self._grid_y - brow_center_y) / brow_ry) ** 2))
+            g_rb = np.exp(-0.5 * (((self._grid_x - rx) / brow_rx) ** 2 + ((self._grid_y - brow_center_y) / brow_ry) ** 2))
+            disp_y += (g_lb + g_rb).astype(np.float32) * (brow_raise * 9.5)
 
         brow_furrow = float(recipe.get("brow_furrow", 0.0))
         if brow_furrow > 1e-3:
-            g_li = self._gauss(lx + eye_r * 0.55, ly - brow_offset_y * 0.88, eye_r * 1.05, brow_ry)
-            g_ri = self._gauss(rx - eye_r * 0.55, ry - brow_offset_y * 0.88, eye_r * 1.05, brow_ry)
-            # Negative disp_y pulls upper brow pixels DOWN
-            disp_y -= (g_li + g_ri) * (brow_furrow * inter_eye * 0.11)
-            disp_x += g_li * (-brow_furrow * inter_eye * 0.05) + g_ri * (brow_furrow * inter_eye * 0.05)
+            g_li = np.exp(-0.5 * (((self._grid_x - (lx + eye_r * 0.45)) / (eye_r * 1.25)) ** 2 + ((self._grid_y - (brow_center_y + 4)) / brow_ry) ** 2))
+            g_ri = np.exp(-0.5 * (((self._grid_x - (rx - eye_r * 0.45)) / (eye_r * 1.25)) ** 2 + ((self._grid_y - (brow_center_y + 4)) / brow_ry) ** 2))
+            disp_y -= (g_li + g_ri).astype(np.float32) * (brow_furrow * 8.5)
+            disp_x += (g_li * (-brow_furrow * 4.5) + g_ri * (brow_furrow * 4.5)).astype(np.float32)
 
         brow_inner_lift = float(recipe.get("brow_inner_lift", 0.0))
         if brow_inner_lift > 1e-3:
-            g_li = self._gauss(lx + eye_r * 0.45, ly - brow_offset_y * 0.92, eye_r * 0.95, brow_ry)
-            g_ri = self._gauss(rx - eye_r * 0.45, ry - brow_offset_y * 0.92, eye_r * 0.95, brow_ry)
-            disp_y += (g_li + g_ri) * (brow_inner_lift * inter_eye * 0.085)
+            g_li = np.exp(-0.5 * (((self._grid_x - (lx + eye_r * 0.40)) / (eye_r * 1.15)) ** 2 + ((self._grid_y - brow_center_y) / brow_ry) ** 2))
+            g_ri = np.exp(-0.5 * (((self._grid_x - (rx - eye_r * 0.40)) / (eye_r * 1.15)) ** 2 + ((self._grid_y - brow_center_y) / brow_ry) ** 2))
+            disp_y += (g_li + g_ri).astype(np.float32) * (brow_inner_lift * 7.5)
 
         brow_asym = float(recipe.get("brow_asym", 0.0))
-        if brow_asym > 1e-3:
-            g_lb = self._gauss(lx, ly - brow_offset_y, brow_rx, brow_ry)
-            g_rb = self._gauss(rx, ry - brow_offset_y, brow_rx, brow_ry)
-            disp_y += g_lb * (brow_asym * inter_eye * 0.09) - g_rb * (brow_asym * inter_eye * 0.06)
+        if abs(brow_asym) > 1e-3:
+            g_lb = np.exp(-0.5 * (((self._grid_x - lx) / brow_rx) ** 2 + ((self._grid_y - brow_center_y) / brow_ry) ** 2))
+            g_rb = np.exp(-0.5 * (((self._grid_x - rx) / brow_rx) ** 2 + ((self._grid_y - brow_center_y) / brow_ry) ** 2))
+            disp_y += (g_lb * (brow_asym * 10.0) - g_rb * (brow_asym * 4.5)).astype(np.float32)
 
-        # 3. Eye Widen / Squint / Blink / Wink
-        eye_widen = float(recipe.get("eye_widen", 0.0))
-        if eye_widen > 1e-3:
-            for ex, ey in ((lx, ly), (rx, ry)):
-                g_top = self._gauss(ex, ey - eye_r * 0.45, eye_r * 1.05, eye_r * 0.48)
-                g_bot = self._gauss(ex, ey + eye_r * 0.45, eye_r * 1.05, eye_r * 0.48)
-                disp_y += g_top * (eye_widen * eye_r * 0.34) - g_bot * (eye_widen * eye_r * 0.24)
-
+        # 5. Eyes: Lower lid squint (natural Duchenne smile eye)
         squint = float(recipe.get("squint", 0.0))
         if squint > 1e-3:
             for ex, ey in ((lx, ly), (rx, ry)):
-                g_bot = self._gauss(ex, ey + eye_r * 0.42, eye_r * 1.15, eye_r * 0.50)
-                disp_y += g_bot * (squint * eye_r * 0.48)
+                g_bot = np.exp(-0.5 * (((self._grid_x - ex) / (eye_r * 1.10)) ** 2 + ((self._grid_y - (ey + eye_r * 0.32)) / (eye_r * 0.42)) ** 2))
+                disp_y += g_bot.astype(np.float32) * (squint * 6.5)
 
+        # 6. Eye widen (surprised)
+        eye_widen = float(recipe.get("eye_widen", 0.0))
+        if eye_widen > 1e-3:
+            for ex, ey in ((lx, ly), (rx, ry)):
+                g_top = np.exp(-0.5 * (((self._grid_x - ex) / (eye_r * 1.15)) ** 2 + ((self._grid_y - (ey - eye_r * 0.35)) / (eye_r * 0.45)) ** 2))
+                disp_y += g_top.astype(np.float32) * (eye_widen * 5.5)
+
+        # 7. Blink / Wink
         blink_l = float(recipe.get("blink_l", 0.0))
         blink_r = float(recipe.get("blink_r", 0.0))
         for ex, ey, b_amt in ((lx, ly, blink_l), (rx, ry, blink_r)):
             if b_amt > 1e-3:
-                # Natural eyelid closure: smooth lid motion preserving natural skin texture & eyelashes
-                g_top = self._gauss(ex, ey - eye_r * 0.25, eye_r * 1.10, eye_r * 0.45)
-                g_bot = self._gauss(ex, ey + eye_r * 0.35, eye_r * 1.10, eye_r * 0.45)
-                disp_y -= g_top * (b_amt * eye_r * 0.22)
-                disp_y += g_bot * (b_amt * eye_r * 0.26)
+                g_top = np.exp(-0.5 * (((self._grid_x - ex) / (eye_r * 1.10)) ** 2 + ((self._grid_y - (ey - eye_r * 0.20)) / (eye_r * 0.42)) ** 2))
+                g_bot = np.exp(-0.5 * (((self._grid_x - ex) / (eye_r * 1.10)) ** 2 + ((self._grid_y - (ey + eye_r * 0.32)) / (eye_r * 0.42)) ** 2))
+                disp_y -= (g_top * b_amt * 7.5).astype(np.float32)
+                disp_y += (g_bot * b_amt * 8.5).astype(np.float32)
 
-        # 4. Mouth Shift / Tense / 'O' Shape / Real Jaw Opening
-        mouth_shift_x = float(recipe.get("mouth_shift_x", 0.0))
-        if abs(mouth_shift_x) > 1e-3:
-            g_m = self._gauss(mx, my, mouth_half_w * 1.25, mouth_half_w * 0.72)
-            disp_x -= g_m * (mouth_shift_x * inter_eye * 0.085)
-
-        mouth_tense = float(recipe.get("mouth_tense", 0.0))
-        if mouth_tense > 1e-3:
-            g_ul = self._gauss(mx, my - mouth_half_w * 0.20, mouth_half_w * 1.0, mouth_half_w * 0.35)
-            g_ll = self._gauss(mx, my + mouth_half_w * 0.20, mouth_half_w * 1.0, mouth_half_w * 0.35)
-            disp_y -= g_ul * (mouth_tense * inter_eye * 0.035)
-            disp_y += g_ll * (mouth_tense * inter_eye * 0.035)
-
+        # 8. Mouth 'O' shape & jaw drop
         mouth_o = float(recipe.get("mouth_o", 0.0))
         if mouth_o > 1e-3:
-            g_lm = self._gauss(lmx, lmy, mouth_half_w * 0.68, mouth_half_w * 0.62)
-            g_rm = self._gauss(rmx, rmy, mouth_half_w * 0.68, mouth_half_w * 0.62)
-            # Pull corners slightly inward for surprised 'O' shape
-            disp_x += g_lm * (-mouth_o * inter_eye * 0.085) + g_rm * (mouth_o * inter_eye * 0.085)
+            for cx, cy, sign in ((lmx, lmy, -1.0), (rmx, rmy, 1.0)):
+                dx = (self._grid_x - cx) / max(2.0, mouth_half_w * 0.70)
+                dy = (self._grid_y - cy) / max(2.0, mouth_half_w * 0.55)
+                g = np.exp(-0.5 * (dx * dx + dy * dy)).astype(np.float32)
+                disp_x += g * (mouth_o * 8.0 * sign)
 
         if eff_mouth > 0.04:
-            # Lower lip + chin drop downward naturally; upper lip rises slightly
-            jaw_drop = eff_mouth * inter_eye * 0.18
-            g_jaw = self._gauss(
-                mx,
-                my + mouth_half_w * 0.48,
-                mouth_half_w * 1.35,
-                mouth_half_w * 0.90,
-            )
-            g_upper_lip = self._gauss(
-                mx,
-                my - mouth_half_w * 0.22,
-                mouth_half_w * 0.90,
-                mouth_half_w * 0.35,
-            )
-            disp_y -= g_jaw * jaw_drop
-            disp_y += g_upper_lip * (jaw_drop * 0.14)
+            g_jaw = np.exp(-0.5 * (((self._grid_x - mx) / (mouth_half_w * 1.35)) ** 2 + ((self._grid_y - (my + mouth_half_w * 0.40)) / (mouth_half_w * 0.75)) ** 2))
+            disp_y -= g_jaw.astype(np.float32) * (eff_mouth * 12.0)
+
+        # 9. Mouth shift (thinking)
+        mouth_shift_x = float(recipe.get("mouth_shift_x", 0.0))
+        if abs(mouth_shift_x) > 1e-3:
+            g_m = np.exp(-0.5 * (((self._grid_x - mx) / (mouth_half_w * 1.25)) ** 2 + ((self._grid_y - my) / (mouth_half_w * 0.65)) ** 2))
+            disp_x -= g_m.astype(np.float32) * (mouth_shift_x * 8.5)
 
         # Apply smooth sub-pixel remap with replicate border mode (no mirroring)
         map_x = np.clip(self._grid_x + disp_x, 0, TARGET_SIZE - 1).astype(np.float32)
@@ -460,16 +484,18 @@ class LocalFaceAnimator:
             borderMode=cv2.BORDER_REPLICATE,
         )
 
-        # 5. Subtle Rosy Blush for 'love' expression
+        # 10. Subtle Rosy Blush for 'love' expression
         blush = float(recipe.get("blush", 0.0))
         if blush > 1e-3:
             warped = self._blend_rosy_blush(warped, lx, ly, rx, ry, my, inter_eye, blush)
 
-        # 6. Gentle Natural Head Tilt for Expressive Pose
+        # 11. Gentle Natural Head Tilt & Shift for Expressive Pose
         tilt_deg = float(recipe.get("tilt_deg", 0.0))
-        if abs(tilt_deg) > 0.1:
+        shift_y = float(recipe.get("shift_y", 0.0))
+        if abs(tilt_deg) > 0.1 or abs(shift_y) > 0.1:
             pivot = (TARGET_SIZE * 0.5, TARGET_SIZE * 0.58)
             rot_m = cv2.getRotationMatrix2D(pivot, tilt_deg, 1.015)
+            rot_m[1, 2] += shift_y
             warped = cv2.warpAffine(
                 warped,
                 rot_m,
@@ -478,12 +504,17 @@ class LocalFaceAnimator:
                 borderMode=cv2.BORDER_REPLICATE,
             )
 
-        # 7. Subtle Mood Warmth / Brightness Grading
+        # 12. Subtle Mood Warmth / Brightness / Contrast Grading
         pil = Image.fromarray(warped)
         warmth = float(recipe.get("warmth", 1.0))
         if abs(warmth - 1.0) > 0.01:
             pil = ImageEnhance.Color(pil).enhance(warmth)
-            pil = ImageEnhance.Brightness(pil).enhance(0.98 + (warmth - 0.98) * 0.45)
+        brightness = float(recipe.get("brightness", 1.0))
+        if abs(brightness - 1.0) > 0.01:
+            pil = ImageEnhance.Brightness(pil).enhance(brightness)
+        contrast = float(recipe.get("contrast", 1.0))
+        if abs(contrast - 1.0) > 0.01:
+            pil = ImageEnhance.Contrast(pil).enhance(contrast)
 
         return pil
 
