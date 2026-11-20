@@ -399,23 +399,47 @@ class AIPipeline:
         pid, _ = await self._get_active_personality()
         action_spec = extract_emoji_and_emotion(text or (f"[{mood}]" if mood else ""))
         effective_mood = mood or action_spec["ws_mood"]
+
+        audio_out = await self._generate_tts(clean_text_for_tts(text), pid)
+        from app.services.avatar.lipsync import get_lipsync_service
+        lipsync = get_lipsync_service()
+        if audio_out and len(audio_out) > 500:
+            sync_meta = lipsync.analyze_wav(
+                audio_out,
+                expression=action_spec["expression"],
+                face_emoji=action_spec["face_emoji"],
+            )
+        else:
+            sync_meta = lipsync.estimate_cadence(
+                duration_ms=max(900, len(text.split()) * 260),
+                expression=action_spec["expression"],
+                face_emoji=action_spec["face_emoji"],
+            )
+
         await manager.send_to_phone({
             "t": "eyes",
             "mood": effective_mood,
             "face_emoji": action_spec["face_emoji"],
+            "eye_timeline": sync_meta["eye_timeline"],
         })
-        await manager.send_to_phone({
+        avatar_payload = {
             "t": "avatar_action",
             "face_emoji": action_spec["face_emoji"],
             "expression": action_spec["expression"],
             "mouth_preset": action_spec["mouth_preset"],
             "speak_mouth": True,
-            "voice_mode": "cloned",
+            "voice_mode": "cloned" if audio_out else "none",
             "personality_id": pid,
             "flame_params": action_spec["flame_params"],
-        })
-        audio_out = await self._generate_tts(clean_text_for_tts(text), pid)
-        await manager.send_to_phone(audio_out)
+            "duration_ms": sync_meta["duration_ms"],
+            "fps": sync_meta["fps"],
+            "viseme_timeline": sync_meta["viseme_timeline"],
+            "eye_timeline": sync_meta["eye_timeline"],
+        }
+        await manager.send_to_phone(avatar_payload)
+        await manager.broadcast_to_desks(avatar_payload)
+        if audio_out:
+            await manager.send_to_phone(audio_out)
 
     async def _transcribe_and_verify(
         self, audio: bytes
@@ -1173,10 +1197,26 @@ class AIPipeline:
                 "expression": action_spec["expression"],
                 "latency": {"llm_ms": round(llm_ms), "total_ms": round(total_ms)},
             })
+            from app.services.avatar.lipsync import get_lipsync_service
+            lipsync = get_lipsync_service()
+            if audio_bytes and len(audio_bytes) > 500:
+                sync_meta = lipsync.analyze_wav(
+                    audio_bytes,
+                    expression=action_spec["expression"],
+                    face_emoji=action_spec["face_emoji"],
+                )
+            else:
+                sync_meta = lipsync.estimate_cadence(
+                    duration_ms=max(900, len(full_response.split()) * 260),
+                    expression=action_spec["expression"],
+                    face_emoji=action_spec["face_emoji"],
+                )
+
             await manager.send_to_phone({
                 "t": "eyes",
                 "mood": action_spec["ws_mood"],
                 "face_emoji": action_spec["face_emoji"],
+                "eye_timeline": sync_meta["eye_timeline"],
             })
             avatar_ws_payload = {
                 "t": "avatar_action",
@@ -1187,6 +1227,10 @@ class AIPipeline:
                 "voice_mode": "cloned" if audio_bytes else "none",
                 "personality_id": pid,
                 "flame_params": action_spec["flame_params"],
+                "duration_ms": sync_meta["duration_ms"],
+                "fps": sync_meta["fps"],
+                "viseme_timeline": sync_meta["viseme_timeline"],
+                "eye_timeline": sync_meta["eye_timeline"],
             }
             await manager.send_to_phone(avatar_ws_payload)
             await manager.broadcast_to_desks(avatar_ws_payload)

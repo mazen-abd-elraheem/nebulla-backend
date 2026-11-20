@@ -101,6 +101,8 @@ class ChatResponse(BaseModel):
     face_emoji: str = "😐"
     expression: str = "neutral"
     avatar_action: Dict[str, Any] = Field(default_factory=dict)
+    viseme_timeline: List[Dict[str, Any]] = Field(default_factory=list, description="Synchronized lip-sync keyframes")
+    eye_timeline: List[Dict[str, Any]] = Field(default_factory=list, description="Synchronized eye blinking and gaze keyframes")
     llm_latency_ms: float = 0.0
     latency: Dict[str, Any] = Field(default_factory=dict)
     retrieved_memories: List[str] = Field(default_factory=list)
@@ -207,10 +209,10 @@ async def chat_playground():
 async def _synthesize_chat_audio(
     text: str,
     personality_id: int | None,
-) -> tuple[Optional[str], Optional[str], bool, Optional[str]]:
+) -> tuple[Optional[str], Optional[str], bool, Optional[str], Optional[bytes]]:
     """
     Synthesizes speech for chat response in cloned voice.
-    Returns (audio_base64, audio_url, has_voice_sample, voice_notice).
+    Returns (audio_base64, audio_url, has_voice_sample, voice_notice, wav_bytes).
     """
     from app.services.voice_clone.voice_clone_service import VoiceCloneService
     import base64
@@ -220,11 +222,11 @@ async def _synthesize_chat_audio(
     sample_path = voice_svc.get_sample_path(personality_id) if has_sample else None
 
     if not has_sample or not sample_path:
-        return None, None, False, "يرجى تسجيل عينة صوتك لتفعيل الرد الصوتي"
+        return None, None, False, "يرجى تسجيل عينة صوتك لتفعيل الرد الصوتي", None
 
     to_speak = clean_text_for_tts(text)
     if not to_speak:
-        return None, None, True, None
+        return None, None, True, None, None
 
     try:
         wav_bytes = await voice_svc.synthesize(
@@ -242,10 +244,10 @@ async def _synthesize_chat_audio(
             except Exception:
                 pass
             url = f"/api/v1/voice-clone/synthesize?personality_id={personality_id or 1}"
-            return audio_b64, url, True, None
+            return audio_b64, url, True, None, wav_bytes
     except Exception as ex:
         logger.error(f"Error synthesizing chat audio: {ex}")
-    return None, None, True, None
+    return None, None, True, None, None
 
 
 async def _build_and_broadcast_avatar_action(
@@ -253,14 +255,68 @@ async def _build_and_broadcast_avatar_action(
     personality_id: Optional[int],
     audio_url: Optional[str],
     has_voice_sample: bool,
+    wav_bytes: Optional[bytes] = None,
 ) -> Dict[str, Any]:
-    """Build structured face-emoji avatar action and notify live WebSocket clients safely."""
+    """Build structured face-emoji avatar action, synchronized viseme & eye timelines, and notify live clients."""
     action = extract_emoji_and_emotion(
         reply_text,
         voice_mode="cloned" if has_voice_sample else "none",
     )
     action["personality_id"] = personality_id
     action["audio_url"] = audio_url
+
+    # Retrieve synthesized WAV if not explicitly passed
+    if wav_bytes is None and audio_url:
+        try:
+            from app.api.v1.endpoints.voice_clone import _last_synthesized_audio, LATEST_WAV_FILE
+            pid_key = personality_id or 1
+            if pid_key in _last_synthesized_audio:
+                wav_bytes = _last_synthesized_audio[pid_key]
+            elif "latest" in _last_synthesized_audio:
+                wav_bytes = _last_synthesized_audio["latest"]
+            elif LATEST_WAV_FILE.exists():
+                wav_bytes = LATEST_WAV_FILE.read_bytes()
+        except Exception:
+            pass
+
+    # Generate synchronized lip-sync visemes and natural eye motions (VoiceTut audio -> FLAME visemes)
+    from app.services.avatar.lipsync import get_lipsync_service
+    lipsync = get_lipsync_service()
+
+    if wav_bytes and len(wav_bytes) > 500:
+        sync_meta = lipsync.analyze_wav(
+            wav_bytes,
+            expression=action.get("expression", "neutral"),
+            face_emoji=action.get("face_emoji", "😐"),
+        )
+    else:
+        sync_meta = lipsync.estimate_cadence(
+            duration_ms=max(900, len(reply_text.split()) * 260),
+            expression=action.get("expression", "neutral"),
+            face_emoji=action.get("face_emoji", "😐"),
+        )
+
+    action["duration_ms"] = sync_meta.get("duration_ms", 1200)
+    action["fps"] = sync_meta.get("fps", 40)
+    action["viseme_timeline"] = sync_meta.get("viseme_timeline", [])
+    action["eye_timeline"] = sync_meta.get("eye_timeline", [])
+    action["max_jaw"] = sync_meta.get("max_jaw", 0.0)
+
+    # Attach avatar sprites and mouth frames for this personality if registered
+    try:
+        from app.services.avatar.gagavatar_service import get_avatar_service
+        from app.db.session import AsyncSessionLocal
+        async with AsyncSessionLocal() as db_session:
+            avatar = await get_avatar_service().get_active_avatar(db=db_session, personality_id=personality_id)
+            if avatar:
+                serialized = get_avatar_service().serialize_avatar(avatar)
+                action["avatar_id"] = avatar.id
+                action["avatar_preview_url"] = serialized.get("preview_url")
+                action["sprites"] = serialized.get("sprites", {})
+                action["mouth_frames"] = serialized.get("mouth_frames", {})
+    except Exception as ex:
+        logger.debug(f"Notice attaching avatar assets to avatar_action: {ex}")
+
     ws_payload = {
         "t": "avatar_action",
         "face_emoji": action["face_emoji"],
@@ -271,6 +327,14 @@ async def _build_and_broadcast_avatar_action(
         "personality_id": personality_id,
         "audio_url": audio_url,
         "flame_params": action["flame_params"],
+        "duration_ms": action["duration_ms"],
+        "fps": action["fps"],
+        "viseme_timeline": action["viseme_timeline"],
+        "eye_timeline": action["eye_timeline"],
+        "sprites": action.get("sprites"),
+        "mouth_frames": action.get("mouth_frames"),
+        "avatar_id": action.get("avatar_id"),
+        "avatar_preview_url": action.get("avatar_preview_url"),
     }
     try:
         await manager.send_to_phone({
@@ -278,6 +342,7 @@ async def _build_and_broadcast_avatar_action(
             "mood": action["ws_mood"],
             "face_emoji": action["face_emoji"],
             "audio_url": audio_url,
+            "eye_timeline": action["eye_timeline"],
         })
         await manager.send_to_phone(ws_payload)
         await manager.broadcast_to_desks(ws_payload)
@@ -378,9 +443,10 @@ async def chat_with_llm(
                 audio_url = None
                 has_sample = True
                 voice_notice = None
+                wav_bytes = None
 
                 if body.return_audio:
-                    audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(
+                    audio_b64, audio_url, has_sample, voice_notice, wav_bytes = await _synthesize_chat_audio(
                         reply_text, active_pid
                     )
 
@@ -389,6 +455,7 @@ async def chat_with_llm(
                     personality_id=active_pid,
                     audio_url=audio_url,
                     has_voice_sample=has_sample,
+                    wav_bytes=wav_bytes,
                 )
 
                 # Persist turn in conversation history
@@ -410,6 +477,8 @@ async def chat_with_llm(
                     face_emoji=avatar_act.get("face_emoji", "😊"),
                     expression=avatar_act.get("expression", "happy"),
                     avatar_action=avatar_act,
+                    viseme_timeline=avatar_act.get("viseme_timeline", []),
+                    eye_timeline=avatar_act.get("eye_timeline", []),
                     llm_latency_ms=total_action_latency,
                     latency={"action_ms": total_action_latency, "llm_ms": 0.0},
                     personality_id=active_pid,
@@ -597,10 +666,12 @@ async def chat_with_llm(
     await db.commit()
 
     active_model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or settings.LLM_MODEL
-    audio_b64, audio_url, has_sample, voice_notice = (None, None, True, None)
+    audio_b64, audio_url, has_sample, voice_notice, wav_bytes = (None, None, True, None, None)
     if body.return_audio:
-        audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(reply, active_pid)
-    avatar_action = await _build_and_broadcast_avatar_action(reply, active_pid, audio_url, has_sample)
+        audio_b64, audio_url, has_sample, voice_notice, wav_bytes = await _synthesize_chat_audio(reply, active_pid)
+    avatar_action = await _build_and_broadcast_avatar_action(
+        reply, active_pid, audio_url, has_sample, wav_bytes=wav_bytes
+    )
 
     return ChatResponse(
         reply=reply,
@@ -612,6 +683,8 @@ async def chat_with_llm(
         face_emoji=avatar_action["face_emoji"],
         expression=avatar_action["expression"],
         avatar_action=avatar_action,
+        viseme_timeline=avatar_action.get("viseme_timeline", []),
+        eye_timeline=avatar_action.get("eye_timeline", []),
         llm_latency_ms=round(llm_ms, 2),
         latency={"llm_ms": round(llm_ms, 2), "total_ms": round(llm_ms, 2)},
         retrieved_memories=memories,
@@ -710,9 +783,10 @@ async def chat_stream(
                 audio_url = None
                 has_sample = True
                 voice_notice = None
+                wav_bytes = None
 
                 if body.return_audio:
-                    audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(
+                    audio_b64, audio_url, has_sample, voice_notice, wav_bytes = await _synthesize_chat_audio(
                         reply_text, active_pid
                     )
 
@@ -721,6 +795,7 @@ async def chat_stream(
                     personality_id=active_pid,
                     audio_url=audio_url,
                     has_voice_sample=has_sample,
+                    wav_bytes=wav_bytes,
                 )
 
                 # Persist turn in conversation history

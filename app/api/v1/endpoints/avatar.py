@@ -12,10 +12,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_optional_user
+from app.core.logger import get_logger
 from app.db.session import get_db
+from app.models.personality import Personality
 from app.models.user import User
 from app.services.avatar.emoji_actions import list_emoji_action_catalog
 from app.services.avatar.gagavatar_service import GAGAvatarService, get_avatar_service
+from app.services.avatar.lipsync import get_lipsync_service
+from app.services.voice_clone.voice_clone_service import VoiceCloneService
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -94,6 +100,120 @@ async def create_avatar(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"فشل إنشاء الأفاتار: {exc}")
+
+
+@router.post(
+    "/register-twin",
+    summary="Register Digital Twin: Upload face photo and voice sample together",
+    status_code=status.HTTP_201_CREATED,
+)
+async def register_digital_twin(
+    photo: UploadFile = File(..., description="Clear frontal photo of user face (JPEG/PNG)"),
+    voice: UploadFile = File(..., description="Audio or video file of user voice (WAV, MP3, MP4, M4A, etc.)"),
+    name: Optional[str] = Form(None, description="Name of the personality / digital twin"),
+    personality_id: Optional[int] = Form(None, description="Optional existing personality ID to bind"),
+    gender: str = Form("male", description="Gender ('male' or 'female')"),
+    system_prompt: Optional[str] = Form(None, description="Custom system prompt for personality"),
+    style: str = Form("realistic", description="GAGAvatar style ('realistic', 'studio_3d')"),
+    require_face: bool = Form(True, description="Strict face detection verification"),
+    db: AsyncSession = Depends(get_db),
+    sub: Optional[str] = Depends(get_optional_user),
+    avatar_svc: GAGAvatarService = Depends(get_avatar_service),
+    voice_svc: VoiceCloneService = Depends(VoiceCloneService.get_instance),
+) -> Dict[str, Any]:
+    """
+    Unified Digital Twin Registration:
+    Binds voice reference audio (VoiceTut) and facial 3D representation (GAGAvatar)
+    under a unified personality ID, activates them immediately with zero fallback.
+    """
+    image_bytes = await photo.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="ملف صورة الوجه فارغ.")
+
+    if not voice.filename:
+        raise HTTPException(status_code=422, detail="ملف الصوت مفقود أو بدون اسم.")
+
+    user_id = await _resolve_authenticated_user_id(sub, db)
+
+    # 1. Resolve or create Personality
+    personality: Optional[Personality] = None
+    if personality_id and personality_id > 0:
+        res = await db.execute(select(Personality).where(Personality.id == personality_id))
+        personality = res.scalar_one_or_none()
+        if not personality:
+            raise HTTPException(status_code=404, detail=f"الشخصية رقم {personality_id} غير موجودة.")
+    else:
+        twin_name = (name or "").strip() or (f"التوأم الرقمي #{user_id}" if user_id else "التوأم الرقمي")
+        personality = Personality(
+            name=twin_name,
+            user_id=user_id,
+            system_prompt=(system_prompt or "").strip() or "أنت مساعد ذكي وتوأم رقمي مخلص ومرح يتحدث باللهجة المصرية.",
+            tone="ودود وعفوي ومباشر",
+            dialect="cairo",
+            language_mix="ar_en",
+            is_active=True,
+        )
+        db.add(personality)
+        await db.commit()
+        await db.refresh(personality)
+
+    pid = personality.id
+
+    # 2. Upload and enroll voice reference sample (VoiceTut)
+    try:
+        voice_path = await voice_svc.upload_sample(pid, voice)
+        personality.voice_sample_path = voice_path
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Failed to process voice sample in register-twin: {exc}")
+        raise HTTPException(status_code=500, detail=f"فشل معالجة عينة الصوت: {exc}")
+
+    # Auto-enroll in speaker verification if feature is enabled
+    try:
+        from app.core.config import settings
+        if getattr(settings, "PHONE_ACTIONS_ENABLED", False) and getattr(settings, "SPEAKER_VERIFICATION_ENABLED", False):
+            from app.services.voice_verification.speaker_service import get_speaker_service
+            speaker_svc = get_speaker_service()
+            speaker_id = f"speaker_{pid}"
+            await speaker_svc.enroll(speaker_id=speaker_id, audio_path=voice_path, force=True)
+    except Exception as exc:
+        logger.warning(f"Speaker verification auto-enrollment notice: {exc}")
+
+    # 3. Create GAGAvatar 3D head representation
+    try:
+        avatar_profile = await avatar_svc.create_avatar_from_photo(
+            image_bytes=image_bytes,
+            db=db,
+            user_id=user_id,
+            personality_id=pid,
+            name=personality.name,
+            style=style,
+            require_face=require_face,
+        )
+        # Automatically approve and set active for this personality
+        avatar_profile = await avatar_svc.approve_avatar(avatar_id=avatar_profile.id, db=db, user_id=user_id)
+
+        # Link source photo to personality image path
+        personality.image_path = avatar_profile.source_photo_path
+        await db.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Failed to create avatar in register-twin: {exc}")
+        raise HTTPException(status_code=500, detail=f"فشل إنشاء الأفاتار عبر GAGAvatar: {exc}")
+
+    serialized = avatar_svc.serialize_avatar(avatar_profile)
+    return {
+        "status": "ready",
+        "message": "تم تسجيل وتفعيل التوأم الرقمي (الصوت والصورة) بنجاح!",
+        "personality_id": pid,
+        "personality_name": personality.name,
+        "voice_sample_path": voice_path,
+        "avatar_id": avatar_profile.id,
+        "avatar": serialized,
+    }
 
 
 @router.get("/active", summary="Get currently active approved avatar")
@@ -240,6 +360,50 @@ async def render_avatar_expression(
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/{avatar_id}/lipsync", summary="Generate synchronized lip-sync and eye movement keyframes for any audio")
+async def generate_avatar_lipsync(
+    avatar_id: int,
+    file: Optional[UploadFile] = File(None, description="Optional WAV/audio file to analyze"),
+    expression: Optional[str] = Form(None),
+    face_emoji: Optional[str] = Form(None),
+    duration_ms: int = Form(1500),
+    db: AsyncSession = Depends(get_db),
+    sub: Optional[str] = Depends(get_optional_user),
+    svc: GAGAvatarService = Depends(get_avatar_service),
+) -> Dict[str, Any]:
+    """
+    Generate sub-5ms acoustic lip-sync visemes and natural eye motions for this avatar.
+    If no audio file is uploaded, synthesizes a natural cadence for the given duration.
+    """
+    user_id = await _resolve_authenticated_user_id(sub, db)
+    avatar = await svc.get_avatar(avatar_id=avatar_id, db=db, user_id=user_id)
+    if not avatar:
+        raise HTTPException(status_code=404, detail="الأفاتار غير موجود.")
+
+    lipsync_svc = get_lipsync_service()
+    expr = expression or "neutral"
+    emoji = face_emoji or "😐"
+
+    if file is not None:
+        audio_bytes = await file.read()
+        if audio_bytes and len(audio_bytes) > 200:
+            res = lipsync_svc.analyze_wav(audio_bytes, expression=expr, face_emoji=emoji)
+        else:
+            res = lipsync_svc.estimate_cadence(duration_ms=duration_ms, expression=expr, face_emoji=emoji)
+    else:
+        res = lipsync_svc.estimate_cadence(duration_ms=duration_ms, expression=expr, face_emoji=emoji)
+
+    serialized = svc.serialize_avatar(avatar)
+    return {
+        "avatar_id": avatar.id,
+        "expression": expr,
+        "face_emoji": emoji,
+        "sprites": serialized.get("sprites", {}),
+        "mouth_frames": serialized.get("mouth_frames", {}),
+        **res,
+    }
 
 
 async def _resolve_avatar_and_asset(
