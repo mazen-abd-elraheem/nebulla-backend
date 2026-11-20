@@ -95,15 +95,16 @@ class RAGService:
                     pass
 
                 if embedder is None:
-                    try:
-                        embedder = SentenceTransformer(
-                            settings.EMBEDDING_MODEL,
-                            device=settings.EMBEDDING_DEVICE,
-                            local_files_only=False,
-                        )
-                        logger.info(f"Embedding model loaded/downloaded: {settings.EMBEDDING_MODEL}")
-                    except Exception:
-                        pass
+                    if os.environ.get("HF_HUB_OFFLINE") != "1" and os.environ.get("TRANSFORMERS_OFFLINE") != "1":
+                        try:
+                            embedder = SentenceTransformer(
+                                settings.EMBEDDING_MODEL,
+                                device=settings.EMBEDDING_DEVICE,
+                                local_files_only=False,
+                            )
+                            logger.info(f"Embedding model loaded/downloaded: {settings.EMBEDDING_MODEL}")
+                        except Exception:
+                            pass
 
                 if embedder is not None:
                     RAGService._shared_embedder = embedder
@@ -750,7 +751,6 @@ class RAGService:
             user_id=user_id,
             content=content,
             personality_id=personality_id,
-            user_id=user_id,
             embedding=embedding,
             source=source,
             importance=importance,
@@ -766,7 +766,6 @@ class RAGService:
         importance: int = 5,
         user_id: int | None = None,
         db: AsyncSession | None = None,
-        user_id: int | None = None,
     ) -> int:
         """
         Add a new memory with automatic embedding generation, conflict resolution and vector store synchronization.
@@ -803,7 +802,6 @@ class RAGService:
                 user_id=user_id,
                 content=content.strip(),
                 personality_id=personality_id,
-                user_id=user_id,
                 embedding=embedding_bytes,
                 source=source,
                 importance=importance,

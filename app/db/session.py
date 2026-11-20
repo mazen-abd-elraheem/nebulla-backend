@@ -201,6 +201,17 @@ async def init_db() -> None:
                 if "updated_at" not in cols:
                     connection.execute(text("ALTER TABLE speakers ADD COLUMN updated_at DATETIME"))
 
+            if "contacts" in tables:
+                cols = [c["name"] for c in inspector.get_columns("contacts")]
+                if "tone" not in cols:
+                    connection.execute(text("ALTER TABLE contacts ADD COLUMN tone VARCHAR(64) DEFAULT 'ودود وعفوي'"))
+                if "notes" not in cols:
+                    connection.execute(text("ALTER TABLE contacts ADD COLUMN notes VARCHAR(255)"))
+                if "face_profile_id" not in cols:
+                    connection.execute(text("ALTER TABLE contacts ADD COLUMN face_profile_id INTEGER REFERENCES face_profiles(id)"))
+                if "voiceprint_id" not in cols:
+                    connection.execute(text("ALTER TABLE contacts ADD COLUMN voiceprint_id INTEGER REFERENCES voiceprints(id)"))
+
             # Catch-all guard for SQLite: ensure any newly pulled ORM column exists before queries run
             if connection.dialect.name == "sqlite":
                 refreshed_tables = {

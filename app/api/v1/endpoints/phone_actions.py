@@ -5,7 +5,7 @@ Audit Logs, and Level-3 External Approval (benefits_section.docx Chapter 14).
 
 from datetime import datetime, timezone
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -44,10 +44,14 @@ router = APIRouter()
 
 class ContactCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64, description="الاسم كما ينطق (مثال: ماما)")
-    phone_number: str = Field(..., min_length=7, max_length=32, description="رقم الهاتف الدولي أو المحلي")
-    aliases: Optional[str] = Field("", max_length=255, description="أسماء بديلة ينطقها المستخدم (مثال: مامي,الوالدة)")
+    phone_number: Optional[str] = Field("", max_length=32, description="رقم الهاتف الدولي أو المحلي")
+    aliases: Optional[Union[str, List[str]]] = Field("", description="أسماء بديلة ينطقها المستخدم (مثال: مامي,الوالدة أو قائمة)")
     slug: Optional[str] = Field("", max_length=64, description="المعرّف المرسل للهاتف (مثال: mama)")
-    relationship: Optional[str] = Field(None, max_length=32, description="نوع العلاقة (mother, friend, work)")
+    relationship: Optional[str] = Field(None, max_length=64, description="نوع العلاقة (mother, friend, work, أمي، صديق)")
+    tone: Optional[str] = Field("ودود وعفوي", max_length=64, description="نبرة التعامل المخصصة (حنين وودود، رسمي، مرح)")
+    notes: Optional[str] = Field(None, max_length=255, description="ملاحظات وتفاصيل إضافية")
+    face_profile_id: Optional[int] = Field(None, description="معرف بصمة الوجه إن وجد")
+    voiceprint_id: Optional[int] = Field(None, description="معرف بصمة الصوت إن وجد")
     is_allowlisted: bool = Field(True, description="هل مسموح للروبوت الاتصال بهذه الجهة")
     requires_confirmation: bool = Field(True, description="طلب تأكيد لفظي قبل الاتصال")
     required_level: int = Field(1, ge=1, le=2, description="مستوى الأمان المطلوب (1 أو 2)")
@@ -56,10 +60,14 @@ class ContactCreate(BaseModel):
 
 class ContactUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=64)
-    phone_number: Optional[str] = Field(None, min_length=7, max_length=32)
-    aliases: Optional[str] = Field(None, max_length=255)
+    phone_number: Optional[str] = Field(None, max_length=32)
+    aliases: Optional[Union[str, List[str]]] = Field(None)
     slug: Optional[str] = Field(None, max_length=64)
-    relationship: Optional[str] = Field(None, max_length=32)
+    relationship: Optional[str] = Field(None, max_length=64)
+    tone: Optional[str] = Field(None, max_length=64)
+    notes: Optional[str] = Field(None, max_length=255)
+    face_profile_id: Optional[int] = None
+    voiceprint_id: Optional[int] = None
     is_allowlisted: Optional[bool] = None
     requires_confirmation: Optional[bool] = None
     required_level: Optional[int] = Field(None, ge=1, le=2)
@@ -91,6 +99,10 @@ class ContactResponse(BaseModel):
     slug: str
     phone_number: str
     relationship: Optional[str] = None
+    tone: Optional[str] = "ودود وعفوي"
+    notes: Optional[str] = None
+    face_profile_id: Optional[int] = None
+    voiceprint_id: Optional[int] = None
     is_allowlisted: bool
     requires_confirmation: bool
     required_level: int
@@ -185,25 +197,38 @@ async def create_contact(
     db: AsyncSession = Depends(get_db),
 ):
     """Register a new trusted contact with security tier and aliases."""
-    norm_phone = normalize_phone(body.phone_number)
-    if not norm_phone:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="رقم الهاتف غير صالح. يجب إدخال رقم هاتف صحيح مع كود الدولة أو 01xxxxxxxxx.",
-        )
+    norm_phone = ""
+    if body.phone_number and body.phone_number.strip():
+        norm_phone = normalize_phone(body.phone_number)
+        if not norm_phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="رقم الهاتف غير صالح. يجب إدخال رقم هاتف صحيح مع كود الدولة أو 01xxxxxxxxx.",
+            )
 
     # Derive slug if not provided
     slug = (body.slug or "").strip().lower()
     if not slug:
         slug = re.sub(r"[^a-zA-Z0-9_\-]", "", body.name.lower()) or "contact"
 
+    # Normalize aliases whether string or list from frontend
+    raw_aliases = body.aliases or ""
+    if isinstance(raw_aliases, (list, tuple)):
+        aliases_str = ",".join(str(a).strip() for a in raw_aliases if str(a).strip())
+    else:
+        aliases_str = str(raw_aliases).strip()
+
     contact = Contact(
         user_id=current_user.id,
         name=body.name.strip(),
-        aliases=(body.aliases or "").strip(),
+        aliases=aliases_str,
         slug=slug,
         phone_number=norm_phone,
         relationship=body.relationship,
+        tone=(body.tone or "ودود وعفوي").strip(),
+        notes=body.notes.strip() if body.notes else None,
+        face_profile_id=body.face_profile_id,
+        voiceprint_id=body.voiceprint_id,
         is_allowlisted=body.is_allowlisted,
         requires_confirmation=body.requires_confirmation,
         required_level=body.required_level,
@@ -212,6 +237,29 @@ async def create_contact(
     db.add(contact)
     await db.commit()
     await db.refresh(contact)
+
+    # Seed contact / relative into RAG long-term memory
+    rel_desc = f" ({body.relationship})" if body.relationship else ""
+    tone_desc = f"، أسلوب ونبرة التعامل المفضلة معها: {contact.tone}" if contact.tone else ""
+    notes_desc = f"، ملاحظات: {contact.notes}" if contact.notes else ""
+    fact_text = f"المعارف والعلاقات لـ {current_user.full_name}: الشخصية '{contact.name}'{rel_desc}{tone_desc}{notes_desc}."
+    try:
+        from app.services.memory.rag_service import RAGService
+        from app.models.memory import Memory
+        rag = RAGService()
+        mem_entry = Memory(
+            content=fact_text,
+            user_id=current_user.id,
+            category="relationships",
+            personality_id=1,
+            source="user_contacts",
+        )
+        db.add(mem_entry)
+        await db.commit()
+        rag.add_memory(fact_text, memory_id=mem_entry.id, user_id=current_user.id)
+    except Exception as e:
+        logger.warning(f"Could not seed contact into RAG: {e}")
+
     logger.info(f"Added allowlisted contact: {contact.name} (id={contact.id}) for user {current_user.id}")
     return contact
 
@@ -311,11 +359,22 @@ async def update_contact(
     if body.name is not None:
         contact.name = body.name.strip()
     if body.aliases is not None:
-        contact.aliases = body.aliases.strip()
+        if isinstance(body.aliases, (list, tuple)):
+            contact.aliases = ",".join(str(a).strip() for a in body.aliases if str(a).strip())
+        else:
+            contact.aliases = str(body.aliases).strip()
     if body.slug is not None:
         contact.slug = body.slug.strip().lower()
     if body.relationship is not None:
         contact.relationship = body.relationship
+    if body.tone is not None:
+        contact.tone = body.tone.strip()
+    if body.notes is not None:
+        contact.notes = body.notes.strip() if body.notes else None
+    if body.face_profile_id is not None:
+        contact.face_profile_id = body.face_profile_id
+    if body.voiceprint_id is not None:
+        contact.voiceprint_id = body.voiceprint_id
     if body.is_allowlisted is not None:
         contact.is_allowlisted = body.is_allowlisted
     if body.requires_confirmation is not None:

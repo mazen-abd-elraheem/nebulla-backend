@@ -407,12 +407,19 @@ async def build_grounding_context(
 
     # 7. Allowlisted Contacts & Reminders (Privacy: names only, zero numbers)
     trusted_contacts: List[str] = []
+    known_people_profiles: List[str] = []
+    all_contacts: List[Any] = []
     active_reminders_list: List[str] = []
     try:
         from app.models.contact import Contact
         from app.models.reminder import Reminder
-        c_res = await db.execute(select(Contact.name).where(Contact.is_allowlisted == True).limit(20))
-        trusted_contacts = list(c_res.scalars().all())
+        c_res = await db.execute(select(Contact).where(Contact.is_allowlisted == True).limit(20))
+        all_contacts = list(c_res.scalars().all())
+        trusted_contacts = [c.name for c in all_contacts]
+        for c in all_contacts:
+            rel = f" ({c.relationship})" if c.relationship else ""
+            t = f" [نبرة التعامل: {c.tone}]" if c.tone else ""
+            known_people_profiles.append(f"{c.name}{rel}{t}")
         r_res = await db.execute(select(Reminder.title).where(Reminder.is_active == True, Reminder.status == "pending").limit(5))
         active_reminders_list = list(r_res.scalars().all())
     except Exception as e:
@@ -679,6 +686,20 @@ async def build_grounding_context(
         faces_info["photo_path"] = person_profile.get("photo_path")
     if trusted_contacts:
         sys_status_block += f"- جهات الاتصال المسموحة (أسماء فقط): {', '.join(trusted_contacts)}.\n"
+    if known_people_profiles:
+        sys_status_block += f"- شبكة معارف المستخدم ونبرة الحديث المخصصة: {'; '.join(known_people_profiles)}.\n"
+        matched_contact = None
+        for c in all_contacts:
+            cand_name = getattr(c, "name", "").strip().lower()
+            if cand_name and (
+                (face_detected and current_face.get("face_id") and cand_name in current_face["face_id"].lower())
+                or (verified_speaker and cand_name in verified_speaker.lower())
+            ):
+                matched_contact = c
+                break
+        if matched_contact:
+            rel = f" ({matched_contact.relationship})" if matched_contact.relationship else ""
+            sys_status_block += f"- توجيه المعارف: الشخص المتفاعل حالياً هو '{matched_contact.name}'{rel}. التزم بنبرة التعامل المحددة: {matched_contact.tone}.\n"
     if active_reminders_list:
         sys_status_block += f"- التذكيرات الحالية: {', '.join(active_reminders_list)}.\n"
 

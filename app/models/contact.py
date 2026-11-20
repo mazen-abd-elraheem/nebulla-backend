@@ -33,8 +33,17 @@ class Contact(Base):
     aliases: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     # Latin slug sent to the phone as {"contact": "mama"}
     slug: Mapped[str] = mapped_column(String(64), default="", nullable=False)
-    phone_number: Mapped[str] = mapped_column(String(32), nullable=False)
-    relationship: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    phone_number: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    relationship: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tone: Mapped[str | None] = mapped_column(String(64), nullable=True, default="ودود وعفوي")
+    notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    face_profile_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("face_profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    voiceprint_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("voiceprints.id", ondelete="SET NULL"), nullable=True
+    )
 
     is_allowlisted: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Verbal «أكلّم ماما؟» confirmation before calling. Messages ALWAYS confirm.

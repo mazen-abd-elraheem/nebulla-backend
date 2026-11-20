@@ -11,7 +11,7 @@ import secrets
 from typing import Any, Optional
 
 import numpy as np
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select, and_
@@ -34,7 +34,13 @@ from app.auth.schemas import (
     UserRegister,
     UserResponse,
     UserUpdateRequest,
+    CompassQuestionsResponse,
+    CompassQuestionItem,
+    CompassAnswersRequest,
+    CompassAnswersResponse,
 )
+from app.services.onboarding.nebula_compass_engine import NebulaCompassEngine
+from app.services.onboarding.memory_extractor import CompassMemoryExtractor
 from app.core.logger import get_logger
 from app.core.security import get_password_hash, verify_password, verify_pairing_code
 from app.db.session import get_db
@@ -683,89 +689,81 @@ async def exchange_pairing_token(body: LegacyTokenRequest):
     return {"access_token": token, "token_type": "bearer", "expires_in": 60 * 60 * 8}
 
 
-# ── 8. Onboarding Questionnaire Endpoints (أسئلة التخصيص) ─────────────────────
+# ── 8. Nebula Compass (بوصلة نيبولا) & Onboarding Endpoints ───────────────────
 
 @router.get(
-    "/onboarding/questions",
-    summary="Get dynamic onboarding questionnaire (أسئلة تخصيص الذكاء الاصطناعي)",
+    "/compass/questions",
+    response_model=CompassQuestionsResponse,
+    summary="Get Nebula Compass Questionnaire (أسئلة بوصلة نيبولا للشخصية)",
 )
-async def get_onboarding_questions():
+async def get_compass_questions(
+    mode: str = Query("balanced", description="نمط الاستبيان: balanced (2-3 أسئلة لكل بُعد، 10-15 سؤالاً), quick (15 أساسي), full (50 كاملاً)"),
+    dimension: Optional[str] = Query(None, description="تصفية حسب بُعد محدد"),
+    per_dimension: int = Query(2, ge=1, le=10, description="عدد الأسئلة لكل بُعد في نمط balanced (افتراضي: 2 إلى 3)"),
+):
     """
-    Returns dynamic onboarding questions to personalize the AI companion and seed long-term memory.
-    Matches the onboarding questions card in the UI.
+    Returns balanced profiling questions across the 5 dimensions of Nebula Compass.
+    Default mode ('balanced') picks 2 to 3 questions per dimension (10-15 total).
     """
-    return {
-        "questions": [
-            {
-                "id": "interaction_style",
-                "title": "ما هو أسلوب التفاعل المفضل لديك؟",
-                "subtitle": "اختر الطريقة الأنسب للتواصل والتفاعل مع مساعدك الذكي",
-                "options": ["نصي وصوتي", "صوتي تفاعلي", "نصي فقط"],
-                "default": "نصي وصوتي",
-            },
-            {
-                "id": "interest_domain",
-                "title": "ما هو مجال اهتمامك الأساسي؟",
-                "subtitle": "لتخصيص الردود والذكاء الاصطناعي وفق اهتماماتك اليومية",
-                "options": ["البرمجة والتقنية", "التعليم والدراسة", "الأعمال والإدارة", "الترفيه والتسلية"],
-                "default": "البرمجة والتقنية",
-            },
-            {
-                "id": "personal_fact",
-                "title": "معلومة شخصية تريد من المساعد حفظها بذاكرته:",
-                "subtitle": "احفظ حقيقة أو تفضيل عنك في الذاكرة طويلة المدى",
-                "placeholder": "مثال: اسمي مازن، أحب تطوير التطبيقات وتصميم الأنظمة الذكية",
-                "default": "",
-            },
-        ]
-    }
-
-
-class OnboardingAnswersRequest(BaseModel):
-    answers: dict[str, Any]
+    questions = NebulaCompassEngine.get_questions(mode=mode, dimension=dimension, per_dimension=per_dimension)
+    return CompassQuestionsResponse(
+        title="بوصلة نيبولا للشخصية (Nebula Compass)",
+        mode=mode,
+        total_questions=len(questions),
+        questions=questions,
+    )
 
 
 @router.post(
-    "/onboarding/answers",
-    summary="Save onboarding answers and inject directly to RAG memory (حفظ أسئلة التخصيص)",
+    "/compass/answers",
+    response_model=CompassAnswersResponse,
+    summary="Submit Compass answers, determine archetype and seed RAG memory (حفظ إجابات بوصلة نيبولا)",
 )
-async def save_onboarding_answers(
-    body: OnboardingAnswersRequest,
+async def save_compass_answers(
+    body: CompassAnswersRequest,
     current_user: Optional[User] = Depends(get_optional_user_model),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Persists onboarding questionnaire answers directly into the RAG memory system
-    and user personalization profile.
+    Analyzes user answers from Nebula Compass, determines personality archetype,
+    and extracts structured memories directly into the RAG vector store.
     """
-    answers = body.answers
-    interaction = answers.get("interaction_style", "نصي وصوتي")
-    interest = answers.get("interest_domain", "البرمجة والتقنية")
-    personal_fact = str(answers.get("personal_fact", "")).strip()
+    user_name = current_user.full_name if current_user else "صاحب الروبوت"
+    uid = current_user.id if current_user else None
 
-    memories_to_add: list[str] = []
-    if interaction:
-        memories_to_add.append(f"أسلوب التفاعل المفضل للمستخدم: {interaction}")
-    if interest:
-        memories_to_add.append(f"المجال والاهتمام الرئيسي للمستخدم: {interest}")
-    if personal_fact:
-        memories_to_add.append(f"معلومة هامة عن المستخدم في الذاكرة: {personal_fact}")
+    extraction = await CompassMemoryExtractor.hybrid_extract(
+        answers=body.answers,
+        user_name=user_name,
+        use_llm=False,  # deterministic sub-10ms extraction
+    )
 
-    # Seed into RAG and Memory table
+    archetype = extraction["archetype"]
+    memories = list(extraction["memories"])
+    dim_scores = extraction["dimension_scores"]
+
+    # Also handle legacy fields if present
+    legacy_answers = body.answers
+    if "interaction_style" in legacy_answers and legacy_answers["interaction_style"]:
+        memories.append(f"أسلوب التفاعل المفضل للمستخدم: {legacy_answers['interaction_style']}")
+    if "interest_domain" in legacy_answers and legacy_answers["interest_domain"]:
+        memories.append(f"المجال والاهتمام الرئيسي للمستخدم: {legacy_answers['interest_domain']}")
+    if "personal_fact" in legacy_answers and str(legacy_answers["personal_fact"]).strip():
+        memories.append(f"معلومة هامة عن المستخدم في الذاكرة: {str(legacy_answers['personal_fact']).strip()}")
+
+    # Persist memories into Memory table and RAG
     from app.models.memory import Memory
     from app.services.memory.rag_service import RAGService
     rag = RAGService()
 
     saved_count = 0
     target_pid = 1  # Default primary persona
-    uid = current_user.id if current_user else None
-    for mem_text in memories_to_add:
+    for mem_text in memories:
         try:
             m = Memory(
                 user_id=uid,
                 personality_id=target_pid,
                 content=mem_text,
-                source="onboarding",
+                source="nebula_compass",
                 importance=8,
             )
             db.add(m)
@@ -775,7 +773,7 @@ async def save_onboarding_answers(
                 await rag.add_memory(
                     content=mem_text,
                     personality_id=target_pid,
-                    source="onboarding",
+                    source="nebula_compass",
                     importance=8,
                     user_id=uid,
                     db=db,
@@ -784,15 +782,58 @@ async def save_onboarding_answers(
                 logger.debug(f"RAG vector index notice: {rag_err}")
         except Exception as e:
             await db.rollback()
-            logger.warning(f"Error persisting onboarding memory: {e}")
+            logger.warning(f"Error persisting compass memory: {e}")
 
     await db.commit()
-    logger.info(f"Persisted {saved_count} onboarding memory items for user {current_user.email if current_user else 'guest'}")
+    logger.info(f"Persisted {saved_count} compass memory items for user {current_user.email if current_user else 'guest'}")
 
+    return CompassAnswersResponse(
+        message="تم حفظ إجابات بوصلة نيبولا وتحديث بروفايل الشخصية وذاكرة RAG بنجاح",
+        archetype=archetype,
+        dimension_scores=dim_scores,
+        memories_created=saved_count,
+        memories=memories,
+    )
+
+
+# ── Backward Compatibility Aliases for Onboarding ─────────────────────────────
+
+@router.get(
+    "/onboarding/questions",
+    summary="Get dynamic onboarding questionnaire (Alias for Nebula Compass)",
+)
+async def get_onboarding_questions(
+    mode: str = "balanced",
+):
+    """
+    Backward compatible endpoint returning balanced Nebula Compass questions.
+    """
+    questions = NebulaCompassEngine.get_questions(mode=mode, per_dimension=2)
+    return {
+        "title": "بوصلة نيبولا للشخصية (Nebula Compass)",
+        "questions": questions,
+        "total_questions": len(questions),
+    }
+
+
+@router.post(
+    "/onboarding/answers",
+    summary="Save onboarding answers (Alias for Nebula Compass)",
+)
+async def save_onboarding_answers(
+    body: CompassAnswersRequest,
+    current_user: Optional[User] = Depends(get_optional_user_model),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Backward compatible endpoint delegating to save_compass_answers.
+    """
+    resp = await save_compass_answers(body=body, current_user=current_user, db=db)
     return {
         "success": True,
-        "saved_memories_count": saved_count,
-        "message": "تم حفظ تفضيلات التخصيص وإضافتها لذاكرة المساعد الذكي بنجاح",
+        "saved_memories_count": resp.memories_created,
+        "archetype": resp.archetype,
+        "message": resp.message,
     }
 
 

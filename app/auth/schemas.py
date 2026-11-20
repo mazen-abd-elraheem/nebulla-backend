@@ -216,3 +216,39 @@ class MessageResponse(BaseModel):
     """Generic status response."""
     message: str
     details: Optional[dict[str, Any]] = None
+
+
+# ── Nebula Compass (بوصلة نيبولا) Schemas ─────────────────────────────────────
+
+class CompassQuestionItem(BaseModel):
+    id: str
+    index: int
+    dimension: str
+    text: str
+    subtitle: Optional[str] = None
+    is_core: bool = False
+    options: list[str]
+
+
+class CompassQuestionsResponse(BaseModel):
+    title: str = "بوصلة نيبولا للشخصية (Nebula Compass)"
+    mode: str
+    total_questions: int
+    questions: list[CompassQuestionItem]
+
+
+class CompassAnswersRequest(BaseModel):
+    answers: dict[str, Any] = Field(..., description="قاموس الإجابات: معرف السؤال أو رقمه وقيمة الإجابة")
+    mode: Optional[str] = Field("balanced", description="نمط الاستبيان (balanced, quick, full)")
+
+
+class CompassAnswersResponse(BaseModel):
+    message: str
+    archetype: str
+    dimension_scores: dict[str, float]
+    memories_created: int
+    memories: list[str]
+
+
+# Backward compatibility aliases
+OnboardingAnswersRequest = CompassAnswersRequest
