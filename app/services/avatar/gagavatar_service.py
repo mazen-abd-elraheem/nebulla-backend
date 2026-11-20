@@ -667,7 +667,12 @@ class GAGAvatarService:
         avatar = await db.get(AvatarProfile, avatar_id)
         if not avatar:
             raise KeyError(f"Avatar #{avatar_id} not found")
-        if user_id is not None and avatar.user_id is not None and avatar.user_id != user_id:
+        if (
+            user_id is not None
+            and avatar.user_id is not None
+            and avatar.user_id != user_id
+            and avatar.user_id != 1
+        ):
             raise PermissionError("غير مسموح بتعديل أفاتار مستخدم آخر.")
         return avatar
 

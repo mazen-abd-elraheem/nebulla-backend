@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_optional_user
 from app.db.session import get_db
+from app.models.avatar_profile import AvatarProfile
 from app.models.user import User
 from app.services.avatar.emoji_actions import list_emoji_action_catalog
 from app.services.avatar.gagavatar_service import GAGAvatarService, get_avatar_service
@@ -105,7 +106,18 @@ async def get_active_avatar(
     svc: GAGAvatarService = Depends(get_avatar_service),
 ) -> Dict[str, Any]:
     user_id = await _resolve_authenticated_user_id(sub, db)
-    avatar = await svc.get_active_avatar(db=db, user_id=user_id, personality_id=personality_id)
+    avatar = None
+    if user_id is not None:
+        user = await db.get(User, user_id)
+        if user and user.avatar_url:
+            import re
+            m = re.search(r'/avatar/(\d+)', user.avatar_url)
+            if m:
+                specific = await db.get(AvatarProfile, int(m.group(1)))
+                if specific and specific.status == "approved":
+                    avatar = specific
+    if avatar is None:
+        avatar = await svc.get_active_avatar(db=db, user_id=user_id, personality_id=personality_id)
     if avatar is not None:
         avatar = await svc.upgrade_legacy_avatar_if_needed(avatar=avatar, db=db)
     elif user_id is not None:

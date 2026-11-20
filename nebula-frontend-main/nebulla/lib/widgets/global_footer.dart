@@ -21,10 +21,10 @@ class GlobalNebulaFooter extends StatelessWidget {
 
     final items = [
       _FooterItem(
-        index: 2,
-        icon: Icons.home_outlined,
-        activeIcon: Icons.home_rounded,
-        label: t('nav_home'),
+        index: 0,
+        icon: Icons.groups_outlined,
+        activeIcon: Icons.groups_rounded,
+        label: t('nav_personas'),
       ),
       _FooterItem(
         index: 1,
@@ -33,10 +33,16 @@ class GlobalNebulaFooter extends StatelessWidget {
         label: t('nav_chat'),
       ),
       _FooterItem(
-        index: 0,
-        icon: Icons.groups_outlined,
-        activeIcon: Icons.groups_rounded,
-        label: t('nav_personas'),
+        index: 2,
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_rounded,
+        label: t('nav_home'),
+      ),
+      _FooterItem(
+        index: 3,
+        icon: Icons.psychology_outlined,
+        activeIcon: Icons.psychology_rounded,
+        label: t('nav_memory'),
       ),
       _FooterItem(
         index: 4,
@@ -76,7 +82,7 @@ class GlobalNebulaFooter extends StatelessWidget {
                 borderRadius: BorderRadius.circular(30),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
+                    horizontal: 3,
                     vertical: 4,
                   ),
                   child: Column(

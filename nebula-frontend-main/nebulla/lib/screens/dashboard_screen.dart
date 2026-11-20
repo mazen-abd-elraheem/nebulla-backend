@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../services/api_service.dart';
 import '../services/avatar_audio_service.dart';
 import '../services/locale_service.dart';
 import '../services/nebula_repository.dart';
@@ -249,6 +251,93 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Divider(),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF4FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.open_in_browser_rounded,
+                      color: Color(0xFFC026D3),
+                    ),
+                  ),
+                  title: Text(
+                    t('استوديو الأفاتار 3D التفاعلي (Viewer)', 'Interactive 3D Avatar Studio (Viewer)'),
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  subtitle: Text(
+                    t('فتح لوحة التحكم والتعبيرات 3D في المتصفح', 'Open 3D expressions & controller in browser'),
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 11.5,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF94A3B8)),
+                  onTap: () async {
+                    Navigator.of(ctx).pop();
+                    final base = StorageService.instance.getBaseUrl();
+                    final uri = Uri.parse('$base/avatar-ui');
+                    try {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    } catch (_) {}
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.switch_account_rounded,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                  title: Text(
+                    t('تبديل الأفاتار (السايبورغ / صورتك)', 'Switch Avatar (Cyborg / Your Photo)'),
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  subtitle: Text(
+                    t('التبديل بين شخصية الواجهة وصورتك الشخصية', 'Toggle between UI character and personal photo'),
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 11.5,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                  onTap: () async {
+                    Navigator.of(ctx).pop();
+                    final currentAv = _audioService.activeAvatar.value;
+                    // If current is Cyborg (id 8), switch to User (id 7), and vice-versa
+                    final targetId = (currentAv?.id == 8) ? 7 : 8;
+                    try {
+                      await ApiService.instance.post('/api/v1/avatar/$targetId/approve', {});
+                      await _audioService.loadActiveAvatar(force: true);
+                      if (mounted) {
+                        showSuccessSnackbar(
+                          context,
+                          t('تم تبديل الأفاتار بنجاح!', 'Avatar switched successfully!'),
+                        );
+                      }
+                    } catch (_) {
+                      await _audioService.loadActiveAvatar(force: true);
+                    }
+                  },
+                ),
                 ValueListenableBuilder<bool>(
                   valueListenable: _audioService.use3DModel,
                   builder: (context, use3D, _) {

@@ -299,11 +299,6 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
                           ),
                         ),
                       ),
-                      if (isSpeaking && hasGagAvatar)
-                        Positioned(
-                          bottom: widget.fullScreen ? 210 : 14,
-                          child: _buildSpeechWaveform(auraColor, amplitude),
-                        ),
                     ],
                   ),
                 ),
@@ -315,96 +310,29 @@ class _InteractiveAnimatedAvatarState extends State<InteractiveAnimatedAvatar>
     );
   }
 
-  Widget _buildSpeechWaveform(Color color, double amplitude) {
-    final pulseVal = _auraPulseController?.value ?? 0.5;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A).withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.14),
-          width: 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.28),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(7, (i) {
-          final wave = sin((i * 0.7) + (pulseVal * pi * 2.5)).abs();
-          final barHeight = 5.0 + (wave * amplitude * 18.0);
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 2.0),
-            width: 3.0,
-            height: barHeight,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(3),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-
   Widget _buildNoAvatarPlaceholder(Color auraColor) {
-    // 1. If backend avatar URL exists, render it as priority
-    final userAvatarUrl = StorageService.instance.getUserAvatarUrl();
-    if (userAvatarUrl != null && userAvatarUrl.isNotEmpty) {
-      final resolved = ApiService.instance.resolveUrl(userAvatarUrl);
-      return ColoredBox(
-        color: Colors.white,
-        child: Image.network(
-          resolved,
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          errorBuilder: (_, _, _) => _buildAssetCyborg(),
-        ),
-      );
-    }
-
-    // 2. If user previously uploaded a local photo, render it as fallback
-    final userAvatarPath = StorageService.instance.getUserAvatarPath();
-    if (userAvatarPath != null && File(userAvatarPath).existsSync()) {
-      return ColoredBox(
-        color: Colors.white,
-        child: Image.file(
-          File(userAvatarPath),
-          fit: BoxFit.cover,
-          alignment: Alignment.topCenter,
-          errorBuilder: (_, _, _) => _buildAssetCyborg(),
-        ),
-      );
-    }
-
-    // 3. Default initial clean cyborg design matching the reference mockup
-    return _buildAssetCyborg();
-  }
-
-  Widget _buildAssetCyborg() {
+    // 1. If backend avatar URL exists or default to backend avatar 7
+    final userAvatarUrl = StorageService.instance.getUserAvatarUrl() ?? '/api/v1/avatar/7/preview';
+    final resolved = ApiService.instance.resolveUrl(userAvatarUrl);
     return ColoredBox(
       color: Colors.white,
-      child: Image.asset(
-        'assets/images/avatar_female.png',
+      child: Image.network(
+        resolved,
         fit: BoxFit.cover,
         alignment: Alignment.center,
-        errorBuilder: (_, _, _) => Image.asset(
-          'assets/images/avatar_female_full.png',
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          errorBuilder: (_, _, _) => Image.asset(
-            'assets/images/cyborg_bg.jpg',
-            fit: BoxFit.cover,
-            alignment: Alignment.center,
-          ),
-        ),
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) {
+          // 2. If network image fails, fallback to local saved photo
+          final userAvatarPath = StorageService.instance.getUserAvatarPath();
+          if (userAvatarPath != null && File(userAvatarPath).existsSync()) {
+            return Image.file(
+              File(userAvatarPath),
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+            );
+          }
+          return const ColoredBox(color: Colors.white);
+        },
       ),
     );
   }

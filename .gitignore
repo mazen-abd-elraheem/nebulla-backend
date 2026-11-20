@@ -44,3 +44,13 @@ htmlcov/
 /lib/
 /web/
 /windows/
+
+# Model Weights and Large Binaries
+*.pt
+*.bin
+*.pth
+*.onnx
+*.safetensors
+assets/GAGAvatar/*.pt
+nebula-frontend-main/nebulla/assets/GAGAvatar/*.pt
+
