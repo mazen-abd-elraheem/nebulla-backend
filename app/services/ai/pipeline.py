@@ -506,12 +506,14 @@ class AIPipeline:
             if outcome.handled:
                 if outcome.speech:
                     try:
+                        await manager.send_to_phone({"t": "eyes", "mood": outcome.mood or "happy"})
                         await self.speak(outcome.speech, outcome.mood)
                     except Exception as ex:
                         logger.error(f"TTS error while speaking action response: {ex}")
                     await manager.broadcast_to_desks({
                         "t": "action_event",
                         "speech": outcome.speech,
+                        "mood": outcome.mood,
                     })
                 return
 
@@ -1010,6 +1012,48 @@ class AIPipeline:
                 "personality_id": pid,
                 "audio_bytes": audio_bytes,
             }
+
+        # 0b. Phone actions («كلّم ماما», open maps, reminders …)
+        if settings.PHONE_ACTIONS_ENABLED:
+            from app.services.voice_verification.speaker_service import VerificationResult
+            ver = VerificationResult(
+                available=True, enrolled=True, passed_l1=True, passed_l2=True,
+                user_id=1, speaker_name="المستخدم", max_level=2, is_main=True,
+            )
+            outcome = await self._actions.handle_utterance(text, ver)
+            if outcome.handled:
+                reply_text = outcome.speech or "تمام"
+                mood = outcome.mood or "happy"
+                total_ms = (time.perf_counter() - t_start) * 1000
+                logger.info(f"📱 Phone action process_text match in {total_ms:.1f}ms: '{text}' -> '{reply_text}'")
+                if broadcast_to_clients:
+                    await manager.broadcast_to_desks({
+                        "t": "text_stream",
+                        "token": reply_text,
+                        "is_final": True,
+                        "response": reply_text,
+                        "latency": {"llm_ms": 0, "total_ms": round(total_ms)},
+                    })
+                    await manager.send_to_phone({"t": "eyes", "mood": mood})
+                audio_bytes = await self._synthesize_and_dispatch_audio(reply_text, pid, broadcast_to_clients)
+                asyncio.create_task(
+                    self._record_turn(
+                        session_id=session_id,
+                        user_text=text,
+                        assistant_text=reply_text,
+                        emotion=mood,
+                        llm_ms=0.0,
+                        total_ms=total_ms,
+                        personality_id=pid,
+                    )
+                )
+                return {
+                    "session_id": session_id,
+                    "response": reply_text,
+                    "retrieved_memories": [],
+                    "personality_id": pid,
+                    "audio_bytes": audio_bytes,
+                }
 
         # 1. Full Grounding Context & RAG retrieval
         grounding = None

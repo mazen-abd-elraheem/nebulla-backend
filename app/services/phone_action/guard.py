@@ -28,17 +28,35 @@ from app.services.phone_action.planner import (
     SENSITIVE,
     Intent,
 )
+from app.core.config import settings
 from app.services.voice_verification.speaker_service import VerificationResult
 
 # App id → minimum level. Anything not listed is refused (allow-list, not deny-list).
 APP_LEVELS = {
+    # Level 0 (Public / Utilities / Media)
     "music": 0,
+    "clock": 0,
+    "calculator": 0,
+    "calendar": 0,
+    "weather": 0,
+    "gallery": 0,
+    # Level 1 (Personal Communication & Apps)
     "maps": 1,
     "whatsapp": 1,
     "telegram": 1,
     "youtube": 1,
     "spotify": 1,
+    "anghami": 1,
     "camera": 1,
+    "browser": 1,
+    "facebook": 1,
+    "instagram": 1,
+    "tiktok": 1,
+    "twitter": 1,
+    "email": 1,
+    "files": 1,
+    # Level 2 (Device Settings / Sensitive)
+    "settings": 2,
 }
 
 ALLOW = "allow"
@@ -92,11 +110,13 @@ class ActionGuard:
             return GuardDecision(ALLOW, required_level=0)
 
         # ── identity gates (Level ≥ 1) ────────────────────────────────────
-        if ident is None or not ident.available or not ident.enrolled:
+        if not settings.SPEAKER_VERIFICATION_ENABLED:
+            pass
+        elif ident is None or not ident.available or not ident.enrolled:
             return GuardDecision(DENY, required_level=req, reason="no_voiceprint")
-        if not ident.passed_l1 or ident.user_id is None:
+        elif not ident.passed_l1 or ident.user_id is None:
             return GuardDecision(DENY, required_level=req, reason="not_verified")
-        if getattr(ident, "max_level", 2) < req and not getattr(ident, "is_main", False) and not getattr(ident, "is_identified", False):
+        elif getattr(ident, "max_level", 2) < req and not getattr(ident, "is_main", False) and not getattr(ident, "is_identified", False):
             return GuardDecision(DENY, required_level=req, reason="permission")
 
         # ── step-up for Level ≥ 2 ─────────────────────────────────────────

@@ -1024,6 +1024,38 @@ async def execute_universal_action(
                 payload = {"t": "camera_capture"}
                 await manager.send_to_phone(payload)
 
+        elif body.domain == "phone":
+            dispatched = "phone"
+            if body.action == "call":
+                payload = {"t": "call", "contact": body.target or "unlisted", "number": body.params.get("number", ""), "speaker": True}
+                await manager.send_to_phone(payload)
+            elif body.action in ("msg", "message"):
+                payload = {"t": "msg", "app": body.params.get("app", "whatsapp"), "to": body.target or "", "number": body.params.get("number", ""), "text": body.params.get("text", "")}
+                await manager.send_to_phone(payload)
+            elif body.action in ("app_open", "app"):
+                payload = {"t": "app", "cmd": "open", "app": body.params.get("app", body.target), "q": body.params.get("query")}
+                await manager.send_to_phone(payload)
+            elif body.action == "read_notifications":
+                payload = {"t": "app", "cmd": "read_notifications"}
+                await manager.send_to_phone(payload)
+
+        elif body.domain == "reminder":
+            dispatched = "internal"
+            if body.action == "create":
+                from datetime import datetime, timezone
+                from app.models.reminder import Reminder
+                now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+                rem = Reminder(
+                    user_id=1,
+                    title=body.params.get("title", body.target or "تذكير"),
+                    reminder_type=body.params.get("reminder_type", "task"),
+                    target_time=now_utc,
+                    recurrence=body.params.get("recurrence", "once"),
+                )
+                db.add(rem)
+                await db.commit()
+                payload = {"reminder_id": rem.id, "title": rem.title}
+
         return UniversalActionExecuteResponse(
             ok=True,
             status="dispatched",

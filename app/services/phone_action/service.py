@@ -147,7 +147,12 @@ class PhoneActionService:
         self._call_since = 0.0
         self._awaiting_ack: List[int] = []
         self._speaker: Optional[Callable[[str, Optional[str]], Awaitable[None]]] = None
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     # ── plumbing ─────────────────────────────────────────────────────────
 
@@ -250,7 +255,7 @@ class PhoneActionService:
         """
         if not settings.PHONE_ACTIONS_ENABLED or not transcript.strip():
             return NOT_HANDLED
-        async with self._lock:
+        async with self._get_lock():
             try:
                 return await self._handle(transcript, verification)
             except Exception:  # noqa: BLE001 — never log transcript content
@@ -353,7 +358,7 @@ class PhoneActionService:
 
     async def confirm_external(self, log_id: int, approve: bool) -> bool:
         """Level-3 approval from the control room (REST or desk WebSocket)."""
-        async with self._lock:
+        async with self._get_lock():
             await self._expire_pending()
             p = self._pending
             if p is None or p.stage != "external" or p.log_id != log_id:
@@ -397,11 +402,17 @@ class PhoneActionService:
             await self._new_log(user_id=uid, action_type=_LOG_TYPE[intent.kind], target=None,
                                 level=1, status="rejected", reason="lockout", score=score)
             return ActionOutcome(True, S_LOCKED, "alert")
-        if ver is None or not ver.available or not ver.enrolled:
+        if not settings.SPEAKER_VERIFICATION_ENABLED:
+            if ver is None:
+                ver = VerificationResult(
+                    available=True, enrolled=True, passed_l1=True, passed_l2=True,
+                    user_id=1, speaker_name="المستخدم", max_level=2, is_main=True,
+                )
+        elif ver is None or not ver.available or not ver.enrolled:
             await self._new_log(user_id=None, action_type=_LOG_TYPE[intent.kind], target=None,
                                 level=1, status="rejected", reason="no_voiceprint", score=score)
             return ActionOutcome(True, S_NO_VOICEPRINT, "neutral")
-        if not ver.passed_l1 or ver.user_id is None:
+        elif not ver.passed_l1 or ver.user_id is None:
             self._register_failure()
             await self._new_log(user_id=None, action_type=_LOG_TYPE[intent.kind], target=None,
                                 level=1, status="rejected", reason="not_verified", score=score)

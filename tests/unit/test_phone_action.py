@@ -302,145 +302,146 @@ class TestActionGuard:
 # ── PhoneActionService State Machine Tests ────────────────────────────────────
 
 @pytest.mark.asyncio
-class TestPhoneActionServiceFlow:
-    async def test_full_verbal_confirmation_flow(self):
-        dispatched_messages = []
+async def test_full_verbal_confirmation_flow():
+    dispatched_messages = []
 
-        class DummyManager:
-            phone_connected = True
+    class DummyManager:
+        phone_connected = True
 
-            async def send_to_phone(self, msg):
-                dispatched_messages.append(msg)
+        async def send_to_phone(self, msg):
+            dispatched_messages.append(msg)
 
-            async def broadcast_to_desks(self, msg):
-                pass
+        async def broadcast_to_desks(self, msg):
+            pass
 
-        class DummySession:
-            async def __aenter__(self):
-                return self
+    class DummySession:
+        async def __aenter__(self):
+            return self
 
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                pass
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
 
-            def add(self, obj):
-                if hasattr(obj, "id") and obj.id is None:
-                    obj.id = 1
+        def add(self, obj):
+            if hasattr(obj, "id") and obj.id is None:
+                obj.id = 1
 
-            async def commit(self):
-                pass
+        async def commit(self):
+            pass
 
-            async def get(self, model, ident):
-                return None
+        async def get(self, model, ident):
+            return None
 
-            async def execute(self, stmt):
-                class DummyResult:
-                    def scalars(self):
-                        class DummyScalars:
-                            def all(self):
-                                return [
-                                    Contact(
-                                        id=1,
-                                        name="ماما",
-                                        slug="mama",
-                                        phone_number="+201012345678",
-                                        is_allowlisted=True,
-                                        requires_confirmation=True,
-                                        required_level=1,
-                                    )
-                                ]
-                        return DummyScalars()
-                return DummyResult()
+        async def execute(self, stmt):
+            class DummyResult:
+                def scalars(self):
+                    class DummyScalars:
+                        def all(self):
+                            return [
+                                Contact(
+                                    id=1,
+                                    name="ماما",
+                                    slug="mama",
+                                    phone_number="+201012345678",
+                                    is_allowlisted=True,
+                                    requires_confirmation=True,
+                                    required_level=1,
+                                )
+                            ]
+                    return DummyScalars()
+            return DummyResult()
 
-        svc = PhoneActionService(
-            session_factory=DummySession,
-            ws_manager=DummyManager(),
-        )
+    svc = PhoneActionService(
+        session_factory=DummySession,
+        ws_manager=DummyManager(),
+    )
 
-        ver = VerificationResult(
-            available=True,
-            enrolled=True,
-            passed_l1=True,
-            user_id=1,
-            speaker_name="مازن",
-            max_level=2,
-        )
+    ver = VerificationResult(
+        available=True,
+        enrolled=True,
+        passed_l1=True,
+        user_id=1,
+        speaker_name="مازن",
+        max_level=2,
+    )
 
-        # 1. User says "كلّم ماما"
-        out1 = await svc.handle_utterance("كلّم ماما", ver)
-        assert out1.handled is True
-        assert "أكلّم ماما؟" in (out1.speech or "")
+    # 1. User says "كلّم ماما"
+    out1 = await svc.handle_utterance("كلّم ماما", ver)
+    assert out1.handled is True
+    assert "أكلّم ماما؟" in (out1.speech or "")
 
-        # 2. User confirms with "أيوه"
-        out2 = await svc.handle_utterance("أيوه", ver)
-        assert out2.handled is True
-        assert "بكلّم ماما" in (out2.speech or "")
+    # 2. User confirms with "أيوه"
+    out2 = await svc.handle_utterance("أيوه", ver)
+    assert out2.handled is True
+    assert "بكلّم ماما" in (out2.speech or "")
 
-        # Verify command dispatched to phone
-        assert len(dispatched_messages) == 1
-        cmd = dispatched_messages[0]
-        assert cmd.get("t") == "call"
-        assert cmd.get("contact") == "mama"
-        assert cmd.get("number") == "+201012345678"
+    # Verify command dispatched to phone
+    assert len(dispatched_messages) == 1
+    cmd = dispatched_messages[0]
+    assert cmd.get("t") == "call"
+    assert cmd.get("contact") == "mama"
+    assert cmd.get("number") == "+201012345678"
 
-    async def test_verbal_rejection_flow(self):
-        class DummyManager:
-            phone_connected = True
 
-            async def send_to_phone(self, msg):
-                pass
+@pytest.mark.asyncio
+async def test_verbal_rejection_flow():
+    class DummyManager:
+        phone_connected = True
 
-            async def broadcast_to_desks(self, msg):
-                pass
+        async def send_to_phone(self, msg):
+            pass
 
-        class DummySession:
-            async def __aenter__(self):
-                return self
+        async def broadcast_to_desks(self, msg):
+            pass
 
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                pass
+    class DummySession:
+        async def __aenter__(self):
+            return self
 
-            def add(self, obj):
-                if hasattr(obj, "id") and obj.id is None:
-                    obj.id = 1
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
 
-            async def commit(self):
-                pass
+        def add(self, obj):
+            if hasattr(obj, "id") and obj.id is None:
+                obj.id = 1
 
-            async def get(self, model, ident):
-                return None
+        async def commit(self):
+            pass
 
-            async def execute(self, stmt):
-                class DummyResult:
-                    def scalars(self):
-                        class DummyScalars:
-                            def all(self):
-                                return [
-                                    Contact(
-                                        id=1,
-                                        name="ماما",
-                                        slug="mama",
-                                        phone_number="+201012345678",
-                                        is_allowlisted=True,
-                                        requires_confirmation=True,
-                                        required_level=1,
-                                    )
-                                ]
-                        return DummyScalars()
-                return DummyResult()
+        async def get(self, model, ident):
+            return None
 
-        svc = PhoneActionService(
-            session_factory=DummySession,
-            ws_manager=DummyManager(),
-        )
+        async def execute(self, stmt):
+            class DummyResult:
+                def scalars(self):
+                    class DummyScalars:
+                        def all(self):
+                            return [
+                                Contact(
+                                    id=1,
+                                    name="ماما",
+                                    slug="mama",
+                                    phone_number="+201012345678",
+                                    is_allowlisted=True,
+                                    requires_confirmation=True,
+                                    required_level=1,
+                                )
+                            ]
+                    return DummyScalars()
+            return DummyResult()
 
-        ver = VerificationResult(
-            available=True, enrolled=True, passed_l1=True, user_id=1, speaker_name="مازن", max_level=2
-        )
+    svc = PhoneActionService(
+        session_factory=DummySession,
+        ws_manager=DummyManager(),
+    )
 
-        # Step 1: Request
-        await svc.handle_utterance("كلّم ماما", ver)
+    ver = VerificationResult(
+        available=True, enrolled=True, passed_l1=True, user_id=1, speaker_name="مازن", max_level=2
+    )
 
-        # Step 2: Cancel with "لأ"
-        out2 = await svc.handle_utterance("لأ خلاص", ver)
-        assert out2.handled is True
-        assert "لغيت الطلب" in (out2.speech or "")
+    # Step 1: Request
+    await svc.handle_utterance("كلّم ماما", ver)
+
+    # Step 2: Cancel with "لأ"
+    out2 = await svc.handle_utterance("لأ خلاص", ver)
+    assert out2.handled is True
+    assert "لغيت الطلب" in (out2.speech or "")

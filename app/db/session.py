@@ -352,6 +352,44 @@ async def init_db() -> None:
             session.add(main_spk)
             logger.info("Seeded default main speaker [is_main=True]")
 
+        # 3. Seed default allowlisted contacts if empty (ماما, بابا, أحمد)
+        from app.models.contact import Contact
+        contact_res = await session.execute(select(Contact).limit(1))
+        if not contact_res.scalar_one_or_none():
+            c_mama = Contact(
+                name="ماما",
+                aliases="مامي,الوالدة,أمي,امي",
+                slug="mama",
+                phone_number="+201000000001",
+                relationship="mother",
+                is_allowlisted=True,
+                requires_confirmation=True,
+                required_level=1,
+                notify_on_missed=True,
+            )
+            c_baba = Contact(
+                name="بابا",
+                aliases="أبي,ابي,والدي",
+                slug="baba",
+                phone_number="+201000000002",
+                relationship="father",
+                is_allowlisted=True,
+                requires_confirmation=True,
+                required_level=1,
+            )
+            c_ahmed = Contact(
+                name="أحمد",
+                aliases="احمد",
+                slug="ahmed",
+                phone_number="+201000000003",
+                relationship="friend",
+                is_allowlisted=True,
+                requires_confirmation=True,
+                required_level=1,
+            )
+            session.add_all([c_mama, c_baba, c_ahmed])
+            logger.info("Seeded default allowlisted contacts (ماما, بابا, أحمد)")
+
         await session.commit()
 
 

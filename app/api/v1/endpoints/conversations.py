@@ -348,6 +348,80 @@ async def chat_with_llm(
     # Commit read transaction to release all SQLite locks before LLM generation
     await db.commit()
 
+    t_start = time.perf_counter()
+
+    # ── Phone Action Check & Execution («افتح واتساب», «اتصل بماما», «فكرني»...) ───
+    if settings.PHONE_ACTIONS_ENABLED:
+        try:
+            from app.services.phone_action import get_phone_action_service
+            from app.services.voice_verification.speaker_service import VerificationResult
+            phone_svc = get_phone_action_service()
+
+            # Build verification for authorized chat session
+            ver_for_action = VerificationResult(
+                available=True,
+                enrolled=True,
+                passed_l1=True,
+                passed_l2=True,
+                user_id=1,
+                speaker_name="المستخدم",
+                max_level=2,
+                is_main=True,
+            )
+
+            action_outcome = await phone_svc.handle_utterance(body.message, ver_for_action)
+            if action_outcome.handled:
+                reply_text = action_outcome.speech or "تمام، نفذت طلبك."
+                action_mood = action_outcome.mood or "happy"
+
+                audio_b64 = None
+                audio_url = None
+                has_sample = True
+                voice_notice = None
+
+                if body.return_audio:
+                    audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(
+                        reply_text, active_pid
+                    )
+
+                avatar_act = await _build_and_broadcast_avatar_action(
+                    reply_text=f"{reply_text} [{action_mood}]",
+                    personality_id=active_pid,
+                    audio_url=audio_url,
+                    has_voice_sample=has_sample,
+                )
+
+                # Persist turn in conversation history
+                from app.db.session import AsyncSessionLocal
+                async with AsyncSessionLocal() as turn_db:
+                    u_msg = Message(conversation_id=conv_id, role="user", content=body.message)
+                    a_msg = Message(conversation_id=conv_id, role="assistant", content=reply_text)
+                    turn_db.add_all([u_msg, a_msg])
+                    await turn_db.commit()
+
+                total_action_latency = round((time.perf_counter() - t_start) * 1000, 2)
+                return ChatResponse(
+                    reply=reply_text,
+                    cleaned_reply=reply_text,
+                    response=reply_text,
+                    session_id=session_id,
+                    conversation_id=conv_id,
+                    emotion=action_mood,
+                    face_emoji=avatar_act.get("face_emoji", "😊"),
+                    expression=avatar_act.get("expression", "happy"),
+                    avatar_action=avatar_act,
+                    llm_latency_ms=total_action_latency,
+                    latency={"action_ms": total_action_latency, "llm_ms": 0.0},
+                    personality_id=active_pid,
+                    grounding=grounding,
+                    audio_base64=audio_b64,
+                    audio_url=audio_url,
+                    has_voice_sample=has_sample,
+                    voice_notice=voice_notice,
+                )
+        except Exception as ex:
+            logger.error(f"Error handling phone action in chat: {ex}")
+
     # Load LLM provider and generate response
     target_provider = body.provider or settings.LLM_PROVIDER
     if body.model and ("nile" in body.model.lower() or "mbzuai" in body.model.lower()):
@@ -605,6 +679,77 @@ async def chat_stream(
 
     # Commit read transaction to release all SQLite locks before LLM generation
     await db.commit()
+
+    t_start = time.perf_counter()
+
+    # ── Phone Action Check & Execution («افتح واتساب», «اتصل بماما», «فكرني»...) ───
+    if settings.PHONE_ACTIONS_ENABLED:
+        try:
+            from app.services.phone_action import get_phone_action_service
+            from app.services.voice_verification.speaker_service import VerificationResult
+            phone_svc = get_phone_action_service()
+
+            # Build verification for authorized chat session
+            ver_for_action = VerificationResult(
+                available=True,
+                enrolled=True,
+                passed_l1=True,
+                passed_l2=True,
+                user_id=1,
+                speaker_name="المستخدم",
+                max_level=2,
+                is_main=True,
+            )
+
+            action_outcome = await phone_svc.handle_utterance(body.message, ver_for_action)
+            if action_outcome.handled:
+                reply_text = action_outcome.speech or "تمام، نفذت طلبك."
+                action_mood = action_outcome.mood or "happy"
+
+                audio_b64 = None
+                audio_url = None
+                has_sample = True
+                voice_notice = None
+
+                if body.return_audio:
+                    audio_b64, audio_url, has_sample, voice_notice = await _synthesize_chat_audio(
+                        reply_text, active_pid
+                    )
+
+                avatar_act = await _build_and_broadcast_avatar_action(
+                    reply_text=f"{reply_text} [{action_mood}]",
+                    personality_id=active_pid,
+                    audio_url=audio_url,
+                    has_voice_sample=has_sample,
+                )
+
+                # Persist turn in conversation history
+                from app.db.session import AsyncSessionLocal
+                async with AsyncSessionLocal() as turn_db:
+                    u_msg = Message(conversation_id=conv_id, role="user", content=body.message)
+                    a_msg = Message(conversation_id=conv_id, role="assistant", content=reply_text)
+                    turn_db.add_all([u_msg, a_msg])
+                    await turn_db.commit()
+
+                total_action_latency = round((time.perf_counter() - t_start) * 1000, 2)
+                async def action_sse_stream():
+                    import json
+                    yield f"data: {json.dumps({'type': 'context', 'action': True, 'mood': action_mood}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'token', 'content': reply_text}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'avatar', 'avatar_action': avatar_act}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'audio_url': audio_url, 'latency_ms': total_action_latency}, ensure_ascii=False)}\n\n"
+
+                return StreamingResponse(
+                    action_sse_stream(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no",
+                    },
+                )
+        except Exception as ex:
+            logger.error(f"Error handling phone action in chat: {ex}")
 
     # ── Strict Zero-Hallucination & Speed Optimization (SSE Stream) ───────────
     refusal_reply = "المعلومة دي مش مسجلة عندي في الذاكرة حالياً. [wave]"

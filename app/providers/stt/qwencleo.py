@@ -573,8 +573,14 @@ class QwenCleoProvider(BaseSTTProvider):
     """
 
     _shared_pipeline = None
-    _shared_lock = asyncio.Lock()
+    _shared_lock: asyncio.Lock | None = None
     _shared_error: str | None = None
+
+    @classmethod
+    def _get_shared_lock(cls) -> asyncio.Lock:
+        if cls._shared_lock is None:
+            cls._shared_lock = asyncio.Lock()
+        return cls._shared_lock
 
     @classmethod
     def is_ready(cls) -> bool:
@@ -584,7 +590,7 @@ class QwenCleoProvider(BaseSTTProvider):
     async def _ensure_loaded(self):
         if QwenCleoProvider._shared_pipeline is not None:
             return
-        async with QwenCleoProvider._shared_lock:
+        async with QwenCleoProvider._get_shared_lock():
             if QwenCleoProvider._shared_pipeline is None:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(_stt_executor, self._load)

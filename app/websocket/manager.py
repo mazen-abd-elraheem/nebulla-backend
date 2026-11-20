@@ -32,13 +32,18 @@ class ConnectionManager:
         # One ESP32 at a time
         self._esp: Optional[WebSocket] = None
 
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     # ── Phone ────────────────────────────────────────────────────────────────
 
     async def connect_phone(self, ws: WebSocket) -> None:
         await ws.accept()
-        async with self._lock:
+        async with self._get_lock():
             if self._phone:
                 logger.warning("Phone reconnected — dropping old connection")
                 try:
@@ -49,7 +54,7 @@ class ConnectionManager:
         logger.info("📱 Phone connected")
 
     async def disconnect_phone(self, ws: WebSocket) -> None:
-        async with self._lock:
+        async with self._get_lock():
             if self._phone is ws:
                 self._phone = None
         logger.info("📱 Phone disconnected")
@@ -70,12 +75,12 @@ class ConnectionManager:
 
     async def connect_desk(self, ws: WebSocket) -> None:
         await ws.accept()
-        async with self._lock:
+        async with self._get_lock():
             self._desks.add(ws)
         logger.info(f"🖥️  Desktop connected ({len(self._desks)} active)")
 
     async def disconnect_desk(self, ws: WebSocket) -> None:
-        async with self._lock:
+        async with self._get_lock():
             self._desks.discard(ws)
         logger.info(f"🖥️  Desktop disconnected ({len(self._desks)} remaining)")
 
@@ -93,7 +98,7 @@ class ConnectionManager:
 
     async def connect_esp(self, ws: WebSocket) -> None:
         await ws.accept()
-        async with self._lock:
+        async with self._get_lock():
             if self._esp:
                 logger.warning("ESP32 reconnected — dropping old connection")
                 try:
@@ -104,7 +109,7 @@ class ConnectionManager:
         logger.info("🤖 ESP32 connected")
 
     async def disconnect_esp(self, ws: WebSocket) -> None:
-        async with self._lock:
+        async with self._get_lock():
             if self._esp is ws:
                 self._esp = None
         logger.info("🤖 ESP32 disconnected")

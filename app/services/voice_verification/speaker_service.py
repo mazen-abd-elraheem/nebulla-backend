@@ -751,8 +751,13 @@ class SpeakerVerificationService:
                 self._backend = AcousticVoiceprintBackend()
 
         self._cache: Optional[Dict[int, _Entry]] = None
-        self._cache_lock = asyncio.Lock()
+        self._cache_lock: Optional[asyncio.Lock] = None
         logger.info("SpeakerVerificationService initialized using backend: %s", self._backend.model_id)
+
+    def _get_cache_lock(self) -> asyncio.Lock:
+        if self._cache_lock is None:
+            self._cache_lock = asyncio.Lock()
+        return self._cache_lock
 
     # ── cache ────────────────────────────────────────────────────────────
 
@@ -762,7 +767,7 @@ class SpeakerVerificationService:
     async def _entries(self, session_factory=None) -> Dict[int, _Entry]:
         if self._cache is not None:
             return self._cache
-        async with self._cache_lock:
+        async with self._get_cache_lock():
             if self._cache is None:
                 if session_factory is None:
                     from app.db.session import AsyncSessionLocal as session_factory  # noqa: N813
