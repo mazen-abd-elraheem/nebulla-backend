@@ -25,17 +25,17 @@ torch          # Install GPU version from pytorch.org if you have CUDA
 torchaudio
 soundfile==0.12.1
 
-# ── AI — TTS (VoiceTut-TTS & XTTS v2 voice cloning) ───────────────────────────
+# ── AI — TTS (VoiceTut-TTS & voice cloning) ───────────────────────────
 voicetut-tts>=0.1.1
-TTS>=0.22.0           # pip install TTS  (pulls in coqpit, trainer, etc.)
-numpy==1.26.4
-Pillow==10.4.0
+# TTS>=0.22.0  # Optional Coqui XTTS (requires --no-deps on Python 3.10 due to upstream numpy 1.22 pin)
+numpy>=1.24.0
+Pillow>=10.0.0
 
 # ── AI — Vision ─────────────────────────────────────────────────────────────
 # UniFace — lightweight face detection on ONNX Runtime (CPU or CUDA)
 uniface
 # pip install uniface  (or clone from GitHub)
-onnxruntime==1.19.2   # CPU; swap with onnxruntime-gpu for NVIDIA GPU
+onnxruntime>=1.19.0   # CPU; swap with onnxruntime-gpu for NVIDIA GPU
 opencv-python-headless>=4.10.0  # image crop, landmark warp & expression rendering
 imageio>=2.35.0                 # animated avatar GIF/frame export
 huggingface-hub>=0.25.0         # model asset fetching
