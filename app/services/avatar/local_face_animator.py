@@ -27,76 +27,76 @@ logger = get_logger(__name__)
 
 TARGET_SIZE = 512
 
-# Expression deformation recipes driven by detected 5-point landmarks
+# Expression deformation recipes driven by detected 5-point landmarks (subtle, human, photorealistic)
 _LOCAL_EXPRESSION_RECIPES: Dict[str, Dict[str, Any]] = {
     "neutral": {},
-    "blink": {"blink_l": 1.0, "blink_r": 1.0},
-    "happy": {"smile": 0.85, "cheek_lift": 0.45, "mouth_open": 0.10, "warmth": 1.05},
+    "blink": {"blink_l": 0.85, "blink_r": 0.85},
+    "happy": {"smile": 0.65, "cheek_lift": 0.30, "mouth_open": 0.08, "warmth": 1.04},
     "laugh": {
-        "smile": 1.25,
-        "cheek_lift": 0.80,
-        "squint": 0.35,
-        "mouth_open": 0.56,
-        "tilt_deg": 2.2,
-        "warmth": 1.07,
+        "smile": 0.85,
+        "cheek_lift": 0.45,
+        "squint": 0.20,
+        "mouth_open": 0.28,
+        "tilt_deg": 1.2,
+        "warmth": 1.05,
     },
     "love": {
-        "smile": 0.75,
-        "cheek_lift": 0.40,
-        "blush": 0.38,
-        "tilt_deg": 2.4,
-        "warmth": 1.08,
+        "smile": 0.60,
+        "cheek_lift": 0.28,
+        "blush": 0.22,
+        "tilt_deg": 1.4,
+        "warmth": 1.06,
     },
     "sad": {
-        "smile": -0.85,
-        "brow_inner_lift": 0.65,
-        "blink_l": 0.18,
-        "blink_r": 0.18,
-        "tilt_deg": -2.0,
-        "warmth": 0.92,
+        "smile": -0.50,
+        "brow_inner_lift": 0.40,
+        "blink_l": 0.15,
+        "blink_r": 0.15,
+        "tilt_deg": -1.2,
+        "warmth": 0.94,
     },
     "surprised": {
-        "brow_raise": 0.95,
-        "eye_widen": 0.55,
-        "mouth_o": 0.65,
-        "mouth_open": 0.62,
-        "warmth": 1.04,
+        "brow_raise": 0.60,
+        "eye_widen": 0.35,
+        "mouth_o": 0.35,
+        "mouth_open": 0.28,
+        "warmth": 1.03,
     },
     "angry": {
-        "brow_furrow": 0.95,
-        "squint": 0.32,
-        "smile": -0.55,
-        "mouth_tense": 0.55,
+        "brow_furrow": 0.60,
+        "squint": 0.20,
+        "smile": -0.38,
+        "mouth_tense": 0.35,
         "warmth": 1.02,
     },
     "thinking": {
-        "brow_asym": 0.85,
-        "mouth_shift_x": 0.45,
-        "smile": -0.15,
-        "tilt_deg": 3.2,
+        "brow_asym": 0.50,
+        "mouth_shift_x": 0.25,
+        "smile": -0.08,
+        "tilt_deg": 1.8,
     },
     "wink": {
-        "blink_r": 1.0,
-        "smile": 0.72,
-        "cheek_lift": 0.35,
-        "tilt_deg": 2.3,
-        "warmth": 1.05,
+        "blink_r": 0.85,
+        "smile": 0.55,
+        "cheek_lift": 0.25,
+        "tilt_deg": 1.4,
+        "warmth": 1.04,
     },
     "sleepy": {
-        "blink_l": 0.72,
-        "blink_r": 0.72,
-        "mouth_open": 0.12,
-        "tilt_deg": -2.5,
-        "warmth": 0.95,
+        "blink_l": 0.55,
+        "blink_r": 0.55,
+        "mouth_open": 0.06,
+        "tilt_deg": -1.4,
+        "warmth": 0.96,
     },
-    "wave": {"smile": 0.95, "cheek_lift": 0.50, "mouth_open": 0.16, "tilt_deg": 2.0, "warmth": 1.06},
-    "like": {"smile": 0.88, "cheek_lift": 0.45, "mouth_open": 0.10, "tilt_deg": -1.8, "warmth": 1.05},
+    "wave": {"smile": 0.68, "cheek_lift": 0.30, "mouth_open": 0.10, "tilt_deg": 1.2, "warmth": 1.04},
+    "like": {"smile": 0.65, "cheek_lift": 0.28, "mouth_open": 0.06, "tilt_deg": -1.2, "warmth": 1.04},
 }
 
 _MOUTH_LEVEL_AMOUNTS: Dict[int, float] = {
-    1: 0.30,
-    2: 0.60,
-    3: 0.92,
+    1: 0.15,
+    2: 0.32,
+    3: 0.50,
 }
 
 
@@ -173,14 +173,15 @@ class LocalFaceAnimator:
             fcx = (x1 + x2) * 0.5
             fcy = (y1 + y2) * 0.5
 
-            # Generous upper-body / head-and-shoulders framing (~2.25x face height)
-            crop_size = max(fw * 2.55, fh * 2.15)
-            crop_size = min(crop_size, float(max(w, h)) * 1.15)
+            # Natural portrait framing: upper-body / head-and-shoulders, strictly clamped within photo bounds
+            max_crop = float(min(w, h))
+            crop_size = max(fw * 2.30, fh * 2.10)
+            crop_size = min(crop_size, max_crop)
             crop_size = max(crop_size, 128.0)
 
-            # Place face slightly above center so neck & shoulders look natural
-            cx0 = fcx - crop_size * 0.5
-            cy0 = fcy - crop_size * 0.44
+            # Place face centered horizontally and slightly above center vertically (golden portrait ratio)
+            cx0 = float(np.clip(fcx - crop_size * 0.5, 0.0, max(0.0, float(w) - crop_size)))
+            cy0 = float(np.clip(fcy - crop_size * 0.42, 0.0, max(0.0, float(h) - crop_size)))
 
             crop_rgb, actual_x0, actual_y0, actual_size = self._safe_square_crop(
                 rgb, cx0, cy0, crop_size
@@ -263,25 +264,11 @@ class LocalFaceAnimator:
         size: float,
     ) -> Tuple[np.ndarray, float, float, float]:
         h, w = rgb.shape[:2]
-        ix0 = int(round(x0))
-        iy0 = int(round(y0))
-        isize = max(64, int(round(size)))
-        ix1 = ix0 + isize
-        iy1 = iy0 + isize
-
-        pad_l = max(0, -ix0)
-        pad_t = max(0, -iy0)
-        pad_r = max(0, ix1 - w)
-        pad_b = max(0, iy1 - h)
-
-        if pad_l or pad_t or pad_r or pad_b:
-            padded = cv2.copyMakeBorder(
-                rgb, pad_t, pad_b, pad_l, pad_r, borderType=cv2.BORDER_REFLECT_101
-            )
-            crop = padded[iy0 + pad_t : iy1 + pad_t, ix0 + pad_l : ix1 + pad_l]
-        else:
-            crop = rgb[iy0:iy1, ix0:ix1]
-
+        # Guarantee crop fits strictly within image boundaries with zero padding or mirroring
+        isize = max(64, min(int(round(size)), min(w, h)))
+        ix0 = max(0, min(int(round(x0)), max(0, w - isize)))
+        iy0 = max(0, min(int(round(y0)), max(0, h - isize)))
+        crop = rgb[iy0 : iy0 + isize, ix0 : ix0 + isize]
         return crop, float(ix0), float(iy0), float(isize)
 
     @staticmethod
@@ -416,15 +403,13 @@ class LocalFaceAnimator:
 
         blink_l = float(recipe.get("blink_l", 0.0))
         blink_r = float(recipe.get("blink_r", 0.0))
-        closed_eyes: List[Tuple[float, float, float]] = []
         for ex, ey, b_amt in ((lx, ly, blink_l), (rx, ry, blink_r)):
             if b_amt > 1e-3:
-                # Pull upper eyelid skin smoothly downward across the eye aperture
-                g_upper = self._gauss(ex, ey - eye_r * 0.08, eye_r * 1.18, eye_r * 0.62)
-                g_lower = self._gauss(ex, ey + eye_r * 0.48, eye_r * 1.05, eye_r * 0.38)
-                disp_y -= g_upper * (b_amt * eye_r * 0.92)
-                disp_y += g_lower * (b_amt * eye_r * 0.28)
-                closed_eyes.append((ex, ey, b_amt))
+                # Natural eyelid closure: smooth lid motion preserving natural skin texture & eyelashes
+                g_top = self._gauss(ex, ey - eye_r * 0.25, eye_r * 1.10, eye_r * 0.45)
+                g_bot = self._gauss(ex, ey + eye_r * 0.35, eye_r * 1.10, eye_r * 0.45)
+                disp_y -= g_top * (b_amt * eye_r * 0.22)
+                disp_y += g_bot * (b_amt * eye_r * 0.26)
 
         # 4. Mouth Shift / Tense / 'O' Shape / Real Jaw Opening
         mouth_shift_x = float(recipe.get("mouth_shift_x", 0.0))
@@ -447,25 +432,24 @@ class LocalFaceAnimator:
             disp_x += g_lm * (-mouth_o * inter_eye * 0.085) + g_rm * (mouth_o * inter_eye * 0.085)
 
         if eff_mouth > 0.04:
-            # Lower lip + chin drop downward; upper lip rises slightly
-            jaw_drop = eff_mouth * inter_eye * 0.24
+            # Lower lip + chin drop downward naturally; upper lip rises slightly
+            jaw_drop = eff_mouth * inter_eye * 0.18
             g_jaw = self._gauss(
                 mx,
                 my + mouth_half_w * 0.48,
-                mouth_half_w * 1.38,
-                mouth_half_w * 0.95,
+                mouth_half_w * 1.35,
+                mouth_half_w * 0.90,
             )
             g_upper_lip = self._gauss(
                 mx,
                 my - mouth_half_w * 0.22,
-                mouth_half_w * 0.92,
-                mouth_half_w * 0.36,
+                mouth_half_w * 0.90,
+                mouth_half_w * 0.35,
             )
-            # Negative disp_y samples higher pixels -> pushes lower lip & chin DOWNWARD
             disp_y -= g_jaw * jaw_drop
-            disp_y += g_upper_lip * (jaw_drop * 0.16)
+            disp_y += g_upper_lip * (jaw_drop * 0.14)
 
-        # Apply smooth sub-pixel remap
+        # Apply smooth sub-pixel remap with replicate border mode (no mirroring)
         map_x = np.clip(self._grid_x + disp_x, 0, TARGET_SIZE - 1).astype(np.float32)
         map_y = np.clip(self._grid_y + disp_y, 0, TARGET_SIZE - 1).astype(np.float32)
         warped = cv2.remap(
@@ -473,32 +457,15 @@ class LocalFaceAnimator:
             map_x,
             map_y,
             interpolation=cv2.INTER_CUBIC,
-            borderMode=cv2.BORDER_REFLECT_101,
+            borderMode=cv2.BORDER_REPLICATE,
         )
 
-        # 5. Realistic Dark Oral Cavity inside Parted Lips when Mouth Opens
-        if eff_mouth > 0.14:
-            warped = self._blend_mouth_interior(
-                warped,
-                mx=mx,
-                my=my,
-                mouth_half_w=mouth_half_w * (0.72 if mouth_o > 0.3 else 0.86),
-                open_amt=eff_mouth,
-                inter_eye=inter_eye,
-                smiling=smile > 0.3,
-            )
-
-        # 6. Realistic Lash-Crease Shading on Closed / Winking Eyelids
-        for ex, ey, b_amt in closed_eyes:
-            if b_amt >= 0.65:
-                warped = self._blend_closed_eyelid_crease(warped, ex, ey, eye_r, b_amt)
-
-        # 7. Subtle Rosy Blush for 'love' expression
+        # 5. Subtle Rosy Blush for 'love' expression
         blush = float(recipe.get("blush", 0.0))
         if blush > 1e-3:
             warped = self._blend_rosy_blush(warped, lx, ly, rx, ry, my, inter_eye, blush)
 
-        # 8. Gentle Natural Head Tilt for Expressive Pose
+        # 6. Gentle Natural Head Tilt for Expressive Pose
         tilt_deg = float(recipe.get("tilt_deg", 0.0))
         if abs(tilt_deg) > 0.1:
             pivot = (TARGET_SIZE * 0.5, TARGET_SIZE * 0.58)
@@ -508,10 +475,10 @@ class LocalFaceAnimator:
                 rot_m,
                 (TARGET_SIZE, TARGET_SIZE),
                 flags=cv2.INTER_CUBIC,
-                borderMode=cv2.BORDER_REFLECT_101,
+                borderMode=cv2.BORDER_REPLICATE,
             )
 
-        # 9. Subtle Mood Warmth / Brightness Grading
+        # 7. Subtle Mood Warmth / Brightness Grading
         pil = Image.fromarray(warped)
         warmth = float(recipe.get("warmth", 1.0))
         if abs(warmth - 1.0) > 0.01:
