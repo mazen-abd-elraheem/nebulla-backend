@@ -30,101 +30,66 @@ TARGET_SIZE = 512
 # Expression deformation recipes driven by detected 5-point landmarks (vivid, distinct, human & photorealistic)
 _LOCAL_EXPRESSION_RECIPES: Dict[str, Dict[str, Any]] = {
     "neutral": {},
-    "blink": {"blink_l": 0.85, "blink_r": 0.85},
+    "blink": {"blink_l": 0.95, "blink_r": 0.95},
     "happy": {
         "smile": 1.0,
-        "cheek_lift": 0.55,
+        "cheek_lift": 0.60,
         "squint": 0.40,
-        "tilt_deg": 2.8,
-        "shift_y": -3.0,
-        "warmth": 1.06,
     },
     "laugh": {
-        "smile": 1.25,
-        "cheek_lift": 0.75,
+        "smile": 1.30,
+        "cheek_lift": 0.80,
         "squint": 0.60,
-        "mouth_open": 0.22,
-        "tilt_deg": 3.8,
-        "shift_y": -4.0,
-        "warmth": 1.08,
+        "mouth_open": 0.38,
     },
     "love": {
         "smile": 0.95,
         "cheek_lift": 0.50,
         "squint": 0.35,
-        "blush": 0.40,
-        "tilt_deg": 3.0,
-        "shift_y": -2.0,
-        "warmth": 1.08,
+        "blush": 0.45,
     },
     "sad": {
         "frown": 1.0,
         "brow_inner_lift": 0.85,
-        "tilt_deg": -3.0,
-        "shift_y": 5.0,
-        "warmth": 0.90,
-        "brightness": 0.97,
     },
     "surprised": {
-        "brow_raise": 1.0,
-        "mouth_o": 0.70,
-        "mouth_open": 0.28,
-        "tilt_deg": -1.5,
-        "shift_y": -4.0,
-        "brightness": 1.04,
+        "brow_raise": 1.05,
+        "mouth_o": 0.60,
+        "mouth_open": 0.40,
     },
     "angry": {
         "brow_furrow": 1.0,
         "squint": 0.50,
         "frown": 0.50,
-        "tilt_deg": -2.2,
-        "shift_y": 5.0,
-        "warmth": 0.94,
-        "contrast": 1.08,
     },
     "thinking": {
-        "brow_asym": 1.0,
-        "mouth_shift_x": 0.75,
-        "tilt_deg": 4.2,
-        "shift_y": -2.0,
-        "warmth": 1.01,
+        "brow_asym": 1.05,
+        "mouth_shift_x": 0.80,
     },
     "wink": {
         "smile": 0.95,
-        "blink_r": 0.85,
+        "blink_r": 0.95,
         "squint": 0.30,
         "cheek_lift": 0.50,
-        "tilt_deg": 2.5,
-        "warmth": 1.05,
     },
     "sleepy": {
-        "blink_l": 0.60,
-        "blink_r": 0.60,
-        "tilt_deg": -3.2,
-        "shift_y": 6.0,
-        "warmth": 0.94,
-        "brightness": 0.95,
+        "blink_l": 0.65,
+        "blink_r": 0.65,
     },
     "wave": {
         "smile": 1.05,
         "cheek_lift": 0.55,
-        "tilt_deg": 3.5,
-        "shift_y": -3.0,
-        "warmth": 1.06,
     },
     "like": {
         "smile": 0.95,
         "brow_asym": 0.45,
-        "tilt_deg": -2.5,
-        "shift_y": -1.0,
-        "warmth": 1.04,
     },
 }
 
 _MOUTH_LEVEL_AMOUNTS: Dict[int, float] = {
-    1: 0.15,
-    2: 0.32,
-    3: 0.50,
+    1: 0.28,
+    2: 0.58,
+    3: 0.88,
 }
 
 
@@ -449,12 +414,12 @@ class LocalFaceAnimator:
         blink_r = float(recipe.get("blink_r", 0.0))
         for ex, ey, b_amt in ((lx, ly, blink_l), (rx, ry, blink_r)):
             if b_amt > 1e-3:
-                g_top = np.exp(-0.5 * (((self._grid_x - ex) / (eye_r * 1.10)) ** 2 + ((self._grid_y - (ey - eye_r * 0.20)) / (eye_r * 0.42)) ** 2))
-                g_bot = np.exp(-0.5 * (((self._grid_x - ex) / (eye_r * 1.10)) ** 2 + ((self._grid_y - (ey + eye_r * 0.32)) / (eye_r * 0.42)) ** 2))
-                disp_y -= (g_top * b_amt * 7.5).astype(np.float32)
-                disp_y += (g_bot * b_amt * 8.5).astype(np.float32)
+                g_top = np.exp(-0.5 * (((self._grid_x - ex) / (eye_r * 1.15)) ** 2 + ((self._grid_y - (ey - 2.0)) / (eye_r * 0.48)) ** 2))
+                g_bot = np.exp(-0.5 * (((self._grid_x - ex) / (eye_r * 1.10)) ** 2 + ((self._grid_y - (ey + eye_r * 0.35)) / (eye_r * 0.38)) ** 2))
+                disp_y -= (g_top * b_amt * 12.0).astype(np.float32)
+                disp_y += (g_bot * b_amt * 7.0).astype(np.float32)
 
-        # 8. Mouth 'O' shape & jaw drop
+        # 8. Mouth 'O' shape & shift (thinking)
         mouth_o = float(recipe.get("mouth_o", 0.0))
         if mouth_o > 1e-3:
             for cx, cy, sign in ((lmx, lmy, -1.0), (rmx, rmy, 1.0)):
@@ -463,17 +428,12 @@ class LocalFaceAnimator:
                 g = np.exp(-0.5 * (dx * dx + dy * dy)).astype(np.float32)
                 disp_x += g * (mouth_o * 8.0 * sign)
 
-        if eff_mouth > 0.04:
-            g_jaw = np.exp(-0.5 * (((self._grid_x - mx) / (mouth_half_w * 1.35)) ** 2 + ((self._grid_y - (my + mouth_half_w * 0.40)) / (mouth_half_w * 0.75)) ** 2))
-            disp_y -= g_jaw.astype(np.float32) * (eff_mouth * 12.0)
-
-        # 9. Mouth shift (thinking)
         mouth_shift_x = float(recipe.get("mouth_shift_x", 0.0))
         if abs(mouth_shift_x) > 1e-3:
             g_m = np.exp(-0.5 * (((self._grid_x - mx) / (mouth_half_w * 1.25)) ** 2 + ((self._grid_y - my) / (mouth_half_w * 0.65)) ** 2))
             disp_x -= g_m.astype(np.float32) * (mouth_shift_x * 8.5)
 
-        # Apply smooth sub-pixel remap with replicate border mode (no mirroring)
+        # Apply smooth sub-pixel remap with replicate border mode (zero distortion, fixed background)
         map_x = np.clip(self._grid_x + disp_x, 0, TARGET_SIZE - 1).astype(np.float32)
         map_y = np.clip(self._grid_y + disp_y, 0, TARGET_SIZE - 1).astype(np.float32)
         warped = cv2.remap(
@@ -484,154 +444,94 @@ class LocalFaceAnimator:
             borderMode=cv2.BORDER_REPLICATE,
         )
 
+        # 9. Seamless Natural Mouth Opening & Lip Parting (Reveals Real Teeth on Speech / Laugh)
+        if eff_mouth > 0.04:
+            warped = self._render_seamless_mouth_opening(
+                warped,
+                mx=mx,
+                my=my,
+                lmx=lmx,
+                rmx=rmx,
+                mouth_half_w=mouth_half_w,
+                open_amt=eff_mouth,
+                smile_amt=smile,
+            )
+
         # 10. Subtle Rosy Blush for 'love' expression
         blush = float(recipe.get("blush", 0.0))
         if blush > 1e-3:
             warped = self._blend_rosy_blush(warped, lx, ly, rx, ry, my, inter_eye, blush)
 
-        # 11. Gentle Natural Head Tilt & Shift for Expressive Pose
-        tilt_deg = float(recipe.get("tilt_deg", 0.0))
-        shift_y = float(recipe.get("shift_y", 0.0))
-        if abs(tilt_deg) > 0.1 or abs(shift_y) > 0.1:
-            pivot = (TARGET_SIZE * 0.5, TARGET_SIZE * 0.58)
-            rot_m = cv2.getRotationMatrix2D(pivot, tilt_deg, 1.015)
-            rot_m[1, 2] += shift_y
-            warped = cv2.warpAffine(
-                warped,
-                rot_m,
-                (TARGET_SIZE, TARGET_SIZE),
-                flags=cv2.INTER_CUBIC,
-                borderMode=cv2.BORDER_REPLICATE,
-            )
+        return Image.fromarray(warped)
 
-        # 12. Subtle Mood Warmth / Brightness / Contrast Grading
-        pil = Image.fromarray(warped)
-        warmth = float(recipe.get("warmth", 1.0))
-        if abs(warmth - 1.0) > 0.01:
-            pil = ImageEnhance.Color(pil).enhance(warmth)
-        brightness = float(recipe.get("brightness", 1.0))
-        if abs(brightness - 1.0) > 0.01:
-            pil = ImageEnhance.Brightness(pil).enhance(brightness)
-        contrast = float(recipe.get("contrast", 1.0))
-        if abs(contrast - 1.0) > 0.01:
-            pil = ImageEnhance.Contrast(pil).enhance(contrast)
-
-        return pil
-
-    @staticmethod
-    def _blend_mouth_interior(
-        rgb: np.ndarray,
+    def _render_seamless_mouth_opening(
+        self,
+        base_rgb: np.ndarray,
         mx: float,
         my: float,
+        lmx: float,
+        rmx: float,
         mouth_half_w: float,
         open_amt: float,
-        inter_eye: float,
-        smiling: bool = False,
+        smile_amt: float = 0.0,
     ) -> np.ndarray:
-        """Blend a realistic soft-feathered oral cavity between the parted lips."""
-        out = rgb.astype(np.float32)
-        h, w = out.shape[:2]
+        """Naturally parts upper and lower lips to reveal teeth and oral cavity for speech."""
+        max_gap = open_amt * 12.0
+        x_dist = np.abs(self._grid_x - mx) / (mouth_half_w * 0.88)
+        h_weight = np.clip(1.0 - x_dist * x_dist, 0.0, 1.0) ** 1.3
+        gap = max_gap * h_weight
 
-        cavity_rx = max(6.0, mouth_half_w * (0.72 + 0.14 * open_amt))
-        cavity_ry = max(2.5, open_amt * inter_eye * 0.115)
-        cy = my + cavity_ry * 0.42
+        smile_arch = smile_amt * 3.5 * (np.clip((self._grid_x - mx) / mouth_half_w, -1.0, 1.0) ** 2)
+        seam = my - (open_amt * 2.0) - smile_arch
 
-        # Compute bounding box for fast local blending
-        x0 = max(0, int(mx - cavity_rx * 1.8))
-        x1 = min(w, int(mx + cavity_rx * 1.8) + 1)
-        y0 = max(0, int(cy - cavity_ry * 2.2))
-        y1 = min(h, int(cy + cavity_ry * 2.2) + 1)
-        if x1 <= x0 or y1 <= y0:
-            return rgb
+        chin_falloff = np.clip(1.0 - (self._grid_y - (seam + gap)) / 45.0, 0.0, 1.0)
+        chin_falloff = chin_falloff * chin_falloff
 
-        yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
-        nx = (xx - mx) / cavity_rx
-        ny = (yy - cy) / cavity_ry
-
-        # Slight upward curve at corners when smiling
-        if smiling:
-            ny = ny + 0.22 * (nx * nx)
-
-        dist = np.sqrt(nx * nx + ny * ny)
-        # Smooth feathered mask inside ellipse (dist < 1)
-        alpha = np.clip((1.02 - dist) / 0.32, 0.0, 1.0)
-        alpha = (alpha * alpha * (3.0 - 2.0 * alpha)) * float(np.clip(0.55 + open_amt * 0.40, 0.0, 0.92))
-
-        # Deep warm dark-crimson interior color (realistic mouth shadow, not flat black)
-        interior = np.zeros((y1 - y0, x1 - x0, 3), dtype=np.float32)
-        interior[:, :, 0] = 52.0  # R
-        interior[:, :, 1] = 24.0  # G
-        interior[:, :, 2] = 28.0  # B
-
-        # Subtle upper teeth gleam near top of open mouth when laughing/speaking wide
-        if open_amt >= 0.45:
-            teeth_mask = np.clip((1.0 - np.abs(nx) / 0.78), 0.0, 1.0) * np.clip(
-                (1.0 - np.abs(ny + 0.52) / 0.36), 0.0, 1.0
-            )
-            teeth_alpha = teeth_mask * (0.48 if smiling else 0.28) * open_amt
-            interior[:, :, 0] = interior[:, :, 0] * (1.0 - teeth_alpha) + 228.0 * teeth_alpha
-            interior[:, :, 1] = interior[:, :, 1] * (1.0 - teeth_alpha) + 218.0 * teeth_alpha
-            interior[:, :, 2] = interior[:, :, 2] * (1.0 - teeth_alpha) + 210.0 * teeth_alpha
-
-        a3 = alpha[:, :, None]
-        out[y0:y1, x0:x1] = out[y0:y1, x0:x1] * (1.0 - a3) + interior * a3
-        return np.clip(out, 0, 255).astype(np.uint8)
-
-    @staticmethod
-    def _blend_closed_eyelid_crease(
-        rgb: np.ndarray,
-        ex: float,
-        ey: float,
-        eye_r: float,
-        blink_amt: float,
-    ) -> np.ndarray:
-        """Add a soft, natural upper-eyelid skin patch & gentle curved lash line."""
-        out = rgb.copy()
-        h, w = out.shape[:2]
-
-        # Sample average skin tone just above the eye (upper lid skin)
-        sx0 = max(0, int(ex - eye_r * 0.7))
-        sx1 = min(w, int(ex + eye_r * 0.7))
-        sy0 = max(0, int(ey - eye_r * 1.05))
-        sy1 = min(h, int(ey - eye_r * 0.45))
-        if sx1 <= sx0 or sy1 <= sy0:
-            return rgb
-        lid_color = np.median(out[sy0:sy1, sx0:sx1].reshape(-1, 3), axis=0).astype(np.float32)
-
-        # Feather-blend lid skin smoothly over the eye aperture
-        x0 = max(0, int(ex - eye_r * 1.35))
-        x1 = min(w, int(ex + eye_r * 1.35) + 1)
-        y0 = max(0, int(ey - eye_r * 0.85))
-        y1 = min(h, int(ey + eye_r * 0.85) + 1)
-        if x1 <= x0 or y1 <= y0:
-            return rgb
-
-        yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
-        nx = (xx - ex) / max(4.0, eye_r * 1.02)
-        ny = (yy - (ey + eye_r * 0.04)) / max(3.0, eye_r * 0.46)
-        dist = np.sqrt(nx * nx + ny * ny)
-
-        lid_alpha = np.clip((1.05 - dist) / 0.42, 0.0, 1.0)
-        lid_alpha = (lid_alpha * lid_alpha * (3.0 - 2.0 * lid_alpha)) * float(
-            np.clip((blink_amt - 0.55) / 0.45, 0.0, 1.0) * 0.82
+        lower_map_y = np.clip(self._grid_y - gap * chin_falloff, 0, TARGET_SIZE - 1).astype(np.float32)
+        lower_warped = cv2.remap(
+            base_rgb,
+            self._grid_x,
+            lower_map_y,
+            interpolation=cv2.INTER_CUBIC,
+            borderMode=cv2.BORDER_REPLICATE,
         )
 
-        # Subtle natural downward-curved lash line along the bottom of the closed lid
-        lash_y = ey + eye_r * (0.16 + 0.14 * (1.0 - nx * nx))
-        lash_dist = np.abs(yy - lash_y) / max(1.4, eye_r * 0.095)
-        lash_mask = (
-            np.exp(-0.5 * lash_dist * lash_dist)
-            * np.clip(1.0 - np.abs(nx) * 1.02, 0.0, 1.0)
-            * (0.58 * blink_amt)
-        )
+        res = base_rgb.copy().astype(np.float32)
 
-        patch = out[y0:y1, x0:x1].astype(np.float32)
-        patch = patch * (1.0 - lid_alpha[:, :, None]) + lid_color[None, None, :] * lid_alpha[:, :, None]
-        lash_color = np.clip(lid_color * 0.28, 18, 65)
-        patch = patch * (1.0 - lash_mask[:, :, None]) + lash_color[None, None, :] * lash_mask[:, :, None]
+        gap_safe = np.maximum(1e-4, gap)
+        t_gap = np.clip((self._grid_y - seam) / gap_safe, 0.0, 1.0)
 
-        out[y0:y1, x0:x1] = np.clip(patch, 0, 255).astype(np.uint8)
-        return out
+        cavity_rgb = np.zeros((TARGET_SIZE, TARGET_SIZE, 3), dtype=np.float32)
+        cavity_rgb[:, :, 0] = 45.0 + t_gap * 28.0
+        cavity_rgb[:, :, 1] = 16.0 + t_gap * 18.0
+        cavity_rgb[:, :, 2] = 20.0 + t_gap * 18.0
+
+        rel_x = (self._grid_x - mx)
+        groove_dist = np.min(np.abs([rel_x, rel_x - 10.5, rel_x + 10.5, rel_x - 20.5, rel_x + 20.5]), axis=0)
+        grooves = np.clip((groove_dist / 1.5), 0.76, 1.0)
+
+        teeth_h = np.clip((0.60 - t_gap) / 0.18, 0.0, 1.0)
+        teeth_w = np.clip(1.0 - (x_dist / 0.85) ** 2, 0.0, 1.0)
+        teeth_mask = (teeth_h * teeth_w)[:, :, None]
+
+        teeth_color = np.zeros_like(cavity_rgb)
+        teeth_color[:, :, 0] = 238.0 * grooves
+        teeth_color[:, :, 1] = 232.0 * grooves
+        teeth_color[:, :, 2] = 224.0 * grooves
+
+        lip_shadow = np.clip(t_gap / 0.25, 0.40, 1.0)[:, :, None]
+        teeth_color = teeth_color * lip_shadow
+
+        gap_content = cavity_rgb * (1.0 - teeth_mask) + teeth_color * teeth_mask
+
+        blend_y_top = np.clip((self._grid_y - (seam - 0.5)), 0.0, 1.0)
+        blend_y_bot = np.clip((self._grid_y - (seam + gap - 0.5)), 0.0, 1.0)
+
+        in_gap = (blend_y_top * (1.0 - blend_y_bot) * h_weight)[:, :, None]
+        in_lower = (blend_y_bot * h_weight)[:, :, None]
+
+        res = res * (1.0 - in_gap - in_lower) + gap_content * in_gap + lower_warped * in_lower
+        return np.clip(res, 0, 255).astype(np.uint8)
 
     @staticmethod
     def _blend_rosy_blush(
