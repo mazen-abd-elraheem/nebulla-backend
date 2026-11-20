@@ -654,15 +654,19 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            LocaleService.instance.isArabic
-                                ? 'متصل الآن - اضغط للتبديل'
-                                : 'Online - Tap to switch',
-                            style: const TextStyle(
-                              fontFamily: 'Cairo',
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF0096C7),
+                          Flexible(
+                            child: Text(
+                              LocaleService.instance.isArabic
+                                  ? 'متصل الآن - اضغط للتبديل'
+                                  : 'Online - Tap to switch',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0096C7),
+                              ),
                             ),
                           ),
                         ],
@@ -903,23 +907,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(width: 6),
-
-            // Filter icon button
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: const Icon(
-                Icons.tune_rounded,
-                size: 16,
-                color: Color(0xFF475569),
-              ),
             ),
           ],
         ),
