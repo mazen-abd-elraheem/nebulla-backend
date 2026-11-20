@@ -113,6 +113,8 @@ class ChatResponse(BaseModel):
     audio_url: Optional[str] = Field(None, description="Endpoint URL to fetch or stream the synthesized audio")
     has_voice_sample: bool = Field(True, description="Whether user has a registered voice sample")
     voice_notice: Optional[str] = Field(None, description="Notice if user needs to upload a voice sample")
+    photo_url: Optional[str] = Field(None, description="Direct URL of photo when requesting person/object image")
+    photo_name: Optional[str] = Field(None, description="Name of person whose photo is shown")
 
 
 # ── Authentication Helper ────────────────────────────────────────────────────
@@ -286,7 +288,7 @@ async def _build_and_broadcast_avatar_action(
     return action
 
 
-def _strip_robotic_prefaces(text: str) -> str:
+def _strip_robotic_prefaces(text: str, query: str = "") -> str:
     """Strips mechanical repetitive prefixes like 'بناءً على المعلومات المسجلة عندي:' from LLM output."""
     if not text:
         return text
@@ -295,6 +297,12 @@ def _strip_robotic_prefaces(text: str) -> str:
         r"^(?:وفقاً|وفقا)\s+لـ?(?:المعلومات\s+المسجلة|الذاكرة|السياق)\s*[:،,\-]\s*",
         r"^(?:حسب\s+المسجل|حسب\s+الذاكرة|حسب\s+المعلومات\s+المسجلة\s+عندي)\s*[:،,\-]\s*",
     ]
+    if query:
+        from app.services.memory.query_decomposer import QueryDecomposer
+        target_persona = QueryDecomposer.extract_target_persona_name(query)
+        if target_persona:
+            patterns.append(r"^(?:عند\s+(?:احمد|أحمد|مازن|توت)\s*[:،,\-])\s*")
+
     cleaned = text.strip()
     for p in patterns:
         cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE).strip()
@@ -396,16 +404,32 @@ async def chat_with_llm(
             except Exception:
                 pass
 
+        async def _resolve_target_personality_id(pname: Optional[str]) -> Optional[int]:
+            if not pname or not pname.strip():
+                return None
+            from app.services.memory.query_decomposer import QueryDecomposer
+            norm_target = QueryDecomposer._norm(pname)
+            if norm_target in ("مازن", "mazen", "التوام", "التوام الرقمي"):
+                return 1
+            if norm_target in ("نيبولا", "nebula"):
+                return 0
+            p_res = await db.execute(select(Personality))
+            all_p = p_res.scalars().all()
+            for p in all_p:
+                norm_p = QueryDecomposer._norm(p.name)
+                if norm_target in norm_p or norm_p in norm_target:
+                    return p.id
+                first_w = norm_p.split()[0] if norm_p.split() else ""
+                if norm_target == first_w:
+                    return p.id
+            return None
+
         if act_kind == "save":
             fact = memory_action["fact"]
             is_shared = memory_action.get("is_shared", True)
-            target_pid = None if is_shared else active_pid
             target_pname = memory_action.get("target_persona")
-            if target_pname:
-                p_res = await db.execute(select(Personality.id).where(Personality.name.ilike(f"%{target_pname}%")).limit(1))
-                found_pid = p_res.scalar_one_or_none()
-                if found_pid is not None:
-                    target_pid = found_pid
+            resolved_pid = await _resolve_target_personality_id(target_pname) if target_pname else None
+            target_pid = resolved_pid if resolved_pid is not None else (None if is_shared else active_pid)
             try:
                 await _rag_service.add_memory(
                     content=fact,
@@ -423,14 +447,21 @@ async def chat_with_llm(
             new_fact = memory_action["new_fact"]
             target_q = memory_action.get("target") or new_fact
             is_shared = memory_action.get("is_shared", True)
-            target_pid = None if is_shared else active_pid
+            target_pname = memory_action.get("target_persona")
+            resolved_pid = await _resolve_target_personality_id(target_pname) if target_pname else None
+            target_pid = resolved_pid if resolved_pid is not None else (None if is_shared else active_pid)
+
             try:
-                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=active_pid, db=db)
+                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=target_pid, db=db)
                 if matched:
-                    await _rag_service.update_memory(
-                        matched.id,
-                        content=new_fact,
-                        personality_id=target_pid,
+                    # Soft-deactivate old memory and save new memory with historical linkage (superseded_by_id)
+                    new_mid = await _rag_service.archive_and_replace_memory(
+                        old_memory_id=matched.id,
+                        new_content=new_fact,
+                        personality_id=target_pid or matched.personality_id,
+                        user_id=auth_uid,
+                        source="chat",
+                        importance=8,
                         db=db,
                     )
                     mem_used = [new_fact]
@@ -448,11 +479,16 @@ async def chat_with_llm(
                     reply = f"تمام، سجلت في الذاكرة: {new_fact}. [eyes:happy] [nod]"
             except Exception as e:
                 logger.warning(f"Could not update chat memory: {e}")
+                await db.rollback()
+                reply = reply or f"تمام، حدثت المعلومة في الذاكرة: {new_fact}. [eyes:happy] [nod]"
 
         elif act_kind == "delete":
             target_q = memory_action["target"]
+            target_pname = memory_action.get("target_persona")
+            resolved_pid = await _resolve_target_personality_id(target_pname) if target_pname else None
+            target_pid = resolved_pid if resolved_pid is not None else active_pid
             try:
-                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=active_pid, db=db)
+                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=target_pid, db=db)
                 if matched:
                     await _rag_service.delete_memory(matched.id, db=db)
                     reply = memory_action.get("reply") or "تمام، مسحت المعلومة دي من الذاكرة بنجاح. [eyes:happy] [nod]"
@@ -563,13 +599,20 @@ async def chat_with_llm(
         db.add_all([user_msg, robot_msg])
         await db.commit()
 
+        photo_url = act_data.get("photo_url") or act_data.get("url")
+        photo_name = act_data.get("target") or act_data.get("name") or "الشخص"
+
         if body.stream and "application/json" not in request.headers.get("accept", ""):
             async def action_fast_stream():
                 yield reply
+            stream_headers = {"X-Memories-Used": urllib.parse.quote("[]")}
+            if photo_url:
+                stream_headers["X-Photo-Url"] = urllib.parse.quote(photo_url)
+                stream_headers["X-Photo-Name"] = urllib.parse.quote(photo_name)
             return StreamingResponse(
                 action_fast_stream(),
                 media_type="text/plain; charset=utf-8",
-                headers={"X-Memories-Used": urllib.parse.quote("[]")},
+                headers=stream_headers,
             )
 
         active_model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or settings.LLM_MODEL
@@ -600,6 +643,8 @@ async def chat_with_llm(
             audio_url=audio_url,
             has_voice_sample=has_sample,
             voice_notice=voice_notice,
+            photo_url=photo_url,
+            photo_name=photo_name,
         )
 
     # ── Strict Zero-Hallucination & Sub-10ms Speed Optimization ───────────────
@@ -750,7 +795,7 @@ async def chat_with_llm(
         is_greeting=is_greeting_persona,
         has_action=bool(getattr(grounding, "action", {}).get("has_action", False)),
     )
-    reply = _strip_robotic_prefaces(reply)
+    reply = _strip_robotic_prefaces(reply, query=body.message)
     llm_ms = (time.perf_counter() - t_start) * 1000
     cleaned_reply = clean_text_for_tts(reply)
     emotion = _extract_emotion(reply)
@@ -914,13 +959,24 @@ async def chat_stream(
             target_q = memory_action.get("target") or new_fact
             is_shared = memory_action.get("is_shared", True)
             target_pid = None if is_shared else active_pid
+            target_pname = memory_action.get("target_persona")
+            if target_pname:
+                p_res = await db.execute(select(Personality.id).where(Personality.name.ilike(f"%{target_pname}%")).limit(1))
+                found_pid = p_res.scalar_one_or_none()
+                if found_pid is not None:
+                    target_pid = found_pid
+
             try:
-                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=active_pid, db=db)
+                matched = await _rag_service.find_matching_memory_for_action(target_q, personality_id=target_pid or active_pid, db=db)
                 if matched:
-                    await _rag_service.update_memory(
-                        matched.id,
-                        content=new_fact,
-                        personality_id=target_pid,
+                    # Soft-deactivate old memory and save new memory with historical linkage (superseded_by_id)
+                    new_mid = await _rag_service.archive_and_replace_memory(
+                        old_memory_id=matched.id,
+                        new_content=new_fact,
+                        personality_id=target_pid or matched.personality_id,
+                        user_id=auth_uid,
+                        source="chat",
+                        importance=8,
                         db=db,
                     )
                     mem_used = [new_fact]
@@ -938,6 +994,8 @@ async def chat_stream(
                     reply = f"تمام، سجلت في الذاكرة: {new_fact}. [eyes:happy] [nod]"
             except Exception as e:
                 logger.warning(f"Could not update chat memory: {e}")
+                await db.rollback()
+                reply = reply or f"تمام، حدثت المعلومة في الذاكرة: {new_fact}. [eyes:happy] [nod]"
 
         elif act_kind == "delete":
             target_q = memory_action["target"]

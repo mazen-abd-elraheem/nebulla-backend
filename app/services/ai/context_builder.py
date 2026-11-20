@@ -59,8 +59,8 @@ def is_greeting_or_persona_inquiry(message: str) -> bool:
         r"\bمين\s+(صممك|عملك|برمجك|صنعك|طورك)\b",
         r"\bبتعمل\s+(إيه|ايه)\b",
         r"\bتقدر\s+تعمل\s+(إيه|ايه)\b",
-        r"\b(عرف\s+نفسك|عرفنا\s+بنفسك|كلمنا\s+عن\s+نفسك)\b",
-        r"\b(who are you|what is your name|who made you|who created you|what can you do)\b",
+        r"(?:عرفني|عرفنا|عرف|كلمنا|اتكلم|تكلم)\s+(?:عن\s+)?نفسك",
+        r"\b(who are you|what is your name|who made you|who created you|what can you do|introduce yourself)\b",
         r"\b(أنا|معاك|اسمي)\s+[\w]+\b",
         r"\b(فاكر|عارف|فاكرني|عارفني)\b",
         r"\b(شايف|سامع|مين\s+قدامك|مين\s+اللي\s+قدامك|شايفني|سامعني)\b",
@@ -93,6 +93,12 @@ def extract_clean_personality_tokens(p_name: str) -> List[str]:
     for lt in latin_tokens:
         if lt not in noise and lt not in tokens:
             tokens.append(lt)
+
+    # Support aliases for the Digital Twin (Mazen)
+    if "التوأم" in p_name or "twin" in p_name.lower():
+        for extra in ["مازن", "mazen"]:
+            if extra not in tokens:
+                tokens.append(extra)
 
     return tokens
 
@@ -381,12 +387,72 @@ async def build_grounding_context(
     }
 
     # 4. Memories (RAG grounded in Question, Person & VectorStore)
-    memories = await _rag_service.retrieve(
-        message,
-        personality_id=target_p.id,
-        db=db,
-        person_name=rag_person,
-    )
+    if is_greeting_or_persona_inquiry(message):
+        memories = []
+    else:
+        # If the user explicitly targeted a personality in their question, scope RAG to that persona.
+        # If the query is general (e.g. 'الساعة فين'), search across all personas so facts are retrieved & attributed.
+        from app.services.memory.query_decomposer import QueryDecomposer
+        atomic_subs = QueryDecomposer.get_atomic_subqueries(message)
+        rel_info = QueryDecomposer.decompose_multihop_relational(message)
+
+        if len(atomic_subs) > 1 and not rel_info:
+            memories = []
+            for sub_q in atomic_subs:
+                sub_matched_p = match_personality_in_message(sub_q, all_personalities)
+                sub_pid = sub_matched_p.id if sub_matched_p else None
+                if not sub_pid:
+                    sub_target_name = QueryDecomposer.extract_target_persona_name(sub_q)
+                    if sub_target_name:
+                        for p in all_personalities:
+                            if sub_target_name in p.name or (sub_target_name in ("مازن", "mazen") and p.id == 1):
+                                sub_pid = p.id
+                                break
+                if QueryDecomposer.is_past_inquiry(sub_q):
+                    sub_mems = await _rag_service.retrieve_historical_contrast(
+                        sub_q,
+                        personality_id=sub_pid,
+                        db=db,
+                    )
+                else:
+                    sub_mems = await _rag_service.retrieve(
+                        sub_q,
+                        personality_id=sub_pid,
+                        top_k=2,
+                        db=db,
+                    )
+                for sm in sub_mems:
+                    if sm not in memories:
+                        memories.append(sm)
+        else:
+            mentioned_in_msg = QueryDecomposer.extract_mentioned_person_names(message)
+            target_in_query = QueryDecomposer.extract_target_persona_name(message)
+            if len(mentioned_in_msg) > 1:
+                # Multi-persona question inquiring about multiple individuals (e.g. 'ساعة أحمد فين وساعة مازن فين؟')
+                # Search across all personas so all requested facts are retrieved
+                rag_target_pid = None
+            elif target_in_query:
+                rag_target_pid = target_p.id if matched_p else (personality_id if personality_id is not None else None)
+            elif QueryDecomposer.is_location_query(message):
+                # General item/location inquiry without mentioning person (e.g. 'الساعة فين')
+                # Scope to None so facts across multiple personas are retrieved and attributed
+                rag_target_pid = None
+            else:
+                rag_target_pid = target_p.id if matched_p else (personality_id if personality_id is not None else None)
+
+            if QueryDecomposer.is_past_inquiry(message):
+                memories = await _rag_service.retrieve_historical_contrast(
+                    message,
+                    personality_id=rag_target_pid,
+                    db=db,
+                )
+            else:
+                memories = await _rag_service.retrieve(
+                    message,
+                    personality_id=rag_target_pid,
+                    db=db,
+                    person_name=rag_person,
+                )
 
     # 5. Voice Clone & Speaker Verification
     voice_info = {
@@ -545,6 +611,8 @@ async def build_grounding_context(
                         "name": p_target,
                         "url": p_url,
                     }
+                    action_meta["url"] = p_url
+                    action_meta["photo_url"] = p_url
                     action_meta["suggested_speech"] = f"بعرض صورة {p_target} على الشاشة حالاً."
                     action_meta["decision"] = "ready"
                     action_meta["status"] = "ready"
@@ -607,8 +675,18 @@ async def build_grounding_context(
 5. في الأسئلة المركبة (السؤال عن أكثر من شخص أو شيء):
    - يجب عليك الإجابة عن كل شخص أو شيء سأل عنه المستخدم بالترتيب وبشكل كامل دون إهمال أو إسقاط أي واحد منهم طالما معلومته مسجلة في المصادر (مثال: إذا سأل عن وظيفة 3 أشخاص، اذكر وظيفة الثلاثة جميعاً).
    - إذا كانت إحدى المعلومات متوفرة والأخرى غير مسجلة: أجب عن المعلومة المتوفرة واذكر صراحة أن المعلومة الأخرى غير مسجلة.
+6. عند السؤال العام عن غرض أو شيء يمتلكه أكثر من شخص (مثل: 'الكراسة فين؟' أو 'الساعة فين؟' والمصادر تحتوي على أغراض لأشخاص مختلفين):
+   - انسب الغرض لكل شخص باسمه صراحة بصيغة إضافة طبيعية وسلسة (مثال: 'كراسة أحمد على الأرض، وكراسة مازن على السرير.')، ويُمنع منعاً باتاً ذكر الغرض مبهماً أو بدون نسبته لصاحبه.
+7. عند السؤال عن مكان غرض في الماضي (مثل: 'كراسة أحمد كانت فين قبل كده؟' أو 'كانت فين كراسة أحمد؟'):
+   - وضّح المكان السابق مع تأكيد المكان الحالي بلباقة ووضوح (مثال: 'كانت على الأرض، لكن حالياً اتنقلت وبقت على المكتب. 😊').
 
 أمثلة توضيحية لأسلوب الإجابة المباشر ومنع التأليف:
+- المصدر المعتمد: [المصدر 1]: مكان كراسة أحمد السابق كان على الأرض، وحالياً اتنقلت وبقت على المكتب.
+  سؤال: كراسة أحمد كانت فين قبل كده؟
+  إجابة: كانت على الأرض، لكن حالياً اتنقلت وبقت على المكتب. 😊
+- المصادر المعتمدة: [المصدر 1]: كراسة أحمد على الأرض. [المصدر 2]: كراسة مازن على السرير.
+  سؤال: الكراسة فين؟
+  إجابة: كراسة أحمد على الأرض، وكراسة مازن على السرير. 😊
 - المصدر المعتمد: [المصدر 1]: أحمد مهندس برمجيات مقيم في حلوان.
   سؤال: أحمد شغال إيه؟
   إجابة: أحمد شغال مهندس برمجيات في حلوان. 😊

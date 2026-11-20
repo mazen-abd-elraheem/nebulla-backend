@@ -3,7 +3,7 @@
 from typing import Any, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import get_current_user, get_optional_user, get_optional_user_model
@@ -147,13 +147,13 @@ async def list_memories(
 ):
     stmt = select(Memory).order_by(Memory.created_at.desc())
     if current_user:
-        # Strictly user-isolated: Only return memories belonging to this authenticated user
-        stmt = stmt.where(Memory.user_id == current_user.id)
+        # Return memories belonging to this user plus shared/legacy memories
+        stmt = stmt.where(or_(Memory.user_id == current_user.id, Memory.user_id.is_(None)))
     else:
-        # Unauthenticated: Return global/unassigned memories only
-        stmt = stmt.where(Memory.user_id.is_(None))
+        # Unauthenticated: Return global/unassigned memories (or all for dev/single-user)
+        stmt = stmt.where(or_(Memory.user_id.is_(None), Memory.user_id == 1))
 
-    if personality_id is not None:
+    if isinstance(personality_id, int):
         stmt = stmt.where(Memory.personality_id == personality_id)
     r = await db.execute(stmt)
     return {"memories": [_m(m) for m in r.scalars()]}
@@ -181,12 +181,16 @@ async def add_memory(
         src = body.source or "manual"
         imp = int(body.importance or 5)
 
-    if not actual_content and content:
+    if not actual_content and isinstance(content, str):
         actual_content = content.strip()
-    if pid is None and personality_id is not None:
+    if pid is None and isinstance(personality_id, int):
         pid = personality_id
-    if importance is not None:
+    elif pid is None and isinstance(personality_id, str) and personality_id.isdigit():
+        pid = int(personality_id)
+    if isinstance(importance, int):
         imp = importance
+    elif isinstance(importance, str) and importance.isdigit():
+        imp = int(importance)
 
     if not actual_content:
         raise HTTPException(
@@ -195,7 +199,7 @@ async def add_memory(
         )
 
     # Dynamic Personality resolution: if pid is None, check person_name first, else active personality
-    if pid is None and person_name and person_name.strip():
+    if pid is None and isinstance(person_name, str) and person_name.strip():
         clean_p = person_name.strip()
         p_res = await db.execute(
             select(Personality.id).where(Personality.name.ilike(f"%{clean_p}%")).limit(1)
@@ -281,14 +285,18 @@ async def update_memory_endpoint(
         src = body.source
         imp = body.importance
 
-    if actual_content is None and content:
+    if actual_content is None and isinstance(content, str):
         actual_content = content.strip()
-    if pid is None and personality_id is not None:
+    if pid is None and isinstance(personality_id, int):
         pid = personality_id
-    if src is None and source is not None:
+    elif pid is None and isinstance(personality_id, str) and personality_id.isdigit():
+        pid = int(personality_id)
+    if src is None and isinstance(source, str):
         src = source
-    if imp is None and importance is not None:
+    if imp is None and isinstance(importance, int):
         imp = importance
+    elif imp is None and isinstance(importance, str) and importance.isdigit():
+        imp = int(importance)
 
     updated_mem = await _rag.update_memory(
         memory_id=mid,

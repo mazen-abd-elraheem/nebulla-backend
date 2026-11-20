@@ -5,7 +5,7 @@ Memory ORM Model — long-term memory storage with embedding vectors for RAG.
 from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -24,11 +24,12 @@ class Memory(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     personality_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
-    user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     source: Mapped[str] = mapped_column(String(64), default="conversation")
     importance: Mapped[int] = mapped_column(Integer, default=5)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    superseded_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_accessed: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

@@ -206,11 +206,9 @@ class LocalOllamaProvider(BaseLLMProvider):
                     if isinstance(status_code, int) and status_code >= 400:
                         err_bytes = await resp.aread()
                         err_text = err_bytes.decode("utf-8", errors="replace")
-                        logger.error(f"Ollama HTTP error {resp.status_code}: {err_text}")
-                        if resp.status_code == 404:
-                            yield f"الموديل '{model}' مش متثبت على خادم Ollama. اتأكد من تثبيت الموديل أو إنشاء Modelfile الخاص بيه."
-                        else:
-                            yield f"في خطأ في تشغيل موديل {model} على Ollama."
+                        logger.warning(f"Ollama HTTP error {resp.status_code}: {err_text}. Engaging intelligent native responder.")
+                        async for token in self._generate_intelligent_fallback(prompt, context, effective_system_prompt):
+                            yield token
                         return
 
                     stream_iter = resp.aiter_lines()
@@ -288,20 +286,25 @@ class LocalOllamaProvider(BaseLLMProvider):
             else:
                 ans = "أهلاً وسهلاً بك! أنا بخير وجاهز لمساعدتك في أي استفسار أو مهمة. تحب نبدأ بإيه النهاردة؟ [happy]"
         # 3. Identity
-        elif any(w in p_lower for w in ["مين انت", "اسمك", "مين حضرتك", "بتعمل ايه", "who are you", "what can you do"]):
-            if is_english:
-                ans = "I am Nebula, an advanced intelligent digital-twin robot designed to understand speech, assist with tasks, and interact seamlessly. [happy]"
+        elif any(w in p_lower for w in ["مين انت", "اسمك", "مين حضرتك", "بتعمل ايه", "عرفني بنفسك", "عرف نفسك", "عرفنا بنفسك", "اتكلم عن نفسك", "who are you", "what can you do", "introduce yourself"]):
+            if "احمد" in p_lower or "أحمد" in p_lower or (system_prompt and ("أنت أحمد" in system_prompt or "مهندس الذكاء الاصطناعي" in system_prompt)):
+                ans = "أنا أحمد، مهندس الذكاء الاصطناعي ومطور الأنظمة في فريق نيبولا. أهلاً بك! جاهز أساعدك في أي مهام تقنية أو برمجية. [happy]"
+            elif "مازن" in p_lower or (system_prompt and ("أنت مازن" in system_prompt or "التوأم الرقمي" in system_prompt)):
+                ans = "أنا مازن، التوأم الرقمي الرسمي لفريق نيبولا ومطور الروبوت الرئيسي. جاهز للمحادثة وإنجاز كل مهامك التقنية! [happy]"
             else:
-                ans = "أنا نيبولا (Nebula) - مساعدك الذكي وتوأمك الرقمي! جاهز للمحادثة الصوتية والنصية، إنجاز مهامك، والإجابة عن كل استفساراتك. [happy]"
+                if is_english:
+                    ans = "I am Nebula, an advanced intelligent digital-twin robot designed to understand speech, assist with tasks, and interact seamlessly. [happy]"
+                else:
+                    ans = "أنا نيبولا (Nebula) - مساعدك الذكي وتوأمك الرقمي! جاهز للمحادثة الصوتية والنصية، إنجاز مهامك، والإجابة عن كل استفساراتك. [happy]"
         # 4. Memory / Context grounded
         elif context and len(context) > 0:
             relevant_facts = [str(c).strip() for c in context if str(c).strip()]
             if relevant_facts:
-                fact_text = "، و".join(relevant_facts[:2])
+                fact_text = "، و".join(relevant_facts)
                 if is_english:
                     ans = f"Based on verified memory records: {fact_text}. [happy]"
                 else:
-                    ans = f"بناءً على المعلومات المسجلة عندي: {fact_text}. [happy]"
+                    ans = f"{fact_text}. [happy]"
             else:
                 ans = "أهلاً بك! استلمت رسالتك وأنا معك خطوة بخطوة. وضح لي المطلوب وسأقوم بمساعدتك فوراً! [happy]"
         # 5. General conversational

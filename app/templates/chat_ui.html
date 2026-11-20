@@ -515,9 +515,13 @@
         <div class="input-bar">
           <textarea id="userInput" rows="1" placeholder="اكتب رسالتك هنا بالمصري... (دوس Enter عشان تبعت)" onkeydown="handleKey(event)"></textarea>
           <div class="input-controls">
-            <label class="stream-toggle">
+            <label class="stream-toggle" title="عرض النص حرف بحرف أثناء التفكير">
               <input type="checkbox" id="streamToggle" checked>
-              <span>نطق وكتابة لحظية (Streaming)</span>
+              <span>كتابة لحظية (Streaming)</span>
+            </label>
+            <label class="stream-toggle" title="تشغيل صوت الروبوت ونطق كل رد تلقائياً" style="margin-right: 10px;">
+              <input type="checkbox" id="autoVoiceToggle" checked>
+              <span>🔊 نطق الرد تلقائياً</span>
             </label>
             <button class="btn-send" id="sendBtn" onclick="sendMessage()">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -745,6 +749,49 @@
       return div.innerHTML;
     }
 
+    function renderPhotoCard(wrapperEl, photoUrl, photoName) {
+      if (!wrapperEl || !photoUrl) return;
+      if (wrapperEl.querySelector(".chat-photo-card")) return;
+
+      const card = document.createElement("div");
+      card.className = "chat-photo-card";
+      card.style.cssText = `
+        margin-top: 10px;
+        margin-bottom: 6px;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(6, 182, 212, 0.4);
+        background: rgba(13, 19, 33, 0.95);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 16px rgba(6, 182, 212, 0.15);
+        max-width: 290px;
+        animation: fadeIn 0.3s ease-out;
+      `;
+
+      card.innerHTML = `
+        <div style="position: relative; overflow: hidden; background: #000; max-height: 250px; display: flex; align-items: center; justify-content: center;">
+          <a href="${photoUrl}" target="_blank" title="اضغط لفتح الصورة بحجم كامل" style="display:block; width:100%; cursor: zoom-in;">
+            <img src="${photoUrl}" alt="${escapeHtml(photoName || 'صورة')}" style="width: 100%; max-height: 250px; object-fit: cover; display: block; transition: transform 0.3s ease;" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'" onerror="this.onerror=null; this.parentElement.parentElement.innerHTML='<div style=\\'padding:14px; color:#f87171; font-size:0.8rem; text-align:center;\\'>⚠️ تعذر تحميل صورة ${escapeHtml(photoName || '')}</div>';" />
+          </a>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: rgba(15, 23, 42, 0.9); border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.8rem;">
+          <span style="font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+            <span>👤</span> <span>${escapeHtml(photoName || 'صورة الشخص')}</span>
+          </span>
+          <a href="${photoUrl}" target="_blank" style="color: var(--accent); text-decoration: none; font-size: 0.74rem; font-weight: 500; display: flex; align-items: center; gap: 4px;">
+            <span>🔍 تكبير</span>
+          </a>
+        </div>
+      `;
+
+      const metaEl = wrapperEl.querySelector(".meta-tag");
+      if (metaEl) {
+        wrapperEl.insertBefore(card, metaEl);
+      } else {
+        wrapperEl.appendChild(card);
+      }
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
     async function sendMessage() {
       const text = userInput.value.trim();
       if (!text) return;
@@ -788,6 +835,20 @@
             } catch (_) {}
           }
 
+          let photoUrl = null;
+          let photoName = null;
+          const photoUrlHdr = response.headers.get("X-Photo-Url");
+          const photoNameHdr = response.headers.get("X-Photo-Name");
+          if (photoUrlHdr) {
+            try {
+              photoUrl = decodeURIComponent(photoUrlHdr);
+              photoName = decodeURIComponent(photoNameHdr || "");
+            } catch (_) {
+              photoUrl = photoUrlHdr;
+              photoName = photoNameHdr;
+            }
+          }
+
           const reader = response.body.getReader();
           const decoder = new TextDecoder("utf-8");
           let accumulated = "";
@@ -808,6 +869,21 @@
 
           robotMsg.bubble.classList.remove("typing-cursor");
 
+          // Dual-layer detection: fallback to reply regex if header wasn't sent
+          if (!photoUrl) {
+            const m = accumulated.match(/(?:بعرض|عرض)\s+صورة\s+([\w\u0600-\u06FF]+)/);
+            if (m && m[1]) {
+              photoName = m[1].trim();
+              const normName = photoName.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+              photoUrl = `/api/v1/faces/${encodeURIComponent(normName)}/photo`;
+            }
+          }
+
+          if (photoUrl) {
+            photoUrl = photoUrl.replace(/%D8%A3|%D8%A5|%D8%A2/g, "%D8%A7");
+            renderPhotoCard(robotMsg.bubble.parentElement, photoUrl, photoName);
+          }
+
           // Extract emotion tag if present
           const tagMatch = accumulated.match(/\[([\w\u0600-\u06FF]+)\]/);
           robotMsg.meta.style.display = "flex";
@@ -818,6 +894,11 @@
           }
           streamMeta += `<button onclick="speakText(this)" class="tag-gesture" style="cursor:pointer; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); color:var(--primary); padding:2px 8px; border-radius:12px; font-size:0.72rem;">🔊 انطق بصوتي</button>`;
           robotMsg.meta.innerHTML = streamMeta;
+
+          if (document.getElementById("autoVoiceToggle")?.checked) {
+            const cleanSpk = accumulated.replace(/\[[\w\u0600-\u06FF:\-\s]+\]/g, "").trim();
+            if (cleanSpk) speakTextOrBrowser(cleanSpk);
+          }
 
         } else {
           // Non-streaming REST call
@@ -845,6 +926,27 @@
           robotMsg.bubble.classList.remove("typing-cursor");
           robotMsg.bubble.textContent = data.cleaned_reply || data.reply;
 
+          let photoUrl = data.photo_url;
+          let photoName = data.photo_name;
+          if (!photoUrl && data.grounding && data.grounding.action) {
+            photoUrl = data.grounding.action.photo_url || data.grounding.action.url;
+            photoName = data.grounding.action.target || data.grounding.action.name;
+          }
+          if (!photoUrl) {
+            const textToCheck = data.cleaned_reply || data.reply || "";
+            const m = textToCheck.match(/(?:بعرض|عرض)\s+صورة\s+([\w\u0600-\u06FF]+)/);
+            if (m && m[1]) {
+              photoName = m[1].trim();
+              const normName = photoName.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+              photoUrl = `/api/v1/faces/${encodeURIComponent(normName)}/photo`;
+            }
+          }
+
+          if (photoUrl) {
+            photoUrl = photoUrl.replace(/%D8%A3|%D8%A5|%D8%A2/g, "%D8%A7");
+            renderPhotoCard(robotMsg.bubble.parentElement, photoUrl, photoName);
+          }
+
           robotMsg.meta.style.display = "flex";
           let metaHtml = `<span>⚡ ${Math.round(data.llm_latency_ms)} ms</span>`;
           if (data.emotion && data.emotion !== "neutral") {
@@ -853,6 +955,11 @@
           }
           metaHtml += `<button onclick="speakText(this)" class="tag-gesture" style="cursor:pointer; background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); color:var(--primary); padding:2px 8px; border-radius:12px; font-size:0.72rem;">🔊 انطق بصوتي</button>`;
           robotMsg.meta.innerHTML = metaHtml;
+
+          if (document.getElementById("autoVoiceToggle")?.checked) {
+            const cleanSpk = (data.cleaned_reply || data.reply || "").replace(/\[[\w\u0600-\u06FF:\-\s]+\]/g, "").trim();
+            if (cleanSpk) speakTextOrBrowser(cleanSpk);
+          }
 
           // Update grounding panel & memories
           if (data.grounding) {
@@ -1167,15 +1274,48 @@
       }
     }
 
-    async function speakCustomText(text) {
+    function speakWithBrowserTTS(text) {
+      if (!('speechSynthesis' in window)) return false;
+      try {
+        window.speechSynthesis.cancel();
+        const clean = (text || "").replace(/\[[\w\u0600-\u06FF:\-\s]+\]/g, "").trim();
+        if (!clean) return false;
+        const utterance = new SpeechSynthesisUtterance(clean);
+        utterance.lang = "ar-EG";
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        const voices = window.speechSynthesis.getVoices();
+        const arVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith("ar"));
+        if (arVoice) utterance.voice = arVoice;
+        window.speechSynthesis.speak(utterance);
+        return true;
+      } catch (e) {
+        console.warn("speechSynthesis error:", e);
+        return false;
+      }
+    }
+
+    async function speakTextOrBrowser(text) {
+      const clean = (text || "").replace(/\[[\w\u0600-\u06FF:\-\s]+\]/g, "").trim();
+      if (!clean) return;
+      try {
+        await speakCustomText(clean, true);
+      } catch (_) {
+        speakWithBrowserTTS(clean);
+      }
+    }
+
+    async function speakCustomText(text, silentFail = false) {
       const btn = document.getElementById("synthVoiceBtn");
-      const originalText = btn.innerHTML;
-      btn.disabled = true;
-      btn.innerHTML = "<span>⏳</span> بنولد الصوت دلوقتي...";
+      const originalText = btn ? btn.innerHTML : "";
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = "<span>⏳</span> بنولد الصوت دلوقتي...";
+      }
 
       const t0 = performance.now();
+      const cleaned = (text || "").trim();
       try {
-        const cleaned = (text || "").trim();
         if (cleaned.length > 75) {
           const container = document.getElementById("synthAudioContainer");
           const player = document.getElementById("clonedAudioPlayer");
@@ -1239,10 +1379,22 @@
         const latency = serverLatency ? Math.round(parseFloat(serverLatency)) : Math.round(performance.now() - t0);
         playWavBlob(blob, cleaned, latency);
       } catch (err) {
-        alert("معرفناش نولد الصوت: " + err.message);
+        console.warn("Backend voice clone synthesis notice:", err);
+        const playedBrowser = speakWithBrowserTTS(cleaned);
+        const latencyText = document.getElementById("synthLatencyText");
+        if (latencyText) {
+          latencyText.textContent = playedBrowser 
+            ? "🔊 تم النطق بصوت المتصفح (موديل الاستنساخ غير مثبت محلياً)" 
+            : "⚠️ تعذر نطق الصوت";
+        }
+        if (!playedBrowser && !silentFail) {
+          alert("معرفناش نولد الصوت: " + err.message);
+        }
       } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalText;
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
       }
     }
 
@@ -1269,9 +1421,9 @@
       if (!msgRow) return;
       const bubble = msgRow.querySelector(".bubble");
       if (!bubble) return;
-      const cleanText = bubble.textContent.replace(/\[[a-zA-Z_:\-\s]+\]/g, "").trim();
+      const cleanText = bubble.textContent.replace(/\[[\w\u0600-\u06FF:\-\s]+\]/g, "").trim();
       if (!cleanText) return;
-      speakCustomText(cleanText);
+      speakTextOrBrowser(cleanText);
     }
 
     async function refreshVoiceSampleStatus() {

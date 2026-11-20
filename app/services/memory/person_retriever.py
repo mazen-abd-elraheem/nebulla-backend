@@ -59,7 +59,7 @@ class PersonImageRetriever:
 
     @classmethod
     def get_person_profile_sync(cls, name: str) -> Optional[Dict[str, Any]]:
-        """Retrieve FaceProfile record synchronously from SQLite."""
+        """Retrieve FaceProfile record synchronously from SQLite with normalized name matching."""
         db_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
         if db_path.startswith("./"):
             db_path = db_path[2:]
@@ -68,17 +68,30 @@ class PersonImageRetriever:
 
         conn = sqlite3.connect(db_path, timeout=5.0)
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, name, photo_path, created_at FROM face_profiles WHERE name = ? OR name LIKE ?",
-            (name, f"%{name}%"),
-        )
-        row = cursor.fetchone()
+        cursor.execute("SELECT id, name, photo_path, created_at FROM face_profiles")
+        rows = cursor.fetchall()
         conn.close()
 
-        if not row:
+        if not rows:
             return None
 
-        p_id, p_name, photo_path, created_at = row
+        norm_target = normalize_masri_orthography(name).lower().strip()
+        matched_row = None
+        for row in rows:
+            p_id, p_name, photo_path, created_at = row
+            norm_p = normalize_masri_orthography(p_name).lower().strip()
+            if norm_target in norm_p or norm_p in norm_target:
+                matched_row = row
+                break
+            first_w = norm_p.split()[0] if norm_p.split() else ""
+            if norm_target == first_w:
+                matched_row = row
+                break
+
+        if not matched_row:
+            return None
+
+        p_id, p_name, photo_path, created_at = matched_row
         return {
             "id": p_id,
             "name": p_name,
@@ -94,19 +107,31 @@ class PersonImageRetriever:
         name: str,
         db: Optional[AsyncSession] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Retrieve FaceProfile record via AsyncSession or synchronous SQLite."""
+        """Retrieve FaceProfile record via AsyncSession or synchronous SQLite with normalized name matching."""
         if db is not None:
-            res = await db.execute(select(FaceProfile).where(FaceProfile.name.ilike(f"%{name}%")))
-            profile = res.scalar_one_or_none()
-            if not profile:
+            res = await db.execute(select(FaceProfile))
+            all_profiles = list(res.scalars().all())
+            norm_target = normalize_masri_orthography(name).lower().strip()
+            matched_profile = None
+            for p in all_profiles:
+                norm_p = normalize_masri_orthography(p.name).lower().strip()
+                if norm_target in norm_p or norm_p in norm_target:
+                    matched_profile = p
+                    break
+                first_w = norm_p.split()[0] if norm_p.split() else ""
+                if norm_target == first_w:
+                    matched_profile = p
+                    break
+
+            if not matched_profile:
                 return None
             return {
-                "id": profile.id,
-                "name": profile.name,
-                "photo_path": profile.photo_path,
-                "photo_url": f"/api/v1/faces/{profile.name}/photo" if profile.photo_path else None,
-                "created_at": profile.created_at.isoformat() if profile.created_at else None,
-                "has_photo": bool(profile.photo_path and os.path.exists(profile.photo_path)),
+                "id": matched_profile.id,
+                "name": matched_profile.name,
+                "photo_path": matched_profile.photo_path,
+                "photo_url": f"/api/v1/faces/{matched_profile.name}/photo" if matched_profile.photo_path else None,
+                "created_at": matched_profile.created_at.isoformat() if matched_profile.created_at else None,
+                "has_photo": bool(matched_profile.photo_path and os.path.exists(matched_profile.photo_path)),
             }
         return cls.get_person_profile_sync(name)
 

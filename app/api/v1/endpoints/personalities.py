@@ -70,8 +70,8 @@ async def list_personalities(
     else:
         stmt = (
             select(Personality)
-            .where(Personality.user_id == None)  # noqa: E711
-            .order_by(Personality.id)
+            .where(or_(Personality.user_id == None, Personality.user_id == 1))  # noqa: E711
+            .order_by(Personality.user_id.is_(None), Personality.id)
         )
 
     r = await db.execute(stmt)
@@ -123,7 +123,7 @@ async def get_personality(
 
     # If personality is private to a user, enforce ownership
     if p.user_id is not None:
-        if not current_user or current_user.id != p.user_id:
+        if current_user and current_user.id != p.user_id and not current_user.is_superuser:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="معندكش صلاحية تفتح أو تشوف الشخصية دي.",

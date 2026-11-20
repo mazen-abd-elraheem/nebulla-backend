@@ -96,12 +96,24 @@ class CrossReranker:
         if not q_tokens or not d_tokens:
             return phrase_bonus
 
+        def _norm_token(t: str) -> str:
+            if t.startswith("ال") and len(t) >= 4:
+                return t[2:]
+            return t
+
+        norm_q = [_norm_token(w) for w in q_tokens]
+        norm_d = [_norm_token(w) for w in d_tokens]
+
         matches: List[int] = []
         matched_tokens = set()
 
-        for idx, dt in enumerate(d_tokens):
-            for qt in q_tokens:
-                if qt == dt or (len(qt) > 3 and qt in dt) or (len(dt) > 3 and dt in qt):
+        for idx, (dt, ndt) in enumerate(zip(d_tokens, norm_d)):
+            for qt, nqt in zip(q_tokens, norm_q):
+                if (qt == dt or nqt == ndt or
+                    (len(nqt) >= 3 and nqt in ndt) or
+                    (len(ndt) >= 3 and ndt in nqt) or
+                    (len(qt) >= 3 and qt in dt) or
+                    (len(dt) >= 3 and dt in qt)):
                     matches.append(idx)
                     matched_tokens.add(qt)
 

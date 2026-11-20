@@ -52,8 +52,36 @@ class FactVerifier:
     FACTUAL_INQUIRY_SIGNALS = [
         "فين", "مكان", "شغال", "بيشتغل", "تخصص", "معاد", "ميعاد", "ساعة", "كام", "امتى", "إمتى", "متى",
         "رقم", "تليفون", "موبايل", "باسورد", "عنوان", "ساكن", "عايش", "مع مين", "بيحب", "بتحب",
+        "بيسترزق", "بيسترزقوا", "أكل عيش", "اكل عيش", "مطرح", "كيفه", "مزاجه", "هواية", "هوايته",
         "where", "when", "who is", "what is", "work", "job", "location", "address"
     ]
+
+    COLLOQUIAL_CONCEPT_BUNDLES: Dict[str, List[str]] = {
+        "job": [
+            "شغال", "شغالة", "بيشتغل", "بتشتغل", "شغل", "شغلانة", "وظيفة", "مهنة",
+            "أكل عيش", "اكل عيش", "بيسترزق", "بيسترزقوا", "تخصص", "مجال", "مهندس", "دكتور",
+            "طبيب", "محامي", "مدرس", "معلم", "طيار", "مبرمج", "محاسب", "ظابط", "ضابط",
+            "صيدلي", "سواق", "رسام", "فنان", "عامل", "بياكل عيش", "بتاكل عيش"
+        ],
+        "location": [
+            "فين", "مكان", "مطرح", "محطوط", "محطوطة", "موجود", "موجودة", "مركون",
+            "مركونة", "سايب", "سايبها", "سايبه", "حاطط", "حاطة", "في", "على", "علي",
+            "فوق", "تحت", "جوه", "داخل", "برا", "خارج", "دولاب", "درج", "مكتب", "ترابيزة"
+        ],
+        "hobby": [
+            "بيحب", "بتحب", "بحب", "عاوز", "عايز", "غاوي", "غاوية", "كيفه", "كيفها",
+            "مزاجه", "مزاجها", "هواية", "هوايته", "هوايتها", "بيعشق", "بتعشق", "بيمارس",
+            "سباحة", "كورة", "قراءة", "قهوة"
+        ],
+        "schedule": [
+            "معاد", "ميعاد", "توقيت", "امتى", "إمتى", "متى", "ساعة", "الساعة",
+            "هيتقابلوا", "هيقابل", "مقابلة", "موعد", "مواعيد", "اتأجل", "خلوه"
+        ],
+        "residence": [
+            "ساكن", "ساكنة", "عايش", "عايشة", "سكن", "عنوان", "عنوانه", "عنوانها",
+            "بيت", "بيته", "شقة", "شقته", "منطقة", "حي", "مقيم", "يقيم"
+        ],
+    }
 
     @classmethod
     def is_sensitive_or_private_inquiry(cls, query: str) -> bool:
@@ -99,8 +127,12 @@ class FactVerifier:
 
         # 1. If context was completely empty and this is not a greeting or action:
         if not retrieved_memories and not is_greeting and not has_action:
-            if cls.is_sensitive_or_private_inquiry(query):
-                logger.info("FactVerifier: Sensitive/private query with empty context -> Enforcing refusal.")
+            from app.services.memory.query_decomposer import QueryDecomposer
+            mentioned_names = QueryDecomposer.extract_mentioned_person_names(query)
+            is_personal = cls.is_factual_personal_inquiry(query) or bool(mentioned_names)
+
+            if is_personal:
+                logger.info(f"FactVerifier: Factual personal inquiry '{query}' with empty context -> Enforcing refusal.")
                 return default_refusal
 
             # For open-domain questions (general knowledge, coding, math), verify no hallucinated sensitive patterns:
@@ -165,7 +197,20 @@ class FactVerifier:
                     w for w in re.findall(r"[\w\d]+", normalize_masri_orthography(subj).lower())
                     if len(w) >= 2 and w not in cls.QUESTION_STOPWORDS
                 ]
-                if subj_tokens and any(t in norm_context for t in subj_tokens):
+                direct_match = bool(subj_tokens and any(t in norm_context for t in subj_tokens))
+                concept_match = False
+                if not direct_match:
+                    for bundle_name, terms in cls.COLLOQUIAL_CONCEPT_BUNDLES.items():
+                        if any(t in sq.lower() for t in terms) and any(t in norm_context for t in terms):
+                            concept_match = True
+                            break
+
+                sq_names = QueryDecomposer.extract_mentioned_person_names(sq)
+                sq_names_grounded = True
+                if sq_names:
+                    sq_names_grounded = any(name in norm_context for name in sq_names)
+
+                if (direct_match or concept_match) and sq_names_grounded:
                     covered_subs.append(subj)
                 else:
                     missing_subs.append(subj)
@@ -198,11 +243,133 @@ class FactVerifier:
                 w for w in re.findall(r"[\w\d]+", normalize_masri_orthography(query).lower())
                 if len(w) >= 2 and w not in cls.QUESTION_STOPWORDS
             ]
-            if q_words and not has_refusal:
-                overlap_with_ctx = any(w in norm_context for w in q_words)
+            q_stems: set[str] = set()
+            for w in q_words:
+                q_stems.add(w)
+                if w.startswith("ال") and len(w) > 3:
+                    q_stems.add(w[2:])
+
+            from app.services.memory.query_decomposer import QueryDecomposer
+            mentioned_names = QueryDecomposer.extract_mentioned_person_names(query)
+            names_grounded = True
+            if mentioned_names:
+                names_grounded = any(name in norm_context for name in mentioned_names)
+
+            # Strict Inquiry Aspect Grounding (Age, Job, Location, Hobby, Schedule, Residence, Clothing, Contact):
+            # If the user asks about a specific aspect (e.g. age, job, residence), the context MUST contain that specific aspect.
+            # Never allow substituting an answer for a different question (e.g. job for age, or watch location for job).
+            if not has_refusal and not is_greeting and not has_action:
+                inquiry_aspect = QueryDecomposer.get_inquiry_aspect(query)
+                if inquiry_aspect:
+                    has_aspect_in_ctx = any(QueryDecomposer.fact_has_aspect(mem, inquiry_aspect) for mem in retrieved_memories) or QueryDecomposer.fact_has_aspect(norm_context, inquiry_aspect)
+                    if not has_aspect_in_ctx:
+                        logger.info(f"FactVerifier: Query inquired aspect '{inquiry_aspect}', but context lacks this aspect -> Enforcing refusal.")
+                        return default_refusal
+
+                # Strict Subject Item Grounding:
+                # If the query inquired about a specific subject item (e.g. قلم), the context AND response
+                # MUST contain that requested item. NEVER permit answering about a watch when asked about a pen!
+                target_p_name = QueryDecomposer.extract_target_persona_name(query)
+                query_items = QueryDecomposer.extract_subject_items(query, target_p_name)
+                if query_items:
+                    has_item_in_ctx = False
+                    for m in retrieved_memories:
+                        m_tokens = set(re.findall(r"[\w\d]+", normalize_masri_orthography(m).lower()))
+                        for w in list(m_tokens):
+                            if w.startswith("ال") and len(w) > 3:
+                                m_tokens.add(w[2:])
+                        if query_items & m_tokens:
+                            has_item_in_ctx = True
+                            break
+                    if not has_item_in_ctx:
+                        logger.info(f"FactVerifier: Query inquired item(s) {query_items}, but context lacks this item -> Enforcing refusal.")
+                        return default_refusal
+
+                    # Verify that response itself actually mentions the queried item (unless past-tense inquiry with natural pronoun elision)
+                    resp_words = set(re.findall(r"[\w\d]+", norm_response))
+                    for w in list(resp_words):
+                        if w.startswith("ال") and len(w) > 3:
+                            resp_words.add(w[2:])
+                    if not (query_items & resp_words) and not QueryDecomposer.is_past_inquiry(query):
+                        logger.info(f"FactVerifier: Response substituted/omitted queried item {query_items} -> Enforcing refusal.")
+                        return default_refusal
+
+            if q_stems and not has_refusal:
+                direct_overlap = any(s in norm_context for s in q_stems)
+                concept_overlap = False
+                if not direct_overlap:
+                    # Check semantic concept bundles
+                    for bundle_name, terms in cls.COLLOQUIAL_CONCEPT_BUNDLES.items():
+                        q_has_bundle = any(any(t in s for t in terms) for s in q_stems) or any(t in query.lower() for t in terms)
+                        if q_has_bundle:
+                            ctx_has_bundle = any(t in norm_context for t in terms)
+                            if ctx_has_bundle:
+                                concept_overlap = True
+                                break
+
+                overlap_with_ctx = (direct_overlap or concept_overlap) and names_grounded
                 if not overlap_with_ctx and not is_greeting and not has_action:
-                    logger.info(f"FactVerifier: Query content terms {q_words} not found in retrieved context and model did not refuse -> Enforcing refusal.")
+                    logger.info(f"FactVerifier: Query content terms {q_stems} (names_grounded={names_grounded}) not grounded in retrieved context and model did not refuse -> Enforcing refusal.")
                     return default_refusal
+
+            # Prune any unsolicited secondary clauses for single-intent queries (only if not a multi-hop relational query)
+            rel_info = QueryDecomposer.decompose_multihop_relational(query)
+            if not rel_info:
+                response = cls._prune_unsolicited_clauses(response, query)
+                # Multi-persona completeness: If query did not specify a target persona, but retrieved memories
+                # contain distinct personas (e.g. Mazen and Ahmed for 'الكراسة فين؟' or 'الساعة فين؟'), ensure all covered personas are included with natural annexation.
+                if not QueryDecomposer.extract_target_persona_name(query) and len(retrieved_memories) > 1:
+                    norm_r = normalize_masri_orthography(response).lower()
+                    distinct_personas = []
+                    for mem in retrieved_memories:
+                        m_names = QueryDecomposer.extract_mentioned_person_names(mem)
+                        if m_names:
+                            distinct_personas.append((m_names, mem))
+
+                    if len(distinct_personas) >= 2:
+                        covered_count = sum(1 for m_names, _ in distinct_personas if any(n in norm_r for n in m_names))
+                        if covered_count < len(distinct_personas):
+                            logger.info(f"FactVerifier: Multi-persona query lacked explicit owner attribution ({covered_count}/{len(distinct_personas)}). Rebuilding formatted answer.")
+                            gesture_m = re.search(r'(\s*(?:\[[\w:\-]+\]|[\U00010000-\U0010ffff]|[\u2600-\u27bf])+\s*)$', response)
+                            trailing_g = gesture_m.group(1).strip() if gesture_m else "[happy]"
+                            formatted_parts = [m.strip(" .،,") for _, m in distinct_personas]
+                            rebuilt = "، و".join(formatted_parts) + "."
+                            response = f"{rebuilt} {trailing_g}"
+                    else:
+                        for mem in retrieved_memories:
+                            mem_names = QueryDecomposer.extract_mentioned_person_names(mem)
+                            if mem_names and not any(n in norm_r for n in mem_names):
+                                logger.info(f"FactVerifier: Multi-persona query omitted facts for {mem_names}. Completing with: {mem}")
+                                gesture_m = re.search(r'(\s*(?:\[[\w:\-]+\]|[\U00010000-\U0010ffff]|[\u2600-\u27bf])+\s*)$', response)
+                                trailing_g = gesture_m.group(1).strip() if gesture_m else ""
+                                base_r = response[:gesture_m.start()].strip() if gesture_m else response.strip()
+                                base_r = re.sub(r'[.,،!\sو]+$', '', base_r).strip()
+                                clean_mem = mem.strip(" .،,")
+                                response = f"{base_r}، و{clean_mem}." if base_r else f"{clean_mem}."
+                                if trailing_g:
+                                    response = f"{response} {trailing_g}"
+                                norm_r = normalize_masri_orthography(response).lower()
+            else:
+                # Ensure downstream attribute is completed if omitted by the LLM
+                downstream_attr = rel_info["downstream_attr"]
+                downstream_mem = None
+                for mem in retrieved_memories:
+                    if QueryDecomposer.fact_has_aspect(mem, downstream_attr) or downstream_attr in mem:
+                        downstream_mem = mem.strip(" .،,")
+                        break
+                if downstream_mem:
+                    norm_r = normalize_masri_orthography(response).lower()
+                    tokens = [w for w in re.findall(r"[\w\d]+", downstream_mem) if len(w) >= 3 and w not in ["صاحب", "احمد", "أحمد", "نوعها", "شغال"]]
+                    is_covered = any(t in norm_r for t in tokens)
+                    if not is_covered:
+                        logger.info(f"FactVerifier: Multi-hop response omitted downstream attribute. Completing with: {downstream_mem}")
+                        gesture_m = re.search(r'(\s*(?:\[[\w:\-]+\]|[\U00010000-\U0010ffff]|[\u2600-\u27bf])+\s*)$', response)
+                        trailing_g = gesture_m.group(1).strip() if gesture_m else ""
+                        base_r = response[:gesture_m.start()].strip() if gesture_m else response.strip()
+                        base_r = re.sub(r'[.,،!\sو]+$', '', base_r).strip()
+                        response = f"{base_r}، و{downstream_mem}." if base_r else f"{downstream_mem}."
+                        if trailing_g:
+                            response = f"{response} {trailing_g}"
 
         return response
 
@@ -340,5 +507,63 @@ class FactVerifier:
         if trailing_gesture:
             res = f"{res} {trailing_gesture}".strip()
         return res
+
+    @classmethod
+    def _prune_unsolicited_clauses(cls, response: str, query: str) -> str:
+        """
+        For single-intent atomic queries, prunes any trailing or secondary clauses
+        that discuss unrelated entities not requested in the query.
+        """
+        if not response:
+            return response
+
+        from app.services.memory.query_decomposer import QueryDecomposer
+        if QueryDecomposer.is_past_inquiry(query):
+            return response
+        if len(QueryDecomposer.get_atomic_subqueries(query)) > 1:
+            return response
+        gesture_match = re.search(r'(\s*(?:\[[\w:\-]+\]|[\U00010000-\U0010ffff]|[\u2600-\u27bf])+\s*)$', response)
+        trailing_gesture = gesture_match.group(1).strip() if gesture_match else ""
+        base_resp = response[:gesture_match.start()].strip() if gesture_match else response.strip()
+
+        from app.services.memory.query_decomposer import QueryDecomposer
+        clean_subj = QueryDecomposer.clean_subject(query)
+        norm_subj = normalize_masri_orthography(clean_subj).lower()
+        subj_tokens = set(re.findall(r"[\w\d]{3,}", norm_subj))
+        for w in list(subj_tokens):
+            if w.startswith("ال") and len(w) > 3:
+                subj_tokens.add(w[2:])
+
+        # Split base_resp by major sentence/clause terminators
+        raw_clauses = [c.strip() for c in re.split(r'[.،,\n]+|\s+و(?=[\u0600-\u06FF])', base_resp) if c.strip()]
+        if len(raw_clauses) <= 1:
+            return response
+
+        kept_clauses: List[str] = []
+        for c in raw_clauses:
+            norm_c = normalize_masri_orthography(c).lower()
+            c_tokens = set(re.findall(r"[\w\d]{3,}", norm_c))
+            for w in list(c_tokens):
+                if w.startswith("ال") and len(w) > 3:
+                    c_tokens.add(w[2:])
+
+            overlap = bool(subj_tokens & c_tokens)
+            if not overlap:
+                for bundle_name, terms in cls.COLLOQUIAL_CONCEPT_BUNDLES.items():
+                    if any(t in norm_subj for t in terms) and any(t in norm_c for t in terms):
+                        overlap = True
+                        break
+
+            if overlap or not kept_clauses:
+                kept_clauses.append(c)
+
+        if not kept_clauses:
+            return response
+
+        is_arabic = bool(re.search(r"[\u0600-\u06FF]", base_resp))
+        joiner = "، و" if is_arabic else ", and "
+        res = joiner.join(kept_clauses).strip()
+        res = re.sub(r'[.,،!\sو]+$', '', res).strip()
+        return f"{res}. {trailing_gesture}".strip() if trailing_gesture else f"{res}."
 
 

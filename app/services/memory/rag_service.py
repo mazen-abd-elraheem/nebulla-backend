@@ -36,6 +36,7 @@ from app.services.memory.query_decomposer import QueryDecomposer
 from app.services.memory.fact_verifier import FactVerifier
 from app.services.memory.vector_store import DatabaseVectorStore
 from app.services.memory.person_retriever import PersonImageRetriever
+from app.utils.masri_normalizer import normalize_masri_orthography
 
 logger = get_logger(__name__)
 
@@ -130,12 +131,12 @@ class RAGService:
         cursor = conn.cursor()
         if personality_id is not None:
             cursor.execute(
-                "SELECT id, content, personality_id, embedding, source, importance FROM memories WHERE personality_id = ? OR personality_id IS NULL",
+                "SELECT id, content, personality_id, embedding, source, importance, is_active FROM memories WHERE (is_active = 1 OR is_active IS NULL) AND (personality_id = ? OR personality_id IS NULL)",
                 (personality_id,),
             )
             rows = cursor.fetchall()
         else:
-            cursor.execute("SELECT id, content, personality_id, embedding, source, importance FROM memories")
+            cursor.execute("SELECT id, content, personality_id, embedding, source, importance, is_active FROM memories WHERE (is_active = 1 OR is_active IS NULL)")
             rows = cursor.fetchall()
         conn.close()
 
@@ -148,6 +149,7 @@ class RAGService:
                 embedding=r[3],
                 source=r[4],
                 importance=r[5],
+                is_active=bool(r[6]) if len(r) > 6 and r[6] is not None else True,
             )
             memories.append(mem)
         return memories
@@ -222,7 +224,7 @@ class RAGService:
                 lex_scores[mid] = b_score
 
         # Boost person name if found in memory text and query is person-relevant
-        if should_use_person and clean_person:
+        if should_use_person and clean_person and personality_id is None:
             p_lower = clean_person.lower()
             for m in memories:
                 if p_lower in m.content.lower():
@@ -257,10 +259,144 @@ class RAGService:
             imp_val = 5 if imp is None else imp
             importance_boost = (float(imp_val) / 10.0) * 0.03
 
-            combined = (score_rrf * 10.0) + (raw_sem * 0.6) + (raw_lex * 0.5) + importance_boost
+            # Persona Hierarchy Boost: if personality_id is specified and memory belongs specifically to this persona, prioritize it
+            persona_boost = 0.15 if (personality_id is not None and getattr(mem, "personality_id", None) == personality_id) else 0.0
+
+            combined = (score_rrf * 10.0) + (raw_sem * 0.6) + (raw_lex * 0.5) + importance_boost + persona_boost
             sq_candidates[mid] = combined
 
         return sq_candidates
+
+    async def _get_personality_names_map(self, db: AsyncSession | None = None) -> dict[int, str]:
+        """Loads a map of personality_id -> clean first name (e.g. 1: 'مازن', 2: 'أحمد')."""
+        p_map: dict[int, str] = {}
+        if db is not None:
+            try:
+                from app.models.personality import Personality
+                res = await db.execute(select(Personality))
+                for p in res.scalars().all():
+                    if "مازن" in p.name or p.id == 1:
+                        clean_name = "مازن"
+                    else:
+                        clean_name = p.name.split()[0].replace("(", "").replace(")", "").strip()
+                    p_map[p.id] = clean_name
+            except Exception as e:
+                logger.debug(f"Could not load personality map from async db: {e}")
+
+        if not p_map:
+            try:
+                db_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
+                if db_path.startswith("./"):
+                    db_path = db_path[2:]
+                if not os.path.isabs(db_path):
+                    db_path = os.path.abspath(db_path)
+                conn = sqlite3.connect(db_path, timeout=5.0)
+                cur = conn.cursor()
+                for pid, pname in cur.execute("SELECT id, name FROM personalities"):
+                    if "مازن" in pname or pid == 1:
+                        clean_name = "مازن"
+                    else:
+                        clean_name = pname.split()[0].replace("(", "").replace(")", "").strip()
+                    p_map[pid] = clean_name
+                conn.close()
+            except Exception:
+                pass
+
+        return p_map
+
+    @classmethod
+    def attribute_memory_content(cls, content: str, persona_name: Optional[str], query: str = "") -> str:
+        """
+        Attributes memory content to persona name if not already mentioned,
+        dynamically supporting any item noun (e.g., 'الكراسه علي الارض' + 'أحمد' -> 'كراسة أحمد علي الارض').
+        Never adds awkward robotic prefixes like 'عند فلان:'.
+        """
+        if not persona_name or not content:
+            return content
+        clean_p = persona_name.strip()
+        norm_c = QueryDecomposer._norm(content)
+        norm_p = QueryDecomposer._norm(clean_p)
+        if norm_p in norm_c:
+            return content
+
+        # Check if memory describes an item or physical location
+        m = re.match(r'^(?:ال)?([^\s]+)\b\s*(.*)', content)
+        if m:
+            raw_item = m.group(1).strip()
+            rest = m.group(2).strip()
+            norm_raw = QueryDecomposer._norm(raw_item)
+
+            non_items = {
+                "هو", "هي", "هم", "انا", "احنا", "انت", "انتي",
+                "في", "على", "علي", "من", "عن", "الى", "إلى", "مع", "عند", "فوق", "تحت", "ورا", "قدام", "جنب",
+                "كان", "كانت", "يكون", "مش", "مش مسجل", "فيه", "شغال", "شغالة", "شغاله", "بيشتغل", "بتشتغل",
+                "عايش", "ساكن", "ساكنة", "ساكنه", "اتولد", "مواليد", "بيحب", "بتحب", "عنده", "عندها", "معاه", "معاها"
+            }
+            if norm_raw not in non_items and len(raw_item) >= 2:
+                is_loc = QueryDecomposer.is_location_fact(content)
+                q_items = QueryDecomposer.extract_subject_items(query, clean_p) if query else set()
+                item_matches_query = bool(q_items and (norm_raw in q_items or any(qi in norm_raw for qi in q_items)))
+
+                if is_loc or item_matches_query:
+                    item = raw_item
+                    if item.startswith("ال") and len(item) > 3:
+                        item = item[2:]
+                    if item.endswith(('ه', 'ة')):
+                        item = item[:-1] + 'ة'
+                    return f"{item} {clean_p} {rest}".strip()
+
+        return content
+
+    @classmethod
+    def _is_memory_entity_match(
+        cls,
+        mem_content: str,
+        mem_pid: Optional[int],
+        target_persona_name: Optional[str],
+        target_pid: Optional[int],
+        p_map: Optional[dict[int, str]] = None,
+    ) -> bool:
+        """
+        Strict Entity Isolation:
+        When a query targets persona X (e.g. 'مازن' or 'أحمد' or 'مصعب'):
+        - Returns True if content explicitly mentions target persona.
+        - Returns False if content explicitly names another person and NOT target persona.
+        - Returns False if memory's explicit personality_id is different from target_pid.
+        - Returns False if memory belongs to a specific persona (mem_pid is not None)
+          whose name is different from target_persona_name, UNLESS target persona is mentioned in content.
+        - Returns True for shared or persona-scoped memories that have no conflicting entity names.
+        """
+        if not target_persona_name:
+            return True
+
+        norm_content = QueryDecomposer._norm(mem_content)
+        norm_target = QueryDecomposer._norm(target_persona_name)
+
+        # 1. Target persona explicitly named in content -> direct match
+        if norm_target in norm_content:
+            return True
+
+        # 2. Extract conflicting persona names in content
+        mentioned_names = QueryDecomposer.extract_mentioned_person_names(mem_content)
+        conflicting = {QueryDecomposer._norm(n) for n in mentioned_names} - {norm_target}
+        if conflicting:
+            return False
+
+        # 3. Explicit personality_id mismatch
+        if mem_pid is not None and target_pid is not None and mem_pid != target_pid:
+            return False
+
+        # 4. Memory belongs to a specific system persona, but query targets another entity (e.g. Mosaab)
+        if mem_pid is not None and p_map:
+            mem_owner_name = p_map.get(mem_pid)
+            if mem_owner_name and QueryDecomposer._norm(mem_owner_name) != norm_target:
+                return False
+        elif mem_pid is not None and target_pid is None:
+            return False
+
+        return True
+
+        return True
 
     async def _get_scored_memories(
         self,
@@ -278,18 +414,92 @@ class RAGService:
         """
         await self._ensure_embedder()
 
-        # Load memories from DB matching personality or shared
+        # Load personality name mappings to detect targeted personas
+        p_map = await self._get_personality_names_map(db)
+
+        # Multi-Hop Relational Intent Decomposition (e.g. 'عربية صاحب أحمد نوعها ايه؟')
+        rel_info = QueryDecomposer.decompose_multihop_relational(query)
+
+        # Detect if query explicitly targets a specific persona (e.g. 'ساعة أحمد فين', 'يا مازن الساعة فين', 'مازن شغال ايه')
+        # In multi-hop relational questions, we do not restrict to origin person only since downstream hop queries a related entity.
+        target_persona_name = None if rel_info else QueryDecomposer.extract_target_persona_name(query, list(p_map.values()))
+        if target_persona_name:
+            norm_target = QueryDecomposer._norm(target_persona_name)
+            for pid, pname in p_map.items():
+                if QueryDecomposer._norm(pname) == norm_target or (norm_target in ("مازن", "mazen") and pid == 1):
+                    personality_id = pid
+                    logger.info(f"Targeted persona '{target_persona_name}' detected in query -> Scoping RAG to PID {pid}.")
+                    break
+
+        # Load memories from DB matching personality, shared, or explicitly mentioning the targeted persona
         if db is not None:
-            stmt = select(Memory)
-            if personality_id is not None:
-                stmt_p = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
+            stmt = select(Memory).where((Memory.is_active == True) | (Memory.is_active.is_(None)))
+            if personality_id is not None and not rel_info:
+                conditions = (Memory.personality_id == personality_id) | (Memory.personality_id.is_(None))
+                if target_persona_name:
+                    p1 = f"%{target_persona_name}%"
+                    p2 = f"%{target_persona_name.replace('أ', 'ا')}%"
+                    conditions = conditions | (Memory.content.like(p1)) | (Memory.content.like(p2))
+                stmt_p = stmt.where(conditions)
                 res = await db.execute(stmt_p)
                 memories = list(res.scalars().all())
             else:
                 res = await db.execute(stmt)
                 memories = list(res.scalars().all())
         else:
-            memories = self._load_memories_sync(personality_id)
+            memories = self._load_memories_sync(None if rel_info else personality_id)
+
+        if not memories:
+            return []
+
+        # Strict Entity-Level Subject Isolation:
+        # If targeting a specific persona (e.g. Mazen), exclude memories about other entities (e.g. Omar the driver, Ahmed)
+        if target_persona_name and not rel_info:
+            memories = [
+                m for m in memories
+                if self._is_memory_entity_match(m.content, m.personality_id, target_persona_name, personality_id, p_map=p_map)
+            ]
+            if not memories:
+                return []
+
+        if not memories:
+            return []
+
+        # Strict Semantic Aspect Filtering (Age, Job, Location, Hobby, Schedule, Residence, Clothing, Contact)
+        # Guarantees that if a specific aspect is inquired, ONLY facts matching that exact aspect are retained.
+        # If no fact in memory matches the requested aspect, returns [] so the assistant truthfully refuses.
+        inquiry_aspect = QueryDecomposer.get_inquiry_aspect(query)
+        if inquiry_aspect and not rel_info:
+            matching_aspect_mems = [m for m in memories if QueryDecomposer.fact_has_aspect(m.content, inquiry_aspect)]
+            if matching_aspect_mems:
+                memories = matching_aspect_mems
+            else:
+                logger.info(f"RAG: Query requested aspect '{inquiry_aspect}', but no candidate memory has this aspect. Enforcing empty context.")
+                return []
+
+        if not memories:
+            return []
+
+        # Strict Subject Item Isolation:
+        # If the user asks about a specific object/item (e.g. 'قلم احمد فين' or 'ساعة احمد فين'),
+        # candidate memories MUST contain the requested item (or its morphological stem/synonym).
+        # NEVER substitute a watch when asked about a pen, or vice-versa!
+        query_items = QueryDecomposer.extract_subject_items(query, target_persona_name)
+        if query_items and not rel_info and inquiry_aspect == "location":
+            item_filtered = []
+            for m in memories:
+                norm_m = normalize_masri_orthography(m.content).lower()
+                m_tokens = set(re.findall(r"[\w\d]+", norm_m))
+                for w in list(m_tokens):
+                    if w.startswith("ال") and len(w) > 3:
+                        m_tokens.add(w[2:])
+                if query_items & m_tokens:
+                    item_filtered.append(m)
+            if item_filtered:
+                memories = item_filtered
+            else:
+                logger.info(f"RAG: Query asked for item(s) {query_items}, but no candidate memory contains this item. Returning empty.")
+                return []
 
         if not memories:
             return []
@@ -311,8 +521,45 @@ class RAGService:
         # Initialize Okapi BM25 Index on corpus
         bm25 = BM25Okapi(doc_texts)
 
-        # Decompose query into sub-queries
+        # Decompose query into sub-queries and strip vocatives & targeted persona name from search targets
         sub_queries = QueryDecomposer.decompose(query)
+        cleaned_subqueries: list[str] = []
+        for sq in sub_queries:
+            c_sq = QueryDecomposer.clean_vocative(sq)
+            if target_persona_name:
+                c_sq = re.sub(
+                    rf'\b(?:عند|بتاع|بتاعة|بتاعت|تبع)?\s*(?:{re.escape(target_persona_name)}|احمد|أحمد|مازن|توت)\b',
+                    ' ',
+                    c_sq,
+                    flags=re.IGNORECASE,
+                )
+                c_sq = re.sub(r'\s+', ' ', c_sq).strip()
+            if c_sq and len(c_sq) >= 2:
+                cleaned_subqueries.append(c_sq)
+            else:
+                cleaned_subqueries.append(sq)
+        if query not in cleaned_subqueries:
+            cleaned_subqueries.insert(0, query)
+
+        # Multi-Hop Relational Intent Decomposition (e.g. 'عربية صاحب أحمد نوعها ايه؟')
+        rel_info = QueryDecomposer.decompose_multihop_relational(query)
+        if rel_info:
+            step1_q = rel_info["step1_query"]
+            step1_scores = bm25.get_scores(step1_q)
+            best_idx = max(range(len(step1_scores)), key=lambda i: step1_scores[i]) if step1_scores else None
+            if best_idx is not None and step1_scores[best_idx] > 0.0:
+                hop1_mem = memories[best_idx].content
+                dyn_names = QueryDecomposer.extract_mentioned_person_names(hop1_mem)
+                origin_norm = QueryDecomposer._norm(rel_info["origin_person"])
+                intermediate = dyn_names - {origin_norm}
+                if intermediate:
+                    resolved_person = list(intermediate)[0]
+                    hop2_q = f"{rel_info['downstream_attr']} {resolved_person}"
+                    logger.info(f"Multi-Hop resolved '{step1_q}' -> '{resolved_person}'. Generated Step 2: '{hop2_q}'")
+                    if hop2_q not in cleaned_subqueries:
+                        cleaned_subqueries.append(hop2_q)
+
+        sub_queries = cleaned_subqueries if cleaned_subqueries else [query]
         clean_person = person_name.strip() if person_name else None
 
         loop = asyncio.get_running_loop()
@@ -351,9 +598,31 @@ class RAGService:
         if not accumulated_candidates:
             return []
 
-        # Multithreaded Cross-Encoder / Alignment Re-ranking
+        # Adaptive Fast-Path:
+        # If top candidate is dominant (single match >= 0.60 or dominant margin >= 0.18 over second with score >= 0.78),
+        # bypass Cross-Encoder completely for instant sub-80ms response on CPU!
+        sorted_accum = sorted(accumulated_candidates.items(), key=lambda x: x[1], reverse=True)
+        is_clear_match = False
+        if len(sorted_accum) == 1 and sorted_accum[0][1] >= 0.60:
+            is_clear_match = True
+        elif len(sorted_accum) > 1 and sorted_accum[0][1] >= 0.78:
+            gap = sorted_accum[0][1] - sorted_accum[1][1]
+            if gap >= 0.18:
+                is_clear_match = True
+
+        if (is_clear_match and len(sub_queries) <= 2) or rel_info:
+            reason = "Multi-Hop Relational Fast-Path" if rel_info else f"Score: {sorted_accum[0][1]:.3f}"
+            logger.info(f"Adaptive Fast-Path engaged: bypassing Cross-Encoder ({reason})")
+            final_scored = [(sc, mem_by_id[mid]) for mid, sc in sorted_accum[:20]]
+            return final_scored
+
+        # Multithreaded Cross-Encoder / Alignment Re-ranking using attributed content
         candidate_items = [
-            (score, mem_by_id[mid], mem_by_id[mid].content)
+            (
+                score,
+                mem_by_id[mid],
+                self.attribute_memory_content(mem_by_id[mid].content, p_map.get(mem_by_id[mid].personality_id), query),
+            )
             for mid, score in accumulated_candidates.items()
         ]
 
@@ -418,21 +687,30 @@ class RAGService:
 
         top_score = scored[0][0]
         # Require confident topic relevance (disregard noise/unrecorded queries)
-        if top_score < 0.45:
+        if top_score < 0.35:
             return []
 
+        is_loc_q = QueryDecomposer.is_location_query(query)
+        rel_info = QueryDecomposer.decompose_multihop_relational(query)
         atomic_subs = QueryDecomposer.get_atomic_subqueries(query)
-        effective_top_k = top_k or max(len(atomic_subs), 2)
+        effective_top_k = top_k or (2 if rel_info else len(atomic_subs))
+        # If cross-persona search (personality_id is None) and asking about location/item, allow multiple personas (up to 3)
+        if personality_id is None and is_loc_q:
+            effective_top_k = max(effective_top_k, 3)
+        effective_top_k = max(effective_top_k, 2 if rel_info else 1)
         effective_top_k = min(effective_top_k, 6)
 
-        # For composite/multi-part questions, use a balanced margin threshold
-        # so secondary valid sub-queries are retained while unrelated noise (< 0.52) is strictly filtered.
-        if len(atomic_subs) > 1:
-            cutoff = max(0.52, top_score * 0.70)
+        # For composite/multi-part questions or cross-persona searches, use a balanced margin threshold
+        # so valid facts across sub-queries or personas are retained while unrelated noise (< 0.50) is strictly filtered.
+        if rel_info:
+            cutoff = max(0.40, top_score * 0.50)
+        elif len(atomic_subs) > 1 or personality_id is None:
+            cutoff = max(0.45, top_score * 0.55)
         else:
             cutoff = max(0.50, top_score * 0.85)
 
         seen_contents: set[str] = set()
+        seen_personas: set[int] = set()
         unique_top: list[Memory] = []
 
         for score, mem in scored:
@@ -442,10 +720,21 @@ class RAGService:
             if norm_content in seen_contents:
                 continue
 
-            # Temporal suppression: if an already-accepted memory supersedes/conflicts with this one, skip obsolete memory
-            is_conflicted = any(self._is_conflicting_fact(m.content, mem.content) for m in unique_top)
+            # In cross-persona search for single-intent queries: allow at most 1 fact per distinct persona
+            if personality_id is None and len(atomic_subs) <= 1:
+                mem_pid = mem.personality_id or 0
+                if mem_pid in seen_personas:
+                    continue
+
+            # Temporal suppression: if an already-accepted memory supersedes/conflicts with this one for the SAME persona, skip obsolete memory
+            is_conflicted = any(
+                (m.personality_id == mem.personality_id) and self._is_conflicting_fact(m.content, mem.content)
+                for m in unique_top
+            )
             if not is_conflicted:
                 seen_contents.add(norm_content)
+                if personality_id is None and len(atomic_subs) <= 1:
+                    seen_personas.add(mem.personality_id or 0)
                 unique_top.append(mem)
                 if len(unique_top) >= effective_top_k:
                     break
@@ -456,7 +745,14 @@ class RAGService:
 
         # Apply Context Re-ordering to eliminate 'Lost in the Middle'
         reordered_mems = self._reorder_context(unique_top)
-        return [m.content for m in reordered_mems]
+
+        # Persona Attribution: if memory does not explicitly mention the persona name, attribute it clearly
+        p_map = await self._get_personality_names_map(db)
+        attributed_memories = [
+            self.attribute_memory_content(m.content, p_map.get(m.personality_id), query)
+            for m in reordered_mems
+        ]
+        return attributed_memories
 
     async def retrieve_detailed(
         self,
@@ -472,7 +768,7 @@ class RAGService:
             return []
 
         top_score = scored[0][0]
-        if top_score < 0.45:
+        if top_score < 0.35:
             return []
 
         atomic_subs = QueryDecomposer.get_atomic_subqueries(query)
@@ -501,10 +797,12 @@ class RAGService:
             loop = asyncio.get_running_loop()
             loop.run_in_executor(_RAG_EXECUTOR, self._update_access_times_sync, [m.id for _, m in unique_scored])
 
+        p_map = await self._get_personality_names_map(db)
         return [
             {
                 "id": m.id,
                 "content": m.content,
+                "attributed_content": self.attribute_memory_content(m.content, p_map.get(m.personality_id), query),
                 "score": round(score, 4),
                 "source": m.source,
                 "personality_id": m.personality_id,
@@ -651,7 +949,7 @@ class RAGService:
         Determines whether a new memory supersedes/conflicts with an existing older memory.
         Example:
           old: "أحمد حط الكتاب في الصالة"
-          new: "أحمد نقل الكتاب وحطه علي الكرسيي"
+          new: "أحمد نقل الكتاب وحطه علي المكتب"
           -> Returns True (supersedes old location).
         """
         if not new_text or not old_text:
@@ -662,13 +960,46 @@ class RAGService:
         if norm_new == norm_old:
             return True
 
-        tokens_new = set(re.findall(r"[\u0600-\u06FF\w]{3,}", norm_new))
-        tokens_old = set(re.findall(r"[\u0600-\u06FF\w]{3,}", norm_old))
+        # 1. Location facts conflict check:
+        # If both describe physical locations, they conflict IF and ONLY IF they share the subject item!
+        # (e.g. 'كراسة أحمد على المكتب' conflicts with 'الكراسة على الأرض', but 'ساعة أحمد' does NOT conflict with 'شنطة أحمد').
+        is_loc_new = QueryDecomposer.is_location_fact(new_text)
+        is_loc_old = QueryDecomposer.is_location_fact(old_text)
+        if is_loc_new and is_loc_old:
+            items_new = QueryDecomposer.extract_subject_items(new_text)
+            items_old = QueryDecomposer.extract_subject_items(old_text)
+            shared_items = items_new & items_old
+            if shared_items:
+                return True
+            # If both are location facts but have completely different subject items, they never conflict!
+            if items_new and items_old and not shared_items:
+                return False
+
+        # 2. Job facts conflict check:
+        # If both describe a profession/job for the same person, they conflict!
+        if QueryDecomposer.is_job_fact(new_text) and QueryDecomposer.is_job_fact(old_text):
+            names_new = QueryDecomposer.extract_mentioned_person_names(new_text)
+            names_old = QueryDecomposer.extract_mentioned_person_names(old_text)
+            if (names_new & names_old) or (not names_new and not names_old):
+                return True
+
+        def _get_stems(text: str) -> set[str]:
+            raw = re.findall(r"[\u0600-\u06FF\w]{3,}", text)
+            stems = set()
+            for w in raw:
+                stems.add(w)
+                if w.startswith("ال") and len(w) >= 4:
+                    stems.add(w[2:])
+            return stems
+
+        tokens_new = _get_stems(norm_new)
+        tokens_old = _get_stems(norm_old)
 
         stopwords = {
             "على", "علي", "الي", "الى", "عن", "مع", "عند", "كان", "كانت", "يكون",
             "اللي", "ذلك", "هذا", "هذه", "عشان", "علشان", "خلاص", "تمام",
-            "نيبولا", "وبعدين", "حيث", "حتى", "اكتر", "اكثر", "في", "من"
+            "نيبولا", "وبعدين", "حيث", "حتى", "اكتر", "اكثر", "في", "من",
+            "انا", "أنا", "انت", "أنت", "هو", "هي", "احنا", "هما", "انو", "انه"
         }
         content_new = tokens_new - stopwords
         content_old = tokens_old - stopwords
@@ -679,22 +1010,18 @@ class RAGService:
 
         update_indicators = {
             "نقل", "نقله", "نقلت", "حط", "حطه", "حطيت", "شال", "شاله", "شلت",
-            "غير", "غيره", "غيرت", "بدل", "بدله", "بقى", "بقت", "اصبح",
-            "اتأجل", "اتاجل", "تأجل", "تاجيل", "دلوقتي", "حاليا", "مكان"
+            "غير", "غيره", "غيرت", "بدل", "بدله", "بقا", "بقى", "بقت", "اصبح", "أصبح",
+            "اتأجل", "اتاجل", "تأجل", "تاجيل", "تاخر", "اتأخر", "دلوقتي", "حاليا",
+            "افتكر", "جديد", "جديده"
         }
         has_update_cue = bool((tokens_new | tokens_old) & update_indicators)
 
-        subject_items = {
-            "كتاب", "مفتاح", "عربية", "محفظة", "ساعة", "شاحن", "لابتوب",
-            "كمبيوتر", "شنطة", "نظارة", "ميعاد", "معاد", "اجتماع", "فلوس",
-            "كرسي", "ترابيزة", "مكتب", "صالة", "اوضة", "غرفة", "درج", "دولاب"
-        }
-        common_subjects = common_entities & subject_items
-
-        if common_subjects and (has_update_cue or len(common_entities) >= 2):
+        # If they share an entity and an update cue is present (e.g. نقل، غير، بدل، بقى)
+        if common_entities and has_update_cue:
             return True
 
-        if len(common_entities) >= 2 and len(common_entities) / min(len(content_new), len(content_old)) >= 0.5:
+        # If they share 2 or more entities (e.g. مصعب + شغال, or أحمد + كتاب)
+        if len(common_entities) >= 2 and len(common_entities) / min(len(content_new), len(content_old)) >= 0.4:
             return True
 
         return False
@@ -727,16 +1054,17 @@ class RAGService:
             cursor.execute("SELECT id, content FROM memories")
         existing_rows = cursor.fetchall()
         obsolete_ids = [r[0] for r in existing_rows if self._is_conflicting_fact(content, r[1])]
-        for oid in obsolete_ids:
-            cursor.execute("DELETE FROM memories WHERE id = ?", (oid,))
-            self._vstore.delete(oid)
-            logger.info(f"Auto-resolved conflicting memory: removed obsolete memory ID {oid} in favor of: '{content}'")
-
         cursor.execute(
-            "INSERT INTO memories (content, personality_id, embedding, source, importance, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (content, personality_id, embedding, source, importance, datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO memories (content, personality_id, user_id, embedding, source, importance, created_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+            (content, personality_id, user_id, embedding, source, importance, datetime.now(timezone.utc).isoformat()),
         )
         mid = cursor.lastrowid
+
+        for oid in obsolete_ids:
+            cursor.execute("UPDATE memories SET is_active = 0, superseded_by_id = ? WHERE id = ?", (mid, oid))
+            self._vstore.delete(oid)
+            logger.info(f"Auto-resolved conflicting memory: safely archived obsolete memory ID {oid} (superseded by {mid}) in favor of: '{content}'")
+
         conn.commit()
         conn.close()
 
@@ -750,7 +1078,6 @@ class RAGService:
             user_id=user_id,
             content=content,
             personality_id=personality_id,
-            user_id=user_id,
             embedding=embedding,
             source=source,
             importance=importance,
@@ -766,7 +1093,6 @@ class RAGService:
         importance: int = 5,
         user_id: int | None = None,
         db: AsyncSession | None = None,
-        user_id: int | None = None,
     ) -> int:
         """
         Add a new memory with automatic embedding generation, conflict resolution and vector store synchronization.
@@ -785,48 +1111,46 @@ class RAGService:
                 logger.warning(f"Could not generate embedding for new memory: {e}")
 
         if db is not None:
-            # Automatic Conflict Resolution: detect & remove obsolete conflicting memories
-            stmt = select(Memory)
-            if personality_id is not None:
+            # Automatic Conflict Resolution: detect & archive obsolete conflicting memories (preserve history)
+            stmt = select(Memory).where(Memory.is_active == True)
+            if isinstance(personality_id, int):
                 stmt = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
             res = await db.execute(stmt)
             existing_mems = res.scalars().all()
             obsolete_found = False
+            obsolete_mems = []
             for ex in existing_mems:
                 if self._is_conflicting_fact(content.strip(), ex.content):
-                    logger.info(f"Auto-resolving conflicting memory: removing obsolete memory {ex.id} ('{ex.content}') in favor of: '{content.strip()}'")
-                    await db.delete(ex)
+                    logger.info(f"Auto-resolving conflicting memory: archiving obsolete memory {ex.id} ('{ex.content}') in favor of: '{content.strip()}'")
+                    ex.is_active = False
                     self._vstore.delete(ex.id)
+                    obsolete_mems.append(ex)
                     obsolete_found = True
 
             mem = Memory(
                 user_id=user_id,
                 content=content.strip(),
                 personality_id=personality_id,
-                user_id=user_id,
                 embedding=embedding_bytes,
                 source=source,
                 importance=importance,
+                is_active=True,
             )
             db.add(mem)
             await db.commit()
             await db.refresh(mem)
+            for ex in obsolete_mems:
+                ex.superseded_by_id = mem.id
+            if obsolete_mems:
+                await db.commit()
             self._vstore.add_or_update(mem, vec=vec_array)
             if obsolete_found:
                 with RAGService._cache_lock:
                     RAGService._shared_cache.clear()
 
             logger.info(f"Memory {mem.id} added via db session (personality: {personality_id}, user: {user_id})")
-            return mem.id
-        else:
-            return self._add_memory_sync(
-                content.strip(),
-                personality_id,
-                embedding_bytes,
-                source,
-                importance,
-                user_id=user_id,
-            )
+            return mem
+
 
     async def delete_memory(self, memory_id: int, db: AsyncSession | None = None) -> bool:
         """
@@ -842,7 +1166,7 @@ class RAGService:
         if db is not None:
             mem = await db.get(Memory, memory_id)
             if mem:
-                await db.delete(mem)
+                mem.is_active = False
                 await db.commit()
                 return True
             return False
@@ -855,12 +1179,12 @@ class RAGService:
                     db_path = os.path.abspath(db_path)
                 conn = sqlite3.connect(db_path, timeout=5.0)
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+                cursor.execute("UPDATE memories SET is_active = 0 WHERE id = ?", (memory_id,))
                 conn.commit()
                 conn.close()
                 return True
             except Exception as e:
-                logger.warning(f"Could not delete memory sync from SQLite: {e}")
+                logger.warning(f"Could not soft-delete memory sync from SQLite: {e}")
                 return False
 
         return True
@@ -878,9 +1202,19 @@ class RAGService:
         if not query or not query.strip():
             return None
 
+        # Resolve targeted persona if present in query (e.g. 'شغل احمد' -> Ahmed PID: 2)
+        p_map = await self._get_personality_names_map(db)
+        target_persona_name = QueryDecomposer.extract_target_persona_name(query, list(p_map.values()))
+        if target_persona_name:
+            norm_target = QueryDecomposer._norm(target_persona_name)
+            for pid, pname in p_map.items():
+                if QueryDecomposer._norm(pname) == norm_target or (norm_target in ("مازن", "mazen") and pid == 1):
+                    personality_id = pid
+                    break
+
         if db is not None:
-            stmt = select(Memory)
-            if personality_id is not None:
+            stmt = select(Memory).where((Memory.is_active == True) | (Memory.is_active.is_(None)))
+            if isinstance(personality_id, int):
                 stmt = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
             res = await db.execute(stmt)
             memories = list(res.scalars().all())
@@ -890,11 +1224,30 @@ class RAGService:
         if not memories:
             return None
 
+        # Strict entity isolation
+        if target_persona_name:
+            memories = [
+                m for m in memories
+                if self._is_memory_entity_match(m.content, m.personality_id, target_persona_name, personality_id, p_map=p_map)
+            ]
+            if not memories:
+                return None
+
+        # Subject item priority matching:
+        # If the target query specifies an item (e.g. 'كراسة' or 'ساعة'), find the candidate memory
+        # whose subject item matches, preventing cross-item mismatch (e.g. updating watch instead of bag).
+        q_items = QueryDecomposer.extract_subject_items(query, target_persona_name)
+        if q_items:
+            for m in memories:
+                m_items = QueryDecomposer.extract_subject_items(m.content, target_persona_name)
+                if q_items & m_items:
+                    return m
+
         norm_q = self._normalize_arabic(query).lower()
         stopwords = {
             "في", "على", "علي", "ان", "إن", "هو", "هي", "من", "عن", "بتاع",
             "بتاعة", "معلومة", "معلومه", "حاجة", "حاجه", "مكان", "مكانها", "مكانه",
-            "شغال", "كان", "بقى", "بقت", "اصبح", "اصبحت", "خليها", "خليه", "مش", "ده", "دي", "اللي"
+            "كان", "بقى", "بقت", "اصبح", "اصبحت", "خليها", "خليه", "مش", "ده", "دي", "اللي"
         }
         q_tokens = set(re.findall(r"[\w\d]+", norm_q)) - stopwords
         if not q_tokens:
@@ -938,44 +1291,6 @@ class RAGService:
             mem = await db.get(Memory, memory_id)
             if not mem:
                 return None
-
-            content_changed = False
-            if content is not None:
-                stripped_content = content.strip()
-                if stripped_content and stripped_content != mem.content:
-                    mem.content = stripped_content
-                    content_changed = True
-
-            if personality_id is not None:
-                mem.personality_id = personality_id
-            if source is not None:
-                mem.source = source
-            if importance is not None:
-                mem.importance = importance
-
-            vec_array: Optional[np.ndarray] = None
-            if content_changed:
-                if self._embedder != "disabled" and np is not None:
-                    try:
-                        vec = await self._embed_async(mem.content)
-                        if vec is not None:
-                            vec_array = vec.astype(np.float32)
-                            mem.embedding = vec_array.tobytes()
-                    except Exception as e:
-                        logger.warning(f"Could not re-generate embedding on memory update: {e}")
-                else:
-                    mem.embedding = None
-
-            await db.commit()
-            await db.refresh(mem)
-
-            # Update in-memory vector store & clear cache
-            self._vstore.add_or_update(mem, vec=vec_array)
-            with RAGService._cache_lock:
-                RAGService._shared_cache.clear()
-
-            logger.info(f"Memory {mem.id} updated (personality: {mem.personality_id})")
-            return mem
         else:
             # Sync SQLite fallback
             db_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
@@ -1033,6 +1348,186 @@ class RAGService:
             with RAGService._cache_lock:
                 RAGService._shared_cache.clear()
             return mem
+
+    async def archive_and_replace_memory(
+        self,
+        old_memory_id: int,
+        new_content: str,
+        personality_id: int | None = None,
+        source: str = "chat",
+        importance: int = 8,
+        user_id: int | None = None,
+        db: AsyncSession | None = None,
+    ) -> int:
+        """
+        Soft-deactivates the old memory (is_active = False, superseded_by_id = new_id),
+        and creates the new active memory (is_active = True), keeping historical provenance.
+        """
+        # 1. Soft-deactivate old memory first so add_memory treats it as non-active
+        if db is not None:
+            old_mem = await db.get(Memory, old_memory_id)
+            if old_mem:
+                old_mem.is_active = False
+                await db.commit()
+                self._vstore.delete(old_memory_id)
+        else:
+            db_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
+            if db_path.startswith("./"):
+                db_path = db_path[2:]
+            if not os.path.isabs(db_path):
+                db_path = os.path.abspath(db_path)
+            conn = sqlite3.connect(db_path, timeout=5.0)
+            cur = conn.cursor()
+            cur.execute("UPDATE memories SET is_active = 0 WHERE id = ?", (old_memory_id,))
+            conn.commit()
+            conn.close()
+            self._vstore.delete(old_memory_id)
+
+        # 2. Add new active memory
+        new_res = await self.add_memory(
+            content=new_content,
+            personality_id=personality_id,
+            source=source,
+            importance=importance,
+            user_id=user_id,
+            db=db,
+        )
+        new_mid = new_res.id if hasattr(new_res, "id") else int(new_res)
+
+        # 3. Link superseded_by_id on old memory
+        if db is not None:
+            old_mem = await db.get(Memory, old_memory_id)
+            if old_mem:
+                old_mem.superseded_by_id = new_mid
+                await db.commit()
+                await db.refresh(old_mem)
+        else:
+            conn = sqlite3.connect(db_path, timeout=5.0)
+            cur = conn.cursor()
+            cur.execute("UPDATE memories SET superseded_by_id = ? WHERE id = ?", (new_mid, old_memory_id))
+            conn.commit()
+            conn.close()
+
+        # Clear query cache
+        with RAGService._cache_lock:
+            RAGService._shared_cache.clear()
+
+        logger.info(f"Safely archived memory {old_memory_id} (superseded by {new_mid}): '{new_content}'")
+        return new_mid
+
+    async def retrieve_historical_contrast(
+        self,
+        query: str,
+        personality_id: int | None = None,
+        db: AsyncSession | None = None,
+    ) -> list[str]:
+        """
+        For past-tense inquiries (e.g. 'كراسة أحمد كانت فين قبل كده؟'):
+        Finds the archived/previous memory and the current active memory for the inquired item/entity,
+        and constructs a historical contrast context:
+        'مكان كراسة أحمد السابق كان [المكان القديم]، وحالياً اتنقلت وبقت [المكان الحالي].'
+        """
+        p_map = await self._get_personality_names_map(db)
+        target_persona_name = QueryDecomposer.extract_target_persona_name(query, list(p_map.values()))
+        if target_persona_name:
+            norm_target = QueryDecomposer._norm(target_persona_name)
+            for pid, pname in p_map.items():
+                if QueryDecomposer._norm(pname) == norm_target or (norm_target in ("مازن", "mazen") and pid == 1):
+                    personality_id = pid
+                    break
+
+        query_items = QueryDecomposer.extract_subject_items(query, target_persona_name)
+        if not query_items:
+            return []
+
+        if db is not None:
+            stmt = select(Memory).order_by(Memory.id.desc())
+            if isinstance(personality_id, int):
+                stmt = stmt.where((Memory.personality_id == personality_id) | (Memory.personality_id.is_(None)))
+            res = await db.execute(stmt)
+            all_mems = list(res.scalars().all())
+        else:
+            all_mems = self._load_memories_sync(personality_id)
+
+        if target_persona_name:
+            all_mems = [
+                m for m in all_mems
+                if self._is_memory_entity_match(m.content, m.personality_id, target_persona_name, personality_id, p_map=p_map)
+            ]
+
+        matching_inactive = []
+        matching_active = []
+
+        for m in all_mems:
+            m_items = QueryDecomposer.extract_subject_items(m.content, target_persona_name)
+            if query_items & m_items:
+                if m.is_active:
+                    matching_active.append(m)
+                else:
+                    matching_inactive.append(m)
+
+        if not matching_inactive and not matching_active:
+            return []
+
+        # Format historical contrast
+        if matching_inactive and matching_active:
+            old_mem = matching_inactive[0]
+            new_mem = None
+            if old_mem.superseded_by_id:
+                new_mem = next((m for m in matching_active if m.id == old_mem.superseded_by_id), None)
+            if not new_mem:
+                new_mem = matching_active[0]
+
+            effective_pid = old_mem.personality_id or new_mem.personality_id or personality_id
+            persona_label = target_persona_name or (p_map.get(effective_pid) if effective_pid else "")
+            old_attr = self.attribute_memory_content(old_mem.content, persona_label, query)
+            new_attr = self.attribute_memory_content(new_mem.content, persona_label, query)
+
+            loc_old_m = re.search(r"\b(?:على|علي|في|فوق|تحت|جوه|داخل|برا|خارج|عند|جنب|بجانب)\s+[\w\s]+$", old_attr)
+            loc_new_m = re.search(r"\b(?:على|علي|في|فوق|تحت|جوه|داخل|برا|خارج|عند|جنب|بجانب)\s+[\w\s]+$", new_attr)
+            loc_old = loc_old_m.group(0).strip() if loc_old_m else old_attr
+            loc_new = loc_new_m.group(0).strip() if loc_new_m else new_attr
+
+            loc_old = re.sub(r'[.,،!\s]+$', '', loc_old)
+            loc_new = re.sub(r'[.,،!\s]+$', '', loc_new)
+
+            m_items = QueryDecomposer.extract_subject_items(new_mem.content, persona_label)
+            overlap = query_items & m_items
+            if overlap:
+                item_name = list(overlap)[0]
+            else:
+                item_name = list(query_items)[0] if query_items else ""
+
+            if item_name:
+                if persona_label and persona_label not in item_name:
+                    if item_name.startswith("ال") and len(item_name) > 3:
+                        base = item_name[2:]
+                        if base.endswith(('ه', 'ة')):
+                            base = base[:-1] + 'ة'
+                        entity_label = f"{base} {persona_label}"
+                    else:
+                        entity_label = f"{item_name} {persona_label}"
+                else:
+                    entity_label = item_name
+                contrast_text = f"مكان {entity_label} السابق كان {loc_old}، وحالياً اتنقلت وبقت {loc_new}"
+            else:
+                contrast_text = f"المكان السابق كان {loc_old}، وحالياً اتنقلت وبقت {loc_new}"
+            return [contrast_text]
+
+        elif matching_active:
+            new_mem = matching_active[0]
+            effective_pid = new_mem.personality_id or personality_id
+            persona_label = target_persona_name or (p_map.get(effective_pid) if effective_pid else "")
+            new_attr = self.attribute_memory_content(new_mem.content, persona_label, query)
+            return [f"{new_attr}، ومفيش مكان سابق متسجل ليها."]
+        elif matching_inactive:
+            old_mem = matching_inactive[0]
+            effective_pid = old_mem.personality_id or personality_id
+            persona_label = target_persona_name or (p_map.get(effective_pid) if effective_pid else "")
+            old_attr = self.attribute_memory_content(old_mem.content, persona_label, query)
+            return [f"مكان سابق مسجل: {old_attr}."]
+
+        return []
 
     # ── Internals ─────────────────────────────────────────────────────────────
 

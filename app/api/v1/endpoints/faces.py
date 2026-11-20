@@ -285,8 +285,21 @@ async def list_registered_faces(db: AsyncSession = Depends(get_db)):
     description="Retrieve registration info and photo URL for a specific person.",
 )
 async def get_face_profile(name: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
-    profile = result.scalar_one_or_none()
+    from app.utils.masri_normalizer import normalize_masri_orthography
+    norm_target = normalize_masri_orthography(name).lower().strip()
+    result = await db.execute(select(FaceProfile))
+    all_profiles = result.scalars().all()
+    profile = None
+    for p in all_profiles:
+        norm_p = normalize_masri_orthography(p.name).lower().strip()
+        if norm_target in norm_p or norm_p in norm_target or p.name == name:
+            profile = p
+            break
+        first_w = norm_p.split()[0] if norm_p.split() else ""
+        if norm_target == first_w:
+            profile = p
+            break
+
     if not profile:
         raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
 
@@ -305,8 +318,21 @@ async def get_face_profile(name: str, db: AsyncSession = Depends(get_db)):
     description="Serve the thumbnail image of the registered person.",
 )
 async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
-    profile = result.scalar_one_or_none()
+    from app.utils.masri_normalizer import normalize_masri_orthography
+    norm_target = normalize_masri_orthography(name).lower().strip()
+    result = await db.execute(select(FaceProfile))
+    all_profiles = result.scalars().all()
+    profile = None
+    for p in all_profiles:
+        norm_p = normalize_masri_orthography(p.name).lower().strip()
+        if norm_target in norm_p or norm_p in norm_target or p.name == name:
+            profile = p
+            break
+        first_w = norm_p.split()[0] if norm_p.split() else ""
+        if norm_target == first_w:
+            profile = p
+            break
+
     if not profile:
         raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
 
@@ -315,57 +341,6 @@ async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
 
     media_type = "image/png" if profile.photo_path.lower().endswith(".png") else "image/jpeg"
     return FileResponse(profile.photo_path, media_type=media_type)
-
-
-@router.delete(
-    "/{name}",
-    summary="Delete a face profile",
-    description="Delete a registered person and their photo from the database.",
-)
-async def delete_face_profile(name: str, db: AsyncSession = Depends(get_db)):
-    face_service = _get_face_service()
-    deleted = await face_service.delete_face(name=name, db=db)
-    if not deleted:
-        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
-
-    return {"message": f"Person '{name}' was successfully deleted."}
-
-
-@router.get(
-    "/{name}",
-    summary="Get face profile details",
-    description="Retrieve registration info and photo URL for a specific person.",
-)
-async def get_face_profile(name: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
-    profile = result.scalar_one_or_none()
-    if not profile:
-        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
-
-    return {
-        "id": profile.id,
-        "name": profile.name,
-        "photo_path": profile.photo_path,
-        "photo_url": f"/api/v1/faces/{profile.name}/photo" if profile.photo_path else None,
-        "created_at": profile.created_at.isoformat() if profile.created_at else None,
-    }
-
-
-@router.get(
-    "/{name}/photo",
-    summary="Get registered person face photo",
-    description="Serve the thumbnail image of the registered person.",
-)
-async def get_face_photo(name: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(FaceProfile).where(FaceProfile.name == name))
-    profile = result.scalar_one_or_none()
-    if not profile:
-        raise HTTPException(status_code=404, detail=f"Person '{name}' not found.")
-
-    if not profile.photo_path or not os.path.exists(profile.photo_path):
-        raise HTTPException(status_code=404, detail=f"Photo for '{name}' does not exist on disk.")
-
-    return FileResponse(profile.photo_path, media_type="image/jpeg")
 
 
 @router.delete(

@@ -534,7 +534,7 @@ class UniversalActionPlanner:
                 )
 
         # Show Person Photo
-        photo_m = re.match(r"^(?:اعرض|وريني|عرض|شوف)\s+(?:صوره|صورة)\s+(?P<name>.+)", norm)
+        photo_m = re.match(r"^(?:اعرض|وريني|عرض|شوف|عايز\s+اشوف|عاوز\s+اشوف|عايز\s+أشوف|عاوز\s+أشوف|فرجني\s+على|فرجني\s+علي|أشوف|اشوف)\s+(?:صوره|صورة)\s+(?P<name>.+)", norm)
         if photo_m:
             p_name = sanitize_free_text(photo_m.group("name"), 64)
             return UniversalIntent(
